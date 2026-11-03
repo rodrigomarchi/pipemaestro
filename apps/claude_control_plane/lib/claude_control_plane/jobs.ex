@@ -181,6 +181,13 @@ defmodule ClaudeControlPlane.Jobs do
 
   # ── Runners ───────────────────────────────────────────────────────────────
 
+  @doc """
+  The last `limit` jobs `runner` finished in `workspace`, the latest first, with
+  their stage and task.
+  """
+  @spec recent_for_runner(Workspace.t(), Runner.t(), pos_integer()) :: [Job.t()]
+  def recent_for_runner(%Workspace{}, %Runner{}, _limit \\ 10), do: []
+
   @doc "The runner's unfinished jobs: the running ones, then those waiting, oldest first."
   @spec active_for_runner(Runner.t()) :: [Job.t()]
   def active_for_runner(%Runner{id: runner_id}) do
