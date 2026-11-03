@@ -26,7 +26,7 @@ por último: até aqui, commit, push e PR eram a critério do prompt de cada eta
      lançador.
 2. **Burrito fica para depois.** O binário único precisa de Zig no build. A release
    (com seu tarball) já roda sem Elixir na máquina de destino, desde que o sistema seja
-   igual ao do build.
+   igual ao do build. (Feito depois: [ADR 0014](0014-pendencias-do-roadmap.md).)
 3. **Imagem do control plane** (`Dockerfile`, `make image`).
    - Constrói e roda sobre `elixir:1.20.4-otp-28-slim`, para a ERTS da release casar
      com as bibliotecas do sistema.

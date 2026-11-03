@@ -65,9 +65,20 @@ pendentes.
      existe. Um processo recém-criado pode ter o TERM bloqueado, e por isso o
      cancelamento manda KILL em seguida.
 
-## Continuam pendentes
+9. **Binário único do runner (Burrito).**
+   - A release `cp_runner` gera um executável por plataforma (macOS arm64 e x86_64,
+     Linux x86_64 e arm64), com o Erlang dentro (`make runner.binary`).
+   - No binário, a release sobe em vez de rodar `eval`, e o CLI do Elixir leria os
+     argumentos como scripts. Por isso o `start/2` do runner roda o comando e encerra
+     a VM.
+   - O Burrito publica ERTS por versão do OTP, não por patch, e só troca os binários
+     e os NIFs. O binário é gerado no OTP 28.5 para que os apps do OTP da release e o
+     NIF do `crypto` de cada alvo coincidam.
+   - A versão do binário leva o commit, porque ele se descompacta uma vez por versão
+     e reaproveitaria um payload antigo.
+   - O `service install` de dentro do binário aponta para o próprio binário.
 
-- **Binário único do runner (Burrito):** exige o Zig instalado na máquina que gera o
-  binário.
+## Continua pendente
+
 - **GitHub App com token por tarefa:** exige registrar um app no GitHub e instalá-lo
   nos repositórios. Até lá, o runner usa o `gh` de quem o roda.

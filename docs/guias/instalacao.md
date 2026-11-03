@@ -90,6 +90,21 @@ A release não leva Phoenix nem Ecto (`_build/prod/rel/claude_control_plane_runn
 `.tar.gz` ao lado, para copiar para outra máquina com o mesmo sistema). Sem Elixir na
 máquina de destino, basta descompactar o tarball e usar `bin/cp-runner`.
 
+**Binário único (sem instalar nada):** `make runner.binary` gera em `burrito_out/` um
+executável por plataforma: `cp_runner_macos_arm64`, `cp_runner_macos_x86_64`,
+`cp_runner_linux_x86_64` e `cp_runner_linux_arm64`. Cada um leva o Erlang dentro;
+basta copiar, renomear para `cp-runner` e usar os mesmos comandos abaixo. Na primeira
+execução, ele se descompacta na pasta de dados do usuário.
+
+Para gerar os binários, a máquina do build precisa de:
+
+- Zig 0.16 (`brew install zig@0.16`);
+- `xz`;
+- o Erlang 28.5 (`asdf install erlang 28.5`): o Burrito publica ERTS por versão do OTP,
+  não por patch.
+
+`TARGET=linux_x86_64` gera só um deles.
+
 ### Conectar
 
 ```bash

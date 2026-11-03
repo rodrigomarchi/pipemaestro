@@ -1,7 +1,7 @@
 .PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
 	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
-	runner.status runner.logout \
+	runner.status runner.logout runner.binary \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
 E2E_PORT ?= 4003
@@ -115,6 +115,17 @@ runner.install: runner.release ## Install cp-runner for this user (~/.local/shar
 	cp -R _build/prod/rel/claude_control_plane_runner $(HOME)/.local/share/claude-control-plane-runner
 	ln -sf $(HOME)/.local/share/claude-control-plane-runner/bin/cp-runner $(HOME)/.local/bin/cp-runner
 	@echo "Instalado: $(HOME)/.local/bin/cp-runner (ponha ~/.local/bin no PATH). Comece com: cp-runner login --url <plataforma>"
+
+# Burrito needs exactly this Zig (brew install zig@0.16, keg-only), plus xz.
+# Its precompiled ERTS exist per OTP release, not per patch: the binary is
+# built on that release (asdf install erlang 28.5), so its OTP apps and the
+# ERTS (with crypto's NIF) of each target match.
+ZIG_BIN ?= $(shell brew --prefix zig@0.16 2>/dev/null)/bin
+BINARY_OTP ?= 28.5
+
+runner.binary: ## Build the runner as one binary per platform into burrito_out/ ([TARGET=linux_x86_64] only one; needs zig 0.16, xz and OTP 28.5)
+	PATH="$(ZIG_BIN):$$PATH" ASDF_ERLANG_VERSION=$(BINARY_OTP) MIX_ENV=prod \
+		$(if $(TARGET),BURRITO_TARGET=$(TARGET)) mix release cp_runner --overwrite
 
 image: ## Build the control plane's Docker image (claude-control-plane)
 	docker build -t claude-control-plane .

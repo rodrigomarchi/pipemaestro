@@ -42,6 +42,16 @@ defmodule ClaudeControlPlaneRunner.ServiceTest do
     assert unit =~ "WantedBy=default.target"
   end
 
+  test "what the service runs: the single binary, the release's cp-runner, or mix" do
+    assert Service.program(%{"__BURRITO_BIN_PATH" => "/opt/cp/cp_runner", "RELEASE_ROOT" => "/x"}) ==
+             {["/opt/cp/cp_runner", "start"], "/opt/cp"}
+
+    assert Service.program(%{"RELEASE_ROOT" => "/rel"}) ==
+             {["/rel/bin/cp-runner", "start"], "/rel"}
+
+    assert Service.program(%{}) == :development
+  end
+
   test "the commands that load and unload it" do
     assert Service.load_commands({:unix, :darwin}, "/x.plist", 501) ==
              [["launchctl", "bootstrap", "gui/501", "/x.plist"]]

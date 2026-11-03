@@ -202,7 +202,7 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 
 1. **✓ Release do runner com `cp-runner`, instalação em um comando**
    ([ADR 0013](../adr/0013-distribuicao-e-entrega-no-git.md); o binário único via
-   Burrito fica para depois).
+   Burrito veio depois, no [ADR 0014](../adr/0014-pendencias-do-roadmap.md)).
 2. **✓ Deploy do control plane** (ADR 0013): release, migrations, `PHX_HOST` e TLS
    para o WebSocket.
 3. **✓ Guia de instalação e de primeiro pipeline** ([`guias/instalacao.md`](../guias/instalacao.md)).
@@ -265,11 +265,11 @@ As pendências deixadas pelos marcos foram resolvidas no
 - responsável e prazo das decisões;
 - limite de tarefas por workspace;
 - mudanças em diretório sem git;
-- `gh` no `doctor`.
+- `gh` no `doctor`;
+- binário único do runner (Burrito).
 
-Continuam pendentes:
+Continua pendente:
 
 | Item | Por quê |
 |---|---|
-| Binário único do runner (Burrito) | exige o Zig instalado na máquina do build |
 | GitHub App com token por tarefa | exige registrar e instalar um app no GitHub; até lá, o `gh` de quem roda o runner |

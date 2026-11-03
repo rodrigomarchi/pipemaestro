@@ -38,16 +38,16 @@ defmodule ClaudeControlPlaneRunner.Commands.Service do
 
   def run(_args), do: Output.fail!("Uso: cp-runner service print | install | uninstall")
 
-  # From a release the service runs its cp-runner; in development, mix.
+  # From the binary or a release the service runs cp-runner; in development, mix.
   defp options do
     {program, dir} =
-      case System.get_env("RELEASE_ROOT") do
-        nil ->
+      case Service.program(System.get_env()) do
+        :development ->
           mix = System.find_executable("mix") || Output.fail!("mix não está no PATH")
           {[mix, "runner.start"], File.cwd!()}
 
-        root ->
-          {[Path.join([root, "bin", "cp-runner"]), "start"], root}
+        program ->
+          program
       end
 
     [

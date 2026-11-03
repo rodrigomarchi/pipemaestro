@@ -15,6 +15,19 @@ defmodule ClaudeControlPlaneRunner.Service do
   @type definition :: %{path: Path.t(), content: String.t()}
 
   @doc """
+  What the service runs and where, from the environment: the single binary
+  itself (Burrito's `__BURRITO_BIN_PATH`; its unpacked release has no
+  `cp-runner`), the release's `bin/cp-runner`, or `:development` (mix).
+  """
+  @spec program(%{String.t() => String.t()}) :: {[String.t()], String.t()} | :development
+  def program(%{"__BURRITO_BIN_PATH" => bin}), do: {[bin, "start"], Path.dirname(bin)}
+
+  def program(%{"RELEASE_ROOT" => root}),
+    do: {[Path.join([root, "bin", "cp-runner"]), "start"], root}
+
+  def program(_env), do: :development
+
+  @doc """
   The service file for `os` (`:os.type/0`). Options: `:program` (the command
   that runs the runner, as a list), `:runner_dir` (where it runs),
   `:config_dir`, `:path` (the `PATH` it runs with) and `:home`.
