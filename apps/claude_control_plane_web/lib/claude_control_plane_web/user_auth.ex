@@ -152,10 +152,14 @@ defmodule ClaudeControlPlaneWeb.UserAuth do
     end
   end
 
-  # Every workspace page shows how many decisions wait (the menu's badge),
-  # kept up to date here so no page has to.
+  # Every workspace page shows how many decisions wait (the menu's badge) and
+  # tells when a task pauses or ends (a toast, and a browser notification
+  # through the "notify" event), kept up to date here so no page has to.
   defp follow_pending_decisions(socket, workspace) do
-    if LiveView.connected?(socket), do: Tasks.subscribe({:decisions, workspace.id})
+    if LiveView.connected?(socket) do
+      Tasks.subscribe({:decisions, workspace.id})
+      Tasks.subscribe({:events, workspace.id})
+    end
 
     socket
     |> Phoenix.Component.assign(pending_decisions: Tasks.count_awaiting(workspace))
@@ -163,9 +167,30 @@ defmodule ClaudeControlPlaneWeb.UserAuth do
       {:pending_decisions, count}, socket ->
         {:halt, Phoenix.Component.assign(socket, pending_decisions: count)}
 
+      {:task_event, event}, socket ->
+        {:halt, notify_task_event(socket, workspace, event)}
+
       _other, socket ->
         {:cont, socket}
     end)
+  end
+
+  defp notify_task_event(socket, workspace, event) do
+    {kind, title} =
+      case event.kind do
+        :awaiting -> {:info, "#{event.title} aguarda decisão"}
+        :succeeded -> {:info, "#{event.title} foi concluída"}
+        :failed -> {:error, "#{event.title} falhou"}
+        :canceled -> {:info, "#{event.title} foi cancelada"}
+      end
+
+    socket
+    |> LiveView.put_flash(kind, title)
+    |> LiveView.push_event("notify", %{
+      title: title,
+      body: event.reason || "",
+      url: ~p"/w/#{workspace.slug}/tasks/#{event.id}"
+    })
   end
 
   defp mount_current_scope(socket, session) do

@@ -18,7 +18,9 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   `stream-json` lines become `ClaudeControlPlaneProtocol.JobEvent`s, and every
   message for the control plane goes to the owner (the connection) as
   `{:job_out, event_name, payload}`, in the wire form of
-  `ClaudeControlPlaneProtocol.Job`.
+  `ClaudeControlPlaneProtocol.Job`. What the agent is writing goes as
+  `{:job_live, "job:delta", payload}`, at most every 250 ms: it is not
+  kept if it cannot be delivered.
 
   Canceling a waiting job drops it; canceling a running one (in its setup or
   in the CLI) sends SIGTERM, then SIGKILL if it is still there after
@@ -33,6 +35,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   @line_bytes 1_048_576
   @artifact_bytes 65_536
   @stderr_tail 20
+  @delta_every_ms 250
+  @delta_bytes 4_000
 
   # The CLI reads piped stdin as extra prompt; the shell gives it /dev/null
   # instead of the port's pipe, and `exec` keeps the CLI as the port's process.
@@ -301,7 +305,9 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
       canceled: false,
       timed_out: false,
       tracking: nil,
-      finishing: nil
+      finishing: nil,
+      typing: "",
+      typed_at: nil
     })
   end
 
@@ -398,14 +404,47 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   defp handle_line(state, current, line) do
     case Jason.decode(line) do
       {:ok, decoded} when is_map(decoded) ->
-        decoded
-        |> JobEvent.from_stream_json()
-        |> Enum.reduce(current, &report_event(state, &2, &1))
+        case JobEvent.text_delta(decoded) do
+          nil ->
+            decoded
+            |> JobEvent.from_stream_json()
+            |> Enum.reduce(%{current | typing: ""}, &report_event(state, &2, &1))
+
+          text ->
+            typed(state, current, text)
+        end
 
       _not_json ->
         %{current | stderr: Enum.take([line | current.stderr], @stderr_tail)}
     end
   end
+
+  # What the agent is writing, relayed at most every @delta_every_ms (the
+  # first part at once): the text so far, its end if it is long.
+  defp typed(state, current, text) do
+    typing = current.typing <> text
+    now = System.monotonic_time(:millisecond)
+
+    if current.typed_at == nil or now - current.typed_at >= @delta_every_ms do
+      send(
+        state.owner,
+        {:job_live, Job.delta_event(), %{"job_id" => current.job.id, "text" => tail(typing)}}
+      )
+
+      %{current | typing: typing, typed_at: now}
+    else
+      %{current | typing: typing}
+    end
+  end
+
+  defp tail(text) when byte_size(text) <= @delta_bytes, do: text
+
+  defp tail(text),
+    do: from_char_start(binary_part(text, byte_size(text) - @delta_bytes, @delta_bytes))
+
+  # A cut may start inside a character: its continuation bytes go.
+  defp from_char_start(<<0b10::2, _bits::6, rest::binary>>), do: from_char_start(rest)
+  defp from_char_start(text), do: text
 
   defp report_event(state, current, %JobEvent{} = event) do
     seq = current.seq + 1

@@ -44,6 +44,16 @@ defmodule ClaudeControlPlaneWeb.DecisionsLiveTest do
     assert has_element?(view, "[data-testid=sidebar-decisions]", "1")
   end
 
+  test "any page tells, with a toast and a browser notification, when a task pauses", ctx do
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/runners")
+
+    task = blocked_task(ctx, "Tela branca")
+    path = "/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+
+    assert_push_event(view, "notify", %{title: "Tela branca aguarda decisão", url: ^path})
+    assert render(view) =~ "Tela branca aguarda decisão"
+  end
+
   test "lists what waits for a decision and decides from there", ctx do
     {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
     assert has_element?(view, "[data-testid=no-decisions]")

@@ -1,6 +1,6 @@
 .PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
-	runner.login runner.start runner.status runner.logout \
+	runner.login runner.start runner.doctor runner.service runner.status runner.logout \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
 E2E_PORT ?= 4003
@@ -98,6 +98,12 @@ runner.login: ## Sign this machine in as a runner (URL=http://localhost:4000 [NA
 
 runner.start: ## Connect this runner and stay online (Ctrl+C to stop) ([ROOT=~/src] code directories offered; remembered)
 	cd $(RUNNER_DIR) && mix runner.start $(if $(ROOT),--root $(ROOT))
+
+runner.doctor: ## Check this machine as a runner: claude, its sign-in, git, credentials, root, disk, platform
+	cd $(RUNNER_DIR) && mix runner.doctor
+
+runner.service: ## Run the runner in the background (ACTION=print|install|uninstall; launchd or systemd --user)
+	cd $(RUNNER_DIR) && mix runner.service $(or $(ACTION),print)
 
 runner.status: ## Show this runner's credentials and whether the platform accepts them
 	cd $(RUNNER_DIR) && mix runner.status

@@ -48,6 +48,17 @@ defmodule ClaudeControlPlaneWeb.RunnersLiveTest do
     assert has_element?(view, "[data-testid=runner-directories-build-01]", "sem raiz")
     assert has_element?(view, "[data-testid=runner-worktrees-build-01]", "3 · 1,5 GB")
     assert has_element?(view, "[data-testid=runner-worktrees-build-01]", "50 GB livres")
+    assert has_element?(view, "[data-testid=runner-agent-build-01]", "—")
+
+    {:ok, _} =
+      ClaudeControlPlane.Runners.record_hello(
+        ClaudeControlPlane.Runners.get_runner!(workspace, runner.id),
+        hello_fixture(%{agent: %{"cli_version" => "2.1.317", "auth" => "login"}})
+      )
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+    assert has_element?(view, "[data-testid=runner-agent-build-01]", "2.1.317")
+    assert has_element?(view, "[data-testid=runner-agent-build-01]", "login pessoal")
     refute has_element?(view, "[data-testid=runner-alheio]")
   end
 

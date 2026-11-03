@@ -15,6 +15,21 @@ defmodule ClaudeControlPlaneWeb.JobComponentsTest do
 
   defp tool(name, input), do: render_event("tool_use", %{"name" => name, "input" => input})
 
+  test "the session start says which credential and permission mode it ran with" do
+    html =
+      render_event("system", %{
+        "text" => "Sessão iniciada (haiku)",
+        "auth" => "none",
+        "permission_mode" => "dontAsk"
+      })
+
+    assert html =~ "login pessoal"
+    assert html =~ "dontAsk"
+
+    assert render_event("system", %{"text" => "x", "auth" => "ANTHROPIC_API_KEY"}) =~
+             "chave de API"
+  end
+
   test "the agent's text is rendered Markdown" do
     html = render_event("assistant_text", %{"text" => "Achei o **bug** em `login.ex`"})
     assert html =~ "<strong>bug</strong>"

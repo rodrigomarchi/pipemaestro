@@ -11,10 +11,14 @@ defmodule ClaudeControlPlaneProtocol.Hello do
   `directories` lists the code directories the runner offers, the first level
   of the root it was started with (`%{"name" => "my_app", "git" => true}`). A
   task picks one of them to work in.
+
+  `agent` describes the agent CLI on the machine: `"cli_version"` (`nil` when
+  it was not found) and `"auth"`, how it authenticates: `"api_key"` (the
+  runner's own key) or `"login"` (whoever is signed in to the CLI).
   """
 
   @enforce_keys [:protocol_version, :runner_version, :hostname, :os, :arch, :labels, :capacity]
-  defstruct @enforce_keys ++ [running_job_ids: [], directories: []]
+  defstruct @enforce_keys ++ [running_job_ids: [], directories: [], agent: nil]
 
   @type t :: %__MODULE__{
           protocol_version: pos_integer(),
@@ -25,7 +29,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
           labels: [String.t()],
           capacity: pos_integer(),
           running_job_ids: [String.t()],
-          directories: [directory()]
+          directories: [directory()],
+          agent: %{String.t() => String.t() | nil} | nil
         }
 
   @typedoc "A code directory the runner offers, in the wire form."
@@ -50,7 +55,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
          {:ok, labels} <- labels(attrs),
          {:ok, capacity} <- positive_integer(attrs, :capacity),
          {:ok, running_job_ids} <- running_job_ids(attrs),
-         {:ok, directories} <- parse_directories(fetch(attrs, :directories) || []) do
+         {:ok, directories} <- parse_directories(fetch(attrs, :directories) || []),
+         {:ok, agent} <- agent(fetch(attrs, :agent)) do
       {:ok,
        %__MODULE__{
          protocol_version: protocol_version,
@@ -61,7 +67,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
          labels: labels,
          capacity: capacity,
          running_job_ids: running_job_ids,
-         directories: directories
+         directories: directories,
+         agent: agent
        }}
     end
   end
@@ -77,6 +84,20 @@ defmodule ClaudeControlPlaneProtocol.Hello do
   @doc "Parses the wire form."
   @spec from_map(map()) :: {:ok, t()} | {:error, String.t()}
   def from_map(map), do: new(map)
+
+  defp agent(nil), do: {:ok, nil}
+
+  defp agent(%{} = agent) do
+    version = Map.get(agent, "cli_version")
+    auth = Map.get(agent, "auth")
+
+    if auth in ["api_key", "login"] and
+         (is_nil(version) or (is_binary(version) and byte_size(version) <= 40)),
+       do: {:ok, %{"cli_version" => version, "auth" => auth}},
+       else: {:error, "agent must say how the CLI authenticates (api_key or login)"}
+  end
+
+  defp agent(_agent), do: {:error, "agent must be a map"}
 
   defp fetch(attrs, key), do: Map.get(attrs, key, Map.get(attrs, Atom.to_string(key)))
 

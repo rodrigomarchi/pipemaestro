@@ -31,7 +31,7 @@ defmodule ClaudeControlPlaneWeb.JobLive do
 
     {:ok,
      socket
-     |> assign(page_title: "Execução", job: job, event_count: last_seq(events))
+     |> assign(page_title: "Execução", job: job, event_count: last_seq(events), typing: nil)
      |> stream(:events, events)}
   end
 
@@ -39,7 +39,12 @@ defmodule ClaudeControlPlaneWeb.JobLive do
   defp last_seq(events), do: events |> List.last() |> Map.fetch!(:seq)
 
   @impl true
-  def handle_info({:job_updated, %Job{} = job}, socket), do: {:noreply, assign(socket, job: job)}
+  def handle_info({:job_updated, %Job{} = job}, socket),
+    do:
+      {:noreply,
+       assign(socket, job: job, typing: if(Job.active?(job), do: socket.assigns.typing))}
+
+  def handle_info({:job_delta, _id, text}, socket), do: {:noreply, assign(socket, typing: text)}
 
   # Events are numbered from 1, so the highest seq counts them (a gap only
   # when the runner lost its connection mid-run).
@@ -47,7 +52,8 @@ defmodule ClaudeControlPlaneWeb.JobLive do
     {:noreply,
      socket
      |> stream_insert(:events, event)
-     |> update(:event_count, &max(&1, event.seq))}
+     |> update(:event_count, &max(&1, event.seq))
+     |> assign(typing: nil)}
   end
 
   @impl true
@@ -158,6 +164,7 @@ defmodule ClaudeControlPlaneWeb.JobLive do
               <ol id="job-events" phx-update="stream" class="space-y-4" data-testid="job-events">
                 <.job_event :for={{id, event} <- @streams.events} id={id} event={event} />
               </ol>
+              <.typing :if={@typing} text={@typing} />
             </.card_content>
           </.card>
         </div>

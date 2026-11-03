@@ -36,6 +36,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
       "stages" => [
         %{
           "key" => "triagem",
+          "permission_profile" => "leitura",
           "name" => "Triagem",
           "prompt" => """
           Avalie se esta tarefa está bem definida o bastante para ser corrigida sem perguntas:
@@ -50,6 +51,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
         },
         %{
           "key" => "investigacao",
+          "permission_profile" => "leitura",
           "name" => "Investigação",
           "prompt" => """
           Encontre a causa raiz do problema descrito na triagem. Leia o código envolvido, siga o fluxo
@@ -80,6 +82,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
         },
         %{
           "key" => "auditoria",
+          "permission_profile" => "leitura",
           "name" => "Validação e auditoria",
           "prompt" => """
           Revise a correção como um revisor independente: você não fez a implementação. Leia o diff,

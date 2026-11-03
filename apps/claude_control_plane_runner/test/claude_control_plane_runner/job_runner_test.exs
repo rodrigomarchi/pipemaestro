@@ -115,6 +115,23 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     assert finished["error"] =~ "não existe"
   end
 
+  test "relays what the agent is writing, apart from the events", %{tmp_dir: dir} do
+    runner = start_runner(dir)
+    JobRunner.enqueue(runner, job("j1", "responda [digitando]"))
+
+    assert_receive {:job_live, "job:delta", %{"job_id" => "j1", "text" => "Pronto: "}}, 5_000
+    assert_receive {:job_live, "job:delta", %{"text" => "Pronto: gravei o prompt "}}, 5_000
+
+    assert_receive {:job_live, "job:delta",
+                    %{"text" => "Pronto: gravei o prompt em fake-claude.txt."}},
+                   5_000
+
+    {messages, finished} = collect_until_finished("j1")
+    assert finished["status"] == "succeeded"
+    # The deltas are not events: the sequence is the usual one.
+    assert Enum.count(messages, &match?({"job:event", _}, &1)) == 5
+  end
+
   test "a failing CLI fails the job with its stderr", %{tmp_dir: dir} do
     runner = start_runner(dir)
     JobRunner.enqueue(runner, job("j1", "quebre [falha]"))
@@ -470,6 +487,7 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
       assert "--verbose" in argv
       assert "--dangerously-skip-permissions" in argv
       assert "--no-session-persistence" in argv
+      assert "--include-partial-messages" in argv
       refute "--json-schema" in argv
     end
 
@@ -491,7 +509,43 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
                "--max-budget-usd",
                "0.5"
              ] =
-               Enum.drop(argv, 7)
+               Enum.drop(argv, 8)
+    end
+
+    test "argv narrows what the agent may do to the stage's permission profile" do
+      flags = fn permissions ->
+        argv = Claude.argv(%Job{id: "j", prompt: "p", permissions: permissions})
+        refute "--dangerously-skip-permissions" in argv
+        argv
+      end
+
+      editing =
+        flags.(%{"profile" => "edicao", "allow" => ["Bash(mix test:*)"], "deny" => ["WebFetch"]})
+
+      assert ["--permission-mode", "acceptEdits"] in Enum.chunk_every(editing, 2, 1)
+      assert ["--permission-prompts", "none"] in Enum.chunk_every(editing, 2, 1)
+      assert ["--allowedTools", "Bash(mix test:*)"] in Enum.chunk_every(editing, 2, 1)
+      assert ["--disallowedTools", "WebFetch"] in Enum.chunk_every(editing, 2, 1)
+
+      reading = flags.(%{"profile" => "leitura"})
+      assert ["--permission-mode", "dontAsk"] in Enum.chunk_every(reading, 2, 1)
+
+      allowed =
+        reading
+        |> Enum.drop_while(&(&1 != "--allowedTools"))
+        |> tl()
+        |> Enum.take_while(&(not String.starts_with?(&1, "--")))
+
+      assert "Read" in allowed
+      assert "Grep" in allowed
+      assert "Edit(./.control-plane/**)" in allowed
+      refute Enum.any?(allowed, &String.starts_with?(&1, "Bash"))
+
+      assert "--dangerously-skip-permissions" in Claude.argv(%Job{
+               id: "j",
+               prompt: "p",
+               permissions: %{"profile" => "total"}
+             })
     end
 
     test "env unsets the nested-session markers and gives the artifact path" do
@@ -499,6 +553,25 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
       assert {~c"CLAUDECODE", false} in env
       assert {~c"CP_ARTIFACT_PATH", ~c".cp/a.md"} in env
       refute Enum.any?(Claude.env(job("j", "p")), &match?({~c"CP_ARTIFACT_PATH", _}, &1))
+    end
+
+    test "the runner's own API key goes to the CLI, and the agent says how it signs in" do
+      previous = System.get_env("RUNNER_ANTHROPIC_API_KEY")
+
+      try do
+        System.delete_env("RUNNER_ANTHROPIC_API_KEY")
+        refute Enum.any?(Claude.env(job("j", "p")), &match?({~c"ANTHROPIC_API_KEY", _}, &1))
+        assert %{"auth" => "login", "cli_version" => "0.0.0-fake"} = Claude.agent({:ok, @fake})
+        assert %{"auth" => "login", "cli_version" => nil} = Claude.agent({:error, :not_found})
+
+        System.put_env("RUNNER_ANTHROPIC_API_KEY", "sk-teste")
+        assert {~c"ANTHROPIC_API_KEY", ~c"sk-teste"} in Claude.env(job("j", "p"))
+        assert %{"auth" => "api_key"} = Claude.agent({:ok, @fake})
+      after
+        if previous,
+          do: System.put_env("RUNNER_ANTHROPIC_API_KEY", previous),
+          else: System.delete_env("RUNNER_ANTHROPIC_API_KEY")
+      end
     end
 
     test "executable honors CLAUDE_BIN only when it exists" do

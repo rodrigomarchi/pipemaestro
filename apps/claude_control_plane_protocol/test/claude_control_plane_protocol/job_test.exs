@@ -23,6 +23,11 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                  "artifact_path" => ".control-plane/t1/01-triagem.md",
                  "setup" => %{"command" => "mix deps.get", "copy" => ["deps", "_build"]},
                  "timeout_ms" => 600_000,
+                 "permissions" => %{
+                   "profile" => "leitura",
+                   "allow" => ["Bash(mix test:*)"],
+                   "deny" => ["WebFetch"]
+                 },
                  "gates" => [
                    %{"command" => "mix test", "expect" => "pass"},
                    %{"command" => "mix test test/repro_test.exs", "expect" => "fail"}
@@ -61,6 +66,17 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert {:error, "setup" <> _} = Job.new(Map.put(base, :setup, %{"copy" => ["/abs"]}))
       assert {:error, "timeout_ms" <> _} = Job.new(Map.put(base, :timeout_ms, 0))
       assert {:error, "timeout_ms" <> _} = Job.new(Map.put(base, :timeout_ms, 1.5))
+      assert {:error, "permissions" <> _} = Job.new(Map.put(base, :permissions, %{}))
+
+      assert {:error, "permissions" <> _} =
+               Job.new(Map.put(base, :permissions, %{"profile" => "root"}))
+
+      assert {:error, "permissions" <> _} =
+               Job.new(Map.put(base, :permissions, %{"profile" => "edicao", "allow" => [""]}))
+
+      assert {:error, "permissions" <> _} =
+               Job.new(Map.put(base, :permissions, %{"profile" => "edicao", "deny" => "Bash"}))
+
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, "mix test"))
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, [%{"command" => "x"}]))
 
@@ -105,12 +121,16 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
         "cwd" => "/work",
         "model" => "claude-haiku-5-5",
         "claude_code_version" => "2.1.317",
+        "apiKeySource" => "none",
+        "permissionMode" => "dontAsk",
         "tools" => ["Bash"]
       }
 
       assert [%JobEvent{type: "system", data: data}] = JobEvent.from_stream_json(line)
       assert data["model"] == "claude-haiku-5-5"
       assert data["cwd"] == "/work"
+      assert data["auth"] == "none"
+      assert data["permission_mode"] == "dontAsk"
       assert data["text"] =~ "claude-haiku-5-5"
     end
 
@@ -275,6 +295,27 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                "num_turns" => 3,
                "structured_output" => nil
              }
+    end
+
+    test "partial message lines give the text being written, and are no events" do
+      delta = %{
+        "type" => "stream_event",
+        "event" => %{
+          "type" => "content_block_delta",
+          "delta" => %{"type" => "text_delta", "text" => "El"}
+        }
+      }
+
+      assert JobEvent.text_delta(delta) == "El"
+      assert JobEvent.from_stream_json(delta) == []
+
+      assert JobEvent.text_delta(%{
+               "type" => "stream_event",
+               "event" => %{"type" => "message_stop"}
+             }) == nil
+
+      assert JobEvent.text_delta(%{"type" => "assistant"}) == nil
+      assert Job.delta_event() == "job:delta"
     end
 
     test "internal lines are dropped" do

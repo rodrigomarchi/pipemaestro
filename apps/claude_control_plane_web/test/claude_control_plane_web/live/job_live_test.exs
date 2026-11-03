@@ -61,6 +61,19 @@ defmodule ClaudeControlPlaneWeb.JobLiveTest do
 
     assert has_element?(view, "[data-testid=job-event][data-type=assistant_text]", "feito")
 
+    refute has_element?(view, "[data-testid=job-typing]")
+    Jobs.relay_delta(runner, job.id, "Estou olhando o **login**")
+    assert has_element?(view, "[data-testid=job-typing]", "Estou olhando o")
+
+    {:ok, _} =
+      Jobs.append_event(runner, job.id, %{
+        "seq" => 99,
+        "type" => "assistant_text",
+        "data" => %{"text" => "Estou olhando o login."}
+      })
+
+    refute has_element?(view, "[data-testid=job-typing]")
+
     {:ok, _} =
       Jobs.finish_job(runner, job.id, %{
         "status" => "succeeded",

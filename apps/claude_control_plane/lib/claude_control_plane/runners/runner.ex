@@ -24,6 +24,7 @@ defmodule ClaudeControlPlane.Runners.Runner do
           capacity: pos_integer(),
           directories: [map()],
           worktree_usage: map() | nil,
+          agent: map() | nil,
           last_connected_at: DateTime.t() | nil,
           last_seen_at: DateTime.t() | nil,
           revoked_at: DateTime.t() | nil,
@@ -44,6 +45,7 @@ defmodule ClaudeControlPlane.Runners.Runner do
     field :capacity, :integer, default: 1
     field :directories, {:array, :map}, default: []
     field :worktree_usage, :map
+    field :agent, :map
     field :last_connected_at, :utc_datetime
     field :last_seen_at, :utc_datetime
     field :revoked_at, :utc_datetime
@@ -78,6 +80,7 @@ defmodule ClaudeControlPlane.Runners.Runner do
       labels: hello.labels,
       capacity: hello.capacity,
       directories: hello.directories,
+      agent: hello.agent,
       last_connected_at: now,
       last_seen_at: now
     )

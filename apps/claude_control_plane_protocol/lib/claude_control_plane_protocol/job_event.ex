@@ -8,7 +8,9 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
   showing, each with a small `data` map whose texts are cut at
   `max_text_bytes/0`:
 
-    * `"system"` — the session started: `text`, `model`, `cwd`, `version`.
+    * `"system"` — the session started: `text`, `model`, `cwd`, `version`,
+      `auth` (the CLI's `apiKeySource`: `"none"` for a signed-in user's
+      login, else the API key's source) and `permission_mode`.
     * `"assistant_text"` — something the agent said: `text`.
     * `"tool_use"` — a tool call: `id`, `name`, `text` (its main argument)
       and, for the tools the screens know, `input`: the arguments worth
@@ -75,7 +77,9 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
         "text" => "Sessão iniciada (#{model})",
         "model" => model,
         "cwd" => line["cwd"],
-        "version" => line["claude_code_version"]
+        "version" => line["claude_code_version"],
+        "auth" => line["apiKeySource"],
+        "permission_mode" => line["permissionMode"]
       })
     ]
   end
@@ -102,6 +106,25 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
   end
 
   def from_stream_json(_line), do: []
+
+  @doc """
+  The text a partial message line (`--include-partial-messages`) adds to what
+  the agent is writing; `nil` for any other line. Partial lines are not
+  events: the runner relays them as they come (`job:delta`) and the full
+  message arrives later as an `"assistant_text"` event.
+  """
+  @spec text_delta(map()) :: String.t() | nil
+  def text_delta(%{
+        "type" => "stream_event",
+        "event" => %{
+          "type" => "content_block_delta",
+          "delta" => %{"type" => "text_delta", "text" => text}
+        }
+      })
+      when is_binary(text),
+      do: text
+
+  def text_delta(_line), do: nil
 
   @doc "The wire form, without the job id and sequence the runner adds."
   @spec to_map(t()) :: %{String.t() => term()}

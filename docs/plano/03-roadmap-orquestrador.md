@@ -80,20 +80,20 @@ descartável".
 5. **✓ Limites na execução** (ADR 0006): tempo máximo por etapa (o runner mata o grupo de processos
    ao estourar) e orçamento por etapa, já suportado via `--max-budget-usd`, exposto
    na UI.
-6. **Perfis de permissão em vez de permissão total.**
+6. **✓ Perfis de permissão em vez de permissão total** ([ADR 0009](../adr/0009-permissoes-credencial-e-operacao-do-runner.md)).
    - Por etapa: "somente leitura" (`plan`), "edita arquivos" (`acceptEdits` + Bash
      restrito), "total" (o atual).
    - Listas de ferramentas permitidas e negadas.
    - Triagem, investigação e auditoria não precisam escrever.
-7. **Autenticação do agente.**
+7. **✓ Autenticação do agente** (ADR 0009).
    - O runner informa a origem da credencial (o `init` do stream traz `apiKeySource`).
    - Opção de usar `ANTHROPIC_API_KEY` própria do runner, guardada só nele.
    - Aviso quando roda com login pessoal.
-8. **Diagnóstico.**
+8. **✓ Diagnóstico** (ADR 0009; a página do runner mostra o equivalente).
    - `make runner.doctor`: versão do `claude`, autenticação, `git`, raiz e diretórios,
      disco, conectividade.
    - O resultado aparece também na página do runner.
-9. **Runner como serviço.**
+9. **✓ Runner como serviço** (ADR 0009; a outbox ainda não sobrevive ao restart).
    - `runner.start` em segundo plano (launchd/systemd), com logs.
    - Reinício automático com reconciliação. A reconciliação já existe; precisa
      sobreviver ao restart sem perder a outbox.
@@ -118,9 +118,9 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
      como diff, o Read como caminho, as buscas com contagem.
    - Pensamento oculto, agrupamento de chamadas consecutivas, custo e tokens por turno,
      filtros por tipo.
-4. **Texto do agente em tempo real:** `--include-partial-messages` para ver a resposta
+4. **✓ Texto do agente em tempo real** ([ADR 0010](../adr/0010-conversa-com-a-tarefa.md)): `--include-partial-messages` para ver a resposta
    sendo escrita, com limite de frequência no envio.
-5. **Conversa contínua.**
+5. **✓ Conversa contínua** (ADR 0010).
    - Além das decisões em pausa, a pessoa pode a qualquer momento:
      - **mandar uma instrução**, aplicada na próxima tentativa ou etapa;
      - **pausar depois desta etapa**;
@@ -132,14 +132,14 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 7. **✓ Página de Decisões** (ADR 0007).
    - O que espera alguém, em todo o workspace, com o motivo e a ação direta.
    - Contador no menu, que já existe e hoje é fixo.
-8. **Notificações:** toast ao vivo e notificação do navegador quando uma tarefa pausa ou
+8. **✓ Notificações** (ADR 0010): toast ao vivo e notificação do navegador quando uma tarefa pausa ou
    termina.
-9. **Ações sobre tarefas:** reexecutar (nova tarefa com o mesmo pedido), duplicar com
+9. **✓ Ações sobre tarefas** (ADR 0010): reexecutar (nova tarefa com o mesmo pedido), duplicar com
    outro pipeline ou diretório, buscar no histórico.
-10. **Execuções avulsas** viram uma tarefa com o pipeline "Prompt único", para haver um
+10. **Decidido no ADR 0010: as execuções avulsas continuam.** **Execuções avulsas** viram uma tarefa com o pipeline "Prompt único", para haver um
     só lugar de acompanhar trabalho. A tela "Execuções" passa a ser só a visão técnica
     de jobs.
-11. **Página do runner:** diretórios, jobs na fila e em execução, versão do `claude`,
+11. **✓ Página do runner** (ADR 0010): diretórios, jobs na fila e em execução, versão do `claude`,
     autenticação, disco e worktrees.
 
 ### Marco 3 — Motor de pipeline poderoso
@@ -242,7 +242,7 @@ O que o plano original chama de "PR como canvas":
 2. **✓ Respondida no ADR 0006: detecção automática agora, configuração do projeto
    depois.** **Clones de cópia:** quais diretórios copiar é configuração do projeto ou detecção
    automática por toolchain?
-3. **Conversa contínua:** uma instrução no meio de uma etapa em execução cancela e refaz
+3. **✓ Respondida no ADR 0010: espera a etapa terminar.** **Conversa contínua:** uma instrução no meio de uma etapa em execução cancela e refaz
    a etapa ou espera ela terminar?
 4. **✓ Respondida no ADR 0007: `mdex` no servidor.** **Markdown:** `mdex` (NIF em Rust, a mesma escolha do Petal) ou renderização no
    cliente?

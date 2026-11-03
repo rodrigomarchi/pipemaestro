@@ -51,9 +51,20 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
       "timeout_minutes" => to_string(stage.timeout_minutes),
       "gates_text" => Stage.gates_text(stage),
       "rules_text" => Stage.rules_text(stage),
+      "permission_profile" => stage.permission_profile,
+      "allowed_tools_text" => Stage.allowed_tools_text(stage),
+      "denied_tools_text" => Stage.denied_tools_text(stage),
       "output_schema_json" =>
         if(stage.output_schema, do: Jason.encode!(stage.output_schema, pretty: true), else: "")
     }
+  end
+
+  defp permission_options do
+    [
+      {"Tudo (sem restrição)", "total"},
+      {"Editar arquivos e rodar o que for liberado", "edicao"},
+      {"Só ler e escrever o próprio artefato", "leitura"}
+    ]
   end
 
   defp new_stage, do: %{"name" => "", "prompt" => "", "max_attempts" => "2"}
@@ -302,6 +313,32 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
                   placeholder="bem_definida == false"
                   help_text="Um por linha: campo == valor ou campo != valor, sobre a saída estruturada."
                   data-testid={"stage-rules-#{stage.index}"}
+                />
+              </div>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <.field
+                  field={stage[:permission_profile]}
+                  type="select"
+                  label="O agente pode"
+                  options={permission_options()}
+                  data-testid={"stage-permission-#{stage.index}"}
+                />
+                <.field
+                  field={stage[:allowed_tools_text]}
+                  type="textarea"
+                  rows="2"
+                  label="Liberar também"
+                  placeholder="Bash(git log:*)"
+                  help_text="Uma regra por linha. Os comandos de teste e lint do projeto já vêm liberados."
+                  data-testid={"stage-allowed-#{stage.index}"}
+                />
+                <.field
+                  field={stage[:denied_tools_text]}
+                  type="textarea"
+                  rows="2"
+                  label="Negar"
+                  placeholder="WebFetch"
+                  data-testid={"stage-denied-#{stage.index}"}
                 />
               </div>
               <details class="mt-2">

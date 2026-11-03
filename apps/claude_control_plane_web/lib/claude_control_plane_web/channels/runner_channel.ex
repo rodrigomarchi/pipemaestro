@@ -7,7 +7,8 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
   Jobs travel on it too (`ClaudeControlPlaneProtocol.Job`): the channel pushes
   `job:assign` and `job:cancel` as the runner's jobs are created and canceled,
   hands over the queued ones again on every join, and stores what the runner
-  reports (`job:started`, `job:event`, `job:finished`). A job of a task's
+  reports (`job:started`, `job:event`, `job:finished`) and passes on what
+  the agent is writing (`job:delta`). A job of a task's
   stage carries its context (directory, worktree, schema, artifact path).
 
   So do the task worktrees (`ClaudeControlPlaneProtocol.Worktree`): the channel
@@ -79,6 +80,14 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
 
   def handle_in("job:event", %{"job_id" => job_id} = payload, socket) do
     socket.assigns.runner |> Jobs.append_event(job_id, payload) |> reply_to(socket)
+  end
+
+  # What the agent is writing: passed on, never answered (the runner does not
+  # wait for it).
+  def handle_in("job:delta", %{"job_id" => job_id, "text" => text}, socket)
+      when is_binary(job_id) and is_binary(text) do
+    _relayed = Jobs.relay_delta(socket.assigns.runner, job_id, String.slice(text, -4_000, 4_000))
+    {:noreply, socket}
   end
 
   def handle_in("job:finished", %{"job_id" => job_id} = payload, socket) do

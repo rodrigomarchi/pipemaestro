@@ -35,6 +35,19 @@ const liveSocket = new LiveSocket("/live", Socket, {
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
+// A task paused or ended (pushed as "notify" by every workspace page): a
+// browser notification when the tab is in the background and the person
+// allowed them; the page itself shows a toast either way.
+window.addEventListener("phx:notify", ({detail}) => {
+  if (!("Notification" in window) || document.visibilityState === "visible") return
+  const show = () => {
+    const notification = new Notification(detail.title, {body: detail.body})
+    notification.onclick = () => { window.focus(); window.location.assign(detail.url) }
+  }
+  if (Notification.permission === "granted") show()
+  else if (Notification.permission === "default") Notification.requestPermission().then(p => p === "granted" && show())
+})
+
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 

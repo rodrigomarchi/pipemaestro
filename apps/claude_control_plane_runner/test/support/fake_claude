@@ -9,10 +9,17 @@
 #   a prompt with "[falha]" writes to stderr and exits 1
 #   a prompt with "[bloqueio]" (and no "[desbloqueio]") answers status
 #     "bloqueado" when asked for structured output
+#   a prompt with "[digitando]" writes its answer in partial message lines
+#     first, as `--include-partial-messages` does
 #
 # It writes the prompt to fake-claude.txt in the working directory, so a test
 # can tell where it ran, and, like a pipeline stage, writes its artifact to
 # $CP_ARTIFACT_PATH when that is set.
+
+if [ "$1" = "--version" ]; then
+  echo "0.0.0-fake (Claude Code)"
+  exit 0
+fi
 
 prompt="$2"
 printf '%s\n' "$prompt" > fake-claude.txt
@@ -52,6 +59,15 @@ if [ -n "$CP_ARTIFACT_PATH" ] && [ "$status" = "ok" ]; then
   mkdir -p "$(dirname "$CP_ARTIFACT_PATH")"
   printf '# Artefato do fake_claude\n\n%s\n' "$summary" > "$CP_ARTIFACT_PATH"
 fi
+
+case "$prompt" in
+  *"[digitando]"*)
+    for part in "Pronto: " "gravei o prompt " "em fake-claude.txt."; do
+      echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"'"$part"'"}}}'
+      sleep 0.3
+    done
+    ;;
+esac
 
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Pronto: gravei o prompt em fake-claude.txt."}]}}'
 

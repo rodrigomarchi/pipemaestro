@@ -124,12 +124,13 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
           <:col :let={runner} label="Runner">
             <div class="flex items-center gap-2">
               <.icon name="hero-server" class="size-4 text-gray-400" />
-              <span
-                class="font-medium text-gray-900 dark:text-white"
-                data-testid={"runner-#{runner.name}"}
+              <.link
+                navigate={~p"/w/#{@current_scope.workspace.slug}/runners/#{runner.id}"}
+                class="font-medium text-gray-900 hover:underline dark:text-white"
+                data-testid={"runner-link-#{runner.name}"}
               >
-                {runner.name}
-              </span>
+                <span data-testid={"runner-#{runner.name}"}>{runner.name}</span>
+              </.link>
             </div>
             <p class="mt-0.5 font-mono text-xs text-gray-500 dark:text-gray-400">
               {runner.hostname} · {runner.os}/{runner.arch}
@@ -168,6 +169,31 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
               label="sem raiz"
               data-testid={"runner-directories-#{runner.name}"}
             />
+          </:col>
+          <:col :let={runner} label="Agente">
+            <span
+              class="flex items-center gap-1.5 whitespace-nowrap text-gray-600 dark:text-gray-300"
+              data-testid={"runner-agent-#{runner.name}"}
+            >
+              <span :if={!runner.agent}>—</span>
+              <span :if={runner.agent} class="font-mono text-xs">
+                {runner.agent["cli_version"] || "sem claude"}
+              </span>
+              <.badge
+                :if={runner.agent && runner.agent["auth"] == "login"}
+                size="xs"
+                color="warning"
+                variant="soft"
+                label="login pessoal"
+              />
+              <.badge
+                :if={runner.agent && runner.agent["auth"] == "api_key"}
+                size="xs"
+                color="success"
+                variant="soft"
+                label="chave de API"
+              />
+            </span>
           </:col>
           <:col :let={runner} label="Worktrees">
             <span

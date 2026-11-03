@@ -225,6 +225,15 @@ defmodule ClaudeControlPlaneRunner.Connection do
 
   def handle_info(:measure_usage, socket), do: {:noreply, measure_usage(socket)}
 
+  # What the agent is writing: worth showing now or never, so it skips the
+  # outbox and is dropped while disconnected.
+  def handle_info({:job_live, event, payload}, socket) do
+    if joined?(socket, socket.assigns.topic),
+      do: _pushed = push(socket, socket.assigns.topic, event, payload)
+
+    {:noreply, socket}
+  end
+
   def handle_info({ref, usage}, %{assigns: %{measuring: ref}} = socket) do
     Process.demonitor(ref, [:flush])
     Process.send_after(self(), :measure_usage, socket.assigns.usage_every)

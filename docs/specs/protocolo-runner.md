@@ -85,7 +85,10 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
 - **Join:** o payload é o `Hello` (o mesmo formato da seção 1.1), acrescido de:
   - `running_job_ids`: os jobs que o runner ainda está executando (vazio se omitido);
   - `directories`: os diretórios de código que ele oferece, ou seja, o primeiro nível
-    da raiz com que foi iniciado (`[{"name": "app", "git": true}, …]`, até 500).
+    da raiz com que foi iniciado (`[{"name": "app", "git": true}, …]`, até 500);
+  - `agent` (opcional): `{"cli_version", "auth"}`, a versão do CLI do agente (`null`
+    se não foi encontrado) e como ele se autentica: `api_key` (a chave própria do
+    runner) ou `login` (o login da máquina).
 
   O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
@@ -127,6 +130,7 @@ Cada mensagem recebe uma resposta: `ok`, ou `error` com `{"reason"}`, onde `reas
 | `job:started` | `{"job_id"}` |
 | `job:event` | `{"job_id", "seq", "type", "data"}`, com `seq` contando a partir de 1 |
 | `job:finished` | `{"job_id", "status", "exit_code", "result", "cost_usd", "duration_ms", "num_turns", "error"?}`, com `status` igual a `succeeded`, `failed` ou `canceled` |
+| `job:delta` | `{"job_id", "text"}`: o que o agente está escrevendo (até 4 KB do fim), no máximo a cada 250 ms. Sem resposta, fora da outbox e não guardado |
 
 Os tipos de `job:event` (`ClaudeControlPlaneProtocol.JobEvent`) resumem as linhas do
 `claude -p --output-format stream-json`. Os textos são cortados em 8 KB.
@@ -169,6 +173,7 @@ opcionais:
 | `model`, `max_budget_usd` | passados em `--model` e `--max-budget-usd` |
 | `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB) |
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
+| `permissions` | `{"profile", "allow"?, "deny"?}`: o que o agente pode fazer. `profile` é `total` (o padrão, sem o campo), `edicao` ou `leitura`; `allow` e `deny` são regras de ferramenta na sintaxe do CLI (`Bash(mix test:*)`). Detalhes no ADR 0009 |
 | `gates` | `[{"command", "expect"}]` (até 10, `expect` igual a `pass` ou `fail`): comandos que o runner roda no diretório de trabalho, em ordem, **depois que o agente termina bem**. O `job:finished` traz `gates` com cada um mais `exit_code`, `output` (o fim), `passed` e `duration_ms`. O runner só informa; quem decide é o control plane |
 | `setup` | `{"copy"?, "command"?}`: prepara o worktree **quando ele é criado**. O runner clona os caminhos de `copy` do diretório para o worktree (*copy-on-write*: `cp -c` no APFS, `--reflink` no Linux) e depois roda `command` no worktree. Sem `copy`, clona os que encontrar entre `deps`, `_build`, `node_modules`, `.venv`, `venv`, `vendor/bundle` e `target`. Um caminho que o worktree já tem (versionado) fica como está |
 

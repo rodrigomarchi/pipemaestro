@@ -179,6 +179,16 @@ defmodule ClaudeControlPlane.Jobs do
 
   # ── Runners ───────────────────────────────────────────────────────────────
 
+  @doc "The runner's unfinished jobs: the running ones, then those waiting, oldest first."
+  @spec active_for_runner(Runner.t()) :: [Job.t()]
+  def active_for_runner(%Runner{id: runner_id}) do
+    Repo.all(
+      from j in Job,
+        where: j.runner_id == ^runner_id and j.status in [:running, :queued],
+        order_by: [desc: j.status == :running, asc: j.inserted_at, asc: j.id]
+    )
+  end
+
   @doc "The runner's jobs that still wait to start, oldest first."
   @spec queued_for_runner(Runner.t()) :: [Job.t()]
   def queued_for_runner(%Runner{id: runner_id}) do
@@ -268,6 +278,19 @@ defmodule ClaudeControlPlane.Jobs do
       conflict_target: [:job_id, :seq],
       returning: true
     )
+  end
+
+  @doc """
+  Passes on what the agent of one of the runner's running jobs is writing to
+  whoever watches the job (`{:job, id}` gets `{:job_delta, id, text}`). Not
+  stored: the full message comes as an event.
+  """
+  @spec relay_delta(Runner.t(), String.t(), String.t()) :: :ok | {:error, :not_found}
+  def relay_delta(%Runner{} = runner, job_id, text) when is_binary(text) do
+    case fetch_for_runner(runner, job_id) do
+      {:ok, %Job{status: :running} = job} -> broadcast({:job, job.id}, {:job_delta, job.id, text})
+      _missing_or_not_running -> {:error, :not_found}
+    end
   end
 
   @doc "Records how one of the runner's jobs ended."

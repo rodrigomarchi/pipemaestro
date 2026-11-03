@@ -13,6 +13,9 @@ defmodule ClaudeControlPlaneProtocol.Job do
   `timeout_ms` is how long the agent may run before the runner stops it.
   `gates` are shell commands the runner runs in the working directory after
   the agent ends well, each expected to `"pass"` (exit 0) or `"fail"`.
+  `permissions` says what the agent may do: `"profile"` (one of
+  `permission_profiles/0`; without it, `"total"`) and the tool rules to
+  `"allow"` and `"deny"` on top, in the CLI's syntax (`"Bash(mix test:*)"`).
 
   `setup` prepares a task's worktree once, when the runner creates it:
   `"copy"` names paths of the directory (dependencies, build output) the runner
@@ -30,6 +33,10 @@ defmodule ClaudeControlPlaneProtocol.Job do
     * `"job:started"` — `%{"job_id" => id}`.
     * `"job:event"` — `%{"job_id", "seq", "type", "data"}`, one per
       `ClaudeControlPlaneProtocol.JobEvent`, `seq` counting from 1.
+    * `"job:delta"` — `%{"job_id", "text"}`: what the agent is writing right
+      now (`ClaudeControlPlaneProtocol.JobEvent.text_delta/1`), at most a few
+      times a second. Not stored and not sent again: the full message comes as
+      a `job:event`.
     * `"job:finished"` — `%{"job_id", "status", "exit_code", "result",
       "cost_usd", "duration_ms", "num_turns", "structured_output", "artifact",
       "workdir", "setup", "changes", "gates", "error"}` with `status` one of
@@ -55,7 +62,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
                 artifact_path: nil,
                 setup: nil,
                 timeout_ms: nil,
-                gates: nil
+                gates: nil,
+                permissions: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -72,7 +80,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
           artifact_path: String.t() | nil,
           setup: setup() | nil,
           timeout_ms: pos_integer() | nil,
-          gates: [%{String.t() => String.t()}] | nil
+          gates: [%{String.t() => String.t()}] | nil,
+          permissions: %{String.t() => String.t() | [String.t()]} | nil
         }
 
   @optional [
@@ -84,8 +93,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
     :artifact_path,
     :setup,
     :timeout_ms,
-    :gates
+    :gates,
+    :permissions
   ]
+
+  @permission_profiles ~w(total edicao leitura)
 
   @max_gates 10
 
@@ -109,6 +121,10 @@ defmodule ClaudeControlPlaneProtocol.Job do
   @spec event_event() :: String.t()
   def event_event, do: "job:event"
 
+  @doc "The runner relays what the agent is writing (not stored)."
+  @spec delta_event() :: String.t()
+  def delta_event, do: "job:delta"
+
   @doc "The runner reports how a job ended."
   @spec finished_event() :: String.t()
   def finished_event, do: "job:finished"
@@ -116,6 +132,14 @@ defmodule ClaudeControlPlaneProtocol.Job do
   @doc "How a job can end, as sent on the wire."
   @spec finished_statuses() :: [String.t()]
   def finished_statuses, do: ~w(succeeded failed canceled)
+
+  @doc """
+  What an agent may do: `"total"` (everything, no prompts), `"edicao"` (edit
+  files; run only the commands allowed) and `"leitura"` (read and search; write
+  only the stage's artifact).
+  """
+  @spec permission_profiles() :: [String.t()]
+  def permission_profiles, do: @permission_profiles
 
   @doc "The longest prompt a job may carry, in bytes."
   @spec max_prompt_bytes() :: pos_integer()
@@ -207,6 +231,18 @@ defmodule ClaudeControlPlaneProtocol.Job do
   defp check(:timeout_ms, value) when is_integer(value) and value in 1..@max_timeout_ms, do: :ok
   defp check(:timeout_ms, _value), do: {:error, "must be a number of milliseconds up to a day"}
 
+  defp check(:permissions, %{"profile" => profile} = permissions)
+       when profile in @permission_profiles do
+    rules = [Map.get(permissions, "allow", []), Map.get(permissions, "deny", [])]
+
+    if Enum.all?(rules, &tool_rules?/1),
+      do: :ok,
+      else: {:error, "allow and deny must be lists of tool rules"}
+  end
+
+  defp check(:permissions, _value),
+    do: {:error, "must name a profile: #{Enum.join(@permission_profiles, ", ")}"}
+
   defp check(:gates, gates) when is_list(gates) and length(gates) <= @max_gates do
     if Enum.all?(gates, &gate?/1),
       do: :ok,
@@ -222,6 +258,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
   end
 
   defp check(:setup, _value), do: {:error, "must be a map with a command or paths to copy"}
+
+  defp tool_rules?(rules) when is_list(rules) and length(rules) <= 50,
+    do: Enum.all?(rules, &(is_binary(&1) and byte_size(&1) in 1..500))
+
+  defp tool_rules?(_rules), do: false
 
   defp gate?(%{"command" => command, "expect" => expect}),
     do: is_binary(command) and byte_size(command) in 1..4_000 and expect in ["pass", "fail"]

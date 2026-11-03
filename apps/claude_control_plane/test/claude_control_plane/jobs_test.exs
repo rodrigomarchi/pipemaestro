@@ -191,4 +191,20 @@ defmodule ClaudeControlPlane.JobsTest do
       refute Map.has_key?(Jobs.load_by_runner(ctx.workspace), other.id)
     end
   end
+
+  describe "active_for_runner/1" do
+    test "the runner's running jobs, then the ones waiting, oldest first", ctx do
+      running = job_fixture(ctx.runner, ctx.user)
+      waiting = job_fixture(ctx.runner, ctx.user)
+      done = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, running.id)
+      {:ok, _} = Jobs.mark_started(ctx.runner, done.id)
+      {:ok, _} = Jobs.finish_job(ctx.runner, done.id, %{"status" => "succeeded"})
+
+      assert Enum.map(Jobs.active_for_runner(ctx.runner), &{&1.id, &1.status}) == [
+               {running.id, :running},
+               {waiting.id, :queued}
+             ]
+    end
+  end
 end

@@ -112,10 +112,18 @@ defmodule ClaudeControlPlane.RunnersTest do
     end
 
     test "records what the runner announces", %{runner: runner} do
-      hello = hello_fixture(%{labels: ["docker", "linux"], capacity: 8, runner_version: "0.2.0"})
+      hello =
+        hello_fixture(%{
+          labels: ["docker", "linux"],
+          capacity: 8,
+          runner_version: "0.2.0",
+          agent: %{"cli_version" => "2.1.317", "auth" => "login"}
+        })
+
       {:ok, updated} = Runners.record_hello(runner, hello)
 
       assert %{labels: ["docker", "linux"], capacity: 8, runner_version: "0.2.0"} = updated
+      assert updated.agent == %{"cli_version" => "2.1.317", "auth" => "login"}
       assert updated.last_connected_at
 
       :ok = Runners.touch_last_seen(updated)

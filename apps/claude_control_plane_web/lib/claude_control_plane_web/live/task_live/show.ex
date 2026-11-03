@@ -9,7 +9,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   use ClaudeControlPlaneWeb, :live_view
 
   import ClaudeControlPlaneWeb.JobComponents,
-    only: [job_event: 1, format_cost: 1, format_duration: 1]
+    only: [job_event: 1, typing: 1, format_cost: 1, format_duration: 1]
 
   import ClaudeControlPlaneWeb.TaskComponents
 
@@ -34,7 +34,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
     {:ok,
      socket
      |> assign(page_title: task.title, task: task, live_job_id: nil, timelines: %{})
-     |> assign(raw_artifacts: MapSet.new())
+     |> assign(raw_artifacts: MapSet.new(), typing: nil)
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
      |> follow_running_job()}
   end
@@ -45,7 +45,13 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
   def handle_info({:job_event, event}, socket) do
     if event.job_id == socket.assigns.live_job_id,
-      do: {:noreply, stream_insert(socket, :events, event)},
+      do: {:noreply, socket |> stream_insert(:events, event) |> assign(typing: nil)},
+      else: {:noreply, socket}
+  end
+
+  def handle_info({:job_delta, job_id, text}, socket) do
+    if job_id == socket.assigns.live_job_id,
+      do: {:noreply, assign(socket, typing: text)},
       else: {:noreply, socket}
   end
 
@@ -72,6 +78,66 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
       {:error, :finished} ->
         {:noreply, put_flash(socket, :error, "A tarefa já terminou.")}
+    end
+  end
+
+  def handle_event("rerun", _params, socket) do
+    %{user: user, workspace: workspace} = socket.assigns.current_scope
+
+    case Tasks.rerun(user, socket.assigns.task) do
+      {:ok, task} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Tarefa iniciada de novo em #{task.runner.name}.")
+         |> push_navigate(to: ~p"/w/#{workspace.slug}/tasks/#{task.id}")}
+
+      {:error, _changeset} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Não foi possível reexecutar: o pipeline, o runner ou o diretório não estão mais disponíveis. Use Duplicar."
+         )}
+    end
+  end
+
+  def handle_event("instruct", %{"instruct" => %{"text" => text}}, socket) do
+    case Tasks.instruct(socket.assigns.task, text) do
+      {:ok, task} ->
+        {:noreply, socket |> assign(task: task) |> put_flash(:info, "Mensagem guardada.")}
+
+      {:error, :blank} ->
+        {:noreply, socket}
+
+      {:error, :finished} ->
+        {:noreply, put_flash(socket, :error, "A tarefa já terminou.")}
+    end
+  end
+
+  def handle_event("request_pause", _params, socket) do
+    case Tasks.request_pause(socket.assigns.task) do
+      {:ok, task} ->
+        {:noreply, assign(socket, task: task)}
+
+      {:error, :not_running} ->
+        {:noreply, put_flash(socket, :error, "A tarefa não está rodando.")}
+    end
+  end
+
+  def handle_event("redo", %{"index" => index}, socket) do
+    case Tasks.redo_from(socket.assigns.task, String.to_integer(index), nil) do
+      {:ok, task} ->
+        {:noreply, socket |> assign(task: task) |> follow_running_job()}
+
+      {:error, reason} ->
+        message =
+          case reason do
+            :running -> "A tarefa está rodando."
+            :no_worktree -> "O worktree desta tarefa foi removido."
+            :no_stage -> "Essa etapa não existe."
+          end
+
+        {:noreply, put_flash(socket, :error, message)}
     end
   end
 
@@ -141,7 +207,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
     cond do
       is_nil(job) ->
-        socket |> assign(live_job_id: nil) |> stream(:events, [], reset: true)
+        socket |> assign(live_job_id: nil, typing: nil) |> stream(:events, [], reset: true)
 
       job.id == socket.assigns.live_job_id ->
         socket
@@ -150,7 +216,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
         if connected?(socket), do: Jobs.subscribe({:job, job.id})
 
         socket
-        |> assign(live_job_id: job.id)
+        |> assign(live_job_id: job.id, typing: nil)
         |> stream(:events, Jobs.list_events(job), reset: true)
     end
   end
@@ -165,6 +231,9 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
       run.job && run.job.changes && run.job.changes["task_files"]
     end)
   end
+
+  defp redoable?(%Task{} = task),
+    do: task.status != :running and is_nil(task.worktree_removed_at)
 
   defp removable_worktree?(%Task{} = task) do
     not Task.active?(task) and not is_nil(task.worktree) and is_nil(task.worktree_removed_at) and
@@ -220,6 +289,28 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
           data-testid="back-to-tasks"
         >
           Tarefas
+        </.button>
+        <.button
+          :if={!Task.active?(@task)}
+          size="sm"
+          variant="outline"
+          color="gray"
+          icon="hero-arrow-path"
+          phx-click="rerun"
+          data-testid="task-rerun"
+        >
+          Reexecutar
+        </.button>
+        <.button
+          size="sm"
+          variant="outline"
+          color="gray"
+          icon="hero-document-duplicate"
+          link_type="live_redirect"
+          to={~p"/w/#{@current_scope.workspace.slug}/tasks?duplicate=#{@task.id}"}
+          data-testid="task-duplicate"
+        >
+          Duplicar
         </.button>
         <.button
           :if={removable_worktree?(@task)}
@@ -325,6 +416,20 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                 <span :if={length(row.runs) > 1} class="text-xs text-gray-500 dark:text-gray-400">
                   {length(row.runs)} tentativas
                 </span>
+                <.button
+                  :if={redoable?(@task) and row.runs != []}
+                  size="xs"
+                  variant="ghost"
+                  color="gray"
+                  icon="hero-arrow-uturn-left"
+                  phx-click="redo"
+                  phx-value-index={row.index}
+                  data-confirm={"Refazer a partir de \"#{row.stage.name}\"? As etapas seguintes rodam de novo."}
+                  class="ml-auto"
+                  data-testid={"stage-redo-#{row.stage.key}"}
+                >
+                  Refazer a partir daqui
+                </.button>
               </div>
 
               <div :if={row.runs != []} class="mt-3 space-y-4">
@@ -333,6 +438,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                   run={run}
                   many={length(row.runs) > 1}
                   live={run.job && run.job.id == @live_job_id}
+                  typing={@typing}
                   streams={@streams}
                   steps={run.job && Map.get(@timelines, run.job.id)}
                   raw_artifact={MapSet.member?(@raw_artifacts, run.id)}
@@ -386,6 +492,59 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
             </div>
           </li>
         </ol>
+
+        <.card
+          :if={@task.status == :running or (Task.active?(@task) and @task.pending_instructions)}
+          variant="outline"
+        >
+          <.card_content>
+            <div
+              :if={@task.pending_instructions}
+              class="mb-3 rounded-lg bg-info-50 px-3 py-2 text-sm text-info-900 dark:bg-info-950/40 dark:text-info-100"
+              data-testid="task-pending-instructions"
+            >
+              <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
+              <p class="whitespace-pre-wrap">{@task.pending_instructions}</p>
+            </div>
+            <.form
+              :if={@task.status == :running}
+              for={to_form(%{"text" => ""}, as: "instruct")}
+              id="instruct-form"
+              phx-submit="instruct"
+            >
+              <.field
+                field={to_form(%{"text" => ""}, as: "instruct")[:text]}
+                type="textarea"
+                rows="2"
+                label="Mensagem para a tarefa"
+                placeholder="Ex.: não mexa no módulo de pagamentos."
+                help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
+                data-testid="task-instruct-text"
+              />
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <span
+                  :if={@task.pause_requested}
+                  class="text-sm text-warning-700 dark:text-warning-400"
+                  data-testid="task-pause-requested"
+                >
+                  Pausa pedida: a tarefa para quando esta etapa terminar.
+                </span>
+                <.button
+                  :if={@task.status == :running and not @task.pause_requested}
+                  type="button"
+                  variant="outline"
+                  color="gray"
+                  icon="hero-pause"
+                  phx-click="request_pause"
+                  data-testid="task-request-pause"
+                >
+                  Pausar depois desta etapa
+                </.button>
+                <.button icon="hero-paper-airplane" data-testid="task-instruct">Enviar</.button>
+              </div>
+            </.form>
+          </.card_content>
+        </.card>
       </div>
     </Layouts.app>
     """
@@ -445,6 +604,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   attr :streams, :any, required: true
   attr :steps, :list, default: nil
   attr :raw_artifact, :boolean, default: false
+  attr :typing, :string, default: nil
   attr :workspace_slug, :string, required: true
 
   defp attempt(assigns) do
@@ -558,6 +718,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
           <ol id="task-events" phx-update="stream" class="space-y-3" data-testid="task-events">
             <.job_event :for={{id, event} <- @streams.events} id={id} event={event} />
           </ol>
+          <.typing :if={@typing} text={@typing} />
         </div>
 
         <div :if={@run.job && !@live}>

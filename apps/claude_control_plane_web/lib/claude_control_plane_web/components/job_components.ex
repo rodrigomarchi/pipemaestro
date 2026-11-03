@@ -82,6 +82,23 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
     tool_body(assigns)
   end
 
+  defp event_body(%{event: %Event{type: "system"}} = assigns) do
+    ~H"""
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+      {@event.data["text"]}
+      <span :if={@event.data["auth"]} class="text-gray-500 dark:text-gray-400">
+        · {auth_label(@event.data["auth"])}
+      </span>
+      <span
+        :if={@event.data["permission_mode"]}
+        class="font-mono text-xs text-gray-500 dark:text-gray-400"
+      >
+        · {@event.data["permission_mode"]}
+      </span>
+    </p>
+    """
+  end
+
   defp event_body(%{event: %Event{type: "tool_result"}} = assigns) do
     text = assigns.event.data["text"] || ""
     assigns = assign(assigns, text: text, lines: length(String.split(text, "\n")))
@@ -184,6 +201,10 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
     """
   end
 
+  # The CLI's `apiKeySource`: "none" is the login of whoever ran `claude`.
+  defp auth_label("none"), do: "login pessoal"
+  defp auth_label(_source), do: "chave de API"
+
   defp lines(nil), do: []
   defp lines(text), do: String.split(text, "\n")
 
@@ -229,6 +250,26 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
 
   defp diff_class(:del),
     do: "diff-del bg-danger-50 text-danger-800 dark:bg-danger-950/40 dark:text-danger-300"
+
+  @doc "What the agent is writing right now, before the full message arrives."
+  attr :text, :string, required: true
+
+  @spec typing(map()) :: Phoenix.LiveView.Rendered.t()
+  def typing(assigns) do
+    ~H"""
+    <div class="mt-4 flex gap-3" data-testid="job-typing">
+      <div class="mt-0.5 flex size-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">
+        <.icon name="hero-pencil" class="size-4" />
+      </div>
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">Agente · escrevendo…</p>
+        <p class="mt-1 whitespace-pre-wrap break-words rounded-lg bg-primary-50 px-3 py-2 text-sm text-gray-900 dark:bg-primary-950/40 dark:text-gray-100">
+          {@text}
+        </p>
+      </div>
+    </div>
+    """
+  end
 
   @neutral "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
 

@@ -49,6 +49,18 @@ defmodule ClaudeControlPlaneProtocolTest do
       assert {:error, _} = Hello.new("not a map")
     end
 
+    test "the agent: the CLI's version and how it authenticates" do
+      agent = %{"cli_version" => "2.1.317", "auth" => "login"}
+      assert {:ok, %Hello{agent: ^agent}} = Hello.new(Map.put(@valid, :agent, agent))
+      assert {:ok, %Hello{agent: nil}} = Hello.new(@valid)
+
+      assert {:ok, %Hello{agent: %{"cli_version" => nil, "auth" => "api_key"}}} =
+               Hello.new(Map.put(@valid, :agent, %{"auth" => "api_key"}))
+
+      assert {:error, "agent" <> _} = Hello.new(Map.put(@valid, :agent, %{"auth" => "magic"}))
+      assert {:error, "agent" <> _} = Hello.new(Map.put(@valid, :agent, "claude"))
+    end
+
     test "directories are validated, deduplicated and sorted" do
       dirs = [
         %{"name" => "b", "git" => false},

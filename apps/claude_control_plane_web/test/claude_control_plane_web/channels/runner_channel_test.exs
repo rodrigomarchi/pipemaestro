@@ -170,6 +170,13 @@ defmodule ClaudeControlPlaneWeb.RunnerChannelTest do
       ref = push(channel, "job:event", %{"job_id" => job.id, "seq" => 2, "type" => "bogus"})
       assert_reply ref, :error, %{"reason" => "invalid"}
 
+      # What the agent is writing goes to whoever watches the job, unstored.
+      :ok = Jobs.subscribe({:job, job.id})
+      push(channel, "job:delta", %{"job_id" => job.id, "text" => "Escrev"})
+      assert_receive {:job_delta, ^job_id, "Escrev"}
+      push(channel, "job:delta", %{"job_id" => Ecto.UUID.generate(), "text" => "alheio"})
+      refute_receive {:job_delta, _, "alheio"}
+
       {:ok, _} = Jobs.request_cancel(Jobs.get_job!(ctx.workspace, job.id))
       assert_push "job:cancel", %{"job_id" => ^job_id}
 

@@ -95,7 +95,10 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
             "prompt" => "p",
             "timeout_minutes" => 15,
             "gates_text" => "{{projeto.teste}}\n! mix test test/repro_test.exs",
-            "rules_text" => "risco == alto"
+            "rules_text" => "risco == alto",
+            "permission_profile" => "edicao",
+            "allowed_tools_text" => "Bash(git log:*)",
+            "denied_tools_text" => "WebFetch"
           }
         ]
       })
@@ -106,6 +109,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
              "! mix test test/repro_test.exs"
 
     assert view |> element("[data-testid=stage-rules-0]") |> render() =~ "risco == alto"
+    assert has_element?(view, "[data-testid=stage-permission-0] option[selected][value=edicao]")
 
     {:error, {:live_redirect, _}} =
       view
@@ -116,6 +120,9 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     assert stage.timeout_minutes == 15
     assert [%{"expect" => "pass"}, %{"expect" => "fail"}] = stage.gates
     assert stage.rules == [%{"field" => "risco", "op" => "!=", "value" => "baixo"}]
+    assert stage.permission_profile == "edicao"
+    assert stage.allowed_tools == ["Bash(git log:*)"]
+    assert stage.denied_tools == ["WebFetch"]
   end
 
   test "edits a pipeline, bumping its version, and deletes it", %{

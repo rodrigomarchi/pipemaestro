@@ -11,12 +11,18 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   person when the structured output says so (`field op value`, `op` `==` or
   `!=`). A form edits both as text, one per line (`gates_text`, a `!` before
   a command that must fail; `rules_text`).
+
+  `permission_profile` is what the agent may do in the stage
+  (`ClaudeControlPlaneProtocol.Job.permission_profiles/0`), with tool rules
+  allowed and denied on top (`allowed_tools`, `denied_tools`, one per line in
+  a form).
   """
   use Ecto.Schema
 
   import Ecto.Changeset
 
   alias ClaudeControlPlane.Pipelines.Prompt
+  alias ClaudeControlPlaneProtocol.Job
 
   @type t :: %__MODULE__{
           key: String.t() | nil,
@@ -32,7 +38,12 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
           gates: [map()],
           gates_text: String.t() | nil,
           rules: [map()],
-          rules_text: String.t() | nil
+          rules_text: String.t() | nil,
+          permission_profile: String.t(),
+          allowed_tools: [String.t()],
+          allowed_tools_text: String.t() | nil,
+          denied_tools: [String.t()],
+          denied_tools_text: String.t() | nil
         }
 
   @models ~w(haiku sonnet opus)
@@ -54,6 +65,11 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     field :gates_text, :string, virtual: true
     field :rules, {:array, :map}, default: []
     field :rules_text, :string, virtual: true
+    field :permission_profile, :string, default: "total"
+    field :allowed_tools, {:array, :string}, default: []
+    field :allowed_tools_text, :string, virtual: true
+    field :denied_tools, {:array, :string}, default: []
+    field :denied_tools_text, :string, virtual: true
   end
 
   @rule ~r/^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=)\s*(.+)$/
@@ -81,7 +97,10 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
       :output_schema,
       :output_schema_json,
       :gates_text,
-      :rules_text
+      :rules_text,
+      :permission_profile,
+      :allowed_tools_text,
+      :denied_tools_text
     ])
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome à etapa")
@@ -102,6 +121,27 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     |> parse_output_schema()
     |> parse_gates()
     |> parse_rules()
+    |> validate_inclusion(:permission_profile, Job.permission_profiles(),
+      message: "escolha um perfil de permissão"
+    )
+    |> parse_tools(:allowed_tools)
+    |> parse_tools(:denied_tools)
+  end
+
+  @doc "The tools a stage allows beyond its profile, one per line."
+  @spec allowed_tools_text(t()) :: String.t()
+  def allowed_tools_text(%__MODULE__{allowed_tools: tools}), do: Enum.join(tools, "\n")
+
+  @doc "The tools a stage denies, one per line."
+  @spec denied_tools_text(t()) :: String.t()
+  def denied_tools_text(%__MODULE__{denied_tools: tools}), do: Enum.join(tools, "\n")
+
+  defp parse_tools(changeset, field) do
+    case lines(changeset, "#{field}_text") do
+      {:ok, tools} when length(tools) <= 20 -> put_change(changeset, field, tools)
+      {:ok, _tools} -> add_error(changeset, :"#{field}_text", "use no máximo 20 regras")
+      :absent -> changeset
+    end
   end
 
   @doc "A stage's gates as the form shows them: one per line, `!` when it must fail."

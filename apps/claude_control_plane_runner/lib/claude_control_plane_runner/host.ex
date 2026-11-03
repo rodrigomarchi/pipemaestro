@@ -13,7 +13,8 @@ defmodule ClaudeControlPlaneRunner.Host do
   The hello for this machine.
 
   Options: `:labels` (extra labels), `:capacity` (default: the number of
-  schedulers, roughly the CPU count), `:directories` (the code directories
+  schedulers, roughly the CPU count), `:agent` (the agent CLI's version and
+  sign-in, `ClaudeControlPlaneRunner.Claude.agent/1`), `:directories` (the code directories
   offered, `ClaudeControlPlaneRunner.Directories`).
   """
   @spec hello(keyword()) :: {:ok, Hello.t()} | {:error, String.t()}
@@ -30,7 +31,8 @@ defmodule ClaudeControlPlaneRunner.Host do
         arch: arch,
         labels: [os, arch | detected_tools()] ++ Keyword.get(opts, :labels, []),
         capacity: Keyword.get(opts, :capacity) || System.schedulers_online(),
-        directories: Keyword.get(opts, :directories, [])
+        directories: Keyword.get(opts, :directories, []),
+        agent: Keyword.get(opts, :agent)
       })
 
     # Matching the struct makes this module depend on Hello at compile time:

@@ -49,7 +49,8 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
   defp finish_current(ctx, task, output, extra \\ %{}) do
     task = Tasks.get_task!(ctx.workspace, task.id)
     job = List.last(task.stage_runs).job
-    {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+    # A test may have started it already.
+    _started = Jobs.mark_started(ctx.runner, job.id)
 
     {:ok, _} =
       Jobs.append_event(ctx.runner, job.id, %{
@@ -163,6 +164,80 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
       assert has_element?(view, "[data-testid=task-status-#{task.id}]", "Concluída")
+    end
+  end
+
+  describe "talking to the task" do
+    test "sends an instruction and asks for a pause while it runs", ctx do
+      task = create_task(ctx)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      view
+      |> form("#instruct-form", instruct: %{text: "Use o Safari"})
+      |> render_submit()
+
+      assert has_element?(view, "[data-testid=task-pending-instructions]", "Use o Safari")
+
+      view |> element("[data-testid=task-request-pause]") |> render_click()
+      assert has_element?(view, "[data-testid=task-pause-requested]")
+      refute has_element?(view, "[data-testid=task-request-pause]")
+
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      assert has_element?(view, "[data-testid=task-status]", "Aguardando decisão")
+      # Kept for whatever the decision starts next.
+      assert has_element?(view, "[data-testid=task-pending-instructions]", "Use o Safari")
+    end
+
+    test "redoes the task from an earlier stage", ctx do
+      task = create_task(ctx)
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=task-status]", "Concluída")
+      refute has_element?(view, "#instruct-form")
+
+      view |> element("[data-testid=stage-redo-a]") |> render_click()
+      assert has_element?(view, "[data-testid=task-status]", "Executando")
+      assert has_element?(view, "[data-testid=stage-run-status-a-2]", "Executando")
+      refute has_element?(view, "[data-testid=stage-redo-a]")
+    end
+  end
+
+  describe "again" do
+    test "runs a finished task again, or opens the form to start a copy", ctx do
+      bring_online(ctx.runner)
+      task = create_task(ctx)
+      {:ok, _} = Tasks.cancel_task(task)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      {:error, {:live_redirect, %{to: path}}} =
+        view |> element("[data-testid=task-rerun]") |> render_click()
+
+      "/w/" <> rest = path
+      again = Tasks.get_task!(ctx.workspace, rest |> String.split("/") |> List.last())
+      assert again.id != task.id
+      assert again.title == task.title
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=task-duplicate][href$='?duplicate=#{task.id}']")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks?duplicate=#{task.id}")
+      assert has_element?(view, "[data-testid=task-title][value='Corrigir login']")
+
+      assert has_element?(view, "[data-testid=task-directory] option[selected][value=app]")
+    end
+
+    test "the list searches titles and prompts", ctx do
+      create_task(ctx)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
+      assert has_element?(view, "[data-testid^=task-link-]", "Corrigir login")
+
+      view |> form("#tasks-search", search: %{q: "nada disso"}) |> render_change()
+      refute has_element?(view, "[data-testid^=task-link-]")
+
+      view |> form("#tasks-search", search: %{q: "botão"}) |> render_change()
+      assert has_element?(view, "[data-testid^=task-link-]", "Corrigir login")
     end
   end
 
@@ -314,6 +389,10 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
 
       job_b = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
 
+      {:ok, _} = Jobs.mark_started(ctx.runner, job_b.id)
+      :ok = Jobs.relay_delta(ctx.runner, job_b.id, "Pensando em b")
+      assert has_element?(view, "[data-testid=stage-b] [data-testid=job-typing]", "Pensando em b")
+
       {:ok, _} =
         Jobs.append_event(ctx.runner, job_b.id, %{
           "seq" => 9,
@@ -326,6 +405,8 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
                "[data-testid=stage-b] [data-testid=task-events]",
                "evento ao vivo"
              )
+
+      refute has_element?(view, "[data-testid=job-typing]")
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
       assert has_element?(view, "[data-testid=task-status]", "Concluída")

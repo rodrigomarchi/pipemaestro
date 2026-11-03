@@ -187,4 +187,29 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
     connect_and_assert_join(client, "runner:r1", params, :ok)
     assert params["running_job_ids"] == []
   end
+
+  test "relays what the agent is writing without keeping it", %{client: client} do
+    push(client, "runner:r1", "job:assign", %{"id" => "j1", "prompt" => "oi [digitando]"})
+    assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
+    assert_events(1..3)
+
+    for text <- [
+          "Pronto: ",
+          "Pronto: gravei o prompt ",
+          "Pronto: gravei o prompt em fake-claude.txt."
+        ] do
+      assert_push("runner:r1", "job:delta", %{"job_id" => "j1", "text" => ^text}, _ref, 5_000)
+    end
+
+    assert_events(4..5)
+    assert_push("runner:r1", "job:finished", %{"job_id" => "j1"}, _ref, 5_000)
+
+    # Unanswered, the deltas are not sent again after reconnecting.
+    disconnect(client, :closed)
+    connect_and_assert_join(client, "runner:r1", _params, :ok)
+    assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
+    assert_events(1..5)
+    assert_push("runner:r1", "job:finished", %{"job_id" => "j1"}, _ref, 5_000)
+    refute_push("runner:r1", "job:delta", _params)
+  end
 end

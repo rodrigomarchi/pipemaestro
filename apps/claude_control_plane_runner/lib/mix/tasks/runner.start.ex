@@ -16,7 +16,8 @@ defmodule Mix.Tasks.Runner.Start do
   (`ClaudeControlPlaneRunner.JobRunner`): a task's stages in a git worktree of
   the task's directory (`ClaudeControlPlaneRunner.Workspace`), a job on its own
   in the runner's working directory (`workdir` next to the credentials). The
-  agent runs with every permission granted.
+  agent runs with the permission profile of each stage
+  (`ClaudeControlPlaneRunner.Claude`).
   """
   use Mix.Task
 
@@ -31,7 +32,10 @@ defmodule Mix.Tasks.Runner.Start do
 
     CLI.start!()
     config = config_with_root(CLI.config!(), opts[:root])
-    {:ok, hello} = Host.hello(labels: config.labels, capacity: config.capacity)
+    agent = Claude.agent(Claude.executable())
+
+    {:ok, hello} =
+      Host.hello(labels: config.labels, capacity: config.capacity, agent: agent)
 
     workdir = Config.workdir()
     File.mkdir_p!(workdir)
@@ -41,7 +45,8 @@ defmodule Mix.Tasks.Runner.Start do
     Diretórios: #{root_description(config.root)}
     Capacidade: #{hello.capacity} jobs ao mesmo tempo
     Agente: #{agent_description()}
-    Atenção: os jobs rodam o agente com permissões totais nesta máquina (sem container).
+    Credencial: #{auth_description(agent)}
+    Atenção: os jobs rodam nesta máquina, sem container, com o perfil de permissão de cada etapa (por padrão, total).
     """)
 
     Mix.shell().info("Conectando #{config.runner_name} a #{config.url}...")
@@ -113,6 +118,13 @@ defmodule Mix.Tasks.Runner.Start do
       {:error, :not_found} -> "não encontrado (instale o claude ou defina CLAUDE_BIN)"
     end
   end
+
+  defp auth_description(%{"auth" => "api_key"}),
+    do: "chave de API do runner (RUNNER_ANTHROPIC_API_KEY)"
+
+  defp auth_description(_login),
+    do:
+      "login pessoal do claude nesta máquina (defina RUNNER_ANTHROPIC_API_KEY para usar uma chave própria)"
 
   defp finished_label(%{"status" => "succeeded"} = payload) do
     cost = if payload["cost_usd"], do: ", US$ #{payload["cost_usd"]}", else: ""

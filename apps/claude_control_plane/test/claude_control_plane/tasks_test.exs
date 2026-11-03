@@ -41,7 +41,7 @@ defmodule ClaudeControlPlane.TasksTest do
     task =
       Tasks.get_task!(%ClaudeControlPlane.Workspaces.Workspace{id: task.workspace_id}, task.id)
 
-    List.last(task.stage_runs).job
+    (Enum.find(task.stage_runs, &(&1.status == :running)) || List.last(task.stage_runs)).job
   end
 
   # Plays the runner: starts the task's current job and reports its end.
@@ -315,6 +315,37 @@ defmodule ClaudeControlPlane.TasksTest do
       assert job.context["gates"] == [%{"command" => "mix test", "expect" => "pass"}]
     end
 
+    test "a stage's permission profile reaches the runner with the project's commands", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "stages" => [
+            %{
+              "key" => "ler",
+              "name" => "Ler",
+              "prompt" => "p",
+              "permission_profile" => "leitura",
+              "allowed_tools_text" => "Bash(git log:*)",
+              "denied_tools_text" => "WebFetch"
+            },
+            %{"key" => "tudo", "name" => "Tudo", "prompt" => "p"}
+          ]
+        })
+
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx, %{"pipeline_id" => pipeline.id})
+      assert_receive {:job_assign, job}
+
+      assert job.context["permissions"] == %{
+               "profile" => "leitura",
+               "allow" => ["Bash(git log:*)", "Bash(mix test:*)"],
+               "deny" => ["WebFetch"]
+             }
+
+      run_current(ctx, task, %{})
+      assert_receive {:job_assign, second}
+      refute Map.has_key?(second.context, "permissions")
+    end
+
     test "a gate that renders to nothing (no project setting) is dropped", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
       create_task(ctx, %{"directory" => "notas"})
@@ -417,6 +448,74 @@ defmodule ClaudeControlPlane.TasksTest do
     end
   end
 
+  describe "talking to a running task" do
+    test "an instruction waits for the next stage, then goes with it", ctx do
+      task = create_task(ctx)
+
+      assert {:ok, %Task{pending_instructions: "use o Safari"}} =
+               Tasks.instruct(task, " use o Safari ")
+
+      assert {:ok, %Task{pending_instructions: "use o Safari\n\ne o Chrome"}} =
+               Tasks.instruct(task, "e o Chrome")
+
+      assert Tasks.instruct(task, "  ") == {:error, :blank}
+
+      task = run_current(ctx, task, %{})
+      assert %Task{current_stage: 1, pending_instructions: nil} = task
+      assert List.last(task.stage_runs).instructions == "use o Safari\n\ne o Chrome"
+      assert current_job(task).prompt =~ "e o Chrome"
+    end
+
+    test "pause after this stage, even one that does not ask for it", ctx do
+      task = create_task(ctx)
+      assert {:ok, %Task{pause_requested: true}} = Tasks.request_pause(task)
+
+      task = run_current(ctx, task, %{})
+
+      assert %Task{status: :awaiting_decision, pause_requested: false, decision_reason: reason} =
+               task
+
+      assert reason =~ "pediu uma pausa"
+    end
+
+    test "redo from an earlier stage: it and the ones after run again", ctx do
+      task = create_task(ctx)
+      task = run_current(ctx, task, %{})
+      task = run_current(ctx, task, %{})
+      assert task.status == :succeeded
+
+      assert {:ok, %Task{status: :running, current_stage: 0} = task} =
+               Tasks.redo_from(task, 0, "refaça com testes")
+
+      assert Enum.map(task.stage_runs, &{&1.index, &1.attempt}) == [{0, 1}, {0, 2}, {1, 1}]
+      assert Enum.at(task.stage_runs, 1).instructions == "refaça com testes"
+
+      task = run_current(ctx, task, %{})
+      assert %Task{current_stage: 1} = task
+
+      assert Enum.map(task.stage_runs, &{&1.index, &1.attempt}) == [
+               {0, 1},
+               {0, 2},
+               {1, 1},
+               {1, 2}
+             ]
+    end
+
+    test "only a task that is not running can be redone, and not without its worktree", ctx do
+      task = create_task(ctx)
+      assert Tasks.redo_from(task, 0, nil) == {:error, :running}
+
+      {:ok, task} = Tasks.cancel_task(task)
+
+      task =
+        task
+        |> Ecto.Changeset.change(worktree_removed_at: DateTime.utc_now(:second))
+        |> ClaudeControlPlane.Repo.update!()
+
+      assert Tasks.redo_from(task, 0, nil) == {:error, :no_worktree}
+    end
+  end
+
   test "canceling a running task cancels its job", ctx do
     task = create_task(ctx)
 
@@ -455,6 +554,45 @@ defmodule ClaudeControlPlane.TasksTest do
       assert ids.(%{"pipeline" => "", "runner_id" => ""}) == Enum.sort([a.id, b.id, c.id])
     end
 
+    test "searches titles and prompts", ctx do
+      a = create_task(ctx, %{"title" => "Corrigir login", "prompt" => "O botão não responde"})
+      b = create_task(ctx, %{"title" => "Rodapé", "prompt" => "Ajustar o LOGIN social"})
+      _c = create_task(ctx, %{"title" => "Outra", "prompt" => "nada a ver"})
+
+      ids = fn q ->
+        ctx.workspace |> Tasks.list_tasks(%{"q" => q}) |> Enum.map(& &1.id) |> Enum.sort()
+      end
+
+      assert ids.("login") == Enum.sort([a.id, b.id])
+      assert ids.("botão") == [a.id]
+      assert ids.("100%_") == []
+    end
+
+    test "runs a task again: same request, pipeline, runner and directory", ctx do
+      task = create_task(ctx)
+      {:ok, _} = Tasks.cancel_task(task)
+      colleague = member_fixture(ctx.workspace)
+
+      assert {:ok, again} = Tasks.rerun(colleague, Tasks.get_task!(ctx.workspace, task.id))
+      assert again.id != task.id
+
+      assert {again.title, again.prompt, again.directory} ==
+               {task.title, task.prompt, task.directory}
+
+      assert again.pipeline_id == task.pipeline_id
+      assert again.runner_id == task.runner_id
+      assert again.created_by_user_id == colleague.id
+      assert again.status == :running
+
+      assert Tasks.duplicate_params(task) == %{
+               "title" => task.title,
+               "prompt" => task.prompt,
+               "pipeline_id" => task.pipeline_id,
+               "runner_id" => task.runner_id,
+               "directory" => task.directory
+             }
+    end
+
     test "counts the decisions waiting and tells who listens", ctx do
       assert Tasks.count_awaiting(ctx.workspace) == 0
       :ok = Tasks.subscribe({:decisions, ctx.workspace.id})
@@ -470,6 +608,21 @@ defmodule ClaudeControlPlane.TasksTest do
 
       {:ok, _task} = Tasks.cancel_task(task)
       assert_receive {:pending_decisions, 0}
+    end
+
+    test "tells the workspace when a task pauses or ends", ctx do
+      :ok = Tasks.subscribe({:events, ctx.workspace.id})
+      task = create_task(ctx)
+      task_id = task.id
+
+      blocked = %{"structured_output" => %{"status" => "bloqueado", "resumo" => "dúvida"}}
+      task = run_current(ctx, task, blocked)
+      assert_receive {:task_event, %{id: ^task_id, kind: :awaiting, title: "Corrigir o login"}}
+
+      {:ok, _} = Tasks.advance(task, nil)
+      task = run_current(ctx, Tasks.get_task!(ctx.workspace, task_id), %{})
+      assert task.status == :succeeded
+      assert_receive {:task_event, %{id: ^task_id, kind: :succeeded}}
     end
 
     test "sums up a period: tasks by state and what the stages cost", ctx do

@@ -18,6 +18,9 @@ defmodule ClaudeControlPlane.Tasks do
   Changes are broadcast on PubSub (`subscribe/1`): `{:task, id}` and
   `{:workspace, id}` get `{:task_updated, task}`, and `{:decisions, id}` gets
   `{:pending_decisions, count}`, the workspace's tasks waiting for a decision.
+  `{:events, id}` gets `{:task_event, %{id, title, kind, reason}}` when a task
+  starts waiting for a decision (`kind: :awaiting`) or ends (`:succeeded`,
+  `:failed`, `:canceled`), for notifications.
   """
 
   import Ecto.Query
@@ -39,13 +42,27 @@ defmodule ClaudeControlPlane.Tasks do
 
   @typedoc "What a PubSub subscription is about."
   @type subject ::
-          {:task, Ecto.UUID.t()} | {:workspace, Ecto.UUID.t()} | {:decisions, Ecto.UUID.t()}
+          {:task, Ecto.UUID.t()}
+          | {:workspace, Ecto.UUID.t()}
+          | {:decisions, Ecto.UUID.t()}
+          | {:events, Ecto.UUID.t()}
 
   @doc "Subscribes the calling process to a task's or a workspace's task updates."
   @spec subscribe(subject()) :: :ok | {:error, term()}
   def subscribe({:task, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:task:" <> id)
   def subscribe({:workspace, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:workspace:" <> id)
   def subscribe({:decisions, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:decisions:" <> id)
+  def subscribe({:events, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:events:" <> id)
+
+  defp announce(%Task{} = task, kind) do
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      "tasks:events:" <> task.workspace_id,
+      {:task_event, %{id: task.id, title: task.title, kind: kind, reason: task.decision_reason}}
+    )
+
+    task
+  end
 
   defp notify(%Task{} = task) do
     Phoenix.PubSub.broadcast(@pubsub, "tasks:task:" <> task.id, {:task_updated, task})
@@ -68,7 +85,7 @@ defmodule ClaudeControlPlane.Tasks do
   @doc """
   The workspace's most recent tasks, newest first. `filters` (blank values
   ignored): `"pipeline"` (its name), `"runner_id"`, `"directory"`, `"user_id"`
-  (who created it).
+  (who created it), `"q"` (text in the title or the prompt).
   """
   @spec list_tasks(Workspace.t(), map()) :: [Task.t()]
   def list_tasks(%Workspace{id: workspace_id}, filters \\ %{}) do
@@ -87,6 +104,11 @@ defmodule ClaudeControlPlane.Tasks do
 
   defp filter({"pipeline", name}, query), do: where(query, [t], t.pipeline_name == ^name)
   defp filter({"directory", dir}, query), do: where(query, [t], t.directory == ^dir)
+
+  defp filter({"q", text}, query) do
+    pattern = "%" <> String.replace(text, ~r/([\\%_])/, "\\\\\\1") <> "%"
+    where(query, [t], ilike(t.title, ^pattern) or ilike(t.prompt, ^pattern))
+  end
 
   defp filter({key, id}, query) when key in ["runner_id", "user_id"] do
     case {key, Ecto.UUID.cast(id)} do
@@ -293,6 +315,7 @@ defmodule ClaudeControlPlane.Tasks do
   # its job, with the prompt and context the runner needs.
   defp start_stage(%Task{} = task, index, instructions, attempt \\ 1) do
     stage = Enum.at(task.stages, index)
+    instructions = join_instructions([instructions, task.pending_instructions])
 
     stage_run =
       Repo.insert!(%StageRun{
@@ -328,8 +351,21 @@ defmodule ClaudeControlPlane.Tasks do
     })
 
     task
-    |> Ecto.Changeset.change(status: :running, current_stage: index, decision_reason: nil)
+    |> Ecto.Changeset.change(
+      status: :running,
+      current_stage: index,
+      decision_reason: nil,
+      pending_instructions: nil,
+      finished_at: nil
+    )
     |> Repo.update!()
+  end
+
+  defp join_instructions(texts) do
+    case texts |> Enum.map(&blank_to_nil/1) |> Enum.reject(&is_nil/1) do
+      [] -> nil
+      texts -> Enum.join(texts, "\n\n")
+    end
   end
 
   # A new attempt after a failed one learns what went wrong.
@@ -362,9 +398,28 @@ defmodule ClaudeControlPlane.Tasks do
       "artifact_path" => Prompt.artifact_path(task.id, index, stage.key),
       "timeout_ms" => stage.timeout_minutes * 60_000,
       "setup" => Project.setup(task.project),
-      "gates" => gates(stage, task)
+      "gates" => gates(stage, task),
+      "permissions" => permissions(stage, task.project)
     }
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  # Everything goes in a "total" stage; a narrower one also lets the agent run
+  # the project's test and lint commands.
+  defp permissions(%{permission_profile: "total"}, _project), do: nil
+
+  defp permissions(stage, project) do
+    commands =
+      for key <- ["test_command", "lint_command"],
+          command = project && project[key],
+          is_binary(command) and String.trim(command) != "",
+          do: "Bash(#{String.trim(command)}:*)"
+
+    %{
+      "profile" => stage.permission_profile,
+      "allow" => Enum.uniq(stage.allowed_tools ++ commands),
+      "deny" => stage.denied_tools
+    }
   end
 
   # A gate whose command is only a project setting the task does not have
@@ -438,6 +493,9 @@ defmodule ClaudeControlPlane.Tasks do
     stage = Enum.at(task.stages, stage_run.index)
 
     case outcome do
+      :passed when task.pause_requested ->
+        await(task, "Alguém pediu uma pausa depois da etapa \"#{stage.name}\".")
+
       :passed when stage.pause_after ->
         await(task, "A etapa \"#{stage.name}\" terminou e pede aprovação para seguir.")
 
@@ -464,22 +522,29 @@ defmodule ClaudeControlPlane.Tasks do
     end
   end
 
+  # A stage run again (after a redo) keeps counting its attempts.
   defp next_or_finish(task, index, instructions) do
     if index < length(task.stages),
-      do: start_stage(task, index, instructions),
+      do: start_stage(task, index, instructions, last_attempt(task, index) + 1),
       else: finish(task, :succeeded)
   end
 
   defp await(task, reason) do
     task
-    |> Ecto.Changeset.change(status: :awaiting_decision, decision_reason: reason)
+    |> Ecto.Changeset.change(
+      status: :awaiting_decision,
+      decision_reason: reason,
+      pause_requested: false
+    )
     |> Repo.update!()
+    |> announce(:awaiting)
   end
 
   defp finish(task, status) do
     task
     |> Ecto.Changeset.change(status: status, decision_reason: nil, finished_at: now())
     |> Repo.update!()
+    |> announce(status)
   end
 
   # ── Decisions ─────────────────────────────────────────────────────────────
@@ -500,6 +565,74 @@ defmodule ClaudeControlPlane.Tasks do
   @spec advance(Task.t(), String.t() | nil) :: {:ok, Task.t()} | {:error, :not_awaiting}
   def advance(%Task{} = task, instructions) do
     decide(task, &next_or_finish(&1, &1.current_stage + 1, instructions))
+  end
+
+  # ── Talking to a task ─────────────────────────────────────────────────────
+
+  @doc """
+  Sends instructions to a task that has not ended. They wait for its next
+  attempt or stage (one running now is not interrupted), added to any sent
+  before.
+  """
+  @spec instruct(Task.t(), String.t()) :: {:ok, Task.t()} | {:error, :blank | :finished}
+  def instruct(%Task{} = task, text) do
+    task = Repo.get!(Task, task.id)
+
+    cond do
+      blank_to_nil(text) == nil ->
+        {:error, :blank}
+
+      not Task.active?(task) ->
+        {:error, :finished}
+
+      true ->
+        pending = join_instructions([task.pending_instructions, text])
+        update_and_notify(task, pending_instructions: pending)
+    end
+  end
+
+  @doc "Asks a running task to pause for a decision once its current stage ends."
+  @spec request_pause(Task.t()) :: {:ok, Task.t()} | {:error, :not_running}
+  def request_pause(%Task{} = task) do
+    case Repo.get!(Task, task.id) do
+      %Task{status: :running} = task -> update_and_notify(task, pause_requested: true)
+      _other -> {:error, :not_running}
+    end
+  end
+
+  @doc """
+  Runs a task again from stage `index`: a new attempt of that stage, with
+  `instructions`, then the stages after it as usual. For a task that is not
+  running and still has its worktree.
+  """
+  @spec redo_from(Task.t(), non_neg_integer(), String.t() | nil) ::
+          {:ok, Task.t()} | {:error, :running | :no_worktree | :no_stage}
+  def redo_from(%Task{} = task, index, instructions) do
+    task = Repo.get!(Task, task.id)
+
+    cond do
+      task.status == :running ->
+        {:error, :running}
+
+      task.worktree_removed_at != nil ->
+        {:error, :no_worktree}
+
+      index not in 0..(length(task.stages) - 1)//1 ->
+        {:error, :no_stage}
+
+      true ->
+        task =
+          task |> start_stage(index, instructions, last_attempt(task, index) + 1) |> preload()
+
+        notify(task)
+        {:ok, task}
+    end
+  end
+
+  defp update_and_notify(task, changes) do
+    task = task |> Ecto.Changeset.change(changes) |> Repo.update!() |> preload()
+    notify(task)
+    {:ok, task}
   end
 
   defp decide(task, fun) do
@@ -544,6 +677,29 @@ defmodule ClaudeControlPlane.Tasks do
         {:error, :finished}
     end
   end
+
+  @doc """
+  What a new task like `task` starts from: the same request, pipeline, runner
+  and directory (to change before starting it).
+  """
+  @spec duplicate_params(Task.t()) :: map()
+  def duplicate_params(%Task{} = task) do
+    %{
+      "title" => task.title,
+      "prompt" => task.prompt,
+      "pipeline_id" => task.pipeline_id,
+      "runner_id" => task.runner_id,
+      "directory" => task.directory
+    }
+  end
+
+  @doc """
+  Starts a new task with the same request as `task`, by `user`. It uses the
+  pipeline as it is now, so it fails if the pipeline is gone.
+  """
+  @spec rerun(User.t(), Task.t()) :: {:ok, Task.t()} | {:error, Ecto.Changeset.t()}
+  def rerun(%User{} = user, %Task{} = task),
+    do: create_task(user, %Workspace{id: task.workspace_id}, duplicate_params(task))
 
   # ── The worktree ──────────────────────────────────────────────────────────
 

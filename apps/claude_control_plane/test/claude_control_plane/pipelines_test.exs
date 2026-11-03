@@ -134,6 +134,47 @@ defmodule ClaudeControlPlane.PipelinesTest do
       end
     end
 
+    test "a stage's permissions: a known profile and tool rules as text", %{workspace: workspace} do
+      stage = %{
+        "name" => "Ler",
+        "prompt" => "p",
+        "permission_profile" => "leitura",
+        "allowed_tools_text" => "Bash(git log:*)\n\nBash(rg:*)",
+        "denied_tools_text" => "WebFetch"
+      }
+
+      {:ok, pipeline} =
+        Pipelines.create_pipeline(workspace, %{"name" => "P", "stages" => [stage]})
+
+      assert [
+               %Stage{
+                 permission_profile: "leitura",
+                 allowed_tools: allowed,
+                 denied_tools: ["WebFetch"]
+               } = saved
+             ] =
+               pipeline.stages
+
+      assert allowed == ["Bash(git log:*)", "Bash(rg:*)"]
+      assert Stage.allowed_tools_text(saved) == "Bash(git log:*)\nBash(rg:*)"
+
+      {:ok, pipeline} =
+        Pipelines.create_pipeline(workspace, %{
+          "name" => "Q",
+          "stages" => [%{"name" => "E", "prompt" => "p"}]
+        })
+
+      assert [%Stage{permission_profile: "total"}] = pipeline.stages
+
+      assert {:error, changeset} =
+               Pipelines.create_pipeline(workspace, %{
+                 "name" => "R",
+                 "stages" => [Map.put(stage, "permission_profile", "root")]
+               })
+
+      assert [%{permission_profile: [_]}] = errors_on(changeset).stages
+    end
+
     test "a stage runs for an hour at most unless told otherwise", %{workspace: workspace} do
       stage = %{"name" => "Etapa", "prompt" => "p"}
 
@@ -170,6 +211,10 @@ defmodule ClaudeControlPlane.PipelinesTest do
 
       assert Enum.map(bug_fix.stages, & &1.key) ==
                ~w(triagem investigacao reproducao implementacao auditoria pr)
+
+      # Stages that only look do not get to change the code.
+      assert Enum.map(bug_fix.stages, & &1.permission_profile) ==
+               ~w(leitura leitura total total leitura total)
     end
 
     test "a workspace does not see another's pipelines", %{workspace: workspace} do

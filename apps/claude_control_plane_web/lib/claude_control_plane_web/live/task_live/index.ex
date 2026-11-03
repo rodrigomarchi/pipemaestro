@@ -1,7 +1,7 @@
 defmodule ClaudeControlPlaneWeb.TaskLive.Index do
   @moduledoc """
-  The workspace's tasks, newest first and updated live, and the form that
-  starts one: what to do, which pipeline, and which online runner (with how
+  The workspace's tasks, newest first, searchable and updated live, and the
+  form that starts one (empty, or a copy of a task: `?duplicate=<id>`): what to do, which pipeline, and which online runner (with how
   busy it is) and directory to work in.
   """
   use ClaudeControlPlaneWeb, :live_view
@@ -25,11 +25,26 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
 
     {:ok,
      socket
-     |> assign(page_title: "Tarefas", creating: false, form: nil, params: %{})
+     |> assign(page_title: "Tarefas", creating: false, form: nil, params: %{}, query: "")
      |> assign(pipelines: Pipelines.list_pipelines(workspace))
      |> load_tasks()
      |> load_online_runners()}
   end
+
+  @impl true
+  def handle_params(%{"duplicate" => id}, _uri, socket) do
+    task = Tasks.get_task!(socket.assigns.current_scope.workspace, id)
+    params = task |> Tasks.duplicate_params() |> Map.new(fn {k, v} -> {k, v || ""} end)
+
+    {:noreply,
+     assign(socket,
+       creating: true,
+       params: params,
+       form: to_form(Tasks.change_task(params), as: "task")
+     )}
+  end
+
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info({:task_updated, _task}, socket), do: {:noreply, load_tasks(socket)}
@@ -48,6 +63,9 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
      |> assign(creating: true, params: %{})
      |> assign(form: to_form(Tasks.change_task(), as: "task"))}
   end
+
+  def handle_event("search", %{"search" => %{"q" => query}}, socket),
+    do: {:noreply, socket |> assign(query: query) |> load_tasks()}
 
   def handle_event("close_new", _params, socket),
     do: {:noreply, assign(socket, creating: false, form: nil)}
@@ -74,7 +92,8 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
 
   defp load_tasks(socket) do
     assign(socket,
-      tasks: Tasks.list_tasks(socket.assigns.current_scope.workspace),
+      tasks:
+        Tasks.list_tasks(socket.assigns.current_scope.workspace, %{"q" => socket.assigns.query}),
       now: DateTime.utc_now()
     )
   end
@@ -136,7 +155,25 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
         <.card_header
           title="Tarefas do workspace"
           description="Cada tarefa percorre as etapas de um pipeline num runner, com contexto novo a cada etapa."
-        />
+        >
+          <:action>
+            <.form
+              for={to_form(%{"q" => @query}, as: "search")}
+              id="tasks-search"
+              phx-change="search"
+              phx-submit="search"
+            >
+              <.field
+                field={to_form(%{"q" => @query}, as: "search")[:q]}
+                type="search"
+                label="Buscar"
+                placeholder="Título ou pedido"
+                phx-debounce="300"
+                data-testid="tasks-search"
+              />
+            </.form>
+          </:action>
+        </.card_header>
 
         <.table :if={@tasks != []} id="tasks" rows={@tasks} row_id={&"task-row-#{&1.id}"}>
           <:col :let={task} label="Tarefa">

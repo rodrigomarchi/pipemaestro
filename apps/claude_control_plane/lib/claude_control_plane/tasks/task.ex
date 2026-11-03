@@ -10,6 +10,10 @@ defmodule ClaudeControlPlane.Tasks.Task do
   is `running` while a stage runs, `awaiting_decision` when a person must say
   how to go on, and ends `succeeded`, `failed` or `canceled`.
 
+  While it runs, a person may send instructions (`pending_instructions`, given
+  to the next attempt or stage) or ask it to pause once the current stage ends
+  (`pause_requested`).
+
   Its worktree (on the runner) stays after it ends, until a person asks to
   remove it: `worktree_removal_requested_at` until the runner confirms,
   then `worktree_removed_at`, or `worktree_error` if it could not.
@@ -37,6 +41,8 @@ defmodule ClaudeControlPlane.Tasks.Task do
           worktree_removal_requested_at: DateTime.t() | nil,
           worktree_removed_at: DateTime.t() | nil,
           worktree_error: String.t() | nil,
+          pending_instructions: String.t() | nil,
+          pause_requested: boolean(),
           status: status(),
           current_stage: non_neg_integer(),
           decision_reason: String.t() | nil,
@@ -67,6 +73,8 @@ defmodule ClaudeControlPlane.Tasks.Task do
     field :worktree_removal_requested_at, :utc_datetime
     field :worktree_removed_at, :utc_datetime
     field :worktree_error, :string
+    field :pending_instructions, :string
+    field :pause_requested, :boolean, default: false
 
     field :status, Ecto.Enum,
       values: [:running, :awaiting_decision, :succeeded, :failed, :canceled],
