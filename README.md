@@ -44,6 +44,19 @@ bin/claude_control_plane eval 'ClaudeControlPlane.Release.migrate()'
 bin/claude_control_plane eval 'ClaudeControlPlane.Release.create_operator("ops@empresa.com", "Nome", "senha longa")'
 ```
 
+### Runner
+
+```bash
+make runner.login URL=http://localhost:4000   # mostra um código; aprove no navegador
+make runner.start                             # fica online no workspace (Ctrl+C para parar)
+make runner.status                            # credenciais e se a plataforma ainda aceita
+make runner.logout                            # remove as credenciais locais
+```
+
+Opções do login: `NAME=...`, `LABELS="gpu cuda"`, `CAPACITY=N`. Na plataforma, os
+runners ficam em **Executores** (`/w/<workspace>/runners`). O protocolo está em
+[`docs/specs/protocolo-runner.md`](docs/specs/protocolo-runner.md).
+
 ### Testes de tela
 
 ```bash

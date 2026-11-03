@@ -21,6 +21,7 @@ defmodule ClaudeControlPlaneWeb.MixProject do
         ignore_modules: [
           ClaudeControlPlaneWeb,
           ClaudeControlPlaneWeb.Application,
+          ClaudeControlPlaneWeb.ChannelCase,
           ClaudeControlPlaneWeb.ConnCase,
           ClaudeControlPlaneWeb.Telemetry
         ]

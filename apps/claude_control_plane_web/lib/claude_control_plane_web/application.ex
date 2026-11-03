@@ -12,6 +12,7 @@ defmodule ClaudeControlPlaneWeb.Application do
       # Start a worker by calling: ClaudeControlPlaneWeb.Worker.start_link(arg)
       # {ClaudeControlPlaneWeb.Worker, arg},
       # Start to serve requests, typically the last entry
+      ClaudeControlPlaneWeb.RunnerPresence,
       ClaudeControlPlaneWeb.Endpoint
     ]
 

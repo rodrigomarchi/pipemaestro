@@ -14,10 +14,9 @@ defmodule ClaudeControlPlaneWeb.BoardLiveTest do
     for task <- Demo.tasks(), do: assert(has_element?(view, "#task-#{task.id}"))
   end
 
-  test "lists runners and pending decisions", %{conn: conn, workspace: workspace} do
+  test "lists pending decisions", %{conn: conn, workspace: workspace} do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
 
-    for runner <- Demo.runners(), do: assert(has_element?(view, "#runner-#{runner.name}"))
     for decision <- Demo.decisions(), do: assert(has_element?(view, "#decision-#{decision.id}"))
   end
 
@@ -92,5 +91,16 @@ defmodule ClaudeControlPlaneWeb.BoardLiveTest do
   test "anonymous visitors are sent to sign in", %{workspace: workspace} do
     conn = get(build_conn(), ~p"/w/#{workspace.slug}")
     assert redirected_to(conn) == ~p"/login"
+  end
+
+  test "shows the workspace's real runners, live", %{conn: conn, workspace: workspace, user: user} do
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+    assert has_element?(view, "[data-testid=board-no-runners]")
+
+    {_runner, _token} = runner_fixture(workspace, user, %{name: "build-01"})
+    ClaudeControlPlaneWeb.RunnerStatus.notify_changed(workspace.id)
+
+    assert render(view) =~ "build-01"
+    assert has_element?(view, "[data-testid=board-runner-status-build-01]", "Offline")
   end
 end

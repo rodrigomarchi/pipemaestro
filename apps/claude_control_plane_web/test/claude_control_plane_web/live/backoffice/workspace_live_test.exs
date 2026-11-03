@@ -131,4 +131,27 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLiveTest do
                "Eva já faz parte deste workspace."
     end
   end
+
+  describe "runners" do
+    test "lists the workspace's runners with their status", %{conn: conn} do
+      workspace = workspace_fixture(%{name: "Acme"})
+
+      {_runner, _token} =
+        runner_fixture(workspace, member_fixture(workspace), %{name: "build-01"})
+
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}")
+
+      assert has_element?(view, "[data-testid=workspace-runner-build-01]")
+      assert has_element?(view, "[data-testid=workspace-runner-status-build-01]", "Offline")
+
+      ClaudeControlPlaneWeb.RunnerStatus.notify_changed(workspace.id)
+      assert has_element?(view, "[data-testid=workspace-runners-online]", "0 online")
+    end
+
+    test "says when there are none", %{conn: conn} do
+      workspace = workspace_fixture()
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}")
+      assert has_element?(view, "[data-testid=workspace-no-runners]")
+    end
+  end
 end

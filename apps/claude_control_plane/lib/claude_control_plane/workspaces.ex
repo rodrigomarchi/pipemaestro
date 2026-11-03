@@ -47,6 +47,14 @@ defmodule ClaudeControlPlane.Workspaces do
     )
   end
 
+  @doc "Whether `user` belongs to `workspace`."
+  @spec member?(Workspace.t(), User.t()) :: boolean()
+  def member?(%Workspace{id: workspace_id}, %User{id: user_id}) do
+    Repo.exists?(
+      from m in Membership, where: m.workspace_id == ^workspace_id and m.user_id == ^user_id
+    )
+  end
+
   @doc "Creates a workspace."
   @spec create_workspace(map()) :: {:ok, Workspace.t()} | {:error, Ecto.Changeset.t()}
   def create_workspace(attrs), do: %Workspace{} |> Workspace.changeset(attrs) |> Repo.insert()

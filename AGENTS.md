@@ -10,10 +10,10 @@ non-trivial change.
 
 | App | Role | May depend on |
 |---|---|---|
-| `apps/claude_control_plane` | Control-plane domain: `Accounts` (workspace users), `Backoffice` (operators), `Workspaces`; later the pipeline engine and dispatcher. **No web layer.** | `protocol` |
+| `apps/claude_control_plane` | Control-plane domain: `Accounts` (workspace users), `Backoffice` (operators), `Workspaces`, `Runners` (device flow, runner tokens); later the pipeline engine and dispatcher. **No web layer.** | `protocol` |
 | `apps/claude_control_plane_web` | Phoenix, LiveView board, Channels the runners connect to. The only place web concerns live. | domain, `protocol` |
-| `apps/claude_control_plane_protocol` | The runner ↔ control-plane contract. Public and versioned. | nothing in the umbrella |
-| `apps/claude_control_plane_runner` | The BYO runner installed on the customer's infrastructure. | `protocol` only |
+| `apps/claude_control_plane_protocol` | The runner ↔ control-plane contract (`Hello`, paths, topics, versions). Public and versioned: [`docs/specs/protocolo-runner.md`](docs/specs/protocolo-runner.md). | nothing in the umbrella |
+| `apps/claude_control_plane_runner` | The BYO runner: `runner.*` Mix tasks (device-flow login, Slipstream connection). Run its tasks from its own directory (`make runner.*`), never from the root. | `protocol` only |
 
 The runner never depends on the domain or the web app: it ships as its own
 release (`claude_control_plane_runner` in the root `mix.exs`) and must not carry

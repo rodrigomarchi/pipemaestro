@@ -11,6 +11,11 @@ defmodule ClaudeControlPlaneWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  # Runners connect out to this socket with their token (no browser session).
+  socket "/runner/socket", ClaudeControlPlaneWeb.RunnerSocket,
+    websocket: [connect_info: [:peer_data]],
+    longpoll: false
+
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]

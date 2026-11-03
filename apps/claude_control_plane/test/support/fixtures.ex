@@ -53,4 +53,40 @@ defmodule ClaudeControlPlane.Fixtures do
     {:ok, _membership} = Workspaces.add_member(workspace, user)
     user
   end
+
+  @doc "A valid runner announcement."
+  @spec hello_fixture(map()) :: ClaudeControlPlaneProtocol.Hello.t()
+  def hello_fixture(attrs \\ %{}) do
+    {:ok, hello} =
+      attrs
+      |> Enum.into(%{
+        protocol_version: ClaudeControlPlaneProtocol.version(),
+        runner_version: "0.1.0",
+        hostname: "build-#{System.unique_integer([:positive])}",
+        os: "linux",
+        arch: "x86_64",
+        labels: ["linux", "elixir"],
+        capacity: 4
+      })
+      |> ClaudeControlPlaneProtocol.Hello.new()
+
+    hello
+  end
+
+  @doc """
+  A runner signed in to `workspace` through the whole device flow, approved by
+  `user` (a member). Returns the runner and its token.
+  """
+  @spec runner_fixture(Workspaces.Workspace.t(), Accounts.User.t(), map()) ::
+          {ClaudeControlPlane.Runners.Runner.t(), String.t()}
+  def runner_fixture(workspace, user, attrs \\ %{}) do
+    alias ClaudeControlPlane.Runners
+
+    hello = hello_fixture(Map.drop(attrs, [:name]))
+    {:ok, auth, device_code, _user_code} = Runners.start_device_authorization(hello)
+    name = Map.get(attrs, :name, hello.hostname)
+    {:ok, _runner} = Runners.approve_device_authorization(auth, user, workspace, name)
+    {:ok, runner, token} = Runners.exchange_device_code(device_code)
+    {runner, token}
+  end
 end

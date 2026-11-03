@@ -42,6 +42,7 @@ defmodule ClaudeControlPlaneWeb.Router do
 
     live_session :user, on_mount: [{ClaudeControlPlaneWeb.UserAuth, :require_authenticated}] do
       live "/workspaces", WorkspacePickerLive
+      live "/runners/activate", ActivateRunnerLive
     end
 
     live_session :workspace,
@@ -50,6 +51,7 @@ defmodule ClaudeControlPlaneWeb.Router do
         {ClaudeControlPlaneWeb.UserAuth, :require_workspace}
       ] do
       live "/w/:workspace_slug", BoardLive
+      live "/w/:workspace_slug/runners", RunnersLive
     end
   end
 
@@ -94,6 +96,8 @@ defmodule ClaudeControlPlaneWeb.Router do
     pipe_through :api
 
     get "/healthz", HealthController, :index
+    post "/api/runner/device/code", RunnerDeviceController, :create_code
+    post "/api/runner/device/token", RunnerDeviceController, :create_token
   end
 
   # Enable LiveDashboard in development

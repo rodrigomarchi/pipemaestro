@@ -3,25 +3,49 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
   The organization's board: headline numbers, tasks by pipeline stage, pending
   human decisions, runners and recent activity.
 
-  The workspace comes from the scope; the pipeline data is still sample data
-  from `ClaudeControlPlaneWeb.Demo` until the pipeline domain exists.
+  The workspace and its runners are real (runner status is live); the pipeline
+  data is still sample data from `ClaudeControlPlaneWeb.Demo` until the
+  pipeline domain exists.
   """
   use ClaudeControlPlaneWeb, :live_view
 
-  alias ClaudeControlPlaneWeb.Demo
+  import ClaudeControlPlaneWeb.RunnerComponents
+
+  alias ClaudeControlPlane.Runners
+  alias ClaudeControlPlaneWeb.{Demo, RunnerStatus}
+  alias Phoenix.Socket.Broadcast
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket), do: RunnerStatus.subscribe(socket.assigns.current_scope.workspace.id)
+
     {:ok,
-     assign(socket,
+     socket
+     |> assign(
        page_title: "Board",
        stats: Demo.stats(),
        stages: Demo.stages(),
        tasks_by_stage: Demo.tasks_by_stage(),
        decisions: Demo.decisions(),
-       runners: Demo.runners(),
        activity: Demo.activity()
-     )}
+     )
+     |> load_runners()}
+  end
+
+  @impl true
+  def handle_info(%Broadcast{event: "presence_diff"}, socket),
+    do: {:noreply, load_runners(socket)}
+
+  def handle_info(:runners_changed, socket), do: {:noreply, load_runners(socket)}
+
+  defp load_runners(socket) do
+    workspace = socket.assigns.current_scope.workspace
+
+    assign(socket,
+      runners: Runners.list_runners(workspace),
+      online: RunnerStatus.online_ids(workspace.id),
+      now: DateTime.utc_now()
+    )
   end
 
   @impl true
@@ -130,26 +154,43 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
         <.card variant="outline">
           <.card_header
             title="Executores"
-            description="Daemons BYO conectados à organização."
+            description="Daemons BYO conectados a este workspace."
           >
             <:action>
-              <.button size="xs" variant="outline" color="gray" icon="hero-plus">
-                Instalar executor
+              <.button
+                size="xs"
+                variant="outline"
+                color="gray"
+                icon="hero-server-stack"
+                to={~p"/w/#{@current_scope.workspace.slug}/runners"}
+                link_type="live_redirect"
+                data-testid="board-runners-link"
+              >
+                Gerenciar
               </.button>
             </:action>
           </.card_header>
-          <.table id="runners" rows={@runners} row_id={&"runner-#{&1.name}"} density="compact">
+          <.table
+            :if={@runners != []}
+            id="board-runners"
+            rows={@runners}
+            row_id={&"board-runner-#{&1.id}"}
+            density="compact"
+          >
             <:col :let={runner} label="Executor">
               <div
                 class="flex items-center gap-2 font-medium text-gray-900 dark:text-white"
-                data-testid={"runner-#{runner.name}"}
+                data-testid={"board-runner-#{runner.name}"}
               >
                 <.icon name="hero-server" class="size-4 text-gray-400" />
                 {runner.name}
               </div>
             </:col>
             <:col :let={runner} label="Status">
-              <.runner_status status={runner.status} />
+              <.runner_status
+                online={MapSet.member?(@online, runner.id)}
+                data-testid={"board-runner-status-#{runner.name}"}
+              />
             </:col>
             <:col :let={runner} label="Labels">
               <div class="flex flex-wrap gap-1">
@@ -162,27 +203,29 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
                 />
               </div>
             </:col>
-            <:col :let={runner} label="Carga">
-              <div class="flex items-center gap-2">
-                <.progress
-                  size="sm"
-                  value={runner.load}
-                  max={runner.capacity}
-                  color={load_color(runner)}
-                  class="w-24"
-                />
-                <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {runner.load}/{runner.capacity}
-                </span>
-              </div>
-            </:col>
+            <:col :let={runner} label="Capacidade">{runner.capacity}</:col>
             <:col :let={runner} label="Versão">
-              <span class="font-mono text-xs">{runner.version}</span>
+              <span class="font-mono text-xs">{runner.runner_version}</span>
             </:col>
             <:col :let={runner} label="Visto">
-              <span class="text-gray-500 dark:text-gray-400">{runner.last_seen}</span>
+              <span class="text-gray-500 dark:text-gray-400">
+                {if MapSet.member?(@online, runner.id),
+                  do: "agora",
+                  else: time_ago(runner.last_seen_at, @now)}
+              </span>
             </:col>
           </.table>
+          <.card_content :if={@runners == []}>
+            <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="board-no-runners">
+              Nenhum runner conectado.
+              <.link
+                navigate={~p"/w/#{@current_scope.workspace.slug}/runners"}
+                class="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400"
+              >
+                Conectar o primeiro
+              </.link>
+            </p>
+          </.card_content>
         </.card>
       </div>
     </Layouts.app>
@@ -351,14 +394,6 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     """
   end
 
-  attr :status, :atom, required: true
-
-  defp runner_status(assigns) do
-    ~H"""
-    <.badge size="sm" variant="soft" dot color={runner_color(@status)} label={runner_label(@status)} />
-    """
-  end
-
   defp task_runner(%{runner: runner}) when is_binary(runner), do: runner
   defp task_runner(%{status: :queued}), do: "na fila"
   defp task_runner(%{status: :ready}), do: "workspace liberado"
@@ -382,18 +417,6 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
   defp task_status_color(:waiting_decision), do: "warning"
   defp task_status_color(:queued), do: "gray"
   defp task_status_color(:ready), do: "success"
-
-  defp runner_label(:online), do: "Online"
-  defp runner_label(:busy), do: "Ocupado"
-  defp runner_label(:offline), do: "Offline"
-
-  defp runner_color(:online), do: "success"
-  defp runner_color(:busy), do: "info"
-  defp runner_color(:offline), do: "gray"
-
-  defp load_color(%{load: load, capacity: capacity}) when load >= capacity, do: "danger"
-  defp load_color(%{load: load, capacity: capacity}) when load * 4 >= capacity * 3, do: "warning"
-  defp load_color(_runner), do: "primary"
 
   defp option_color("Abortar", _index), do: "danger"
   defp option_color(_option, 0), do: "primary"

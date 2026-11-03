@@ -136,7 +136,14 @@ defmodule ClaudeControlPlaneWeb.Layouts do
           </.sidebar_group>
 
           <.sidebar_group label="Infraestrutura">
-            <.sidebar_item label="Executores" path={@home} icon="hero-server-stack" />
+            <.sidebar_item
+              label="Executores"
+              path={@home <> "/runners"}
+              icon="hero-server-stack"
+              link_type="live_redirect"
+              active={@active == :runners}
+              data-testid="sidebar-runners"
+            />
             <.sidebar_item label="Pipelines" path={@home} icon="hero-squares-2x2" />
             <.sidebar_item label="Uso e limites" path={@home} icon="hero-chart-bar" />
           </.sidebar_group>

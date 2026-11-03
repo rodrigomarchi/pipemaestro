@@ -39,7 +39,13 @@ defmodule ClaudeControlPlaneRunner.MixProject do
   # control plane only through the protocol and never depends on its apps.
   defp deps do
     [
-      {:claude_control_plane_protocol, in_umbrella: true}
+      {:claude_control_plane_protocol, in_umbrella: true},
+      {:slipstream, "~> 1.3"},
+      {:req, "~> 0.7.5"},
+      {:jason, "~> 1.2"},
+
+      # Test dependencies: Req.Test stands in for the platform's HTTP API
+      {:plug, "~> 1.18", only: :test}
     ]
   end
 

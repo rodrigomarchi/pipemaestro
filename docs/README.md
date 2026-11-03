@@ -24,6 +24,11 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 |---|---|---|
 | 0001 | [Biblioteca de componentes de UI: petal_components](adr/0001-biblioteca-de-componentes.md) | Aceita |
 | 0002 | [Identidades, workspaces e backoffice](adr/0002-identidades-e-workspaces.md) | Aceita |
+| 0003 | [Login e conexão do runner](adr/0003-conexao-do-runner.md) | Aceita |
+
+## Specs
+
+- [Protocolo runner ↔ control plane (v1)](specs/protocolo-runner.md)
 
 ## Guias
 

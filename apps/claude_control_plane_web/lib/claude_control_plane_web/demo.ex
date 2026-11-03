@@ -3,7 +3,7 @@ defmodule ClaudeControlPlaneWeb.Demo do
   Static sample data for the screens that exist before the domain does.
 
   Every function here stands in for a context of `ClaudeControlPlane` that is
-  not written yet (tasks, pipeline runs, decisions, runners). LiveViews read
+  not written yet (tasks, pipeline runs, decisions). LiveViews read
   from this module only; when a context lands, its screen switches to it and
   the matching function here is deleted.
   """
@@ -34,16 +34,6 @@ defmodule ClaudeControlPlaneWeb.Demo do
           stage: String.t(),
           due: String.t(),
           options: [String.t()]
-        }
-
-  @type runner :: %{
-          name: String.t(),
-          status: :online | :busy | :offline,
-          labels: [String.t()],
-          load: non_neg_integer(),
-          capacity: pos_integer(),
-          version: String.t(),
-          last_seen: String.t()
         }
 
   @type activity :: %{
@@ -195,49 +185,6 @@ defmodule ClaudeControlPlaneWeb.Demo do
         stage: "Implementação",
         due: "amanhã",
         options: ["Aprovar", "Ajustar plano", "Abortar"]
-      }
-    ]
-  end
-
-  @doc "Runners registered by the organization."
-  @spec runners() :: [runner()]
-  def runners do
-    [
-      %{
-        name: "runner-sp-01",
-        status: :busy,
-        labels: ["linux", "elixir", "node"],
-        load: 3,
-        capacity: 4,
-        version: "0.1.0",
-        last_seen: "agora"
-      },
-      %{
-        name: "runner-sp-02",
-        status: :busy,
-        labels: ["linux", "elixir", "postgres"],
-        load: 2,
-        capacity: 4,
-        version: "0.1.0",
-        last_seen: "agora"
-      },
-      %{
-        name: "runner-dev-ana",
-        status: :online,
-        labels: ["macos", "elixir"],
-        load: 1,
-        capacity: 2,
-        version: "0.1.0",
-        last_seen: "há 4s"
-      },
-      %{
-        name: "runner-gpu-01",
-        status: :offline,
-        labels: ["linux", "python", "cuda"],
-        load: 0,
-        capacity: 2,
-        version: "0.0.9",
-        last_seen: "há 2h"
       }
     ]
   end

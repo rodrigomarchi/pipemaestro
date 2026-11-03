@@ -1,5 +1,6 @@
 .PHONY: help setup deps docker.up docker.down docker.reset server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
+	runner.login runner.start runner.status runner.logout \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
 E2E_PORT ?= 4003
@@ -76,6 +77,27 @@ ci.quick: ## Run every check but Dialyzer (iteration only)
 	mix deps.unlock --check-unused
 	mix credo --strict
 	mix test --warnings-as-errors --cover
+
+# ── Runner ──────────────────────────────────────────────────────────────────
+
+# The runner's tasks run inside its own app, so the control plane does not boot
+# along with them. Credentials go to ~/.config/claude-control-plane (or
+# RUNNER_CONFIG_DIR).
+RUNNER_DIR = apps/claude_control_plane_runner
+
+runner.login: ## Sign this machine in as a runner (URL=http://localhost:4000 [NAME=...] [LABELS="gpu cuda"] [CAPACITY=N])
+	@test -n "$(URL)" || { echo "usage: make runner.login URL=http://localhost:4000"; exit 2; }
+	cd $(RUNNER_DIR) && mix runner.login --url $(URL) $(if $(NAME),--name "$(NAME)") \
+		$(foreach label,$(LABELS),--label $(label)) $(if $(CAPACITY),--capacity $(CAPACITY))
+
+runner.start: ## Connect this runner and stay online (Ctrl+C to stop)
+	cd $(RUNNER_DIR) && mix runner.start
+
+runner.status: ## Show this runner's credentials and whether the platform accepts them
+	cd $(RUNNER_DIR) && mix runner.status
+
+runner.logout: ## Remove this runner's saved credentials
+	cd $(RUNNER_DIR) && mix runner.logout
 
 # ── Browser E2E (Playwright) ────────────────────────────────────────────────
 
