@@ -52,6 +52,8 @@ ver cada runner em detalhe.
    - a capacidade em uso;
    - os worktrees e o disco;
    - os jobs em execução e na fila;
+   - as últimas execuções que ele terminou, com duração, custo, tokens e cache, cada
+     uma levando à auditoria da execução (ADR 0015);
    - os diretórios oferecidos.
 
 ## Consequências

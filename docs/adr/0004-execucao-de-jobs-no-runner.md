@@ -20,7 +20,9 @@ e da parte de jobs do protocolo (§5.4).
    `claude -p <prompt> --output-format stream-json --verbose
    --dangerously-skip-permissions --no-session-persistence`. Ele roda num `Port`, com
    stdin em `/dev/null`, porque o CLI lê o stdin em pipe como parte do prompt. As
-   variáveis de sessão aninhada (`CLAUDECODE`) também são removidas. `$CLAUDE_BIN`
+   variáveis de sessão aninhada (`CLAUDECODE`) também são removidas, assim como a
+   `__BURRITO` do binário único: com ela, uma VM Elixir que o agente inicie e que
+   carregue o app do runner subiria como o CLI do runner. `$CLAUDE_BIN`
    troca o executável, e os testes usam um fake.
 3. **Workdir único e fixo**, `<config_dir>/workdir`, ao lado das credenciais. Todos os
    jobs rodam nele. É a premissa de "ambiente quente": clone, dependências e build
