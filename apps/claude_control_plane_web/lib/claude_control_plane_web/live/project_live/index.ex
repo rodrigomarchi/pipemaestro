@@ -5,6 +5,7 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Index do
   """
   use ClaudeControlPlaneWeb, :live_view
 
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Projects
 
   @impl true
@@ -14,8 +15,16 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Index do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
+    if can?(socket.assigns.current_scope, :manage_projects),
+      do: delete(socket, id),
+      else: {:noreply, put_flash(socket, :error, "Só admins do workspace mudam os projetos.")}
+  end
+
+  defp delete(socket, id) do
     project = Projects.get_project!(socket.assigns.current_scope.workspace, id)
     {:ok, _} = Projects.delete_project(project)
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    Audit.record(workspace, user, "project.deleted", project)
 
     {:noreply, socket |> put_flash(:info, "Projeto #{project.name} removido.") |> load_projects()}
   end
@@ -36,6 +45,7 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Index do
     >
       <:actions>
         <.button
+          :if={can?(@current_scope, :manage_projects)}
           link_type="live_redirect"
           to={~p"/w/#{@current_scope.workspace.slug}/projects/new"}
           size="sm"
@@ -72,7 +82,7 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Index do
                   {project.directory}
                 </p>
               </div>
-              <div class="flex gap-2">
+              <div :if={can?(@current_scope, :manage_projects)} class="flex gap-2">
                 <.button
                   size="xs"
                   variant="outline"

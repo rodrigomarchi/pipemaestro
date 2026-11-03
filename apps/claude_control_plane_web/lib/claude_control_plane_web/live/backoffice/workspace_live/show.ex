@@ -83,6 +83,20 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("set_role", %{"user_id" => user_id, "role" => %{"role" => role}}, socket)
+      when role in ["admin", "member"] do
+    user = Accounts.get_user!(user_id)
+    :ok = Workspaces.set_role(socket.assigns.workspace, user, String.to_existing_atom(role))
+
+    {:noreply,
+     socket
+     |> put_flash(
+       :info,
+       "#{user.name} agora é #{role_label(role)} de #{socket.assigns.workspace.name}."
+     )
+     |> load_members()}
+  end
+
   def handle_event("remove_member", %{"id" => user_id}, socket) do
     user = Accounts.get_user!(user_id)
     :ok = Workspaces.remove_member(socket.assigns.workspace, user)
@@ -93,6 +107,9 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
      |> load_members()}
   end
 
+  defp role_label("admin"), do: "admin"
+  defp role_label("member"), do: "membro"
+
   defp member_count_label(1), do: "1 membro"
   defp member_count_label(count), do: "#{count} membros"
 
@@ -100,7 +117,7 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
     workspace = socket.assigns.workspace
 
     assign(socket,
-      members: Workspaces.list_members(workspace),
+      members: Workspaces.list_memberships(workspace),
       candidates:
         Enum.map(Workspaces.list_non_members(workspace), &{"#{&1.name} · #{&1.email}", &1.id})
     )
@@ -150,8 +167,13 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
                 />
               </:action>
             </.card_header>
-            <.table :if={@members != []} id="members" rows={@members} row_id={&"member-#{&1.id}"}>
-              <:col :let={user} label="Usuário">
+            <.table
+              :if={@members != []}
+              id="members"
+              rows={@members}
+              row_id={&"member-#{&1.user.id}"}
+            >
+              <:col :let={%{user: user}} label="Usuário">
                 <.link
                   navigate={~p"/backoffice/users/#{user}"}
                   class="flex items-center gap-3"
@@ -168,13 +190,31 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
                   </span>
                 </.link>
               </:col>
-              <:col :let={user} label="Status">
+              <:col :let={%{user: user, role: role}} label="Papel">
+                <.form
+                  for={to_form(%{"role" => to_string(role)}, as: "role")}
+                  id={"member-role-form-#{user.id}"}
+                  phx-change="set_role"
+                >
+                  <input type="hidden" name="user_id" value={user.id} />
+                  <.field
+                    field={to_form(%{"role" => to_string(role)}, as: "role")[:role]}
+                    id={"member-role-#{user.id}"}
+                    type="select"
+                    label="Papel"
+                    label_class="sr-only"
+                    options={[{"Admin", "admin"}, {"Membro", "member"}]}
+                    data-testid={"member-role-#{user.email}"}
+                  />
+                </.form>
+              </:col>
+              <:col :let={%{user: user}} label="Status">
                 <.status_badge
                   disabled_at={user.disabled_at}
                   data-testid={"member-status-#{user.email}"}
                 />
               </:col>
-              <:col :let={user} label="" class="text-right">
+              <:col :let={%{user: user}} label="" class="text-right">
                 <.button
                   size="xs"
                   variant="ghost"

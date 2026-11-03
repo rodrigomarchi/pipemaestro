@@ -182,20 +182,20 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 
 ### Marco 4 — Uso, custos e operação
 
-1. **Uso e limites** (a página do menu, hoje placeholder): custo, tokens e tempo por
+1. **✓ Uso e limites** ([ADR 0012](../adr/0012-uso-papeis-auditoria-e-segredos.md)) (a página do menu, hoje placeholder): custo, tokens e tempo por
    tarefa, etapa, pipeline, runner e pessoa ao longo do tempo. Retentativas e decisões
    por etapa (métricas do discovery §6.1).
-2. **Papéis no workspace:** quem cria e edita pipelines, aprova runners, cancela tarefas
+2. **✓ Papéis no workspace** (ADR 0012): quem cria e edita pipelines, aprova runners, cancela tarefas
    de outros.
-3. **Auditoria:** quem fez o quê (criou, decidiu, cancelou, editou o pipeline), com
+3. **✓ Auditoria** (ADR 0012): quem fez o quê (criou, decidiu, cancelou, editou o pipeline), com
    retenção.
-4. **Jobs de manutenção (Oban):**
+4. **✓ Jobs de manutenção** (ADR 0012; um processo periódico em vez do Oban):
    - expirar autorizações de device flow;
    - detectar tarefas paradas (runner offline com tarefa em execução);
    - limpar eventos pela política de retenção;
    - rate limit no device flow.
-5. **Alertas:** tarefa parada, runner offline com trabalho, custo acima do esperado.
-6. **Segredos por workspace** entregues ao runner por job (ex.: credenciais de um MCP),
+5. **✓ Alertas** (ADR 0012): tarefa parada, runner offline com trabalho, custo acima do esperado.
+6. **✓ Segredos por workspace** (ADR 0012) entregues ao runner por job (ex.: credenciais de um MCP),
    nunca persistidos no runner.
 
 ### Marco 5 — Distribuição

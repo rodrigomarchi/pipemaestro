@@ -145,7 +145,7 @@ defmodule ClaudeControlPlaneWeb.UserAuth do
         {:cont,
          socket
          |> Phoenix.Component.assign(
-           current_scope: Scope.put_workspace(scope, workspace),
+           current_scope: Scope.put_workspace(scope, workspace, Workspaces.role(workspace, user)),
            workspaces: Workspaces.list_workspaces_for_user(user)
          )
          |> follow_pending_decisions(workspace)}

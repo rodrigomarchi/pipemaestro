@@ -147,6 +147,16 @@ defmodule ClaudeControlPlaneWeb.RunnerChannelTest do
       assert Jobs.get_job!(ctx.workspace, alive.id).status == :running
     end
 
+    test "the workspace's secrets go with each job, and are not stored with it", ctx do
+      {:ok, _} = ClaudeControlPlane.Secrets.put(ctx.workspace, "GRAFANA_TOKEN", "glsa_1")
+      join_runner(ctx.socket, ctx.runner)
+
+      job = job_fixture(ctx.runner, ctx.user)
+      assert_push "job:assign", %{"id" => id, "env" => %{"GRAFANA_TOKEN" => "glsa_1"}}
+      assert id == job.id
+      refute Map.has_key?(Jobs.get_job!(ctx.workspace, job.id).context, "env")
+    end
+
     test "new and canceled jobs reach the runner; its reports are stored", ctx do
       channel = join_runner(ctx.socket, ctx.runner)
 

@@ -5,11 +5,22 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
   """
   use ClaudeControlPlaneWeb, :live_view
 
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.{Projects, Runners}
   alias ClaudeControlPlane.Projects.Project
 
   @impl true
-  def mount(params, _session, socket) do
+  def mount(params, session, socket) do
+    if can?(socket.assigns.current_scope, :manage_projects),
+      do: mount_form(params, session, socket),
+      else:
+        {:ok,
+         socket
+         |> put_flash(:error, "Só admins do workspace mudam os projetos.")
+         |> push_navigate(to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/projects")}
+  end
+
+  defp mount_form(params, _session, socket) do
     workspace = socket.assigns.current_scope.workspace
 
     project =
@@ -62,6 +73,8 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
 
     case result do
       {:ok, project} ->
+        Audit.record(workspace, socket.assigns.current_scope.user, "project.saved", project)
+
         {:noreply,
          socket
          |> put_flash(:info, "Projeto #{project.name} salvo.")

@@ -26,15 +26,25 @@ defmodule ClaudeControlPlane.Workspaces do
   @spec get_workspace!(Ecto.UUID.t()) :: Workspace.t()
   def get_workspace!(id), do: Repo.get!(Workspace, id)
 
-  @doc "The workspaces `user` belongs to, by name."
-  @spec list_workspaces_for_user(User.t()) :: [Workspace.t()]
-  def list_workspaces_for_user(%User{id: user_id}) do
-    Repo.all(
+  @doc """
+  The workspaces `user` belongs to, by name; with `role: :admin`, only those
+  where they are an admin.
+  """
+  @spec list_workspaces_for_user(User.t(), keyword()) :: [Workspace.t()]
+  def list_workspaces_for_user(%User{id: user_id}, opts \\ []) do
+    query =
       from w in Workspace,
         join: m in assoc(w, :memberships),
         where: m.user_id == ^user_id,
         order_by: [asc: w.name]
-    )
+
+    query =
+      case opts[:role] do
+        nil -> query
+        role -> where(query, [_w, m], m.role == ^role)
+      end
+
+    Repo.all(query)
   end
 
   @doc "The workspace with `slug` if `user` belongs to it, `nil` otherwise."
@@ -91,13 +101,59 @@ defmodule ClaudeControlPlane.Workspaces do
     Repo.all(from u in User, where: u.id not in subquery(members), order_by: [asc: u.name])
   end
 
-  @doc "Adds `user` to `workspace`."
-  @spec add_member(Workspace.t(), User.t()) ::
+  @doc """
+  Adds `user` to `workspace` with `role`; by default the first member becomes
+  an admin and the next ones members.
+  """
+  @spec add_member(Workspace.t(), User.t(), Membership.role() | nil) ::
           {:ok, Membership.t()} | {:error, Ecto.Changeset.t()}
-  def add_member(%Workspace{id: workspace_id}, %User{id: user_id}) do
+  def add_member(%Workspace{id: workspace_id}, %User{id: user_id}, role \\ nil) do
+    role =
+      role ||
+        if Repo.exists?(from m in Membership, where: m.workspace_id == ^workspace_id),
+          do: :member,
+          else: :admin
+
     %Membership{}
-    |> Membership.changeset(%{workspace_id: workspace_id, user_id: user_id})
+    |> Membership.changeset(%{workspace_id: workspace_id, user_id: user_id, role: role})
     |> Repo.insert()
+  end
+
+  @doc "`user`'s role in `workspace`, or `nil` when not a member."
+  @spec role(Workspace.t(), User.t()) :: Membership.role() | nil
+  def role(%Workspace{id: workspace_id}, %User{id: user_id}) do
+    Repo.one(
+      from m in Membership,
+        where: m.workspace_id == ^workspace_id and m.user_id == ^user_id,
+        select: m.role
+    )
+  end
+
+  @doc "Changes a member's role."
+  @spec set_role(Workspace.t(), User.t(), Membership.role()) :: :ok | {:error, :not_member}
+  def set_role(%Workspace{id: workspace_id}, %User{id: user_id}, role)
+      when role in [:admin, :member] do
+    case Repo.update_all(
+           from(m in Membership,
+             where: m.workspace_id == ^workspace_id and m.user_id == ^user_id
+           ),
+           set: [role: role]
+         ) do
+      {1, _rows} -> :ok
+      {0, _rows} -> {:error, :not_member}
+    end
+  end
+
+  @doc "The workspace's memberships with their users, by name."
+  @spec list_memberships(Workspace.t()) :: [Membership.t()]
+  def list_memberships(%Workspace{id: workspace_id}) do
+    Repo.all(
+      from m in Membership,
+        join: u in assoc(m, :user),
+        where: m.workspace_id == ^workspace_id,
+        order_by: [asc: u.name],
+        preload: [user: u]
+    )
   end
 
   @doc "Removes `user` from `workspace`. Removing a non-member is a no-op."

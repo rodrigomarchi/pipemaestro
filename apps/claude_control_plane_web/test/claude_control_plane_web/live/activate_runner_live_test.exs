@@ -93,7 +93,7 @@ defmodule ClaudeControlPlaneWeb.ActivateRunnerLiveTest do
     %{user_code: user_code} = start_sign_in()
     {:ok, view, _html} = live(conn, ~p"/runners/activate?code=#{user_code}")
 
-    assert render(view) =~ "não faz parte de nenhum workspace"
+    assert render(view) =~ "não é admin de nenhum workspace"
     refute has_element?(view, "#activate-approval-form")
   end
 end

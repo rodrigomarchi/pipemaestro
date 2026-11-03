@@ -9,6 +9,7 @@ defmodule ClaudeControlPlaneWeb.Application do
   def start(_type, _args) do
     children = [
       ClaudeControlPlaneWeb.Telemetry,
+      ClaudeControlPlaneWeb.RateLimit,
       # Start a worker by calling: ClaudeControlPlaneWeb.Worker.start_link(arg)
       # {ClaudeControlPlaneWeb.Worker, arg},
       # Start to serve requests, typically the last entry

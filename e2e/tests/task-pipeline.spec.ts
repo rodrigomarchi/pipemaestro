@@ -174,6 +174,10 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("board-stat-succeeded")).toHaveText("3");
     await shot(app.page, "board");
 
+    await app.page.getByTestId("sidebar-usage").click();
+    await expect(app.page.getByTestId("usage-by-runner")).toContainText(runnerName);
+    await shot(app.page, "usage");
+
     await context.close();
   });
 });

@@ -96,7 +96,8 @@ defmodule ClaudeControlPlaneRunner.Claude do
   end
 
   @doc """
-  Environment changes for `job`'s CLI process. The nested-session markers are
+  Environment changes for `job`'s CLI process: the workspace's secrets the
+  job carries (`env`), never written anywhere. The nested-session markers are
   removed (a runner started from inside an agent session would otherwise make
   the CLI refuse to run), and `CP_ARTIFACT_PATH` tells hooks and scripts where
   the stage's artifact goes.
@@ -114,7 +115,14 @@ defmodule ClaudeControlPlaneRunner.Claude do
         key -> [{~c"ANTHROPIC_API_KEY", String.to_charlist(key)}]
       end
 
-    [{~c"CLAUDECODE", false}, {~c"CLAUDE_CODE_ENTRYPOINT", false} | artifact ++ api_key]
+    secrets =
+      for {name, value} <- job.env || %{},
+          do: {String.to_charlist(name), String.to_charlist(value)}
+
+    [
+      {~c"CLAUDECODE", false},
+      {~c"CLAUDE_CODE_ENTRYPOINT", false} | artifact ++ api_key ++ secrets
+    ]
   end
 
   @doc "The runner's own API key for the CLI, if it has one."

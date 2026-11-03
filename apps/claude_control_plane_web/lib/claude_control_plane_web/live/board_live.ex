@@ -60,7 +60,7 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
 
   @impl true
   def handle_info(%Broadcast{event: "presence_diff"}, socket),
-    do: {:noreply, load_runners(socket)}
+    do: {:noreply, socket |> load_runners() |> load_tasks()}
 
   def handle_info(:runners_changed, socket), do: {:noreply, load_runners(socket)}
   def handle_info({:task_updated, _task}, socket), do: {:noreply, load_tasks(socket)}
@@ -75,18 +75,15 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
 
   defp load_tasks(socket) do
     workspace = socket.assigns.current_scope.workspace
+    all = Tasks.list_tasks(workspace)
 
     socket
     |> assign(
       tasks: Tasks.list_tasks(workspace, socket.assigns.filters),
       awaiting: Tasks.list_awaiting(workspace),
-      recent:
-        Enum.take(
-          Enum.sort_by(Tasks.list_tasks(workspace), & &1.updated_at, {:desc, DateTime}),
-          8
-        ),
-      directories:
-        workspace |> Tasks.list_tasks() |> Enum.map(& &1.directory) |> Enum.uniq() |> Enum.sort()
+      alerts: Tasks.alerts(workspace, RunnerStatus.online_ids(workspace.id)),
+      recent: all |> Enum.sort_by(& &1.updated_at, {:desc, DateTime}) |> Enum.take(8),
+      directories: all |> Enum.map(& &1.directory) |> Enum.uniq() |> Enum.sort()
     )
     |> load_stats()
   end
@@ -142,6 +139,17 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
       </:actions>
 
       <div class="space-y-6">
+        <.card :if={@alerts != []} variant="outline" class="border-danger-300 dark:border-danger-800">
+          <.card_header title="Precisa de atenção" />
+          <.card_content>
+            <ul class="space-y-2 text-sm">
+              <li :for={alert <- @alerts} data-testid={alert_testid(alert)}>
+                <.alert_line alert={alert} slug={@current_scope.workspace.slug} />
+              </li>
+            </ul>
+          </.card_content>
+        </.card>
+
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <.stat_card
             id="running"
@@ -378,6 +386,36 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
         </.card>
       </div>
     </Layouts.app>
+    """
+  end
+
+  defp alert_testid({:runner_offline, task}), do: "board-alert-offline-#{task.id}"
+  defp alert_testid({:near_budget, task, _spent, _cap}), do: "board-alert-budget-#{task.id}"
+
+  attr :alert, :any, required: true
+  attr :slug, :string, required: true
+
+  defp alert_line(%{alert: {:runner_offline, task}} = assigns) do
+    assigns = assign(assigns, task: task)
+
+    ~H"""
+    <.icon name="hero-signal-slash" class="size-4 text-danger-500" />
+    <.link navigate={~p"/w/#{@slug}/tasks/#{@task.id}"} class="font-medium hover:underline">
+      {@task.title}
+    </.link>
+    está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
+    """
+  end
+
+  defp alert_line(%{alert: {:near_budget, task, spent, cap}} = assigns) do
+    assigns = assign(assigns, task: task, spent: spent, cap: cap)
+
+    ~H"""
+    <.icon name="hero-currency-dollar" class="size-4 text-warning-500" />
+    <.link navigate={~p"/w/#{@slug}/tasks/#{@task.id}"} class="font-medium hover:underline">
+      {@task.title}
+    </.link>
+    já gastou {format_cost(@spent)} de US$ {@cap}.
     """
   end
 

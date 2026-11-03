@@ -18,6 +18,22 @@ defmodule ClaudeControlPlaneWeb.RunnerDeviceControllerTest do
     assert body["interval"] == Runners.poll_interval_seconds()
   end
 
+  test "limits how many codes one address asks for in a minute", %{conn: conn} do
+    ip = {10, 9, System.unique_integer([:positive]) |> rem(250), 1}
+
+    ask = fn ->
+      %{conn | remote_ip: ip} |> post(~p"/api/runner/device/code", %{hello: hello_params()})
+    end
+
+    for _ <- 1..10, do: assert(ask.().status == 200)
+
+    conn = ask.()
+    assert conn.status == 429
+    assert json_response(conn, 429)["error"] == "slow_down"
+    assert [retry_after] = Plug.Conn.get_resp_header(conn, "retry-after")
+    assert String.to_integer(retry_after) in 1..60
+  end
+
   test "rejects a bad hello or an unsupported protocol", %{conn: conn} do
     assert %{"error" => "invalid_request"} =
              conn

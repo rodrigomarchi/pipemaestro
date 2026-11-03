@@ -36,3 +36,6 @@ config :bcrypt_elixir, log_rounds: 4
 config :phoenix, :plug_init_mode, :runtime
 
 config :phoenix_live_view, enable_expensive_runtime_checks: true
+
+# Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
+config :claude_control_plane, ClaudeControlPlane.Secrets, key: "e2e_only_secrets_key"

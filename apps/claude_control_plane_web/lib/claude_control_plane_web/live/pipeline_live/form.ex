@@ -6,11 +6,22 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
   """
   use ClaudeControlPlaneWeb, :live_view
 
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Pipelines
   alias ClaudeControlPlane.Pipelines.{Pipeline, Prompt, Stage}
 
   @impl true
-  def mount(params, _session, socket) do
+  def mount(params, session, socket) do
+    if can?(socket.assigns.current_scope, :manage_pipelines),
+      do: mount_form(params, session, socket),
+      else:
+        {:ok,
+         socket
+         |> put_flash(:error, "Só admins do workspace mudam os pipelines.")
+         |> push_navigate(to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/pipelines")}
+  end
+
+  defp mount_form(params, _session, socket) do
     workspace = socket.assigns.current_scope.workspace
 
     pipeline =
@@ -134,6 +145,10 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
 
     case result do
       {:ok, pipeline} ->
+        Audit.record(workspace, socket.assigns.current_scope.user, "pipeline.saved", pipeline, %{
+          "version" => pipeline.version
+        })
+
         {:noreply,
          socket
          |> put_flash(:info, "Pipeline #{pipeline.name} salvo (v#{pipeline.version}).")

@@ -8,10 +8,27 @@ defmodule ClaudeControlPlaneWeb.RunnerDeviceController do
 
   alias ClaudeControlPlane.{Runners, Workspaces}
   alias ClaudeControlPlaneProtocol.Hello
+  alias ClaudeControlPlaneWeb.RateLimit
 
   @doc "Starts a sign-in for the runner described in the body."
   @spec create_code(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  # Codes one address may ask for per minute.
+  @codes_per_minute 10
+
   def create_code(conn, params) do
+    case RateLimit.hit({:device_code, conn.remote_ip}, @codes_per_minute, 60_000) do
+      :ok ->
+        issue_code(conn, params)
+
+      {:error, retry_after} ->
+        conn
+        |> put_resp_header("retry-after", Integer.to_string(retry_after))
+        |> put_status(429)
+        |> json(%{error: "slow_down"})
+    end
+  end
+
+  defp issue_code(conn, params) do
     with {:ok, hello} <- Hello.from_map(Map.get(params, "hello", %{})),
          true <- hello.protocol_version in ClaudeControlPlaneProtocol.supported_versions() do
       {:ok, _auth, device_code, user_code} =

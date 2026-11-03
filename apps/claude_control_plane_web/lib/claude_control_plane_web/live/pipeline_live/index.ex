@@ -6,6 +6,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
   """
   use ClaudeControlPlaneWeb, :live_view
 
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Pipelines
 
   @impl true
@@ -16,14 +17,13 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
      |> load_pipelines()}
   end
 
-  @impl true
-  def handle_event("create_defaults", _params, socket) do
-    created = Pipelines.create_defaults(socket.assigns.current_scope.workspace)
+  @admin_events ~w(create_defaults open_import import delete)
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "#{length(created)} pipeline(s) padrão criado(s).")
-     |> load_pipelines()}
+  @impl true
+  def handle_event(event, params, socket) when event in @admin_events do
+    if can?(socket.assigns.current_scope, :manage_pipelines),
+      do: admin_event(event, params, socket),
+      else: {:noreply, put_flash(socket, :error, "Só admins do workspace mudam os pipelines.")}
   end
 
   def handle_event("export", %{"id" => id}, socket) do
@@ -35,15 +35,26 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
 
   def handle_event("close_yaml", _params, socket), do: {:noreply, assign(socket, exported: nil)}
 
-  def handle_event("open_import", _params, socket),
-    do: {:noreply, assign(socket, importing: true, import_error: nil)}
-
   def handle_event("close_import", _params, socket),
     do: {:noreply, assign(socket, importing: false)}
 
-  def handle_event("import", %{"import" => %{"yaml" => yaml}}, socket) do
+  defp admin_event("create_defaults", _params, socket) do
+    created = Pipelines.create_defaults(socket.assigns.current_scope.workspace)
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "#{length(created)} pipeline(s) padrão criado(s).")
+     |> load_pipelines()}
+  end
+
+  defp admin_event("open_import", _params, socket),
+    do: {:noreply, assign(socket, importing: true, import_error: nil)}
+
+  defp admin_event("import", %{"import" => %{"yaml" => yaml}}, socket) do
     case Pipelines.import_yaml(socket.assigns.current_scope.workspace, yaml) do
       {:ok, pipeline} ->
+        audit(socket, "pipeline.imported", pipeline)
+
         {:noreply,
          socket
          |> assign(importing: false)
@@ -58,14 +69,20 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
     end
   end
 
-  def handle_event("delete", %{"id" => id}, socket) do
+  defp admin_event("delete", %{"id" => id}, socket) do
     pipeline = Pipelines.get_pipeline!(socket.assigns.current_scope.workspace, id)
     {:ok, _} = Pipelines.delete_pipeline(pipeline)
+    audit(socket, "pipeline.deleted", pipeline)
 
     {:noreply,
      socket
      |> put_flash(:info, "Pipeline #{pipeline.name} removido.")
      |> load_pipelines()}
+  end
+
+  defp audit(socket, action, subject) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    Audit.record(workspace, user, action, subject)
   end
 
   defp changeset_message(changeset) do
@@ -104,6 +121,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
     >
       <:actions>
         <.button
+          :if={can?(@current_scope, :manage_pipelines)}
           size="sm"
           variant="outline"
           color="gray"
@@ -114,6 +132,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
           Importar
         </.button>
         <.button
+          :if={can?(@current_scope, :manage_pipelines)}
           size="sm"
           variant="outline"
           icon="hero-sparkles"
@@ -123,6 +142,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
           Criar pipelines padrão
         </.button>
         <.button
+          :if={can?(@current_scope, :manage_pipelines)}
           link_type="live_redirect"
           to={~p"/w/#{@current_scope.workspace.slug}/pipelines/new"}
           size="sm"
@@ -193,6 +213,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
                 Exportar
               </.button>
               <.button
+                :if={can?(@current_scope, :manage_pipelines)}
                 link_type="live_redirect"
                 to={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}/edit"}
                 size="xs"
@@ -204,6 +225,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
                 Editar
               </.button>
               <.button
+                :if={can?(@current_scope, :manage_pipelines)}
                 size="xs"
                 variant="ghost"
                 color="danger"

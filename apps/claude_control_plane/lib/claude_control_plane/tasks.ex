@@ -26,6 +26,7 @@ defmodule ClaudeControlPlane.Tasks do
   import Ecto.Query
 
   alias ClaudeControlPlane.Accounts.User
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Jobs
   alias ClaudeControlPlane.Jobs.Job
   alias ClaudeControlPlane.Pipelines.{Pipeline, Prompt}
@@ -217,6 +218,7 @@ defmodule ClaudeControlPlane.Tasks do
     # task is committed first: the runner may report back at once.
     with {:ok, task} <- Repo.insert(changeset) do
       task = task |> put_branch() |> start_stage(0, nil) |> preload()
+      Audit.record(workspace, user, "task.created", task, %{"pipeline" => task.pipeline_name})
       notify(task)
       {:ok, task}
     end
@@ -589,6 +591,41 @@ defmodule ClaudeControlPlane.Tasks do
   """
   @type decision_opts :: [by: User.t() | nil, choice: String.t() | nil]
 
+  @doc """
+  What needs attention among the workspace's tasks that have not ended:
+  `{:runner_offline, task}` when its runner is not in `online_runner_ids`
+  (the task cannot move), and `{:near_budget, task, spent, cap}` when it has
+  spent 80% or more of its pipeline's cap per task.
+  """
+  @spec alerts(Workspace.t(), MapSet.t()) :: [tuple()]
+  def alerts(%Workspace{id: workspace_id}, online_runner_ids) do
+    active =
+      Repo.all(
+        from t in Task,
+          where: t.workspace_id == ^workspace_id and t.status in [:running, :awaiting_decision],
+          order_by: [asc: t.inserted_at],
+          preload: [:runner]
+      )
+
+    Enum.flat_map(active, fn task ->
+      offline =
+        if task.status == :running and not MapSet.member?(online_runner_ids, task.runner_id),
+          do: [{:runner_offline, task}],
+          else: []
+
+      offline ++ near_budget(task)
+    end)
+  end
+
+  defp near_budget(%Task{pipeline_context: %{"max_cost_usd" => cap}} = task)
+       when is_binary(cap) do
+    spent = cost(task)
+    threshold = Decimal.mult(Decimal.new(cap), Decimal.new("0.8"))
+    if Decimal.compare(spent, threshold) != :lt, do: [{:near_budget, task, spent, cap}], else: []
+  end
+
+  defp near_budget(_task), do: []
+
   @doc "What a task's jobs have cost so far."
   @spec cost(Task.t()) :: Decimal.t()
   def cost(%Task{id: task_id}) do
@@ -736,6 +773,13 @@ defmodule ClaudeControlPlane.Tasks do
   defp record_decision(task, action, choice, instructions, user) do
     run = latest_run(task, task.current_stage)
 
+    if action != :cancel,
+      do:
+        Audit.record(task.workspace_id, user, "task.decided", task, %{
+          "action" => to_string(action),
+          "choice" => choice
+        })
+
     options =
       case run do
         %StageRun{structured_output: %{"opcoes" => options}} when is_list(options) -> options
@@ -782,11 +826,13 @@ defmodule ClaudeControlPlane.Tasks do
     case task.status do
       :awaiting_decision ->
         record_decision(task, :cancel, nil, nil, opts[:by])
+        Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
         task = task |> finish(:canceled) |> preload()
         notify(task)
         {:ok, task}
 
       :running ->
+        Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
         task |> running_job() |> Jobs.request_cancel()
         {:ok, get_task!(%Workspace{id: task.workspace_id}, task.id)}
 

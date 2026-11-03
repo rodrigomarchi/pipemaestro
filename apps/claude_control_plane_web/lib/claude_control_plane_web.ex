@@ -83,6 +83,7 @@ defmodule ClaudeControlPlaneWeb do
       use PetalComponents
 
       # Common modules used in templates
+      import ClaudeControlPlane.Authorization, only: [can?: 2, can?: 3]
       alias ClaudeControlPlaneWeb.Layouts
       alias Phoenix.LiveView.JS
 

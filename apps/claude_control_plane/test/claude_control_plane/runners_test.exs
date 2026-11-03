@@ -75,6 +75,12 @@ defmodule ClaudeControlPlane.RunnersTest do
       assert Runners.approve_device_authorization(auth, outsider, workspace, "x") ==
                {:error, :not_a_member}
 
+      # A member who is not an admin cannot either.
+      plain = member_fixture(workspace)
+
+      assert Runners.approve_device_authorization(auth, plain, workspace, "x") ==
+               {:error, :not_an_admin}
+
       assert Repo.reload(auth).status == :pending
     end
 

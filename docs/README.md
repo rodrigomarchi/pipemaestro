@@ -34,6 +34,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0009 | [Perfis de permissão, credencial do agente e operação do runner](adr/0009-permissoes-credencial-e-operacao-do-runner.md) | Aceita |
 | 0010 | [Conversa com a tarefa: texto ao vivo, intervenções, notificações e reexecução](adr/0010-conversa-com-a-tarefa.md) | Aceita |
 | 0011 | [Decisões registradas, contexto por pipeline, orçamento por tarefa e pipelines em YAML](adr/0011-decisoes-contexto-orcamento-e-portabilidade.md) | Aceita |
+| 0012 | [Uso, papéis, auditoria, manutenção, alertas e segredos](adr/0012-uso-papeis-auditoria-e-segredos.md) | Aceita |
 
 ## Specs
 

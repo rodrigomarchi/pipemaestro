@@ -16,6 +16,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
   `system_prompt` is appended to the agent's system prompt, `mcp_config`
   (`%{"mcpServers" => ...}`) adds MCP servers, `agents` defines subagents
   (the CLI's `--agents` object) and `agent` names the agent that runs the job.
+  `env` holds the workspace's secrets as environment variables for the
+  agent's process (`NAME => value`); the runner never stores them.
   `permissions` says what the agent may do: `"profile"` (one of
   `permission_profiles/0`; without it, `"total"`) and the tool rules to
   `"allow"` and `"deny"` on top, in the CLI's syntax (`"Bash(mix test:*)"`).
@@ -70,7 +72,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
                 system_prompt: nil,
                 mcp_config: nil,
                 agents: nil,
-                agent: nil
+                agent: nil,
+                env: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -92,7 +95,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
           system_prompt: String.t() | nil,
           mcp_config: map() | nil,
           agents: map() | nil,
-          agent: String.t() | nil
+          agent: String.t() | nil,
+          env: %{String.t() => String.t()} | nil
         }
 
   @optional [
@@ -109,8 +113,13 @@ defmodule ClaudeControlPlaneProtocol.Job do
     :system_prompt,
     :mcp_config,
     :agents,
-    :agent
+    :agent,
+    :env
   ]
+
+  @env_name ~r/^[A-Z][A-Z0-9_]{0,63}$/
+  # What a secret may not override: the process would break or escape.
+  @reserved_env ~w(PATH HOME SHELL USER CLAUDECODE CLAUDE_CODE_ENTRYPOINT CP_ARTIFACT_PATH)
 
   @permission_profiles ~w(total edicao leitura)
 
@@ -254,6 +263,16 @@ defmodule ClaudeControlPlaneProtocol.Job do
   defp check(:agents, value) when is_map(value) and map_size(value) <= 20, do: :ok
   defp check(:agents, _value), do: {:error, "must be an object of agents by name"}
 
+  defp check(:env, env) when is_map(env) and map_size(env) <= 50 do
+    if Enum.all?(env, fn {name, value} ->
+         env_name?(name) and is_binary(value) and byte_size(value) <= 8_192
+       end),
+       do: :ok,
+       else: {:error, "must map variable names (A-Z, 0-9, _) to texts"}
+  end
+
+  defp check(:env, _value), do: {:error, "must be a map of up to 50 variables"}
+
   defp check(:agent, value) when is_binary(value) and byte_size(value) in 1..100, do: :ok
   defp check(:agent, _value), do: {:error, "must be an agent name"}
 
@@ -287,6 +306,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
   end
 
   defp check(:setup, _value), do: {:error, "must be a map with a command or paths to copy"}
+
+  @doc "Whether `name` can be a secret's variable: A-Z, 0-9 and _, not one the runner needs."
+  @spec env_name?(term()) :: boolean()
+  def env_name?(name),
+    do: is_binary(name) and name =~ @env_name and name not in @reserved_env
 
   defp tool_rules?(rules) when is_list(rules) and length(rules) <= 50,
     do: Enum.all?(rules, &(is_binary(&1) and byte_size(&1) in 1..500))

@@ -74,3 +74,7 @@ config :phoenix_live_view,
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20
+
+# Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
+config :claude_control_plane, ClaudeControlPlane.Secrets,
+  key: "dev_only_secrets_key_change_me_in_prod"

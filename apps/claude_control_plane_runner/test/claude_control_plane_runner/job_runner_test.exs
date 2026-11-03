@@ -566,6 +566,11 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
              })
     end
 
+    test "env passes the workspace's secrets to the CLI" do
+      env = Claude.env(%Job{id: "j", prompt: "p", env: %{"GRAFANA_TOKEN" => "s3"}})
+      assert {~c"GRAFANA_TOKEN", ~c"s3"} in env
+    end
+
     test "env unsets the nested-session markers and gives the artifact path" do
       env = Claude.env(%Job{id: "j", prompt: "p", artifact_path: ".cp/a.md"})
       assert {~c"CLAUDECODE", false} in env

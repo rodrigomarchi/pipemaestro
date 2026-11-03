@@ -27,6 +27,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                  "mcp_config" => %{"mcpServers" => %{"grafana" => %{"command" => "mcp-grafana"}}},
                  "agents" => %{"revisor" => %{"description" => "Revisa", "prompt" => "Revise."}},
                  "agent" => "revisor",
+                 "env" => %{"GRAFANA_TOKEN" => "segredo"},
                  "permissions" => %{
                    "profile" => "leitura",
                    "allow" => ["Bash(mix test:*)"],
@@ -74,6 +75,9 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert {:error, "mcp_config" <> _} = Job.new(Map.put(base, :mcp_config, %{"x" => 1}))
       assert {:error, "agents" <> _} = Job.new(Map.put(base, :agents, ["revisor"]))
       assert {:error, "agent" <> _} = Job.new(Map.put(base, :agent, ""))
+      assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"lower" => "x"}))
+      assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"PATH" => "x"}))
+      assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"OK" => 1}))
       assert {:error, "permissions" <> _} = Job.new(Map.put(base, :permissions, %{}))
 
       assert {:error, "permissions" <> _} =

@@ -9,7 +9,9 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
   hands over the queued ones again on every join, and stores what the runner
   reports (`job:started`, `job:event`, `job:finished`) and passes on what
   the agent is writing (`job:delta`). A job of a task's
-  stage carries its context (directory, worktree, schema, artifact path).
+  stage carries its context (directory, worktree, schema, artifact path), and
+  every job the workspace's secrets (`ClaudeControlPlane.Secrets`), added only
+  on the way out.
 
   So do the task worktrees (`ClaudeControlPlaneProtocol.Worktree`): the channel
   pushes `worktree:remove` when someone asks for a task's worktree to go, and
@@ -21,7 +23,7 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
   """
   use Phoenix.Channel
 
-  alias ClaudeControlPlane.{Jobs, Runners, Tasks}
+  alias ClaudeControlPlane.{Jobs, Runners, Secrets, Tasks}
   alias ClaudeControlPlaneProtocol.{Hello, Job, Worktree}
   alias ClaudeControlPlaneWeb.RunnerStatus
 
@@ -133,8 +135,16 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
   defp reply_to({:error, reason}, socket),
     do: {:reply, {:error, %{"reason" => Atom.to_string(reason)}}, socket}
 
+  # The workspace's secrets join the job only on its way to the runner.
   defp push_assign(socket, job) do
-    {:ok, wire} = job.context |> Map.merge(%{"id" => job.id, "prompt" => job.prompt}) |> Job.new()
+    env = Secrets.env(job.workspace_id)
+
+    {:ok, wire} =
+      job.context
+      |> Map.merge(%{"id" => job.id, "prompt" => job.prompt})
+      |> then(&if(env == %{}, do: &1, else: Map.put(&1, "env", env)))
+      |> Job.new()
+
     push(socket, Job.assign_event(), Job.to_map(wire))
   end
 

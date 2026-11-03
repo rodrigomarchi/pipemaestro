@@ -112,6 +112,28 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLiveTest do
              |> render_submit() =~ "já está em uso"
     end
 
+    test "changes a member's role", %{conn: conn, workspace: workspace} do
+      first = member_fixture(workspace, %{name: "Eva"})
+      second = member_fixture(workspace, %{name: "Fabio"})
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}")
+
+      assert has_element?(
+               view,
+               "[data-testid='member-role-#{first.email}'] option[selected][value=admin]"
+             )
+
+      assert has_element?(
+               view,
+               "[data-testid='member-role-#{second.email}'] option[selected][value=member]"
+             )
+
+      view
+      |> form("#member-role-form-#{second.id}", role: %{role: "admin"})
+      |> render_change()
+
+      assert ClaudeControlPlane.Workspaces.role(workspace, second) == :admin
+    end
+
     test "removes a member", %{conn: conn, workspace: workspace} do
       user = member_fixture(workspace, %{name: "Dora"})
       {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}")

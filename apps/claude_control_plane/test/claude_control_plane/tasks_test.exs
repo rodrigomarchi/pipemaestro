@@ -514,6 +514,22 @@ defmodule ClaudeControlPlane.TasksTest do
   end
 
   describe "the task's budget" do
+    test "alerts: tasks whose runner is offline and tasks near their budget", ctx do
+      pipeline = pipeline_fixture(ctx.workspace, %{"max_task_cost_usd" => "1"})
+      task = create_task(ctx, %{"pipeline_id" => pipeline.id})
+      task = run_current(ctx, task, %{"cost_usd" => 0.85})
+
+      assert [{:runner_offline, %Task{id: id}}, {:near_budget, %Task{id: id}, spent, "1"}] =
+               Tasks.alerts(ctx.workspace, MapSet.new())
+
+      assert id == task.id
+      assert Decimal.equal?(spent, Decimal.new("0.85"))
+      assert [{:near_budget, _, _, _}] = Tasks.alerts(ctx.workspace, MapSet.new([ctx.runner.id]))
+
+      {:ok, _} = Tasks.cancel_task(task)
+      assert Tasks.alerts(ctx.workspace, MapSet.new()) == []
+    end
+
     test "past the pipeline's cap per task, the task pauses instead of going on", ctx do
       pipeline = pipeline_fixture(ctx.workspace, %{"max_task_cost_usd" => "0.5"})
       task = create_task(ctx, %{"pipeline_id" => pipeline.id})

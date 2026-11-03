@@ -10,7 +10,9 @@ defmodule ClaudeControlPlaneWeb.ActivateRunnerLive do
 
   @impl true
   def mount(params, _session, socket) do
-    workspaces = Workspaces.list_workspaces_for_user(socket.assigns.current_scope.user)
+    # Only a workspace's admins connect runners to it.
+    workspaces =
+      Workspaces.list_workspaces_for_user(socket.assigns.current_scope.user, role: :admin)
 
     socket =
       assign(socket,
@@ -132,7 +134,7 @@ defmodule ClaudeControlPlaneWeb.ActivateRunnerLive do
               </div>
 
               <.alert :if={@workspaces == []} color="warning">
-                Você não faz parte de nenhum workspace, então não pode aprovar runners.
+                Você não é admin de nenhum workspace, então não pode aprovar runners.
               </.alert>
 
               <.form

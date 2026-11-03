@@ -178,7 +178,32 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               active={@active == :pipelines}
               data-testid="sidebar-pipelines"
             />
-            <.sidebar_item label="Uso e limites" path={@home} icon="hero-chart-bar" />
+            <.sidebar_item
+              label="Uso e limites"
+              path={@home <> "/usage"}
+              icon="hero-chart-bar"
+              link_type="live_redirect"
+              active={@active == :usage}
+              data-testid="sidebar-usage"
+            />
+            <.sidebar_item
+              :if={can?(@current_scope, :manage_runners)}
+              label="Auditoria"
+              path={@home <> "/audit"}
+              icon="hero-clipboard-document-list"
+              link_type="live_redirect"
+              active={@active == :audit}
+              data-testid="sidebar-audit"
+            />
+            <.sidebar_item
+              :if={can?(@current_scope, :manage_runners)}
+              label="Segredos"
+              path={@home <> "/secrets"}
+              icon="hero-key"
+              link_type="live_redirect"
+              active={@active == :secrets}
+              data-testid="sidebar-secrets"
+            />
           </.sidebar_group>
 
           <:footer>

@@ -94,6 +94,13 @@ defmodule ClaudeControlPlaneWeb.BoardLiveTest do
       assert has_element?(view, "[data-testid=board-activity]", "Ajustar rodapé")
     end
 
+    test "alerts on a task whose runner is offline", ctx do
+      task = create_task(ctx, "Parada")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      assert has_element?(view, "[data-testid=board-alert-offline-#{task.id}]", "Parada")
+      assert has_element?(view, "[data-testid=board-alert-offline-#{task.id}]", "mac")
+    end
+
     test "filters by pipeline, runner, directory and person", ctx do
       other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
       a = create_task(ctx, "Na app")

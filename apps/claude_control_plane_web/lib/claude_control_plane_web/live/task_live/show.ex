@@ -83,13 +83,10 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
       )
 
   def handle_event("cancel", _params, socket) do
-    case Tasks.cancel_task(socket.assigns.task, by: socket.assigns.current_scope.user) do
-      {:ok, task} ->
-        {:noreply, socket |> assign(task: task) |> put_flash(:info, "Cancelamento pedido.")}
-
-      {:error, :finished} ->
-        {:noreply, put_flash(socket, :error, "A tarefa já terminou.")}
-    end
+    if can?(socket.assigns.current_scope, :cancel_task, socket.assigns.task),
+      do: cancel(socket),
+      else:
+        {:noreply, put_flash(socket, :error, "Você não pode cancelar a tarefa de outra pessoa.")}
   end
 
   def handle_event("rerun", _params, socket) do
@@ -194,6 +191,16 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   end
 
   defp instructions(params), do: get_in(params, ["decision", "instructions"])
+
+  defp cancel(socket) do
+    case Tasks.cancel_task(socket.assigns.task, by: socket.assigns.current_scope.user) do
+      {:ok, task} ->
+        {:noreply, socket |> assign(task: task) |> put_flash(:info, "Cancelamento pedido.")}
+
+      {:error, :finished} ->
+        {:noreply, put_flash(socket, :error, "A tarefa já terminou.")}
+    end
+  end
 
   defp decision_opts(socket, params),
     do: [by: socket.assigns.current_scope.user, choice: params["choice"]]
@@ -361,7 +368,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
           Remover worktree
         </.button>
         <.button
-          :if={Task.active?(@task)}
+          :if={Task.active?(@task) and can?(@current_scope, :cancel_task, @task)}
           size="sm"
           variant="outline"
           color="danger"

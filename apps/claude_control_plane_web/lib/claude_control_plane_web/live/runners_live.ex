@@ -8,6 +8,7 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
 
   import ClaudeControlPlaneWeb.RunnerComponents
 
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Runners
   alias ClaudeControlPlaneWeb.RunnerStatus
   alias Phoenix.Socket.Broadcast
@@ -30,14 +31,25 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
 
   def handle_info(:runners_changed, socket), do: {:noreply, load_runners(socket)}
 
+  @admin_events ~w(open_connect open_rename rename revoke)
+
   @impl true
-  def handle_event("open_connect", _params, socket),
-    do: {:noreply, assign(socket, connecting: true)}
+  def handle_event(event, params, socket) when event in @admin_events do
+    if can?(socket.assigns.current_scope, :manage_runners),
+      do: admin_event(event, params, socket),
+      else: {:noreply, put_flash(socket, :error, "Só admins do workspace gerenciam os runners.")}
+  end
 
   def handle_event("close_connect", _params, socket),
     do: {:noreply, assign(socket, connecting: false)}
 
-  def handle_event("open_rename", %{"id" => id}, socket) do
+  def handle_event("close_rename", _params, socket),
+    do: {:noreply, assign(socket, renaming: nil, rename_form: nil)}
+
+  defp admin_event("open_connect", _params, socket),
+    do: {:noreply, assign(socket, connecting: true)}
+
+  defp admin_event("open_rename", %{"id" => id}, socket) do
     runner = Runners.get_runner!(socket.assigns.current_scope.workspace, id)
 
     {:noreply,
@@ -47,13 +59,11 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
      )}
   end
 
-  def handle_event("close_rename", _params, socket),
-    do: {:noreply, assign(socket, renaming: nil, rename_form: nil)}
-
-  def handle_event("rename", %{"runner" => params}, socket) do
+  defp admin_event("rename", %{"runner" => params}, socket) do
     case Runners.rename_runner(socket.assigns.renaming, params) do
       {:ok, runner} ->
         RunnerStatus.notify_changed(runner.workspace_id)
+        audit(socket, "runner.renamed", runner)
 
         {:noreply,
          socket
@@ -66,9 +76,10 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
     end
   end
 
-  def handle_event("revoke", %{"id" => id}, socket) do
+  defp admin_event("revoke", %{"id" => id}, socket) do
     runner = Runners.get_runner!(socket.assigns.current_scope.workspace, id)
     {:ok, runner} = Runners.revoke_runner(runner)
+    audit(socket, "runner.revoked", runner)
     RunnerStatus.disconnect(runner)
     RunnerStatus.notify_changed(runner.workspace_id)
 
@@ -76,6 +87,11 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
      socket
      |> put_flash(:info, "Runner #{runner.name} revogado. A conexão foi encerrada.")
      |> load_runners()}
+  end
+
+  defp audit(socket, action, subject) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    Audit.record(workspace, user, action, subject)
   end
 
   defp load_runners(socket) do
@@ -100,7 +116,13 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
       title="Executores"
     >
       <:actions>
-        <.button size="sm" icon="hero-plus" phx-click="open_connect" data-testid="connect-runner">
+        <.button
+          :if={can?(@current_scope, :manage_runners)}
+          size="sm"
+          icon="hero-plus"
+          phx-click="open_connect"
+          data-testid="connect-runner"
+        >
           Conectar runner
         </.button>
       </:actions>
@@ -217,7 +239,7 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
             </span>
           </:col>
           <:col :let={runner} label="" class="text-right">
-            <div class="flex justify-end gap-1">
+            <div :if={can?(@current_scope, :manage_runners)} class="flex justify-end gap-1">
               <.button
                 size="xs"
                 variant="ghost"

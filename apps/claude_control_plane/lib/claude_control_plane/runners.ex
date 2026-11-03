@@ -12,6 +12,7 @@ defmodule ClaudeControlPlane.Runners do
   import Ecto.Query
 
   alias ClaudeControlPlane.Accounts.User
+  alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Auth.Token
   alias ClaudeControlPlane.Repo
   alias ClaudeControlPlane.Runners.{DeviceAuthorization, Runner}
@@ -78,17 +79,25 @@ defmodule ClaudeControlPlane.Runners do
   end
 
   @doc """
-  Approves a sign-in into `workspace`, which `user` must belong to, creating
+  Approves a sign-in into `workspace`, where `user` must be an admin, creating
   the runner under `name`. The runner's token is issued later, when the runner
   polls (`exchange_device_code/1`).
   """
   @spec approve_device_authorization(DeviceAuthorization.t(), User.t(), Workspace.t(), String.t()) ::
-          {:ok, Runner.t()} | {:error, :not_a_member | :not_pending | Ecto.Changeset.t()}
+          {:ok, Runner.t()}
+          | {:error, :not_a_member | :not_an_admin | :not_pending | Ecto.Changeset.t()}
   def approve_device_authorization(%DeviceAuthorization{} = auth, %User{} = user, workspace, name) do
-    cond do
-      not Workspaces.member?(workspace, user) -> {:error, :not_a_member}
-      not pending?(auth) -> {:error, :not_pending}
-      true -> do_approve(auth, user, workspace, name)
+    case Workspaces.role(workspace, user) do
+      nil ->
+        {:error, :not_a_member}
+
+      :member ->
+        {:error, :not_an_admin}
+
+      :admin ->
+        if pending?(auth),
+          do: do_approve(auth, user, workspace, name),
+          else: {:error, :not_pending}
     end
   end
 
@@ -120,6 +129,7 @@ defmodule ClaudeControlPlane.Runners do
                name: runner.name
              )
              |> Repo.update() do
+        :ok = Audit.record(workspace, user, "runner.approved", runner)
         {:ok, runner}
       end
     end)

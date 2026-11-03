@@ -5,6 +5,9 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+# Tests run the housekeeping themselves.
+config :claude_control_plane, ClaudeControlPlane.Maintenance, false
+
 config :claude_control_plane, ClaudeControlPlane.Repo,
   username: System.get_env("PGUSER", "postgres"),
   password: System.get_env("PGPASSWORD", "postgres"),
@@ -37,3 +40,6 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
+config :claude_control_plane, ClaudeControlPlane.Secrets, key: "test_only_secrets_key"

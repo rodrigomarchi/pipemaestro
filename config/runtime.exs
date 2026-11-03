@@ -64,6 +64,16 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  # Encrypts the workspaces' secrets at rest (ClaudeControlPlane.Secrets).
+  # Changing it makes the stored secrets unreadable.
+  config :claude_control_plane, ClaudeControlPlane.Secrets,
+    key:
+      System.get_env("SECRETS_KEY") ||
+        raise("""
+        environment variable SECRETS_KEY is missing.
+        You can generate one by calling: mix phx.gen.secret
+        """)
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
