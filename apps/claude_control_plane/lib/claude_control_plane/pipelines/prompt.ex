@@ -36,6 +36,12 @@ defmodule ClaudeControlPlane.Pipelines.Prompt do
       "resumo" => %{
         "type" => "string",
         "description" => "o que foi feito, ou por que está bloqueado, em poucas frases"
+      },
+      "opcoes" => %{
+        "type" => "array",
+        "items" => %{"type" => "string"},
+        "description" =>
+          "quando bloqueado, os caminhos possíveis para a pessoa escolher, em frases curtas"
       }
     },
     "required" => ["status", "resumo"]

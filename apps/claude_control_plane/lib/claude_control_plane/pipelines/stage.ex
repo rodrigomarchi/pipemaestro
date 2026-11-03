@@ -15,7 +15,8 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   `permission_profile` is what the agent may do in the stage
   (`ClaudeControlPlaneProtocol.Job.permission_profiles/0`), with tool rules
   allowed and denied on top (`allowed_tools`, `denied_tools`, one per line in
-  a form).
+  a form). `agent` names the agent the stage runs as: one of the repository's
+  (`.claude/agents/`) or of the pipeline's `agents`.
   """
   use Ecto.Schema
 
@@ -40,6 +41,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
           rules: [map()],
           rules_text: String.t() | nil,
           permission_profile: String.t(),
+          agent: String.t() | nil,
           allowed_tools: [String.t()],
           allowed_tools_text: String.t() | nil,
           denied_tools: [String.t()],
@@ -66,6 +68,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     field :rules, {:array, :map}, default: []
     field :rules_text, :string, virtual: true
     field :permission_profile, :string, default: "total"
+    field :agent, :string
     field :allowed_tools, {:array, :string}, default: []
     field :allowed_tools_text, :string, virtual: true
     field :denied_tools, {:array, :string}, default: []
@@ -99,6 +102,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
       :gates_text,
       :rules_text,
       :permission_profile,
+      :agent,
       :allowed_tools_text,
       :denied_tools_text
     ])
@@ -124,6 +128,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     |> validate_inclusion(:permission_profile, Job.permission_profiles(),
       message: "escolha um perfil de permissão"
     )
+    |> validate_length(:agent, max: 100)
     |> parse_tools(:allowed_tools)
     |> parse_tools(:denied_tools)
   end

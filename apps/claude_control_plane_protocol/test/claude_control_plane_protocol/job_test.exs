@@ -23,6 +23,10 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                  "artifact_path" => ".control-plane/t1/01-triagem.md",
                  "setup" => %{"command" => "mix deps.get", "copy" => ["deps", "_build"]},
                  "timeout_ms" => 600_000,
+                 "system_prompt" => "Responda em português.",
+                 "mcp_config" => %{"mcpServers" => %{"grafana" => %{"command" => "mcp-grafana"}}},
+                 "agents" => %{"revisor" => %{"description" => "Revisa", "prompt" => "Revise."}},
+                 "agent" => "revisor",
                  "permissions" => %{
                    "profile" => "leitura",
                    "allow" => ["Bash(mix test:*)"],
@@ -66,6 +70,10 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert {:error, "setup" <> _} = Job.new(Map.put(base, :setup, %{"copy" => ["/abs"]}))
       assert {:error, "timeout_ms" <> _} = Job.new(Map.put(base, :timeout_ms, 0))
       assert {:error, "timeout_ms" <> _} = Job.new(Map.put(base, :timeout_ms, 1.5))
+      assert {:error, "system_prompt" <> _} = Job.new(Map.put(base, :system_prompt, ""))
+      assert {:error, "mcp_config" <> _} = Job.new(Map.put(base, :mcp_config, %{"x" => 1}))
+      assert {:error, "agents" <> _} = Job.new(Map.put(base, :agents, ["revisor"]))
+      assert {:error, "agent" <> _} = Job.new(Map.put(base, :agent, ""))
       assert {:error, "permissions" <> _} = Job.new(Map.put(base, :permissions, %{}))
 
       assert {:error, "permissions" <> _} =

@@ -512,6 +512,24 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
                Enum.drop(argv, 8)
     end
 
+    test "argv gives the pipeline's context: system prompt, MCP servers and agents" do
+      argv =
+        Claude.argv(%Job{
+          id: "j",
+          prompt: "p",
+          system_prompt: "Responda em português.",
+          mcp_config: %{"mcpServers" => %{}},
+          agents: %{"revisor" => %{"description" => "d", "prompt" => "p"}},
+          agent: "revisor"
+        })
+
+      pairs = Enum.chunk_every(argv, 2, 1)
+      assert ["--append-system-prompt", "Responda em português."] in pairs
+      assert ["--mcp-config", ~s({"mcpServers":{}})] in pairs
+      assert ["--agents", ~s({"revisor":{"description":"d","prompt":"p"}})] in pairs
+      assert ["--agent", "revisor"] in pairs
+    end
+
     test "argv narrows what the agent may do to the stage's permission profile" do
       flags = fn permissions ->
         argv = Claude.argv(%Job{id: "j", prompt: "p", permissions: permissions})

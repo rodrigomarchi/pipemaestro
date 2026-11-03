@@ -13,6 +13,9 @@ defmodule ClaudeControlPlaneProtocol.Job do
   `timeout_ms` is how long the agent may run before the runner stops it.
   `gates` are shell commands the runner runs in the working directory after
   the agent ends well, each expected to `"pass"` (exit 0) or `"fail"`.
+  `system_prompt` is appended to the agent's system prompt, `mcp_config`
+  (`%{"mcpServers" => ...}`) adds MCP servers, `agents` defines subagents
+  (the CLI's `--agents` object) and `agent` names the agent that runs the job.
   `permissions` says what the agent may do: `"profile"` (one of
   `permission_profiles/0`; without it, `"total"`) and the tool rules to
   `"allow"` and `"deny"` on top, in the CLI's syntax (`"Bash(mix test:*)"`).
@@ -63,7 +66,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
                 setup: nil,
                 timeout_ms: nil,
                 gates: nil,
-                permissions: nil
+                permissions: nil,
+                system_prompt: nil,
+                mcp_config: nil,
+                agents: nil,
+                agent: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -81,7 +88,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
           setup: setup() | nil,
           timeout_ms: pos_integer() | nil,
           gates: [%{String.t() => String.t()}] | nil,
-          permissions: %{String.t() => String.t() | [String.t()]} | nil
+          permissions: %{String.t() => String.t() | [String.t()]} | nil,
+          system_prompt: String.t() | nil,
+          mcp_config: map() | nil,
+          agents: map() | nil,
+          agent: String.t() | nil
         }
 
   @optional [
@@ -94,7 +105,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
     :setup,
     :timeout_ms,
     :gates,
-    :permissions
+    :permissions,
+    :system_prompt,
+    :mcp_config,
+    :agents,
+    :agent
   ]
 
   @permission_profiles ~w(total edicao leitura)
@@ -227,6 +242,20 @@ defmodule ClaudeControlPlaneProtocol.Job do
       do: :ok,
       else: {:error, "must be a relative path inside the working directory"}
   end
+
+  defp check(:system_prompt, value) when is_binary(value) and byte_size(value) in 1..16_000,
+    do: :ok
+
+  defp check(:system_prompt, _value), do: {:error, "must be a text of up to 16 000 bytes"}
+
+  defp check(:mcp_config, %{"mcpServers" => servers}) when is_map(servers), do: :ok
+  defp check(:mcp_config, _value), do: {:error, "must be an object with mcpServers"}
+
+  defp check(:agents, value) when is_map(value) and map_size(value) <= 20, do: :ok
+  defp check(:agents, _value), do: {:error, "must be an object of agents by name"}
+
+  defp check(:agent, value) when is_binary(value) and byte_size(value) in 1..100, do: :ok
+  defp check(:agent, _value), do: {:error, "must be an agent name"}
 
   defp check(:timeout_ms, value) when is_integer(value) and value in 1..@max_timeout_ms, do: :ok
   defp check(:timeout_ms, _value), do: {:error, "must be a number of milliseconds up to a day"}

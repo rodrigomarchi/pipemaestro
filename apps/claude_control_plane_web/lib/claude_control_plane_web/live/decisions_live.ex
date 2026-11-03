@@ -23,15 +23,21 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
   def handle_info({:task_updated, _task}, socket), do: {:noreply, load(socket)}
 
   @impl true
+  # An option button sends the choice without an action: it retries the stage.
+  def handle_event("decide", %{"choice" => _choice} = params, socket)
+      when not is_map_key(params, "action"),
+      do: handle_event("decide", Map.put(params, "action", "retry"), socket)
+
   def handle_event("decide", %{"task_id" => id, "action" => action} = params, socket) do
     task = Tasks.get_task!(socket.assigns.current_scope.workspace, id)
     instructions = get_in(params, ["decision", "instructions"])
+    opts = [by: socket.assigns.current_scope.user, choice: params["choice"]]
 
     result =
       case action do
-        "retry" -> Tasks.retry_stage(task, instructions)
-        "advance" -> Tasks.advance(task, instructions)
-        "cancel" -> Tasks.cancel_task(task)
+        "retry" -> Tasks.retry_stage(task, instructions, opts)
+        "advance" -> Tasks.advance(task, instructions, opts)
+        "cancel" -> Tasks.cancel_task(task, by: opts[:by])
       end
 
     socket =
@@ -44,8 +50,11 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
   end
 
   defp load(socket) do
+    tasks = Tasks.list_awaiting(socket.assigns.current_scope.workspace)
+
     assign(socket,
-      tasks: Tasks.list_awaiting(socket.assigns.current_scope.workspace),
+      tasks: tasks,
+      options: Map.new(tasks, &{&1.id, Tasks.options(&1)}),
       now: DateTime.utc_now()
     )
   end
@@ -115,6 +124,20 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
               data-testid={"decision-form-#{task.id}"}
             >
               <input type="hidden" name="task_id" value={task.id} />
+              <div :if={@options[task.id] != []} class="mb-3 flex flex-wrap items-center gap-2">
+                <span class="text-sm text-gray-600 dark:text-gray-300">O agente propôs:</span>
+                <.button
+                  :for={{option, index} <- Enum.with_index(@options[task.id])}
+                  type="submit"
+                  name="choice"
+                  value={option}
+                  size="sm"
+                  variant="outline"
+                  data-testid={"decision-option-#{task.id}-#{index}"}
+                >
+                  {option}
+                </.button>
+              </div>
               <.field
                 field={to_form(%{}, as: "decision")[:instructions]}
                 id={"decision-instructions-#{task.id}"}

@@ -64,6 +64,35 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     assert Enum.map(pipeline.stages, & &1.timeout_minutes) == [60, 20]
   end
 
+  test "exports a pipeline as YAML and imports one", %{conn: conn, workspace: workspace} do
+    pipeline_fixture(workspace, %{"name" => "Meu"})
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
+
+    view |> element("[data-testid=pipeline-export-Meu]") |> render_click()
+    yaml = view |> element("[data-testid=pipeline-yaml]") |> render()
+    assert yaml =~ "name: &quot;Meu&quot;"
+    assert has_element?(view, "[data-testid=pipeline-yaml-download][download='meu.yaml']")
+    render_click(view, "close_yaml")
+
+    view |> element("[data-testid=import-pipeline]") |> render_click()
+
+    html =
+      view |> form("#import-form", import: %{yaml: "name: [quebrado"}) |> render_submit()
+
+    assert html =~ "YAML inválido"
+
+    copy =
+      String.replace(
+        Pipelines.export_yaml(Pipelines.list_pipelines(workspace) |> hd()),
+        "Meu",
+        "Cópia"
+      )
+
+    view |> form("#import-form", import: %{yaml: copy}) |> render_submit()
+    assert has_element?(view, "[data-testid='pipeline-Cópia']")
+    refute has_element?(view, "#import-form")
+  end
+
   test "shows the errors of an invalid stage", %{conn: conn, workspace: workspace} do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
 
@@ -89,6 +118,9 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     pipeline =
       pipeline_fixture(workspace, %{
         "name" => "Completo",
+        "system_prompt" => "Nunca altere código.",
+        "max_task_cost_usd" => "2.5",
+        "mcp_config_json" => ~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}}),
         "stages" => [
           %{
             "name" => "Corrigir",
@@ -98,7 +130,8 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
             "rules_text" => "risco == alto",
             "permission_profile" => "edicao",
             "allowed_tools_text" => "Bash(git log:*)",
-            "denied_tools_text" => "WebFetch"
+            "denied_tools_text" => "WebFetch",
+            "agent" => "analista"
           }
         ]
       })
@@ -110,6 +143,8 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
 
     assert view |> element("[data-testid=stage-rules-0]") |> render() =~ "risco == alto"
     assert has_element?(view, "[data-testid=stage-permission-0] option[selected][value=edicao]")
+    assert view |> element("[data-testid=pipeline-mcp-config]") |> render() =~ "grafana"
+    assert has_element?(view, "[data-testid=stage-agent-0][value=analista]")
 
     {:error, {:live_redirect, _}} =
       view
@@ -123,6 +158,11 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     assert stage.permission_profile == "edicao"
     assert stage.allowed_tools == ["Bash(git log:*)"]
     assert stage.denied_tools == ["WebFetch"]
+    assert stage.agent == "analista"
+    pipeline = Pipelines.get_pipeline!(workspace, pipeline.id)
+    assert pipeline.system_prompt == "Nunca altere código."
+    assert Decimal.equal?(pipeline.max_task_cost_usd, Decimal.new("2.5"))
+    assert %{"mcpServers" => %{"grafana" => _}} = pipeline.mcp_config
   end
 
   test "edits a pipeline, bumping its version, and deletes it", %{

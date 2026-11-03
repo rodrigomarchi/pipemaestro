@@ -1,7 +1,8 @@
 defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
   @moduledoc """
   The workspace's pipelines, with their stages and version. An empty
-  workspace starts from the ready-made ones.
+  workspace starts from the ready-made ones. A pipeline exports as YAML, and
+  YAML imports as a new pipeline (`ClaudeControlPlane.Pipelines.Yaml`).
   """
   use ClaudeControlPlaneWeb, :live_view
 
@@ -9,7 +10,10 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(page_title: "Pipelines") |> load_pipelines()}
+    {:ok,
+     socket
+     |> assign(page_title: "Pipelines", exported: nil, importing: false, import_error: nil)
+     |> load_pipelines()}
   end
 
   @impl true
@@ -22,6 +26,38 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
      |> load_pipelines()}
   end
 
+  def handle_event("export", %{"id" => id}, socket) do
+    pipeline = Pipelines.get_pipeline!(socket.assigns.current_scope.workspace, id)
+
+    {:noreply,
+     assign(socket, exported: %{pipeline: pipeline, yaml: Pipelines.export_yaml(pipeline)})}
+  end
+
+  def handle_event("close_yaml", _params, socket), do: {:noreply, assign(socket, exported: nil)}
+
+  def handle_event("open_import", _params, socket),
+    do: {:noreply, assign(socket, importing: true, import_error: nil)}
+
+  def handle_event("close_import", _params, socket),
+    do: {:noreply, assign(socket, importing: false)}
+
+  def handle_event("import", %{"import" => %{"yaml" => yaml}}, socket) do
+    case Pipelines.import_yaml(socket.assigns.current_scope.workspace, yaml) do
+      {:ok, pipeline} ->
+        {:noreply,
+         socket
+         |> assign(importing: false)
+         |> put_flash(:info, "Pipeline #{pipeline.name} importado.")
+         |> load_pipelines()}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, import_error: changeset_message(changeset))}
+
+      {:error, message} ->
+        {:noreply, assign(socket, import_error: message)}
+    end
+  end
+
   def handle_event("delete", %{"id" => id}, socket) do
     pipeline = Pipelines.get_pipeline!(socket.assigns.current_scope.workspace, id)
     {:ok, _} = Pipelines.delete_pipeline(pipeline)
@@ -30,6 +66,25 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
      socket
      |> put_flash(:info, "Pipeline #{pipeline.name} removido.")
      |> load_pipelines()}
+  end
+
+  defp changeset_message(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> inspect(pretty: true)
+    |> then(&"O pipeline não é válido: #{&1}")
+  end
+
+  defp file_name(name) do
+    slug =
+      name
+      |> String.normalize(:nfd)
+      |> String.replace(~r/[^\x00-\x7F]/u, "")
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "-")
+      |> String.trim("-")
+
+    slug <> ".yaml"
   end
 
   defp load_pipelines(socket),
@@ -48,6 +103,16 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
       title="Pipelines"
     >
       <:actions>
+        <.button
+          size="sm"
+          variant="outline"
+          color="gray"
+          icon="hero-arrow-up-tray"
+          phx-click="open_import"
+          data-testid="import-pipeline"
+        >
+          Importar
+        </.button>
         <.button
           size="sm"
           variant="outline"
@@ -73,7 +138,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
           <.empty
             data-testid="no-pipelines"
             title="Nenhum pipeline ainda"
-            description="Comece pelos pipelines padrão (Prompt único e Correção de bug) e ajuste os prompts ao seu time."
+            description="Comece pelos pipelines padrão (correção de bug, funcionalidade, refatoração, revisão, investigação de produção e outros) e ajuste os prompts ao seu time."
           >
             <:icon><.icon name="hero-squares-2x2" /></:icon>
             <:actions>
@@ -117,6 +182,17 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
             </ol>
             <div class="mt-4 flex justify-end gap-1">
               <.button
+                size="xs"
+                variant="ghost"
+                color="gray"
+                icon="hero-arrow-down-tray"
+                phx-click="export"
+                phx-value-id={pipeline.id}
+                data-testid={"pipeline-export-#{pipeline.name}"}
+              >
+                Exportar
+              </.button>
+              <.button
                 link_type="live_redirect"
                 to={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}/edit"}
                 size="xs"
@@ -143,6 +219,53 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
           </.card_content>
         </.card>
       </div>
+
+      <.modal
+        :if={@exported}
+        id="export-modal"
+        title={"#{@exported.pipeline.name} em YAML"}
+        max_width="xl"
+        on_cancel={JS.push("close_yaml")}
+      >
+        <pre
+          class="max-h-[60vh] overflow-auto rounded-lg bg-gray-50 px-4 py-3 font-mono text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-100"
+          data-testid="pipeline-yaml"
+        >{@exported.yaml}</pre>
+        <div class="mt-4 flex justify-end">
+          <a
+            href={"data:application/yaml;charset=utf-8," <> URI.encode(@exported.yaml, &URI.char_unreserved?/1)}
+            download={file_name(@exported.pipeline.name)}
+            class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+            data-testid="pipeline-yaml-download"
+          >
+            <.icon name="hero-arrow-down-tray" class="size-4" /> Baixar
+          </a>
+        </div>
+      </.modal>
+
+      <.modal
+        :if={@importing}
+        id="import-modal"
+        title="Importar pipeline"
+        max_width="xl"
+        on_cancel={JS.push("close_import")}
+      >
+        <.form for={to_form(%{"yaml" => ""}, as: "import")} id="import-form" phx-submit="import">
+          <.field
+            field={to_form(%{"yaml" => ""}, as: "import")[:yaml]}
+            type="textarea"
+            rows="14"
+            label="YAML exportado de um pipeline"
+            data-testid="import-yaml"
+          />
+          <.alert :if={@import_error} color="danger" class="mb-4" data-testid="import-error">
+            {@import_error}
+          </.alert>
+          <div class="flex justify-end">
+            <.button icon="hero-arrow-up-tray" data-testid="import-submit">Importar</.button>
+          </div>
+        </.form>
+      </.modal>
     </Layouts.app>
     """
   end

@@ -51,6 +51,8 @@ defmodule ClaudeControlPlane.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:jason, "~> 1.2"},
       {:bcrypt_elixir, "~> 3.0"},
+      # Reading pipelines exported as YAML.
+      {:yaml_elixir, "~> 2.11"},
       {:claude_control_plane_protocol, in_umbrella: true}
     ]
   end

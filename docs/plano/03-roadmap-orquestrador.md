@@ -160,23 +160,23 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
      pausa; `risco == "alto"` → aprovação humana.
 4. **✓ Retentativa com feedback** (ADR 0008): a nova tentativa recebe o erro, a saída do gate e o
    resumo da tentativa anterior, em vez de repetir o mesmo prompt.
-5. **Decisão como entidade.**
+5. **✓ Decisão como entidade** ([ADR 0011](../adr/0011-decisoes-contexto-orcamento-e-portabilidade.md); responsável e prazo ficam para o Marco 4).
    - Pergunta, opções propostas pelo agente (o schema pode trazer `opcoes`), responsável
      sugerido, prazo e histórico.
    - A resposta vira artefato e entra no contexto da etapa seguinte.
-6. **Contexto e agentes por pipeline.**
+6. **✓ Contexto e agentes por pipeline** (ADR 0011).
    - Instruções de sistema do pipeline (`--append-system-prompt`).
    - Etapa associada a um subagente ou skill do repositório (`--agent`) ou a agentes
      definidos no control plane (`--agents`).
    - Servidores MCP por pipeline (`--mcp-config`) para etapas de análise. Exemplo: um
      pipeline de investigação com Grafana.
-7. **Orçamento e limites por tarefa:** soma de custo com teto e tarefas simultâneas por
+7. **✓ Orçamento e limites por tarefa** (ADR 0011; limite por workspace fica para o Marco 4): soma de custo com teto e tarefas simultâneas por
    workspace e por runner. Ao estourar, a tarefa pausa em vez de morrer.
-8. **Mais templates:** feature, refactor, revisão de código, investigação de
+8. **✓ Mais templates** (ADR 0011): feature, refactor, revisão de código, investigação de
    produção/métricas (sem alterar código), atualização de dependência.
-9. **Importar e exportar pipelines (YAML)**, o que prepara a opção futura de o repo
+9. **✓ Importar e exportar pipelines (YAML)** (ADR 0011), o que prepara a opção futura de o repo
    sobrescrever o pipeline.
-10. **Etapas em paralelo (fan-out)**, por exemplo auditorias independentes que rodam
+10. **Adiado no ADR 0011.** **Etapas em paralelo (fan-out)**, por exemplo auditorias independentes que rodam
     juntas e se consolidam numa etapa seguinte. Este é o item mais distante deste
     marco.
 

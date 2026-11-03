@@ -27,7 +27,8 @@ defmodule ClaudeControlPlaneRunner.Claude do
 
   @doc """
   The arguments for running `job`: its prompt, plus its output schema
-  (`--json-schema`), model and budget when it has them.
+  (`--json-schema`), model, budget, system prompt, MCP servers and agents
+  when it has them.
   """
   @spec argv(Job.t()) :: [String.t()]
   def argv(%Job{} = job) do
@@ -72,7 +73,11 @@ defmodule ClaudeControlPlaneRunner.Claude do
       [
         {"--json-schema", job.output_schema && Jason.encode!(job.output_schema)},
         {"--model", job.model},
-        {"--max-budget-usd", job.max_budget_usd && to_string(job.max_budget_usd)}
+        {"--max-budget-usd", job.max_budget_usd && to_string(job.max_budget_usd)},
+        {"--append-system-prompt", job.system_prompt},
+        {"--mcp-config", job.mcp_config && Jason.encode!(job.mcp_config)},
+        {"--agents", job.agents && Jason.encode!(job.agents)},
+        {"--agent", job.agent}
       ],
       fn
         {_flag, nil} -> []

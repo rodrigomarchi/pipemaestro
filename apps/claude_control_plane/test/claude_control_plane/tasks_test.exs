@@ -122,6 +122,31 @@ defmodule ClaudeControlPlane.TasksTest do
       assert Tasks.get_task!(ctx.workspace, task.id).project["test_command"] == "mix test"
     end
 
+    test "the pipeline's context and the stage's agent reach the runner", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "system_prompt" => "Nunca altere código.",
+          "mcp_config_json" => ~s({"mcpServers": {}}),
+          "agents_json" => ~s({"analista": {"description": "d", "prompt": "p"}}),
+          "stages" => [%{"key" => "a", "name" => "A", "prompt" => "p", "agent" => "analista"}]
+        })
+
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx, %{"pipeline_id" => pipeline.id})
+      assert_receive {:job_assign, job}
+
+      assert job.context["system_prompt"] == "Nunca altere código."
+      assert job.context["mcp_config"] == %{"mcpServers" => %{}}
+      assert job.context["agents"] == %{"analista" => %{"description" => "d", "prompt" => "p"}}
+      assert job.context["agent"] == "analista"
+
+      # Kept with the task: editing the pipeline does not change it.
+      {:ok, _} = Pipelines.update_pipeline(pipeline, %{"system_prompt" => "Outra coisa."})
+
+      assert Tasks.get_task!(ctx.workspace, task.id).pipeline_context["system_prompt"] ==
+               "Nunca altere código."
+    end
+
     test "without a project, {{projeto.*}} is empty and there is no setup", ctx do
       pipeline =
         pipeline_fixture(ctx.workspace, %{
@@ -442,9 +467,73 @@ defmodule ClaudeControlPlane.TasksTest do
       assert {:ok, %Task{status: :succeeded}} = Tasks.advance(task, nil)
     end
 
+    test "every decision is kept: the question, the options, the answer and who gave it", ctx do
+      task = create_task(ctx)
+
+      task =
+        run_current(ctx, task, %{
+          "structured_output" => %{
+            "status" => "bloqueado",
+            "resumo" => "Corrijo no cliente ou no servidor?",
+            "opcoes" => ["No cliente", "No servidor"]
+          }
+        })
+
+      assert Tasks.options(task) == ["No cliente", "No servidor"]
+
+      assert {:ok, task} =
+               Tasks.retry_stage(task, "e escreva um teste", by: ctx.user, choice: "No servidor")
+
+      assert current_job(task).prompt =~ "Decisão: No servidor"
+      assert current_job(task).prompt =~ "e escreva um teste"
+
+      assert [decision] = Tasks.list_decisions(task)
+      assert decision.stage_index == 0
+      assert decision.question =~ "Corrijo no cliente ou no servidor?"
+      assert decision.options == ["No cliente", "No servidor"]
+      assert decision.action == :retry
+      assert decision.choice == "No servidor"
+      assert decision.instructions == "e escreva um teste"
+      assert decision.decided_by_user_id == ctx.user.id
+      assert %DateTime{} = decision.inserted_at
+
+      task =
+        run_current(ctx, task, %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "outra"}
+        })
+
+      assert Tasks.options(task) == []
+      {:ok, task} = Tasks.cancel_task(task, by: ctx.user)
+      assert [_, %{action: :cancel, choice: nil}] = Tasks.list_decisions(task)
+    end
+
     test "cancel ends a task waiting for a decision", ctx do
       assert {:ok, %Task{status: :canceled}} = Tasks.cancel_task(ctx.task)
       assert Tasks.cancel_task(ctx.task) == {:error, :finished}
+    end
+  end
+
+  describe "the task's budget" do
+    test "past the pipeline's cap per task, the task pauses instead of going on", ctx do
+      pipeline = pipeline_fixture(ctx.workspace, %{"max_task_cost_usd" => "0.5"})
+      task = create_task(ctx, %{"pipeline_id" => pipeline.id})
+
+      task = run_current(ctx, task, %{"cost_usd" => 0.3})
+      assert %Task{status: :running, current_stage: 1} = task
+      assert Decimal.equal?(Tasks.cost(task), Decimal.new("0.3"))
+
+      task = run_current(ctx, task, %{"cost_usd" => 0.3, "status" => "failed", "exit_code" => 1})
+      assert %Task{status: :awaiting_decision, decision_reason: reason} = task
+      assert reason =~ "orçamento"
+      assert reason =~ "US$ 0.6"
+
+      assert {:ok, %Task{status: :running}} = Tasks.retry_stage(task, nil)
+    end
+
+    test "without a cap the task goes on", ctx do
+      task = create_task(ctx)
+      task = run_current(ctx, task, %{"cost_usd" => 99.0})
+      assert %Task{status: :running, current_stage: 1} = task
     end
   end
 

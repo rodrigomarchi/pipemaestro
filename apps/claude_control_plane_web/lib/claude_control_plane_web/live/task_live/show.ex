@@ -35,13 +35,14 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
      socket
      |> assign(page_title: task.title, task: task, live_job_id: nil, timelines: %{})
      |> assign(raw_artifacts: MapSet.new(), typing: nil)
+     |> load_decisions()
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
      |> follow_running_job()}
   end
 
   @impl true
   def handle_info({:task_updated, %Task{} = task}, socket),
-    do: {:noreply, socket |> assign(task: task) |> follow_running_job()}
+    do: {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
 
   def handle_info({:job_event, event}, socket) do
     if event.job_id == socket.assigns.live_job_id,
@@ -60,19 +61,29 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   @impl true
   # The form has one submit button per decision; the pressed one comes as
   # "action", with the instructions typed.
+  # An option button sends the choice without an action: it retries the stage.
+  def handle_event("decide", %{"choice" => _choice} = params, socket)
+      when not is_map_key(params, "action"),
+      do: handle_event("decide", Map.put(params, "action", "retry"), socket)
+
   def handle_event("decide", %{"action" => "retry"} = params, socket),
     do:
       decide(
         socket,
-        &Tasks.retry_stage(&1, instructions(params)),
+        &Tasks.retry_stage(&1, instructions(params), decision_opts(socket, params)),
         "Etapa enviada de novo ao runner."
       )
 
   def handle_event("decide", %{"action" => "advance"} = params, socket),
-    do: decide(socket, &Tasks.advance(&1, instructions(params)), "Seguindo para a próxima etapa.")
+    do:
+      decide(
+        socket,
+        &Tasks.advance(&1, instructions(params), decision_opts(socket, params)),
+        "Seguindo para a próxima etapa."
+      )
 
   def handle_event("cancel", _params, socket) do
-    case Tasks.cancel_task(socket.assigns.task) do
+    case Tasks.cancel_task(socket.assigns.task, by: socket.assigns.current_scope.user) do
       {:ok, task} ->
         {:noreply, socket |> assign(task: task) |> put_flash(:info, "Cancelamento pedido.")}
 
@@ -184,18 +195,32 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
   defp instructions(params), do: get_in(params, ["decision", "instructions"])
 
+  defp decision_opts(socket, params),
+    do: [by: socket.assigns.current_scope.user, choice: params["choice"]]
+
   defp decide(socket, fun, message) do
     case fun.(socket.assigns.task) do
       {:ok, task} ->
         {:noreply,
          socket
          |> assign(task: task, decision: to_form(%{"instructions" => ""}, as: "decision"))
+         |> load_decisions()
          |> put_flash(:info, message)
          |> follow_running_job()}
 
       {:error, :not_awaiting} ->
         {:noreply, put_flash(socket, :error, "A tarefa não está aguardando uma decisão.")}
     end
+  end
+
+  defp load_decisions(socket) do
+    task = socket.assigns.task
+
+    assign(socket,
+      decisions: Tasks.list_decisions(task),
+      options: Tasks.options(task),
+      cost: Tasks.cost(task)
+    )
   end
 
   # The running attempt's steps stream in live.
@@ -230,6 +255,17 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
     |> Enum.find_value([], fn run ->
       run.job && run.job.changes && run.job.changes["task_files"]
     end)
+  end
+
+  defp decision_label(:retry), do: "Refazer"
+  defp decision_label(:advance), do: "Seguir"
+  defp decision_label(:cancel), do: "Cancelar"
+
+  defp stage_name(%Task{stages: stages}, index) do
+    case Enum.at(stages, index) do
+      nil -> "—"
+      stage -> stage.name
+    end
   end
 
   defp redoable?(%Task{} = task),
@@ -353,7 +389,19 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
               </div>
               <.task_status task={@task} data-testid="task-status" />
             </div>
-            <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-4">
+              <div>
+                <dt class="text-gray-500 dark:text-gray-400">Custo</dt>
+                <dd class="text-gray-900 dark:text-white" data-testid="task-cost">
+                  {format_cost(@cost)}
+                  <span
+                    :if={@task.pipeline_context && @task.pipeline_context["max_cost_usd"]}
+                    class="text-gray-500 dark:text-gray-400"
+                  >
+                    de US$ {@task.pipeline_context["max_cost_usd"]}
+                  </span>
+                </dd>
+              </div>
               <div>
                 <dt class="text-gray-500 dark:text-gray-400">Runner · diretório</dt>
                 <dd class="font-mono text-xs text-gray-900 dark:text-white" data-testid="task-where">
@@ -465,6 +513,25 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                       placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
                       data-testid="decision-instructions"
                     />
+                    <div :if={@options != []} class="mb-3">
+                      <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                        O agente propôs (refaz a etapa com a escolha e as instruções):
+                      </p>
+                      <div class="flex flex-wrap gap-2">
+                        <.button
+                          :for={{option, index} <- Enum.with_index(@options)}
+                          type="submit"
+                          name="choice"
+                          value={option}
+                          size="sm"
+                          variant="outline"
+                          color="primary"
+                          data-testid={"decision-option-#{index}"}
+                        >
+                          {option}
+                        </.button>
+                      </div>
+                    </div>
                     <div class="flex flex-wrap justify-end gap-2">
                       <.button
                         type="submit"
@@ -492,6 +559,33 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
             </div>
           </li>
         </ol>
+
+        <.card :if={@decisions != []} variant="outline">
+          <.card_header title="Decisões tomadas" />
+          <.card_content>
+            <ol class="space-y-3 text-sm" data-testid="task-decisions">
+              <li :for={decision <- @decisions} class="flex gap-3">
+                <.icon name="hero-hand-raised" class="mt-0.5 size-4 shrink-0 text-warning-500" />
+                <div class="min-w-0">
+                  <p class="text-gray-900 dark:text-white">
+                    <span class="font-medium">{decision_label(decision.action)}</span>
+                    em "{stage_name(@task, decision.stage_index)}"
+                    <span :if={decision.choice}>· escolha: {decision.choice}</span>
+                  </p>
+                  <p :if={decision.instructions} class="text-gray-600 dark:text-gray-300">
+                    {decision.instructions}
+                  </p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"} · {Calendar.strftime(
+                      decision.inserted_at,
+                      "%d/%m %H:%M"
+                    )}
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </.card_content>
+        </.card>
 
         <.card
           :if={@task.status == :running or (Task.active?(@task) and @task.pending_instructions)}

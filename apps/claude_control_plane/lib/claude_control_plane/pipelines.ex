@@ -8,7 +8,7 @@ defmodule ClaudeControlPlane.Pipelines do
 
   import Ecto.Query
 
-  alias ClaudeControlPlane.Pipelines.{Pipeline, Templates}
+  alias ClaudeControlPlane.Pipelines.{Pipeline, Templates, Yaml}
   alias ClaudeControlPlane.Repo
   alias ClaudeControlPlane.Workspaces.Workspace
 
@@ -44,6 +44,17 @@ defmodule ClaudeControlPlane.Pipelines do
     |> Pipeline.changeset(attrs)
     |> Ecto.Changeset.put_change(:version, pipeline.version + 1)
     |> Repo.update()
+  end
+
+  @doc "The pipeline as YAML (`ClaudeControlPlane.Pipelines.Yaml`)."
+  @spec export_yaml(Pipeline.t()) :: String.t()
+  def export_yaml(%Pipeline{} = pipeline), do: Yaml.to_yaml(pipeline)
+
+  @doc "Creates a pipeline in the workspace from YAML written by `export_yaml/1`."
+  @spec import_yaml(Workspace.t(), String.t()) ::
+          {:ok, Pipeline.t()} | {:error, String.t() | Ecto.Changeset.t()}
+  def import_yaml(%Workspace{} = workspace, yaml) do
+    with {:ok, attrs} <- Yaml.from_yaml(yaml), do: create_pipeline(workspace, attrs)
   end
 
   @doc "Deletes a pipeline. Tasks that used it keep their snapshot."

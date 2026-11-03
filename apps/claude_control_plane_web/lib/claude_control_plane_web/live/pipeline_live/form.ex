@@ -35,6 +35,11 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
     %{
       "name" => pipeline.name,
       "description" => pipeline.description || "",
+      "system_prompt" => pipeline.system_prompt || "",
+      "max_task_cost_usd" =>
+        if(pipeline.max_task_cost_usd, do: to_string(pipeline.max_task_cost_usd), else: ""),
+      "mcp_config_json" => Pipeline.mcp_config_json(pipeline),
+      "agents_json" => Pipeline.agents_json(pipeline),
       "stages" => pipeline.stages |> Enum.map(&stage_params/1) |> to_indexed()
     }
   end
@@ -52,6 +57,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
       "gates_text" => Stage.gates_text(stage),
       "rules_text" => Stage.rules_text(stage),
       "permission_profile" => stage.permission_profile,
+      "agent" => stage.agent || "",
       "allowed_tools_text" => Stage.allowed_tools_text(stage),
       "denied_tools_text" => Stage.denied_tools_text(stage),
       "output_schema_json" =>
@@ -179,6 +185,48 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
               label="Descrição"
               data-testid="pipeline-description"
             />
+            <.field
+              field={@form[:max_task_cost_usd]}
+              type="number"
+              step="0.01"
+              min="0"
+              label="Orçamento por tarefa (US$, opcional)"
+              help_text="Passou disso, a tarefa pausa para decisão depois da etapa."
+              data-testid="pipeline-max-cost"
+            />
+            <details class="mt-2">
+              <summary class="cursor-pointer text-sm font-medium text-gray-600 dark:text-gray-300">
+                Contexto do pipeline: instruções de sistema, servidores MCP e agentes
+              </summary>
+              <div class="mt-3 space-y-4">
+                <.field
+                  field={@form[:system_prompt]}
+                  type="textarea"
+                  rows="3"
+                  label="Instruções de sistema (somadas às do agente em todas as etapas)"
+                  data-testid="pipeline-system-prompt"
+                />
+                <.field
+                  field={@form[:mcp_config_json]}
+                  type="textarea"
+                  rows="4"
+                  label="Servidores MCP (JSON com mcpServers)"
+                  placeholder={~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}})}
+                  help_text="Não guarde segredos aqui: use variáveis de ambiente do runner."
+                  data-testid="pipeline-mcp-config"
+                />
+                <.field
+                  field={@form[:agents_json]}
+                  type="textarea"
+                  rows="4"
+                  label="Agentes (JSON por nome)"
+                  placeholder={
+                    ~s({"revisor": {"description": "Revisa o diff", "prompt": "Revise..."}})
+                  }
+                  data-testid="pipeline-agents"
+                />
+              </div>
+            </details>
             <p class="text-sm text-gray-500 dark:text-gray-400">
               Cada etapa roda com contexto novo, lê os artefatos das anteriores e responde com
               status (ok ou bloqueado) e resumo. Variáveis do prompt: <code>{variables_help()}</code>
@@ -315,6 +363,13 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
                   data-testid={"stage-rules-#{stage.index}"}
                 />
               </div>
+              <.field
+                field={stage[:agent]}
+                label="Rodar como o agente (opcional)"
+                placeholder="revisor"
+                help_text="Um agente do repositório (.claude/agents) ou do pipeline."
+                data-testid={"stage-agent-#{stage.index}"}
+              />
               <div class="grid gap-4 sm:grid-cols-3">
                 <.field
                   field={stage[:permission_profile]}

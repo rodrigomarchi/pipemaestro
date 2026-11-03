@@ -167,6 +167,33 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
     end
   end
 
+  describe "deciding" do
+    test "the agent's options become buttons, and every decision stays in the history", ctx do
+      task = create_task(ctx)
+
+      finish_current(ctx, task, %{
+        "status" => "bloqueado",
+        "resumo" => "Onde corrigir?",
+        "opcoes" => ["No cliente", "No servidor"]
+      })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=decision-option-1]", "No servidor")
+      refute has_element?(view, "[data-testid=task-decisions]")
+
+      view
+      |> form("#decision-form", decision: %{instructions: "com teste"})
+      |> render_submit(%{"action" => "retry", "choice" => "No servidor"})
+
+      assert has_element?(view, "[data-testid=task-decisions]", "No servidor")
+      assert has_element?(view, "[data-testid=task-decisions]", "com teste")
+      assert has_element?(view, "[data-testid=task-decisions]", ctx.user.name)
+
+      assert [%{choice: "No servidor", decided_by_user_id: user_id}] = Tasks.list_decisions(task)
+      assert user_id == ctx.user.id
+    end
+  end
+
   describe "talking to the task" do
     test "sends an instruction and asks for a pause while it runs", ctx do
       task = create_task(ctx)
@@ -377,6 +404,7 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
       refute has_element?(view, "[data-testid=stage-run-steps-a-1]")
 
       assert has_element?(view, "[data-testid=stage-run-summary-a-1]", "a feita")
+      assert has_element?(view, "[data-testid=task-cost]", "US$")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
       refute has_element?(view, "[data-testid=stage-run-artifact-raw-a-1]")
       view |> element("[data-testid=stage-run-artifact-toggle-a-1]") |> render_click()

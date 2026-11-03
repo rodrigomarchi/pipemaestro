@@ -53,6 +53,7 @@ defmodule ClaudeControlPlane.Tasks.Task do
           pipeline_id: Ecto.UUID.t() | nil,
           project_id: Ecto.UUID.t() | nil,
           project: map() | nil,
+          pipeline_context: map() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           runner_id: Ecto.UUID.t() | nil,
           runner: Runner.t() | Ecto.Association.NotLoaded.t() | nil,
@@ -86,6 +87,7 @@ defmodule ClaudeControlPlane.Tasks.Task do
     field :pipeline_name, :string
     field :pipeline_version, :integer
     field :project, :map
+    field :pipeline_context, :map
 
     embeds_many :stages, Stage, on_replace: :delete
 

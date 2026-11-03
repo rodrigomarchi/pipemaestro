@@ -33,7 +33,7 @@ defmodule ClaudeControlPlane.Tasks do
   alias ClaudeControlPlane.Projects.Project
   alias ClaudeControlPlane.Repo
   alias ClaudeControlPlane.Runners.Runner
-  alias ClaudeControlPlane.Tasks.{Engine, StageRun, Task}
+  alias ClaudeControlPlane.Tasks.{Decision, Engine, StageRun, Task}
   alias ClaudeControlPlane.Workspaces.Workspace
 
   @pubsub ClaudeControlPlane.PubSub
@@ -228,6 +228,7 @@ defmodule ClaudeControlPlane.Tasks do
         changeset
         |> Ecto.Changeset.put_change(:pipeline_name, pipeline.name)
         |> Ecto.Changeset.put_change(:pipeline_version, pipeline.version)
+        |> Ecto.Changeset.put_change(:pipeline_context, Pipeline.context(pipeline))
         |> Ecto.Changeset.put_embed(:stages, pipeline.stages)
 
       :blank ->
@@ -399,10 +400,17 @@ defmodule ClaudeControlPlane.Tasks do
       "timeout_ms" => stage.timeout_minutes * 60_000,
       "setup" => Project.setup(task.project),
       "gates" => gates(stage, task),
-      "permissions" => permissions(stage, task.project)
+      "permissions" => permissions(stage, task.project),
+      "system_prompt" => context(task, "system_prompt"),
+      "mcp_config" => context(task, "mcp_config"),
+      "agents" => context(task, "agents"),
+      "agent" => stage.agent
     }
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
+
+  defp context(%Task{pipeline_context: nil}, _key), do: nil
+  defp context(%Task{pipeline_context: context}, key), do: context[key]
 
   # Everything goes in a "total" stage; a narrower one also lets the agent run
   # the project's test and lint commands.
@@ -489,7 +497,33 @@ defmodule ClaudeControlPlane.Tasks do
 
   defp maybe_record_worktree(task, _job), do: task
 
+  # A task past its budget stops for a person instead of going on by itself
+  # (to the next stage, or to another attempt); when it would stop anyway, the
+  # reason it stops for says more.
   defp advance_after(task, stage_run, outcome) do
+    goes_on = outcome == :passed or match?({:retry, _error}, outcome)
+
+    case goes_on && over_budget(task) do
+      {:over, cap, spent} ->
+        await(
+          task,
+          "A tarefa atingiu o orçamento de US$ #{cap}: já gastou US$ #{Decimal.round(spent, 4)}."
+        )
+
+      _within_budget ->
+        go_on(task, stage_run, outcome)
+    end
+  end
+
+  defp over_budget(%Task{pipeline_context: %{"max_cost_usd" => cap}} = task)
+       when is_binary(cap) do
+    spent = cost(task)
+    if Decimal.compare(spent, Decimal.new(cap)) == :gt, do: {:over, cap, spent}, else: :ok
+  end
+
+  defp over_budget(_task), do: :ok
+
+  defp go_on(task, stage_run, outcome) do
     stage = Enum.at(task.stages, stage_run.index)
 
     case outcome do
@@ -549,10 +583,57 @@ defmodule ClaudeControlPlane.Tasks do
 
   # ── Decisions ─────────────────────────────────────────────────────────────
 
-  @doc "Runs the current stage again, with the person's instructions."
-  @spec retry_stage(Task.t(), String.t() | nil) :: {:ok, Task.t()} | {:error, :not_awaiting}
-  def retry_stage(%Task{} = task, instructions) do
-    decide(task, fn task ->
+  @typedoc """
+  Who decided and what they chose: `:by` (the user) and `:choice` (one of the
+  options the agent proposed, `options/1`), both optional.
+  """
+  @type decision_opts :: [by: User.t() | nil, choice: String.t() | nil]
+
+  @doc "What a task's jobs have cost so far."
+  @spec cost(Task.t()) :: Decimal.t()
+  def cost(%Task{id: task_id}) do
+    Repo.one(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: r.task_id == ^task_id,
+        select: sum(j.cost_usd)
+    ) || Decimal.new(0)
+  end
+
+  @doc "The options the agent proposed for the decision a task waits for."
+  @spec options(Task.t()) :: [String.t()]
+  def options(%Task{} = task) do
+    task = Repo.get!(Task, task.id)
+
+    with :awaiting_decision <- task.status,
+         %StageRun{structured_output: %{"opcoes" => options}} when is_list(options) <-
+           latest_run(task, task.current_stage) do
+      Enum.filter(options, &is_binary/1)
+    else
+      _no_options -> []
+    end
+  end
+
+  @doc "The decisions taken on a task, oldest first."
+  @spec list_decisions(Task.t()) :: [Decision.t()]
+  def list_decisions(%Task{id: task_id}) do
+    Repo.all(
+      from d in Decision,
+        where: d.task_id == ^task_id,
+        order_by: [asc: d.inserted_at, asc: d.id],
+        preload: :decided_by_user
+    )
+  end
+
+  @doc """
+  Runs the current stage again, with the person's instructions (and the
+  option chosen, if any).
+  """
+  @spec retry_stage(Task.t(), String.t() | nil, decision_opts()) ::
+          {:ok, Task.t()} | {:error, :not_awaiting}
+  def retry_stage(%Task{} = task, instructions, opts \\ []) do
+    decide(task, :retry, instructions, opts, fn task, instructions ->
       attempt = last_attempt(task, task.current_stage) + 1
       start_stage(task, task.current_stage, instructions, attempt)
     end)
@@ -560,11 +641,12 @@ defmodule ClaudeControlPlane.Tasks do
 
   @doc """
   Moves on to the next stage (the task succeeds if there is none), giving it
-  the person's instructions.
+  the person's instructions (and the option chosen, if any).
   """
-  @spec advance(Task.t(), String.t() | nil) :: {:ok, Task.t()} | {:error, :not_awaiting}
-  def advance(%Task{} = task, instructions) do
-    decide(task, &next_or_finish(&1, &1.current_stage + 1, instructions))
+  @spec advance(Task.t(), String.t() | nil, decision_opts()) ::
+          {:ok, Task.t()} | {:error, :not_awaiting}
+  def advance(%Task{} = task, instructions, opts \\ []) do
+    decide(task, :advance, instructions, opts, &next_or_finish(&1, &1.current_stage + 1, &2))
   end
 
   # ── Talking to a task ─────────────────────────────────────────────────────
@@ -635,16 +717,50 @@ defmodule ClaudeControlPlane.Tasks do
     {:ok, task}
   end
 
-  defp decide(task, fun) do
+  defp decide(task, action, instructions, opts, fun) do
     task = Repo.get!(Task, task.id)
 
     if task.status == :awaiting_decision do
-      task = task |> fun.() |> preload()
+      choice = blank_to_nil(opts[:choice])
+      record_decision(task, action, choice, instructions, opts[:by])
+      given = join_instructions([choice && "Decisão: #{choice}", instructions])
+
+      task = task |> fun.(given) |> preload()
       notify(task)
       {:ok, task}
     else
       {:error, :not_awaiting}
     end
+  end
+
+  defp record_decision(task, action, choice, instructions, user) do
+    run = latest_run(task, task.current_stage)
+
+    options =
+      case run do
+        %StageRun{structured_output: %{"opcoes" => options}} when is_list(options) -> options
+        _no_options -> []
+      end
+
+    Repo.insert!(%Decision{
+      task_id: task.id,
+      stage_index: task.current_stage,
+      question: task.decision_reason,
+      options: Enum.filter(options, &is_binary/1),
+      action: action,
+      choice: choice,
+      instructions: blank_to_nil(instructions),
+      decided_by_user_id: user && user.id
+    })
+  end
+
+  defp latest_run(task, index) do
+    Repo.one(
+      from r in StageRun,
+        where: r.task_id == ^task.id and r.index == ^index,
+        order_by: [desc: r.attempt],
+        limit: 1
+    )
   end
 
   defp last_attempt(task, index) do
@@ -659,12 +775,13 @@ defmodule ClaudeControlPlane.Tasks do
   Cancels a task. A task waiting for a decision ends at once; a running one
   has its job canceled and ends when the runner confirms.
   """
-  @spec cancel_task(Task.t()) :: {:ok, Task.t()} | {:error, :finished}
-  def cancel_task(%Task{} = task) do
+  @spec cancel_task(Task.t(), decision_opts()) :: {:ok, Task.t()} | {:error, :finished}
+  def cancel_task(%Task{} = task, opts \\ []) do
     task = Repo.get!(Task, task.id)
 
     case task.status do
       :awaiting_decision ->
+        record_decision(task, :cancel, nil, nil, opts[:by])
         task = task |> finish(:canceled) |> preload()
         notify(task)
         {:ok, task}

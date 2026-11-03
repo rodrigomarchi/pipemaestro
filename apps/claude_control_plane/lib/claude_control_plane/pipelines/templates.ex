@@ -1,13 +1,206 @@
 defmodule ClaudeControlPlane.Pipelines.Templates do
   @moduledoc """
   Ready-made pipelines a workspace starts from: "Prompt único" (the task's
-  prompt, as one stage) and "Correção de bug" (the reference stages of the
-  product plan: triage, investigation, reproduction, fix, audit, PR).
+  prompt, as one stage), "Correção de bug" (the reference stages of the
+  product plan: triage, investigation, reproduction, fix, audit, PR),
+  "Nova funcionalidade", "Refatoração", "Revisão de código", "Investigação de
+  produção" (reads only) and "Atualização de dependência". Stages that only
+  look get the `leitura` permission profile.
   """
 
   @doc "The templates, as attributes for `ClaudeControlPlane.Pipelines.create_pipeline/2`."
   @spec all() :: [map()]
-  def all, do: [single_prompt(), bug_fix()]
+  def all,
+    do: [
+      single_prompt(),
+      bug_fix(),
+      feature(),
+      refactor(),
+      code_review(),
+      production_investigation(),
+      dependency_update()
+    ]
+
+  defp stage(key, name, prompt, extra \\ %{}),
+    do: Map.merge(%{"key" => key, "name" => name, "prompt" => prompt}, extra)
+
+  @read_only %{"permission_profile" => "leitura"}
+
+  defp feature do
+    %{
+      "name" => "Nova funcionalidade",
+      "description" =>
+        "Especificação, plano aprovado por uma pessoa, implementação com testes e revisão.",
+      "stages" => [
+        stage(
+          "especificacao",
+          "Especificação",
+          """
+          Transforme o pedido abaixo numa especificação curta: o que muda para quem usa, os casos
+          de borda e os critérios de aceite. Explore o código só para entender onde a mudança cabe.
+
+          {{tarefa.descricao}}
+
+          {{projeto.notas}}
+
+          Se o pedido for ambíguo a ponto de mudar a solução, termine como "bloqueado" com as
+          perguntas e proponha as alternativas em "opcoes".
+          """,
+          @read_only
+        ),
+        stage(
+          "plano",
+          "Plano",
+          """
+          Com a especificação, escreva o plano de implementação: arquivos a criar ou mudar, a ordem,
+          os testes que provam cada critério de aceite e os riscos. Não altere código.
+          """,
+          Map.put(@read_only, "pause_after", true)
+        ),
+        stage("implementacao", "Implementação", """
+        Implemente o plano, com os testes que ele pede. Rode {{projeto.teste}} e {{projeto.lint}}
+        até passarem. No artefato, liste o que mudou e como verificar.
+        """),
+        stage(
+          "revisao",
+          "Revisão",
+          """
+          Revise a implementação como um revisor exigente que não a escreveu: o diff contra a
+          especificação, testes faltando, nomes, casos de borda, segurança. Liste os problemas por
+          severidade. Se houver algum grave, termine como "bloqueado".
+          """,
+          @read_only
+        )
+      ]
+    }
+  end
+
+  defp refactor do
+    %{
+      "name" => "Refatoração",
+      "description" =>
+        "Mapa do código, refatoração em passos com a suíte verde e verificação de comportamento.",
+      "stages" => [
+        stage(
+          "mapa",
+          "Mapa",
+          """
+          Mapeie o código envolvido nesta refatoração: quem chama, o que é coberto por testes e o que
+          não é. Proponha os passos, cada um pequeno e com a suíte verde ao fim.
+
+          {{tarefa.descricao}}
+          """,
+          @read_only
+        ),
+        stage("refatoracao", "Refatoração", """
+        Faça a refatoração nos passos do mapa, sem mudar comportamento. Se faltar teste para algo
+        que vai mudar de lugar, escreva o teste antes. Rode {{projeto.teste}} a cada passo.
+        """),
+        stage(
+          "verificacao",
+          "Verificação",
+          """
+          Confirme que o comportamento não mudou: compare o diff com o mapa, procure mudanças de
+          semântica escondidas e rode {{projeto.teste}}. Registre o que verificou.
+          """,
+          @read_only
+        )
+      ]
+    }
+  end
+
+  defp code_review do
+    %{
+      "name" => "Revisão de código",
+      "description" =>
+        "Revisa as mudanças do diretório (branch atual contra a principal) sem alterar nada.",
+      "stages" => [
+        stage(
+          "revisao",
+          "Revisão",
+          """
+          Revise as mudanças deste repositório: o que está no branch atual e ainda não está no
+          principal, e o que não foi commitado. Foco do pedido:
+
+          {{tarefa.descricao}}
+
+          Liste os problemas por severidade (bloqueia, deveria mudar, sugestão), cada um com arquivo,
+          linha e o porquê. Não altere código.
+          """,
+          @read_only
+        )
+      ]
+    }
+  end
+
+  defp production_investigation do
+    %{
+      "name" => "Investigação de produção",
+      "description" =>
+        "Investiga um problema de produção (logs, métricas, código) e propõe a correção, sem alterar nada.",
+      "stages" => [
+        stage(
+          "hipoteses",
+          "Hipóteses",
+          """
+          Um problema em produção:
+
+          {{tarefa.descricao}}
+
+          Leia o código envolvido e, se houver ferramentas de observabilidade disponíveis (servidores
+          MCP), consulte logs e métricas do período. Liste as hipóteses com as evidências a favor e
+          contra cada uma.
+          """,
+          @read_only
+        ),
+        stage(
+          "conclusao",
+          "Conclusão",
+          """
+          Feche a investigação: a causa mais provável, o impacto, a correção proposta (sem aplicar) e
+          como confirmar em produção. Se as evidências não bastarem, termine como "bloqueado" dizendo
+          o que falta medir.
+          """,
+          @read_only
+        )
+      ]
+    }
+  end
+
+  defp dependency_update do
+    %{
+      "name" => "Atualização de dependência",
+      "description" => "Lê o changelog, atualiza, corrige o que quebrou e resume o risco.",
+      "stages" => [
+        stage(
+          "changelog",
+          "Changelog",
+          """
+          A dependência a atualizar e a versão alvo:
+
+          {{tarefa.descricao}}
+
+          Leia o changelog entre a versão atual e a alvo e liste as mudanças que afetam este projeto,
+          com os pontos do código que usam o que mudou.
+          """,
+          @read_only
+        ),
+        stage("atualizacao", "Atualização", """
+        Atualize a dependência, ajuste o código ao que mudou e rode {{projeto.setup}},
+        {{projeto.teste}} e {{projeto.lint}} até passarem.
+        """),
+        stage(
+          "risco",
+          "Risco",
+          """
+          Resuma o risco da atualização para quem vai revisar: o que mudou de comportamento, o que os
+          testes cobrem e o que vale testar à mão.
+          """,
+          @read_only
+        )
+      ]
+    }
+  end
 
   defp single_prompt do
     %{

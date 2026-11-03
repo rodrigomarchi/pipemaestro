@@ -4,7 +4,7 @@ defmodule ClaudeControlPlane.PipelinesTest do
   import ClaudeControlPlane.Fixtures
 
   alias ClaudeControlPlane.Pipelines
-  alias ClaudeControlPlane.Pipelines.{Pipeline, Prompt, Stage}
+  alias ClaudeControlPlane.Pipelines.{Pipeline, Prompt, Stage, Templates}
 
   setup do
     %{workspace: workspace_fixture()}
@@ -175,6 +175,39 @@ defmodule ClaudeControlPlane.PipelinesTest do
       assert [%{permission_profile: [_]}] = errors_on(changeset).stages
     end
 
+    test "a pipeline's context: system prompt, MCP servers and agents, from JSON", %{
+      workspace: workspace
+    } do
+      attrs = %{
+        "name" => "Investigação",
+        "system_prompt" => "Nunca altere código.",
+        "mcp_config_json" => ~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}}),
+        "agents_json" => ~s({"analista": {"description": "Lê métricas", "prompt": "Analise."}}),
+        "stages" => [%{"name" => "Analisar", "prompt" => "p", "agent" => "analista"}]
+      }
+
+      {:ok, pipeline} = Pipelines.create_pipeline(workspace, attrs)
+      assert pipeline.system_prompt == "Nunca altere código."
+      assert %{"mcpServers" => %{"grafana" => _}} = pipeline.mcp_config
+      assert %{"analista" => _} = pipeline.agents
+      assert [%Stage{agent: "analista"}] = pipeline.stages
+      assert Pipeline.mcp_config_json(pipeline) =~ "grafana"
+
+      for {field, json} <- [
+            {"mcp_config_json", ~s({"x": 1})},
+            {"agents_json", "[1]"},
+            {"mcp_config_json", "{"}
+          ] do
+        assert {:error, changeset} =
+                 Pipelines.create_pipeline(
+                   workspace,
+                   %{attrs | "name" => "R #{field}#{json}"} |> Map.put(field, json)
+                 )
+
+        assert Map.has_key?(errors_on(changeset), String.to_atom(field))
+      end
+    end
+
     test "a stage runs for an hour at most unless told otherwise", %{workspace: workspace} do
       stage = %{"name" => "Etapa", "prompt" => "p"}
 
@@ -201,11 +234,14 @@ defmodule ClaudeControlPlane.PipelinesTest do
     end
 
     test "create_defaults adds the templates once", %{workspace: workspace} do
-      assert [_, _] = Pipelines.create_defaults(workspace)
+      created = Pipelines.create_defaults(workspace)
+      assert length(created) == length(Templates.all())
       assert Pipelines.create_defaults(workspace) == []
 
       names = workspace |> Pipelines.list_pipelines() |> Enum.map(& &1.name)
-      assert names == ["Correção de bug", "Prompt único"]
+      assert "Correção de bug" in names
+      assert "Prompt único" in names
+      assert "Investigação de produção" in names
 
       bug_fix = Enum.find(Pipelines.list_pipelines(workspace), &(&1.name == "Correção de bug"))
 
@@ -215,6 +251,77 @@ defmodule ClaudeControlPlane.PipelinesTest do
       # Stages that only look do not get to change the code.
       assert Enum.map(bug_fix.stages, & &1.permission_profile) ==
                ~w(leitura leitura total total leitura total)
+    end
+
+    test "exports to YAML and imports it back as the same pipeline", %{workspace: workspace} do
+      {:ok, original} =
+        Pipelines.create_pipeline(workspace, %{
+          "name" => "Completo",
+          "description" => "Com tudo: \"aspas\", dois-pontos: e #.",
+          "system_prompt" => "Linha 1\nLinha 2",
+          "max_task_cost_usd" => "2.5",
+          "mcp_config_json" =>
+            ~s({"mcpServers": {"grafana": {"command": "mcp-grafana", "args": ["-t"]}}}),
+          "agents_json" => ~s({"revisor": {"description": "d", "prompt": "p"}}),
+          "stages" => [
+            %{
+              "key" => "a",
+              "name" => "Etapa: A",
+              "prompt" => "Faça {{tarefa.descricao}}\n\n- item\n  recuado",
+              "max_attempts" => 3,
+              "pause_after" => true,
+              "model" => "sonnet",
+              "max_budget_usd" => "1.5",
+              "timeout_minutes" => 30,
+              "permission_profile" => "edicao",
+              "allowed_tools_text" => "Bash(git log:*)",
+              "denied_tools_text" => "WebFetch",
+              "agent" => "revisor",
+              "gates_text" => "{{projeto.teste}}\n! mix test test/x.exs",
+              "rules_text" => "risco == alto",
+              "output_schema_json" =>
+                ~s({"type": "object", "properties": {"risco": {"type": "string"}}})
+            }
+          ]
+        })
+
+      yaml = Pipelines.export_yaml(original)
+      assert yaml =~ "name: \"Completo\""
+      assert yaml =~ "prompt: |"
+
+      other = workspace_fixture()
+      assert {:ok, imported} = Pipelines.import_yaml(other, yaml)
+
+      fields = fn p ->
+        Map.take(p, [:name, :description, :system_prompt, :mcp_config, :agents])
+        |> Map.put(:max, p.max_task_cost_usd && Decimal.to_string(p.max_task_cost_usd))
+      end
+
+      stage_fields = fn %Stage{} = stage ->
+        stage
+        |> Map.from_struct()
+        |> Map.drop([
+          :output_schema_json,
+          :gates_text,
+          :rules_text,
+          :allowed_tools_text,
+          :denied_tools_text
+        ])
+        |> Map.update!(:max_budget_usd, &(&1 && Decimal.to_string(&1)))
+      end
+
+      assert fields.(imported) == fields.(original)
+      assert Enum.map(imported.stages, stage_fields) == Enum.map(original.stages, stage_fields)
+
+      # Every template survives the round trip too.
+      for template <- Pipelines.create_defaults(workspace) do
+        {:ok, back} = Pipelines.import_yaml(other, Pipelines.export_yaml(template))
+        assert Enum.map(back.stages, stage_fields) == Enum.map(template.stages, stage_fields)
+      end
+
+      assert {:error, "YAML inválido" <> _} = Pipelines.import_yaml(other, "name: [")
+      assert {:error, %Ecto.Changeset{}} = Pipelines.import_yaml(other, "name: Sem etapas")
+      assert {:error, "precisa ser" <> _} = Pipelines.import_yaml(other, "- só uma lista")
     end
 
     test "a workspace does not see another's pipelines", %{workspace: workspace} do
@@ -258,6 +365,12 @@ defmodule ClaudeControlPlane.PipelinesTest do
       refute first =~ "Instruções adicionais"
     end
 
+    test "the output schema lets a blocked stage propose options" do
+      schema = Prompt.output_schema(%Stage{output_schema: nil})
+      assert schema["properties"]["opcoes"]["type"] == "array"
+      refute "opcoes" in schema["required"]
+    end
+
     test "the output schema always requires status and resumo" do
       assert %{"required" => ["status", "resumo"]} = Prompt.output_schema(%Stage{})
 
@@ -270,7 +383,13 @@ defmodule ClaudeControlPlane.PipelinesTest do
           }
         })
 
-      assert Map.keys(schema["properties"]) |> Enum.sort() == ["nota", "resumo", "status"]
+      assert Map.keys(schema["properties"]) |> Enum.sort() == [
+               "nota",
+               "opcoes",
+               "resumo",
+               "status"
+             ]
+
       assert schema["required"] == ["status", "resumo", "nota"]
     end
 
