@@ -93,6 +93,8 @@ descartável".
    - `make runner.doctor`: versão do `claude`, autenticação, `git`, raiz e diretórios,
      disco, conectividade.
    - O resultado aparece também na página do runner.
+   - ✓ A página do runner lista as últimas execuções que ele terminou (status, duração,
+     custo, tokens, cache), cada uma levando à sua auditoria.
 9. **✓ Runner como serviço** (ADR 0009; a outbox ainda não sobrevive ao restart).
    - `runner.start` em segundo plano (launchd/systemd), com logs.
    - Reinício automático com reconciliação. A reconciliação já existe; precisa

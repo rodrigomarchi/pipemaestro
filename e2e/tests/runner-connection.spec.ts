@@ -2,6 +2,7 @@
  * @section Runners
  * @flow A [done] A runner signs in with the device flow: the CLI prints a code, a workspace member approves it in the browser, the CLI saves its credentials
  * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice
+ * @flow D [done] A runner's page lists the latest jobs it finished, each leading to its audit
  * @flow C [done] A member renames the runner, then revokes it: the CLI is refused and stops, and the runner leaves the list
  */
 import { expect, test } from "@playwright/test";
@@ -10,6 +11,7 @@ import { RunnerProcess } from "../helpers/runnerProcess";
 import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
+import { JobsPage } from "../pages/JobsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 
 test.describe("Runner connection", () => {
@@ -62,7 +64,31 @@ test.describe("Runner connection", () => {
     await expect(page.getByTestId(`workspace-runner-status-${runnerName}`)).toHaveText("Online");
     await shot(page, "backoffice-runner-online");
 
+    // Flow D: the runner's page lists the jobs it finished.
+    await runners.openRunner(workspace.slug, runnerName);
+    await expect(runners.noRecentJobs).toBeVisible();
+    await shot(app.page, "runner-detail-no-recent-jobs");
+
+    const jobs = new JobsPage(app.page);
+    await jobs.open(workspace.slug);
+    const prompt = `Liste os arquivos do workdir (${suffix})`;
+    const jobId = await jobs.create(runnerName, prompt);
+    await expect(jobs.status).toHaveText("Concluído");
+
+    await runners.openRunner(workspace.slug, runnerName);
+    await expect(runners.recentJob(jobId, "status")).toHaveText("Concluído");
+    await expect(runners.recentJob(jobId, "link")).toHaveText(prompt);
+    await expect(runners.recentJob(jobId, "duration")).toHaveText("1 s");
+    await expect(runners.recentJob(jobId, "cost")).toHaveText("US$ 0.0042");
+    await expect(runners.recentJob(jobId, "cache")).toHaveText("91%");
+    await expect(runners.noRecentJobs).toHaveCount(0);
+    await shot(app.page, "runner-recent-jobs");
+
+    await runners.recentJob(jobId, "link").click();
+    await expect(app.page.getByTestId("job-audit")).toBeVisible();
+
     // Flow C: rename, then revoke.
+    await runners.open(workspace.slug);
     await runners.rename(runnerName, renamed);
     await expect(runners.status(renamed)).toHaveText("Online");
 

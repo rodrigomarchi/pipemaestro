@@ -183,10 +183,21 @@ defmodule ClaudeControlPlane.Jobs do
 
   @doc """
   The last `limit` jobs `runner` finished in `workspace`, the latest first, with
-  their stage and task.
+  their stage and task. A job canceled before it started never ran on the
+  runner and is left out.
   """
   @spec recent_for_runner(Workspace.t(), Runner.t(), pos_integer()) :: [Job.t()]
-  def recent_for_runner(%Workspace{}, %Runner{}, _limit \\ 10), do: []
+  def recent_for_runner(%Workspace{id: workspace_id}, %Runner{id: runner_id}, limit \\ 10) do
+    Repo.all(
+      from j in Job,
+        where:
+          j.workspace_id == ^workspace_id and j.runner_id == ^runner_id and
+            j.status in ^Job.finished_statuses() and not is_nil(j.started_at),
+        order_by: [desc: j.finished_at, desc: j.id],
+        limit: ^limit,
+        preload: [stage_run: :task]
+    )
+  end
 
   @doc "The runner's unfinished jobs: the running ones, then those waiting, oldest first."
   @spec active_for_runner(Runner.t()) :: [Job.t()]

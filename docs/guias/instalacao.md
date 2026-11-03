@@ -123,6 +123,8 @@ O login mostra um código. Um **admin** do workspace o aprova em
   usa essa chave em vez do login de quem roda o `claude`. A página do runner mostra
   qual é usada.
 - **Capacidade:** `login --capacity N` define quantos jobs rodam ao mesmo tempo.
+- **Histórico:** a página do runner lista as últimas execuções que ele terminou, com
+  duração, custo, tokens e cache; cada uma abre a auditoria da execução.
 
 ## 3. O primeiro pipeline
 

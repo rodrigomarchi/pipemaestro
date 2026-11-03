@@ -1,15 +1,27 @@
 defmodule ClaudeControlPlaneWeb.RunnerLive do
   @moduledoc """
   One runner: its agent and how it signs in, the directories it offers, its
-  task worktrees and disk, and the jobs it is running or has waiting. Updated
-  live.
+  task worktrees and disk, the jobs it is running or has waiting, and the
+  latest jobs it finished, each leading to its audit. Updated live.
   """
   use ClaudeControlPlaneWeb, :live_view
 
   import ClaudeControlPlaneWeb.RunnerComponents
-  import ClaudeControlPlaneWeb.JobComponents, only: [job_status: 1, prompt_summary: 1]
+
+  import ClaudeControlPlaneWeb.JobComponents,
+    only: [
+      job_status: 1,
+      prompt_summary: 1,
+      prompt_summary: 2,
+      format_duration: 1,
+      format_cost: 1,
+      format_percent: 1,
+      short_number: 1
+    ]
 
   alias ClaudeControlPlane.{Jobs, Runners}
+  alias ClaudeControlPlane.Jobs.Job
+  alias ClaudeControlPlane.Tasks.StageRun
   alias ClaudeControlPlaneWeb.{RunnerActions, RunnerStatus}
   alias Phoenix.Socket.Broadcast
 
@@ -45,7 +57,12 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
   @impl true
   def handle_info(%Broadcast{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
   def handle_info(:runners_changed, socket), do: {:noreply, load(socket)}
-  def handle_info({:job_updated, _job}, socket), do: {:noreply, load(socket)}
+
+  def handle_info({:job_updated, %Job{runner_id: runner_id}}, socket) do
+    if runner_id == socket.assigns.runner_id,
+      do: {:noreply, load(socket)},
+      else: {:noreply, socket}
+  end
 
   defp load(socket) do
     workspace = socket.assigns.current_scope.workspace
@@ -55,6 +72,7 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
       runner: runner,
       online: MapSet.member?(RunnerStatus.online_ids(workspace.id), runner.id),
       jobs: Jobs.active_for_runner(runner),
+      recent_jobs: Jobs.recent_for_runner(workspace, runner),
       now: DateTime.utc_now()
     )
   end
@@ -168,6 +186,68 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
           </.card_content>
         </.card>
 
+        <.card variant="outline" data-testid="runner-recent-jobs">
+          <.card_header
+            title="Últimas execuções"
+            description="As mais recentes que este runner terminou; cada uma leva à auditoria."
+          />
+          <.card_content>
+            <p
+              :if={@recent_jobs == []}
+              class="text-sm text-gray-500 dark:text-gray-400"
+              data-testid="runner-no-recent-jobs"
+            >
+              Este runner ainda não terminou nenhuma execução.
+            </p>
+            <ul :if={@recent_jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
+              <li
+                :for={job <- @recent_jobs}
+                id={"runner-recent-job-#{job.id}"}
+                class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm"
+                data-testid={"runner-recent-job-#{job.id}"}
+              >
+                <span class="flex min-w-0 items-center gap-2">
+                  <.job_status job={job} data-testid={"runner-recent-job-status-#{job.id}"} />
+                  <.link
+                    navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
+                    class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
+                    data-testid={"runner-recent-job-link-#{job.id}"}
+                  >
+                    {job_label(job)}
+                  </.link>
+                </span>
+                <dl class="flex shrink-0 items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <div class="flex gap-1" title="Duração">
+                    <dt class="sr-only">Duração</dt>
+                    <.icon name="hero-clock" class="size-4" />
+                    <dd data-testid={"runner-recent-job-duration-#{job.id}"}>
+                      {format_duration(job.duration_ms || job.wall_ms)}
+                    </dd>
+                  </div>
+                  <div class="flex gap-1" title="Custo">
+                    <dt class="sr-only">Custo</dt>
+                    <dd class="font-mono" data-testid={"runner-recent-job-cost-#{job.id}"}>
+                      {format_cost(job.cost_usd)}
+                    </dd>
+                  </div>
+                  <div class="flex gap-1" title="Tokens">
+                    <dt class="sr-only">Tokens</dt>
+                    <dd data-testid={"runner-recent-job-tokens-#{job.id}"}>{tokens(job)}</dd>
+                    <span aria-hidden="true">tokens</span>
+                  </div>
+                  <div class="flex gap-1" title="Do cache">
+                    <dt class="sr-only">Do cache</dt>
+                    <dd data-testid={"runner-recent-job-cache-#{job.id}"}>
+                      {format_percent(Job.cache_hit(job))}
+                    </dd>
+                    <span aria-hidden="true">cache</span>
+                  </div>
+                </dl>
+              </li>
+            </ul>
+          </.card_content>
+        </.card>
+
         <.card variant="outline">
           <.card_header
             title="Diretórios"
@@ -193,6 +273,22 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
       </div>
     </Layouts.app>
     """
+  end
+
+  # A pipeline stage's job reads as its task and stage; any other, as its prompt.
+  defp job_label(%Job{stage_run: %StageRun{task: task, name: name, attempt: attempt}}) do
+    retry = if attempt > 1, do: " (tentativa #{attempt})", else: ""
+    "#{task.title} · #{name}#{retry}"
+  end
+
+  defp job_label(%Job{prompt: prompt}), do: prompt_summary(prompt, 70)
+
+  # No token column reported sums to zero: shown as a dash.
+  defp tokens(job) do
+    case Job.tokens(job) do
+      0 -> "—"
+      count -> short_number(count)
+    end
   end
 
   defp worktrees(nil), do: "—"
