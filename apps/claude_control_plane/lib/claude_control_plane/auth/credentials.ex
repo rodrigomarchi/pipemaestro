@@ -14,7 +14,7 @@ defmodule ClaudeControlPlane.Auth.Credentials do
           optional(atom()) => any()
         }
 
-  @min_password_length 12
+  @min_password_length 6
   @max_password_length 72
 
   @doc "The shortest password accepted."

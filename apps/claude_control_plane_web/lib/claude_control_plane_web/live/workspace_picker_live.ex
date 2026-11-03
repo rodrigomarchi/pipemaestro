@@ -30,16 +30,17 @@ defmodule ClaudeControlPlaneWeb.WorkspacePickerLive do
           <Layouts.brand />
           <div class="flex items-center gap-2">
             <.color_scheme_switch id="picker-scheme" variant="toggle" />
-            <.button
-              to={~p"/logout"}
-              link_type="a"
-              method="delete"
-              variant="ghost"
-              color="gray"
-              size="sm"
-            >
-              Sair
-            </.button>
+            <.form for={%{}} action={~p"/logout"} method="delete">
+              <.button
+                type="submit"
+                variant="ghost"
+                color="gray"
+                size="sm"
+                data-testid="picker-logout"
+              >
+                Sair
+              </.button>
+            </.form>
           </div>
         </div>
 

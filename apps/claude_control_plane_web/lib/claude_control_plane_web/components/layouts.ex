@@ -142,16 +142,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
           </.sidebar_group>
 
           <:footer>
-            <.sidebar_item
-              label="Sair"
-              path={~p"/logout"}
-              link_type="a"
-              icon="hero-arrow-left-start-on-rectangle"
-              data-method="delete"
-              data-to={~p"/logout"}
-              data-csrf={Plug.CSRFProtection.get_csrf_token()}
-              data-testid="sidebar-logout"
-            />
+            <.logout_button to={~p"/logout"} variant="sidebar" data-testid="sidebar-logout" />
           </:footer>
         </.sidebar_nav>
       </:sidebar>
@@ -179,14 +170,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
             >
               <.icon name="hero-squares-2x2" class="size-5" /> Trocar de workspace
             </.dropdown_menu_item>
-            <.dropdown_menu_item
-              link_type="a"
-              to={~p"/logout"}
-              method="delete"
-              data-testid="account-logout"
-            >
-              <.icon name="hero-arrow-left-start-on-rectangle" class="size-5" /> Sair
-            </.dropdown_menu_item>
+            <.logout_button to={~p"/logout"} variant="menu" data-testid="account-logout" />
           </.account_menu>
         </div>
       </header>
@@ -308,14 +292,9 @@ defmodule ClaudeControlPlaneWeb.Layouts do
           </.sidebar_group>
 
           <:footer>
-            <.sidebar_item
-              label="Sair"
-              path={~p"/backoffice/logout"}
-              link_type="a"
-              icon="hero-arrow-left-start-on-rectangle"
-              data-method="delete"
-              data-to={~p"/backoffice/logout"}
-              data-csrf={Plug.CSRFProtection.get_csrf_token()}
+            <.logout_button
+              to={~p"/backoffice/logout"}
+              variant="sidebar"
               data-testid="sidebar-logout"
             />
           </:footer>
@@ -345,14 +324,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
           {render_slot(@actions)}
           <.color_scheme_switch id="backoffice-scheme" variant="dropdown" />
           <.account_menu name={@current_operator.name} email={@current_operator.email}>
-            <.dropdown_menu_item
-              link_type="a"
-              to={~p"/backoffice/logout"}
-              method="delete"
-              data-testid="account-logout"
-            >
-              <.icon name="hero-arrow-left-start-on-rectangle" class="size-5" /> Sair
-            </.dropdown_menu_item>
+            <.logout_button to={~p"/backoffice/logout"} variant="menu" data-testid="account-logout" />
           </.account_menu>
         </div>
       </header>
@@ -396,6 +368,42 @@ defmodule ClaudeControlPlaneWeb.Layouts do
       <.dropdown_menu_separator />
       {render_slot(@inner_block)}
     </.dropdown>
+    """
+  end
+
+  @doc """
+  "Sair" as a real form posting `DELETE` to `to`, so signing out never depends
+  on JavaScript turning a link into a non-GET request. Styled as a sidebar item
+  or as a menu item.
+  """
+  attr :to, :string, required: true
+  attr :variant, :string, required: true, values: ["sidebar", "menu"]
+  attr :rest, :global
+
+  @spec logout_button(map()) :: Phoenix.LiveView.Rendered.t()
+  def logout_button(assigns) do
+    ~H"""
+    <.form for={%{}} action={@to} method="delete" class="contents">
+      <button
+        :if={@variant == "sidebar"}
+        type="submit"
+        class="pc-sidebar-item w-full"
+        title="Sair"
+        {@rest}
+      >
+        <.icon name="hero-arrow-left-start-on-rectangle" class="pc-sidebar-item__icon" />
+        <span class="pc-sidebar-item__label">Sair</span>
+      </button>
+      <button
+        :if={@variant == "menu"}
+        type="submit"
+        class="pc-dropdown__menu-item w-full"
+        role="menuitem"
+        {@rest}
+      >
+        <.icon name="hero-arrow-left-start-on-rectangle" class="size-5" /> Sair
+      </button>
+    </.form>
     """
   end
 

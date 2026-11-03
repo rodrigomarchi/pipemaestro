@@ -9,13 +9,15 @@ defmodule Mix.Tasks.ControlPlane.CreateOperator do
   """
   use Mix.Task
 
+  alias ClaudeControlPlane.Auth.Credentials
   alias ClaudeControlPlane.Backoffice
 
   @requirements ["app.start"]
 
   @impl Mix.Task
   def run([email, name]) do
-    password = Mix.shell().prompt("Senha (mínimo 12 caracteres):") |> String.trim()
+    prompt = "Senha (mínimo #{Credentials.min_password_length()} caracteres):"
+    password = prompt |> Mix.shell().prompt() |> String.trim()
 
     case Backoffice.create_operator(%{email: email, name: name, password: password}) do
       {:ok, operator} ->

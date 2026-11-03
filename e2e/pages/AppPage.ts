@@ -66,4 +66,10 @@ export class AppPage {
     await this.page.getByTestId("sidebar-logout").click();
     await this.expectSignInPage();
   }
+
+  async signOutFromAccountMenu() {
+    await this.openAccountMenu();
+    await this.page.getByTestId("account-logout").click();
+    await this.expectSignInPage();
+  }
 }

@@ -1,7 +1,7 @@
 /**
  * @section Backoffice
  * @flow A [done] Wrong operator credentials are refused with a generic message
- * @flow B [done] An operator creates another operator, who signs in; disabling them blocks the sign-in
+ * @flow B [done] An operator creates another operator, who signs in and out (account menu and sidebar); disabling them blocks the sign-in
  * @flow C [done] A workspace user's session never opens the backoffice, nor do their credentials
  */
 import { expect, test } from "@playwright/test";
@@ -31,6 +31,8 @@ test.describe("Backoffice access", () => {
 
     const other = await browser.newContext();
     const otherBackoffice = new BackofficePage(await other.newPage());
+    await otherBackoffice.signInExpectingSuccess(operator.email, userPassword);
+    await otherBackoffice.signOutFromAccountMenu();
     await otherBackoffice.signInExpectingSuccess(operator.email, userPassword);
     await otherBackoffice.signOut();
 

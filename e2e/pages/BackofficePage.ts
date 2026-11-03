@@ -44,6 +44,12 @@ export class BackofficePage {
     await expect(this.page.getByTestId("operator-login-email")).toBeVisible();
   }
 
+  async signOutFromAccountMenu() {
+    await this.page.getByTestId("account-menu-trigger").click();
+    await this.page.getByTestId("account-logout").click();
+    await expect(this.page.getByTestId("operator-login-email")).toBeVisible();
+  }
+
   // ── Workspaces ────────────────────────────────────────────────────────────
 
   async gotoWorkspaces() {
