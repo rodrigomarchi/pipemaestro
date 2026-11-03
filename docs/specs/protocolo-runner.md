@@ -131,17 +131,42 @@ Cada mensagem recebe uma resposta: `ok`, ou `error` com `{"reason"}`, onde `reas
 | `job:event` | `{"job_id", "seq", "type", "data"}`, com `seq` contando a partir de 1 |
 | `job:finished` | `{"job_id", "status", "exit_code", "result", "cost_usd", "duration_ms", "num_turns", "error"?}`, com `status` igual a `succeeded`, `failed` ou `canceled` |
 | `job:delta` | `{"job_id", "text"}`: o que o agente está escrevendo (até 4 KB do fim), no máximo a cada 250 ms. Sem resposta, fora da outbox e não guardado |
+| `job:telemetry` | `{"job_id", "records"}`: até 200 registros `{"name", "at", "attrs"}` da telemetria OpenTelemetry do CLI (`ClaudeControlPlaneProtocol.Telemetry`, ADR 0015). Pode chegar depois do `job:finished`; a outbox o descarta primeiro, como os eventos, quando enche |
+
+Para a auditoria (ADR 0015), o `job:finished` também traz o que a execução contou de
+si:
+
+- `session_id`, `cli_version`, `model`, `stop_reason` e `result_subtype`;
+- os tempos `duration_api_ms`, `ttft_ms` e `wall_ms` (o processo do agente, medido
+  pelo runner);
+- `usage` (`fresh_input`, `cache_read`, `cache_creation`, `output`, `thinking`) e
+  `model_usage` (por modelo: esses tokens e `cost_usd`);
+- `permission_denials` e `subagents`;
+- `environment`: `tools`, `mcp_servers`, `agents`, `skills`, `slash_commands`,
+  `plugins`, `permission_mode`, `auth` e `output_style`;
+- `stderr`: o fim do que o CLI escreveu lá, até 16 KB.
 
 Os tipos de `job:event` (`ClaudeControlPlaneProtocol.JobEvent`) resumem as linhas do
-`claude -p --output-format stream-json`. Os textos são cortados em 8 KB.
+`claude -p --output-format stream-json`. Os textos são cortados em 32 KB e os
+argumentos de ferramenta em 16 KB.
 
 | `type` | `data` |
 |---|---|
-| `system` | `text`, `model`, `cwd`, `version` (sessão iniciada) |
+| `system` | `text`, `session_id`, `model`, `cwd`, `version`, `auth`, `permission_mode`, `output_style`, `tools`, `mcp_servers` (`name`, `status`), `agents`, `skills`, `slash_commands`, `plugins` (`name`, `version`) |
+| `thinking` | `text` (vazio quando o CLI não mostra o raciocínio), `duration_ms` |
 | `assistant_text` | `text` |
-| `tool_use` | `name`, `text` (o argumento principal: comando, arquivo, padrão…) |
-| `tool_result` | `text`, `is_error` |
-| `result` | `text`, `is_error`, `cost_usd`, `duration_ms`, `num_turns` |
+| `tool_use` | `id`, `name`, `text` (o argumento principal: comando, arquivo, padrão…), `input` (ferramentas conhecidas) ou `arguments` (JSON, para as demais, MCP incluídas) |
+| `tool_result` | `tool_use_id`, `text`, `is_error`, `decision` (`decision`, `source`: a permissão que deixou a ferramenta rodar) |
+| `api_retry` | `attempt`, `max_retries`, `delay_ms`, `status`, `error`, `text` |
+| `compact` | `trigger`, `pre_tokens`, `text` |
+| `permission_denied` | `tool_name`, `tool_use_id`, `text` |
+| `rate_limit` | `status`, `window`, `utilization` (por janela, de 0 a 1), `resets_at` |
+| `result` | `text`, `is_error`, `subtype`, `stop_reason`, `terminal_reason`, `session_id`, `cost_usd`, `duration_ms`, `duration_api_ms`, `ttft_ms`, `num_turns`, `usage`, `model_usage`, `permission_denials`, `errors`, `subagents`, `structured_output` |
+
+Eventos do trabalho de um subagente levam `parent_tool_use_id`. O primeiro evento de
+cada mensagem do agente leva `usage`: `message_id`, `model`, `fresh_input`,
+`cache_read`, `cache_creation`, `input` (os três somados) e `output`. Uma mensagem
+dividida em várias linhas leva os tokens só no primeiro evento.
 
 O par `(job_id, seq)` é único, então um evento reenviado é ignorado.
 

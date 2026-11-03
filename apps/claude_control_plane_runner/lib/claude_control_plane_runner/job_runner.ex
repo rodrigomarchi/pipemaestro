@@ -23,6 +23,19 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   `{:job_live, "job:delta", payload}`, at most every 250 ms: it is not
   kept if it cannot be delivered.
 
+  With `telemetry: true`, the runner receives the CLI's OpenTelemetry on this
+  machine (`ClaudeControlPlaneRunner.Telemetry.Receiver`) and relays each
+  job's records as `{:job_out, "job:telemetry", %{"job_id", "records"}}`, in
+  batches; they may follow the job's outcome.
+
+  The outcome (`job:finished`) carries, besides the result, what the run
+  reported about itself for auditing: the session, the CLI's version, the
+  model, the tokens with the cache apart, the cost per model, the denied
+  permissions, what the agent had at hand (tools, MCP servers, agents...),
+  how long the agent's process ran (`wall_ms`) and the end of its stderr.
+  Each message's tokens go once: a message split over several lines keeps
+  them on its first event.
+
   Canceling a waiting job drops it; canceling a running one (in its setup or
   in the CLI) sends SIGTERM, then SIGKILL if it is still there after
   `:kill_after` ms. A job past its `timeout_ms` is stopped the same way and
@@ -30,12 +43,14 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   """
   use GenServer
 
-  alias ClaudeControlPlaneProtocol.{Job, JobEvent, Worktree}
+  alias ClaudeControlPlaneProtocol.{Job, JobEvent, Telemetry, Text, Worktree}
   alias ClaudeControlPlaneRunner.{Changes, Claude, Delivery, Gates, Setup, Shell, Workspace}
+  alias ClaudeControlPlaneRunner.Telemetry.Receiver
 
   @line_bytes 1_048_576
   @artifact_bytes 65_536
-  @stderr_tail 20
+  @stderr_tail 200
+  @stderr_bytes 16_000
   @delta_every_ms 250
   @delta_bytes 4_000
 
@@ -47,7 +62,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   Starts the runner. Options: `:owner` (pid, required), `:workdir` (required),
   `:root` (where the code directories are, `ClaudeControlPlaneRunner.Workspace`),
   `:executable` (default: `Claude.executable/0`), `:kill_after` (default 5000),
-  `:capacity` (jobs at once, default 1).
+  `:capacity` (jobs at once, default 1), `:telemetry` (receive the CLI's
+  OpenTelemetry, default false).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -79,6 +95,12 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     workdir = Keyword.fetch!(opts, :workdir)
     File.mkdir_p!(workdir)
 
+    endpoint =
+      if Keyword.get(opts, :telemetry, false) do
+        {:ok, receiver} = Receiver.start_link(target: self())
+        Receiver.endpoint(receiver)
+      end
+
     {:ok,
      %{
        owner: Keyword.fetch!(opts, :owner),
@@ -87,6 +109,7 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
        executable: Keyword.get_lazy(opts, :executable, &Claude.executable/0),
        kill_after: Keyword.get(opts, :kill_after, 5_000),
        capacity: Keyword.get(opts, :capacity) || 1,
+       telemetry_endpoint: endpoint,
        queue: [],
        running: %{}
      }}
@@ -145,6 +168,16 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     end
   end
 
+  # Records may name a job that has already ended: they still go out.
+  def handle_info({:telemetry, records}, state) do
+    for {job_id, of_job} <- Enum.group_by(records, &elem(&1, 0), &elem(&1, 1)),
+        batch <- Enum.chunk_every(of_job, Telemetry.max_records()) do
+      out(state, Telemetry.event(), %{"job_id" => job_id, "records" => batch})
+    end
+
+    {:noreply, state}
+  end
+
   def handle_info({:force_kill, id}, state) do
     # The job may have ended before the deadline.
     with %{^id => %{os_pid: os_pid}} when is_integer(os_pid) <- state.running,
@@ -193,6 +226,7 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   # What follows the agent's exit: the job ends now, or once the gates, the
   # delivery and the changes are measured.
   defp after_exit(state, run, code) do
+    run = %{run | wall_ms: wall_ms(run)}
     succeeded = agent_succeeded?(run, code)
     gates = if succeeded, do: run.job.gates || [], else: []
     delivery = if succeeded and stage_ok?(run), do: run.job.delivery
@@ -325,7 +359,11 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
       tracking: nil,
       finishing: nil,
       typing: "",
-      typed_at: nil
+      typed_at: nil,
+      session: nil,
+      messages: MapSet.new(),
+      launched_at: nil,
+      wall_ms: nil
     })
   end
 
@@ -379,11 +417,17 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
         :stderr_to_stdout,
         {:line, @line_bytes},
         {:cd, dir},
-        {:env, Claude.env(job)},
+        {:env, Claude.env(job, state.telemetry_endpoint)},
         {:args, ["-c", @launcher, path | Claude.argv(job)]}
       ])
 
-    {:os_pid, os_pid} = Port.info(port, :os_pid)
+    # A CLI that ends at once has no process left to stop.
+    os_pid =
+      case Port.info(port, :os_pid) do
+        {:os_pid, os_pid} -> os_pid
+        nil -> nil
+      end
+
     if job.timeout_ms, do: Process.send_after(self(), {:timeout, job.id, port}, job.timeout_ms)
 
     put_run(state, %{
@@ -392,9 +436,13 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
         setup: setup,
         tracking: tracking,
         port: port,
-        os_pid: os_pid
+        os_pid: os_pid,
+        launched_at: System.monotonic_time(:millisecond)
     })
   end
+
+  defp wall_ms(%{launched_at: nil}), do: nil
+  defp wall_ms(%{launched_at: at}), do: System.monotonic_time(:millisecond) - at
 
   defp setup_of({:ok, _path, _dir, setup, _tracking}), do: setup
   defp setup_of({:error, _message, setup}), do: setup
@@ -424,7 +472,7 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     do: {:error, "O CLI do claude não foi encontrado no PATH deste runner (ou em $CLAUDE_BIN)."}
 
   defp handle_line(state, current, line) do
-    case Jason.decode(line) do
+    case JSON.decode(line) do
       {:ok, decoded} when is_map(decoded) ->
         case JobEvent.text_delta(decoded) do
           nil ->
@@ -450,7 +498,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     if current.typed_at == nil or now - current.typed_at >= @delta_every_ms do
       send(
         state.owner,
-        {:job_live, Job.delta_event(), %{"job_id" => current.job.id, "text" => tail(typing)}}
+        {:job_live, Job.delta_event(),
+         %{"job_id" => current.job.id, "text" => Text.tail(typing, @delta_bytes)}}
       )
 
       %{current | typing: typing, typed_at: now}
@@ -459,16 +508,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     end
   end
 
-  defp tail(text) when byte_size(text) <= @delta_bytes, do: text
-
-  defp tail(text),
-    do: from_char_start(binary_part(text, byte_size(text) - @delta_bytes, @delta_bytes))
-
-  # A cut may start inside a character: its continuation bytes go.
-  defp from_char_start(<<0b10::2, _bits::6, rest::binary>>), do: from_char_start(rest)
-  defp from_char_start(text), do: text
-
   defp report_event(state, current, %JobEvent{} = event) do
+    {event, current} = count_usage_once(event, current)
     seq = current.seq + 1
 
     payload =
@@ -478,8 +519,20 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
 
     out(state, Job.event_event(), payload)
     result = if event.type == "result", do: event.data, else: current.result
-    %{current | seq: seq, result: result}
+    session = if event.type == "system", do: event.data, else: current.session
+    %{current | seq: seq, result: result, session: session}
   end
+
+  # A message split over several lines repeats its tokens on each: only the
+  # first of its events keeps them.
+  defp count_usage_once(%JobEvent{data: %{"usage" => %{"message_id" => id}}} = event, current)
+       when is_binary(id) do
+    if MapSet.member?(current.messages, id),
+      do: {%{event | data: Map.delete(event.data, "usage")}, current},
+      else: {event, %{current | messages: MapSet.put(current.messages, id)}}
+  end
+
+  defp count_usage_once(event, current), do: {event, current}
 
   # Reports how the job ended (with what was measured after the agent) and
   # frees its place.
@@ -507,6 +560,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
       "workdir" => current.dir
     }
 
+    payload = Map.merge(payload, audit(current, result))
+
     payload =
       for {key, value} <- Map.put(measured, "setup", current.setup),
           value != nil,
@@ -517,20 +572,47 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
   end
 
+  # What the run reported about itself, from its first and last lines and the
+  # runner's own measures.
+  defp audit(current, result) do
+    session = current.session || %{}
+
+    environment =
+      session
+      |> Map.take(~w(tools mcp_servers agents skills slash_commands plugins
+                     permission_mode auth output_style))
+      |> Map.reject(fn {_key, value} -> value in [nil, []] end)
+
+    %{
+      "session_id" => result["session_id"] || session["session_id"],
+      "cli_version" => session["version"],
+      "model" => session["model"],
+      "stop_reason" => result["stop_reason"],
+      "result_subtype" => result["subtype"],
+      "duration_api_ms" => result["duration_api_ms"],
+      "ttft_ms" => result["ttft_ms"],
+      "wall_ms" => current.wall_ms,
+      "usage" => result["usage"],
+      "model_usage" => result["model_usage"],
+      "permission_denials" => result["permission_denials"],
+      "subagents" => result["subagents"],
+      "environment" => if(environment == %{}, do: nil, else: environment),
+      "stderr" => stderr(current)
+    }
+  end
+
+  defp stderr(%{stderr: []}), do: nil
+
+  defp stderr(%{stderr: lines}) do
+    lines |> Enum.reverse() |> Enum.join("\n") |> Text.tail(@stderr_bytes)
+  end
+
   defp read_artifact(%{job: %Job{artifact_path: nil}}), do: nil
 
   defp read_artifact(%{job: %Job{artifact_path: path}, dir: dir}) do
     case File.open(Path.join(dir, path), [:read, :binary], &IO.binread(&1, @artifact_bytes)) do
-      {:ok, data} when is_binary(data) -> valid_utf8(data)
+      {:ok, data} when is_binary(data) -> Text.valid_utf8(data)
       _missing -> nil
-    end
-  end
-
-  # An artifact cut at the byte limit may end inside a character.
-  defp valid_utf8(data) do
-    case :unicode.characters_to_binary(data) do
-      binary when is_binary(binary) -> binary
-      {_incomplete_or_error, valid, _rest} -> valid
     end
   end
 
@@ -540,7 +622,7 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   end
 
   defp maybe_error(payload, "failed", exit_code, current) do
-    tail = current.stderr |> Enum.reverse() |> Enum.join("\n")
+    tail = current.stderr |> Enum.take(20) |> Enum.reverse() |> Enum.join("\n")
     Map.put(payload, "error", String.trim("O claude terminou com código #{exit_code}.\n#{tail}"))
   end
 

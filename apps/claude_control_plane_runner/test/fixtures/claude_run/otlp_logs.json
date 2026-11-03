@@ -1,0 +1,3139 @@
+{
+ "resourceLogs": [
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "cp.job_id",
+      "value": {
+       "stringValue": "captura-1"
+      }
+     },
+     {
+      "key": "host.arch",
+      "value": {
+       "stringValue": "arm64"
+      }
+     },
+     {
+      "key": "os.type",
+      "value": {
+       "stringValue": "darwin"
+      }
+     },
+     {
+      "key": "os.version",
+      "value": {
+       "stringValue": "25.6.0"
+      }
+     },
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "claude-code"
+      }
+     },
+     {
+      "key": "service.version",
+      "value": {
+       "stringValue": "2.1.317"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeLogs": [
+    {
+     "scope": {
+      "name": "com.anthropic.claude_code.events",
+      "version": "2.1.317"
+     },
+     "logRecords": [
+      {
+       "timeUnixNano": "1793741288823000000",
+       "observedTimeUnixNano": "1793741288823000000",
+       "body": {
+        "stringValue": "claude_code.managed_settings_resolved"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "managed_settings_resolved"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.823Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "managed_settings.trigger",
+         "value": {
+          "stringValue": "startup"
+         }
+        },
+        {
+         "key": "managed_settings.sources",
+         "value": {
+          "arrayValue": {
+           "values": []
+          }
+         }
+        },
+        {
+         "key": "managed_settings.source_behavior",
+         "value": {
+          "stringValue": "first-wins"
+         }
+        },
+        {
+         "key": "managed_settings.helper.state",
+         "value": {
+          "stringValue": "none"
+         }
+        },
+        {
+         "key": "managed_settings.helper.applied",
+         "value": {
+          "stringValue": "none"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741288856000000",
+       "observedTimeUnixNano": "1793741288856000000",
+       "body": {
+        "stringValue": "claude_code.plugin_loaded"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "plugin_loaded"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.856Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 1
+         }
+        },
+        {
+         "key": "plugin.name",
+         "value": {
+          "stringValue": "third-party"
+         }
+        },
+        {
+         "key": "marketplace.name",
+         "value": {
+          "stringValue": "third-party"
+         }
+        },
+        {
+         "key": "plugin.scope",
+         "value": {
+          "stringValue": "user-local"
+         }
+        },
+        {
+         "key": "enabled_via",
+         "value": {
+          "stringValue": "user-install"
+         }
+        },
+        {
+         "key": "plugin_id_hash",
+         "value": {
+          "stringValue": "70cd103f72add6aa"
+         }
+        },
+        {
+         "key": "has_hooks",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "has_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "host_owned_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "skill_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "command_path_count",
+         "value": {
+          "intValue": 2
+         }
+        },
+        {
+         "key": "agent_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "safe_mode",
+         "value": {
+          "stringValue": "false"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741288857000000",
+       "observedTimeUnixNano": "1793741288857000000",
+       "body": {
+        "stringValue": "claude_code.plugin_loaded"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "plugin_loaded"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.857Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 2
+         }
+        },
+        {
+         "key": "plugin.name",
+         "value": {
+          "stringValue": "pyright-lsp"
+         }
+        },
+        {
+         "key": "marketplace.name",
+         "value": {
+          "stringValue": "claude-plugins-official"
+         }
+        },
+        {
+         "key": "plugin.version",
+         "value": {
+          "stringValue": "1.0.0"
+         }
+        },
+        {
+         "key": "plugin.scope",
+         "value": {
+          "stringValue": "official"
+         }
+        },
+        {
+         "key": "enabled_via",
+         "value": {
+          "stringValue": "user-install"
+         }
+        },
+        {
+         "key": "plugin_id_hash",
+         "value": {
+          "stringValue": "61230f6e6c9d3331"
+         }
+        },
+        {
+         "key": "has_hooks",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "has_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "host_owned_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "skill_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "command_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "agent_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "safe_mode",
+         "value": {
+          "stringValue": "false"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741288857000000",
+       "observedTimeUnixNano": "1793741288857000000",
+       "body": {
+        "stringValue": "claude_code.plugin_loaded"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "plugin_loaded"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.857Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 3
+         }
+        },
+        {
+         "key": "plugin.name",
+         "value": {
+          "stringValue": "cc-plugin-agents-md"
+         }
+        },
+        {
+         "key": "marketplace.name",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "plugin.scope",
+         "value": {
+          "stringValue": "default-bundle"
+         }
+        },
+        {
+         "key": "enabled_via",
+         "value": {
+          "stringValue": "default-enable"
+         }
+        },
+        {
+         "key": "plugin_id_hash",
+         "value": {
+          "stringValue": "da63145d0acbb62d"
+         }
+        },
+        {
+         "key": "has_hooks",
+         "value": {
+          "boolValue": true
+         }
+        },
+        {
+         "key": "has_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "host_owned_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "skill_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "command_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "agent_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "safe_mode",
+         "value": {
+          "stringValue": "false"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741288857000000",
+       "observedTimeUnixNano": "1793741288857000000",
+       "body": {
+        "stringValue": "claude_code.plugin_loaded"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "plugin_loaded"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.857Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 4
+         }
+        },
+        {
+         "key": "plugin.name",
+         "value": {
+          "stringValue": "cc-plugin-telemetry"
+         }
+        },
+        {
+         "key": "marketplace.name",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "plugin.scope",
+         "value": {
+          "stringValue": "default-bundle"
+         }
+        },
+        {
+         "key": "enabled_via",
+         "value": {
+          "stringValue": "default-enable"
+         }
+        },
+        {
+         "key": "plugin_id_hash",
+         "value": {
+          "stringValue": "0452636910a73fd4"
+         }
+        },
+        {
+         "key": "has_hooks",
+         "value": {
+          "boolValue": true
+         }
+        },
+        {
+         "key": "has_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "host_owned_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "skill_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "command_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "agent_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "safe_mode",
+         "value": {
+          "stringValue": "false"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741288857000000",
+       "observedTimeUnixNano": "1793741288857000000",
+       "body": {
+        "stringValue": "claude_code.plugin_loaded"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "plugin_loaded"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.857Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 5
+         }
+        },
+        {
+         "key": "plugin.name",
+         "value": {
+          "stringValue": "cc-plugin-privacy"
+         }
+        },
+        {
+         "key": "marketplace.name",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "plugin.scope",
+         "value": {
+          "stringValue": "default-bundle"
+         }
+        },
+        {
+         "key": "enabled_via",
+         "value": {
+          "stringValue": "default-enable"
+         }
+        },
+        {
+         "key": "plugin_id_hash",
+         "value": {
+          "stringValue": "a2f27f067781660d"
+         }
+        },
+        {
+         "key": "has_hooks",
+         "value": {
+          "boolValue": true
+         }
+        },
+        {
+         "key": "has_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "host_owned_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "skill_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "command_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "agent_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "safe_mode",
+         "value": {
+          "stringValue": "false"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741288857000000",
+       "observedTimeUnixNano": "1793741288857000000",
+       "body": {
+        "stringValue": "claude_code.plugin_loaded"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "plugin_loaded"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:08.857Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 6
+         }
+        },
+        {
+         "key": "plugin.name",
+         "value": {
+          "stringValue": "cc-plugin-plugin-authoring"
+         }
+        },
+        {
+         "key": "marketplace.name",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "plugin.scope",
+         "value": {
+          "stringValue": "default-bundle"
+         }
+        },
+        {
+         "key": "enabled_via",
+         "value": {
+          "stringValue": "default-enable"
+         }
+        },
+        {
+         "key": "plugin_id_hash",
+         "value": {
+          "stringValue": "559932fe5f722b82"
+         }
+        },
+        {
+         "key": "has_hooks",
+         "value": {
+          "boolValue": true
+         }
+        },
+        {
+         "key": "has_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "host_owned_mcp",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "skill_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "command_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "agent_path_count",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "safe_mode",
+         "value": {
+          "stringValue": "false"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741289380000000",
+       "observedTimeUnixNano": "1793741289380000000",
+       "body": {
+        "stringValue": "claude_code.mcp_server_connection"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "mcp_server_connection"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:09.380Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 7
+         }
+        },
+        {
+         "key": "status",
+         "value": {
+          "stringValue": "connected"
+         }
+        },
+        {
+         "key": "transport_type",
+         "value": {
+          "stringValue": "claudeai-proxy"
+         }
+        },
+        {
+         "key": "server_scope",
+         "value": {
+          "stringValue": "claudeai"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "3"
+         }
+        },
+        {
+         "key": "is_plugin",
+         "value": {
+          "boolValue": false
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "cp.job_id",
+      "value": {
+       "stringValue": "captura-1"
+      }
+     },
+     {
+      "key": "host.arch",
+      "value": {
+       "stringValue": "arm64"
+      }
+     },
+     {
+      "key": "os.type",
+      "value": {
+       "stringValue": "darwin"
+      }
+     },
+     {
+      "key": "os.version",
+      "value": {
+       "stringValue": "25.6.0"
+      }
+     },
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "claude-code"
+      }
+     },
+     {
+      "key": "service.version",
+      "value": {
+       "stringValue": "2.1.317"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeLogs": [
+    {
+     "scope": {
+      "name": "com.anthropic.claude_code.events",
+      "version": "2.1.317"
+     },
+     "logRecords": [
+      {
+       "timeUnixNano": "1793741289915000000",
+       "observedTimeUnixNano": "1793741289915000000",
+       "body": {
+        "stringValue": "claude_code.mcp_server_connection"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "mcp_server_connection"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:09.915Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 8
+         }
+        },
+        {
+         "key": "status",
+         "value": {
+          "stringValue": "connected"
+         }
+        },
+        {
+         "key": "transport_type",
+         "value": {
+          "stringValue": "claudeai-proxy"
+         }
+        },
+        {
+         "key": "server_scope",
+         "value": {
+          "stringValue": "claudeai"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "539"
+         }
+        },
+        {
+         "key": "is_plugin",
+         "value": {
+          "boolValue": false
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741290876000000",
+       "observedTimeUnixNano": "1793741290876000000",
+       "body": {
+        "stringValue": "claude_code.mcp_server_connection"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "mcp_server_connection"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:10.876Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 9
+         }
+        },
+        {
+         "key": "status",
+         "value": {
+          "stringValue": "connected"
+         }
+        },
+        {
+         "key": "transport_type",
+         "value": {
+          "stringValue": "http"
+         }
+        },
+        {
+         "key": "server_scope",
+         "value": {
+          "stringValue": "user"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "2035"
+         }
+        },
+        {
+         "key": "is_plugin",
+         "value": {
+          "boolValue": false
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "cp.job_id",
+      "value": {
+       "stringValue": "captura-1"
+      }
+     },
+     {
+      "key": "host.arch",
+      "value": {
+       "stringValue": "arm64"
+      }
+     },
+     {
+      "key": "os.type",
+      "value": {
+       "stringValue": "darwin"
+      }
+     },
+     {
+      "key": "os.version",
+      "value": {
+       "stringValue": "25.6.0"
+      }
+     },
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "claude-code"
+      }
+     },
+     {
+      "key": "service.version",
+      "value": {
+       "stringValue": "2.1.317"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeLogs": [
+    {
+     "scope": {
+      "name": "com.anthropic.claude_code.events",
+      "version": "2.1.317"
+     },
+     "logRecords": [
+      {
+       "timeUnixNano": "1793741291239000000",
+       "observedTimeUnixNano": "1793741291239000000",
+       "body": {
+        "stringValue": "claude_code.user_prompt"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "user_prompt"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:11.239Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 10
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "prompt_length",
+         "value": {
+          "stringValue": "116"
+         }
+        },
+        {
+         "key": "prompt",
+         "value": {
+          "stringValue": "<REDACTED>"
+         }
+        },
+        {
+         "key": "prompt_text",
+         "value": {
+          "stringValue": "<REDACTED>"
+         }
+        },
+        {
+         "key": "message.uuid",
+         "value": {
+          "stringValue": "63c5080d-024e-4193-98a6-85200a681bfb"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "cp.job_id",
+      "value": {
+       "stringValue": "captura-1"
+      }
+     },
+     {
+      "key": "host.arch",
+      "value": {
+       "stringValue": "arm64"
+      }
+     },
+     {
+      "key": "os.type",
+      "value": {
+       "stringValue": "darwin"
+      }
+     },
+     {
+      "key": "os.version",
+      "value": {
+       "stringValue": "25.6.0"
+      }
+     },
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "claude-code"
+      }
+     },
+     {
+      "key": "service.version",
+      "value": {
+       "stringValue": "2.1.317"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeLogs": [
+    {
+     "scope": {
+      "name": "com.anthropic.claude_code.events",
+      "version": "2.1.317"
+     },
+     "logRecords": [
+      {
+       "timeUnixNano": "1793741292921000000",
+       "observedTimeUnixNano": "1793741292921000000",
+       "body": {
+        "stringValue": "claude_code.tool_decision"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "tool_decision"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:12.921Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 11
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "decision",
+         "value": {
+          "stringValue": "accept"
+         }
+        },
+        {
+         "key": "source",
+         "value": {
+          "stringValue": "config"
+         }
+        },
+        {
+         "key": "tool_name",
+         "value": {
+          "stringValue": "Read"
+         }
+        },
+        {
+         "key": "tool_use_id",
+         "value": {
+          "stringValue": "toolu_01C97gccgDmFR5oN3nV76EFk"
+         }
+        },
+        {
+         "key": "tool_source",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "permission_mode",
+         "value": {
+          "stringValue": "acceptEdits"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghoq4AmZef2dbCrfs9p"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741292924000000",
+       "observedTimeUnixNano": "1793741292924000000",
+       "body": {
+        "stringValue": "claude_code.tool_result"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "tool_result"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:12.924Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 12
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "tool_name",
+         "value": {
+          "stringValue": "Read"
+         }
+        },
+        {
+         "key": "tool_use_id",
+         "value": {
+          "stringValue": "toolu_01C97gccgDmFR5oN3nV76EFk"
+         }
+        },
+        {
+         "key": "success",
+         "value": {
+          "stringValue": "true"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "2"
+         }
+        },
+        {
+         "key": "tool_input_size_bytes",
+         "value": {
+          "stringValue": "150"
+         }
+        },
+        {
+         "key": "tool_result_size_bytes",
+         "value": {
+          "stringValue": "36"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghoq4AmZef2dbCrfs9p"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741293165000000",
+       "observedTimeUnixNano": "1793741293165000000",
+       "body": {
+        "stringValue": "claude_code.tool_decision"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "tool_decision"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:13.165Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 13
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "decision",
+         "value": {
+          "stringValue": "accept"
+         }
+        },
+        {
+         "key": "source",
+         "value": {
+          "stringValue": "config"
+         }
+        },
+        {
+         "key": "tool_name",
+         "value": {
+          "stringValue": "Bash"
+         }
+        },
+        {
+         "key": "tool_use_id",
+         "value": {
+          "stringValue": "toolu_01G8dRzMVgy87MLfSY3xx4j1"
+         }
+        },
+        {
+         "key": "tool_source",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "permission_mode",
+         "value": {
+          "stringValue": "acceptEdits"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghoq4AmZef2dbCrfs9p"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741293171000000",
+       "observedTimeUnixNano": "1793741293171000000",
+       "body": {
+        "stringValue": "claude_code.api_request"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "api_request"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:13.171Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 14
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "model",
+         "value": {
+          "stringValue": "claude-haiku-5-5"
+         }
+        },
+        {
+         "key": "input_tokens",
+         "value": {
+          "intValue": 2
+         }
+        },
+        {
+         "key": "output_tokens",
+         "value": {
+          "intValue": 314
+         }
+        },
+        {
+         "key": "cache_read_tokens",
+         "value": {
+          "intValue": 11382
+         }
+        },
+        {
+         "key": "cache_creation_tokens",
+         "value": {
+          "intValue": 12282
+         }
+        },
+        {
+         "key": "cache_creation_5m_tokens",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "cache_creation_1h_tokens",
+         "value": {
+          "intValue": 12282
+         }
+        },
+        {
+         "key": "cost_usd",
+         "value": {
+          "doubleValue": 0.00272742
+         }
+        },
+        {
+         "key": "cost_usd_micros",
+         "value": {
+          "intValue": 2727
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "intValue": 1913
+         }
+        },
+        {
+         "key": "ttft_ms",
+         "value": {
+          "intValue": 648
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghoq4AmZef2dbCrfs9p"
+         }
+        },
+        {
+         "key": "client_request_id",
+         "value": {
+          "stringValue": "48b92646-43b3-406c-83c7-83914b7e4a83"
+         }
+        },
+        {
+         "key": "speed",
+         "value": {
+          "stringValue": "normal"
+         }
+        },
+        {
+         "key": "query_source",
+         "value": {
+          "stringValue": "sdk"
+         }
+        },
+        {
+         "key": "effort",
+         "value": {
+          "stringValue": "medium"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741293830000000",
+       "observedTimeUnixNano": "1793741293830000000",
+       "body": {
+        "stringValue": "claude_code.tool_result"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "tool_result"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:13.830Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 15
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "tool_name",
+         "value": {
+          "stringValue": "Bash"
+         }
+        },
+        {
+         "key": "tool_use_id",
+         "value": {
+          "stringValue": "toolu_01G8dRzMVgy87MLfSY3xx4j1"
+         }
+        },
+        {
+         "key": "success",
+         "value": {
+          "stringValue": "true"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "664"
+         }
+        },
+        {
+         "key": "tool_input_size_bytes",
+         "value": {
+          "stringValue": "81"
+         }
+        },
+        {
+         "key": "tool_result_size_bytes",
+         "value": {
+          "stringValue": "163"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghoq4AmZef2dbCrfs9p"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "cp.job_id",
+      "value": {
+       "stringValue": "captura-1"
+      }
+     },
+     {
+      "key": "host.arch",
+      "value": {
+       "stringValue": "arm64"
+      }
+     },
+     {
+      "key": "os.type",
+      "value": {
+       "stringValue": "darwin"
+      }
+     },
+     {
+      "key": "os.version",
+      "value": {
+       "stringValue": "25.6.0"
+      }
+     },
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "claude-code"
+      }
+     },
+     {
+      "key": "service.version",
+      "value": {
+       "stringValue": "2.1.317"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeLogs": [
+    {
+     "scope": {
+      "name": "com.anthropic.claude_code.events",
+      "version": "2.1.317"
+     },
+     "logRecords": [
+      {
+       "timeUnixNano": "1793741295016000000",
+       "observedTimeUnixNano": "1793741295016000000",
+       "body": {
+        "stringValue": "claude_code.api_request"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "api_request"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:15.016Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 16
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "model",
+         "value": {
+          "stringValue": "claude-haiku-5-5"
+         }
+        },
+        {
+         "key": "input_tokens",
+         "value": {
+          "intValue": 2
+         }
+        },
+        {
+         "key": "output_tokens",
+         "value": {
+          "intValue": 171
+         }
+        },
+        {
+         "key": "cache_read_tokens",
+         "value": {
+          "intValue": 23664
+         }
+        },
+        {
+         "key": "cache_creation_tokens",
+         "value": {
+          "intValue": 1793
+         }
+        },
+        {
+         "key": "cache_creation_5m_tokens",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "cache_creation_1h_tokens",
+         "value": {
+          "intValue": 1793
+         }
+        },
+        {
+         "key": "cost_usd",
+         "value": {
+          "doubleValue": 0.0006809400000000001
+         }
+        },
+        {
+         "key": "cost_usd_micros",
+         "value": {
+          "intValue": 681
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "intValue": 1176
+         }
+        },
+        {
+         "key": "ttft_ms",
+         "value": {
+          "intValue": 672
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghp26CWkb2UtYzokGXK"
+         }
+        },
+        {
+         "key": "client_request_id",
+         "value": {
+          "stringValue": "2bf0aad9-46c0-44ac-b292-0c3d77015ce3"
+         }
+        },
+        {
+         "key": "speed",
+         "value": {
+          "stringValue": "normal"
+         }
+        },
+        {
+         "key": "query_source",
+         "value": {
+          "stringValue": "sdk"
+         }
+        },
+        {
+         "key": "effort",
+         "value": {
+          "stringValue": "medium"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741295021000000",
+       "observedTimeUnixNano": "1793741295021000000",
+       "body": {
+        "stringValue": "claude_code.tool_decision"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "tool_decision"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:15.021Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 17
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "decision",
+         "value": {
+          "stringValue": "accept"
+         }
+        },
+        {
+         "key": "source",
+         "value": {
+          "stringValue": "config"
+         }
+        },
+        {
+         "key": "tool_name",
+         "value": {
+          "stringValue": "Write"
+         }
+        },
+        {
+         "key": "tool_use_id",
+         "value": {
+          "stringValue": "toolu_019QDqs6a9Zd3YoULCWTV6XG"
+         }
+        },
+        {
+         "key": "tool_source",
+         "value": {
+          "stringValue": "builtin"
+         }
+        },
+        {
+         "key": "permission_mode",
+         "value": {
+          "stringValue": "acceptEdits"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghp26CWkb2UtYzokGXK"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741295026000000",
+       "observedTimeUnixNano": "1793741295026000000",
+       "body": {
+        "stringValue": "claude_code.tool_result"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "tool_result"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:15.026Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 18
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "tool_name",
+         "value": {
+          "stringValue": "Write"
+         }
+        },
+        {
+         "key": "tool_use_id",
+         "value": {
+          "stringValue": "toolu_019QDqs6a9Zd3YoULCWTV6XG"
+         }
+        },
+        {
+         "key": "success",
+         "value": {
+          "stringValue": "true"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "3"
+         }
+        },
+        {
+         "key": "tool_input_size_bytes",
+         "value": {
+          "stringValue": "225"
+         }
+        },
+        {
+         "key": "tool_result_size_bytes",
+         "value": {
+          "stringValue": "229"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghp26CWkb2UtYzokGXK"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741295998000000",
+       "observedTimeUnixNano": "1793741295998000000",
+       "body": {
+        "stringValue": "claude_code.api_request"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "api_request"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:15.998Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 19
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "model",
+         "value": {
+          "stringValue": "claude-haiku-5-5"
+         }
+        },
+        {
+         "key": "input_tokens",
+         "value": {
+          "intValue": 2
+         }
+        },
+        {
+         "key": "output_tokens",
+         "value": {
+          "intValue": 82
+         }
+        },
+        {
+         "key": "cache_read_tokens",
+         "value": {
+          "intValue": 25457
+         }
+        },
+        {
+         "key": "cache_creation_tokens",
+         "value": {
+          "intValue": 301
+         }
+        },
+        {
+         "key": "cache_creation_5m_tokens",
+         "value": {
+          "intValue": 0
+         }
+        },
+        {
+         "key": "cache_creation_1h_tokens",
+         "value": {
+          "intValue": 301
+         }
+        },
+        {
+         "key": "cost_usd",
+         "value": {
+          "doubleValue": 0.00035597
+         }
+        },
+        {
+         "key": "cost_usd_micros",
+         "value": {
+          "intValue": 356
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "intValue": 961
+         }
+        },
+        {
+         "key": "ttft_ms",
+         "value": {
+          "intValue": 649
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghp7EFkSQ7vVKrxPSp6"
+         }
+        },
+        {
+         "key": "client_request_id",
+         "value": {
+          "stringValue": "0862edc0-7ad0-41c6-a9a4-7739ef5d1369"
+         }
+        },
+        {
+         "key": "speed",
+         "value": {
+          "stringValue": "normal"
+         }
+        },
+        {
+         "key": "query_source",
+         "value": {
+          "stringValue": "sdk"
+         }
+        },
+        {
+         "key": "effort",
+         "value": {
+          "stringValue": "medium"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741295998000000",
+       "observedTimeUnixNano": "1793741295998000000",
+       "body": {
+        "stringValue": "claude_code.assistant_response"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "assistant_response"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:15.998Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 20
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "response_length",
+         "value": {
+          "intValue": 171
+         }
+        },
+        {
+         "key": "response",
+         "value": {
+          "stringValue": "<REDACTED>"
+         }
+        },
+        {
+         "key": "request_id",
+         "value": {
+          "stringValue": "req_011Cgghp7EFkSQ7vVKrxPSp6"
+         }
+        },
+        {
+         "key": "message.uuid",
+         "value": {
+          "stringValue": "83ba7c86-aa5e-4a43-a191-5cd738214bda"
+         }
+        },
+        {
+         "key": "model",
+         "value": {
+          "stringValue": "claude-haiku-5-5"
+         }
+        },
+        {
+         "key": "query_source",
+         "value": {
+          "stringValue": "sdk"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741296010000000",
+       "observedTimeUnixNano": "1793741296010000000",
+       "body": {
+        "stringValue": "claude_code.mcp_server_connection"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "mcp_server_connection"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:16.010Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 21
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "status",
+         "value": {
+          "stringValue": "disconnected"
+         }
+        },
+        {
+         "key": "transport_type",
+         "value": {
+          "stringValue": "http"
+         }
+        },
+        {
+         "key": "server_scope",
+         "value": {
+          "stringValue": "user"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "5135"
+         }
+        },
+        {
+         "key": "is_plugin",
+         "value": {
+          "boolValue": false
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741296010000000",
+       "observedTimeUnixNano": "1793741296010000000",
+       "body": {
+        "stringValue": "claude_code.mcp_server_connection"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "mcp_server_connection"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:16.010Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 22
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "status",
+         "value": {
+          "stringValue": "disconnected"
+         }
+        },
+        {
+         "key": "transport_type",
+         "value": {
+          "stringValue": "claudeai-proxy"
+         }
+        },
+        {
+         "key": "server_scope",
+         "value": {
+          "stringValue": "claudeai"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "6095"
+         }
+        },
+        {
+         "key": "is_plugin",
+         "value": {
+          "boolValue": false
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      },
+      {
+       "timeUnixNano": "1793741296011000000",
+       "observedTimeUnixNano": "1793741296011000000",
+       "body": {
+        "stringValue": "claude_code.mcp_server_connection"
+       },
+       "attributes": [
+        {
+         "key": "cp.job_id",
+         "value": {
+          "stringValue": "captura-1"
+         }
+        },
+        {
+         "key": "session.id",
+         "value": {
+          "stringValue": "495c515b-822d-4089-b55d-3dcc9b8a0500"
+         }
+        },
+        {
+         "key": "anthropic.provider",
+         "value": {
+          "stringValue": "firstParty"
+         }
+        },
+        {
+         "key": "anthropic.custom_base_url",
+         "value": {
+          "boolValue": false
+         }
+        },
+        {
+         "key": "anthropic.plan",
+         "value": {
+          "stringValue": "max"
+         }
+        },
+        {
+         "key": "terminal.type",
+         "value": {
+          "stringValue": "Apple_Terminal"
+         }
+        },
+        {
+         "key": "event.name",
+         "value": {
+          "stringValue": "mcp_server_connection"
+         }
+        },
+        {
+         "key": "event.timestamp",
+         "value": {
+          "stringValue": "2026-11-03T21:28:16.011Z"
+         }
+        },
+        {
+         "key": "event.sequence",
+         "value": {
+          "intValue": 23
+         }
+        },
+        {
+         "key": "prompt.id",
+         "value": {
+          "stringValue": "a822b95c-36d0-49f5-b06d-a1b819e4e4ef"
+         }
+        },
+        {
+         "key": "status",
+         "value": {
+          "stringValue": "disconnected"
+         }
+        },
+        {
+         "key": "transport_type",
+         "value": {
+          "stringValue": "claudeai-proxy"
+         }
+        },
+        {
+         "key": "server_scope",
+         "value": {
+          "stringValue": "claudeai"
+         }
+        },
+        {
+         "key": "duration_ms",
+         "value": {
+          "stringValue": "6631"
+         }
+        },
+        {
+         "key": "is_plugin",
+         "value": {
+          "boolValue": false
+         }
+        }
+       ],
+       "droppedAttributesCount": 0
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

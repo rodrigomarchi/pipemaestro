@@ -132,6 +132,133 @@ defmodule ClaudeControlPlane.JobsTest do
     end
   end
 
+  describe "what a run reports for auditing" do
+    setup ctx do
+      {:ok, job} =
+        Jobs.create_job(ctx.user, ctx.workspace, %{"prompt" => "oi", "runner_id" => ctx.runner.id})
+
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      %{job: job}
+    end
+
+    test "the outcome keeps the session, tokens, models, environment and stderr", ctx do
+      {:ok, job} =
+        Jobs.finish_job(ctx.runner, ctx.job.id, %{
+          "status" => "succeeded",
+          "session_id" => "s-1",
+          "cli_version" => "2.1.317",
+          "model" => "claude-haiku-5-5",
+          "stop_reason" => "end_turn",
+          "result_subtype" => "success",
+          "duration_api_ms" => 4054,
+          "ttft_ms" => 1295,
+          "wall_ms" => 5200,
+          "usage" => %{
+            "fresh_input" => 6,
+            "cache_read" => 60_503,
+            "cache_creation" => 14_376,
+            "output" => 567,
+            "thinking" => 118
+          },
+          "model_usage" => %{"claude-haiku-5-5" => %{"cost_usd" => 0.0037}},
+          "permission_denials" => [%{"tool_name" => "Bash", "input" => "rm -rf /"}],
+          "subagents" => %{"spawned" => 1, "completed" => 1, "failed" => 0},
+          "environment" => %{"tools" => ["Bash"], "mcp_servers" => [%{"name" => "grafana"}]},
+          "stderr" => "aviso"
+        })
+
+      assert job.session_id == "s-1"
+      assert job.cli_version == "2.1.317"
+      assert job.model == "claude-haiku-5-5"
+      assert {job.duration_api_ms, job.ttft_ms, job.wall_ms} == {4054, 1295, 5200}
+
+      assert {job.input_tokens, job.cache_read_tokens, job.cache_creation_tokens,
+              job.output_tokens, job.thinking_tokens} == {6, 60_503, 14_376, 567, 118}
+
+      assert job.model_usage["claude-haiku-5-5"]["cost_usd"] == 0.0037
+      assert [%{"tool_name" => "Bash"}] = job.permission_denials
+      assert job.subagents["spawned"] == 1
+      assert job.environment["tools"] == ["Bash"]
+      assert job.stderr == "aviso"
+    end
+
+    test "telemetry is stored and its metrics summed, also after the job ended", ctx do
+      records = [
+        %{
+          "name" => "api_request",
+          "at" => "2026-11-03T21:28:13.171Z",
+          "attrs" => %{"duration_ms" => 1913, "model" => "claude-haiku-5-5"}
+        },
+        %{
+          "name" => "metric:lines_of_code",
+          "at" => "2026-11-03T21:28:14.000Z",
+          "attrs" => %{"type" => "added", "value" => 5}
+        },
+        %{
+          "name" => "metric:commit",
+          "at" => "2026-11-03T21:28:14.000Z",
+          "attrs" => %{"value" => 1}
+        },
+        %{"name" => "plugin_loaded", "at" => "2026-11-03T21:28:14.000Z", "attrs" => %{}},
+        %{"name" => "api_error", "at" => 123, "attrs" => %{}},
+        "não é um registro"
+      ]
+
+      :ok = Jobs.subscribe({:job, ctx.job.id})
+      assert {:ok, 3} = Jobs.record_telemetry(ctx.runner, ctx.job.id, records)
+      job_id = ctx.job.id
+      assert_receive {:job_telemetry, ^job_id}
+      {:ok, _} = Jobs.finish_job(ctx.runner, ctx.job.id, %{"status" => "succeeded"})
+
+      late = [
+        %{
+          "name" => "metric:lines_of_code",
+          "at" => "2026-11-03T21:28:15.000Z",
+          "attrs" => %{"type" => "removed", "value" => 2}
+        },
+        %{
+          "name" => "metric:lines_of_code",
+          "at" => "2026-11-03T21:28:15.500Z",
+          "attrs" => %{"type" => "added", "value" => 1}
+        }
+      ]
+
+      assert {:ok, 2} = Jobs.record_telemetry(ctx.runner, ctx.job.id, late)
+
+      assert {:ok, 1} =
+               Jobs.record_telemetry(ctx.runner, ctx.job.id, [
+                 %{"name" => "api_error", "at" => "2026-11-03T21:28:16Z", "attrs" => "x"}
+               ])
+
+      job = Jobs.get_job!(ctx.workspace, ctx.job.id)
+      assert job.telemetry_totals == %{"lines_added" => 6, "lines_removed" => 2, "commits" => 1}
+
+      assert [%{name: "api_request", attrs: %{"duration_ms" => 1913}} | _] =
+               Jobs.list_telemetry(job)
+
+      assert length(Jobs.list_telemetry(job)) == 6
+    end
+
+    test "a run's tokens and how much of its input came from the cache" do
+      job = %Job{
+        input_tokens: 100,
+        cache_read_tokens: 2_900,
+        cache_creation_tokens: 0,
+        output_tokens: 500
+      }
+
+      assert Job.tokens(job) == 3_500
+      assert Job.cache_hit(job) == 0.97
+      assert Job.tokens(%Job{}) == 0
+      assert Job.cache_hit(%Job{}) == nil
+    end
+
+    test "a runner cannot report telemetry for another's job", ctx do
+      {other, _token} = runner_fixture(ctx.workspace, ctx.user)
+      assert Jobs.record_telemetry(other, ctx.job.id, []) == {:error, :not_found}
+    end
+  end
+
   describe "request_cancel/1" do
     test "a queued job is canceled at once and its runner told", ctx do
       job = job_fixture(ctx.runner, ctx.user)

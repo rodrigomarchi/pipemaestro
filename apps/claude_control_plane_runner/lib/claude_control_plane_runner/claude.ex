@@ -71,12 +71,12 @@ defmodule ClaudeControlPlaneRunner.Claude do
   defp optional(job) do
     Enum.flat_map(
       [
-        {"--json-schema", job.output_schema && Jason.encode!(job.output_schema)},
+        {"--json-schema", job.output_schema && JSON.encode!(job.output_schema)},
         {"--model", job.model},
         {"--max-budget-usd", job.max_budget_usd && to_string(job.max_budget_usd)},
         {"--append-system-prompt", job.system_prompt},
-        {"--mcp-config", job.mcp_config && Jason.encode!(job.mcp_config)},
-        {"--agents", job.agents && Jason.encode!(job.agents)},
+        {"--mcp-config", job.mcp_config && JSON.encode!(job.mcp_config)},
+        {"--agents", job.agents && JSON.encode!(job.agents)},
         {"--agent", job.agent}
       ],
       fn
@@ -100,10 +100,11 @@ defmodule ClaudeControlPlaneRunner.Claude do
   job carries (`env`), never written anywhere. The nested-session markers are
   removed (a runner started from inside an agent session would otherwise make
   the CLI refuse to run), and `CP_ARTIFACT_PATH` tells hooks and scripts where
-  the stage's artifact goes.
+  the stage's artifact goes. With a `telemetry_endpoint`, the CLI's
+  OpenTelemetry goes there.
   """
-  @spec env(Job.t()) :: [{charlist(), charlist() | false}]
-  def env(%Job{} = job) do
+  @spec env(Job.t(), String.t() | nil) :: [{charlist(), charlist() | false}]
+  def env(%Job{} = job, telemetry_endpoint \\ nil) do
     artifact =
       if job.artifact_path,
         do: [{~c"CP_ARTIFACT_PATH", String.to_charlist(job.artifact_path)}],
@@ -121,7 +122,31 @@ defmodule ClaudeControlPlaneRunner.Claude do
 
     [
       {~c"CLAUDECODE", false},
-      {~c"CLAUDE_CODE_ENTRYPOINT", false} | artifact ++ api_key ++ secrets
+      {~c"CLAUDE_CODE_ENTRYPOINT", false}
+      | artifact ++ api_key ++ secrets ++ telemetry(job, telemetry_endpoint)
+    ]
+  end
+
+  # The CLI's OpenTelemetry, to the runner's receiver on this machine
+  # (`ClaudeControlPlaneRunner.Telemetry.Receiver`), each export naming the
+  # job. Short intervals keep it close to the run; contents of prompts,
+  # answers and tool arguments stay out.
+  defp telemetry(_job, nil), do: []
+
+  defp telemetry(job, endpoint) do
+    [
+      {~c"CLAUDE_CODE_ENABLE_TELEMETRY", ~c"1"},
+      {~c"OTEL_LOGS_EXPORTER", ~c"otlp"},
+      {~c"OTEL_METRICS_EXPORTER", ~c"otlp"},
+      {~c"OTEL_EXPORTER_OTLP_PROTOCOL", ~c"http/json"},
+      {~c"OTEL_EXPORTER_OTLP_ENDPOINT", String.to_charlist(endpoint)},
+      {~c"OTEL_LOGS_EXPORT_INTERVAL", ~c"1000"},
+      {~c"OTEL_METRIC_EXPORT_INTERVAL", ~c"2000"},
+      {~c"OTEL_RESOURCE_ATTRIBUTES", String.to_charlist("cp.job_id=#{job.id}")},
+      {~c"OTEL_LOG_USER_PROMPTS", false},
+      {~c"OTEL_LOG_ASSISTANT_RESPONSES", false},
+      {~c"OTEL_LOG_TOOL_DETAILS", false},
+      {~c"OTEL_LOG_TOOL_CONTENT", false}
     ]
   end
 

@@ -89,6 +89,87 @@ defmodule ClaudeControlPlaneWeb.JobLiveTest do
     refute has_element?(view, "[data-testid=job-cancel]")
   end
 
+  test "audits how the agent worked: session, tokens, tools, API, environment", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+
+    for {type, data, seq} <- [
+          {"tool_use", %{"id" => "t1", "name" => "Bash", "text" => "mix test"}, 1},
+          {"tool_result", %{"tool_use_id" => "t1", "is_error" => true, "text" => "falhou"}, 2},
+          {"api_retry", %{"attempt" => 1, "text" => "Tentativa 1 de 10 da API: overloaded"}, 3}
+        ] do
+      {:ok, _} = Jobs.append_event(runner, job.id, event(seq, type, data))
+    end
+
+    {:ok, _} =
+      Jobs.finish_job(runner, job.id, %{
+        "status" => "succeeded",
+        "session_id" => "sessao-123",
+        "cli_version" => "2.1.317",
+        "model" => "claude-haiku-5-5",
+        "stop_reason" => "end_turn",
+        "result_subtype" => "success",
+        "duration_api_ms" => 4_000,
+        "ttft_ms" => 700,
+        "wall_ms" => 6_000,
+        "usage" => %{
+          "fresh_input" => 10,
+          "cache_read" => 90,
+          "cache_creation" => 0,
+          "output" => 40
+        },
+        "model_usage" => %{
+          "claude-haiku-5-5" => %{"fresh_input" => 10, "output" => 40, "cost_usd" => 0.002}
+        },
+        "permission_denials" => [
+          %{"tool_name" => "Write", "input" => "{\"file_path\":\"/etc/x\"}"}
+        ],
+        "environment" => %{
+          "tools" => ["Bash", "Read"],
+          "mcp_servers" => [%{"name" => "grafana", "status" => "failed"}],
+          "permission_mode" => "acceptEdits",
+          "auth" => "none"
+        },
+        "stderr" => "aviso do CLI"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+
+    assert has_element?(view, "[data-testid=job-audit-session]", "sessao-123")
+    assert has_element?(view, "[data-testid=job-audit-session]", "2.1.317")
+    assert has_element?(view, "[data-testid=job-audit-session]", "acceptEdits")
+    assert has_element?(view, "[data-testid=job-audit-cache-hit]", "90%")
+    assert has_element?(view, "[data-testid=job-audit-model-claude-haiku-5-5]", "0.0020")
+    assert has_element?(view, "[data-testid=job-audit-tool-calls-Bash]", "1")
+    assert has_element?(view, "[data-testid=job-audit-api]", "1 nova tentativa")
+    assert has_element?(view, "[data-testid=job-audit-denials]", "Write")
+    assert has_element?(view, "[data-testid=job-audit-mcp-grafana]", "failed")
+    assert has_element?(view, "[data-testid=job-audit-stderr]", "aviso do CLI")
+
+    # The CLI's telemetry may arrive after the end: the audit follows it.
+    {:ok, _} =
+      Jobs.record_telemetry(runner, job.id, [
+        %{
+          "name" => "api_request",
+          "at" => "2026-11-03T12:00:00Z",
+          "attrs" => %{"duration_ms" => 1_234, "ttft_ms" => 500}
+        },
+        %{
+          "name" => "tool_result",
+          "at" => "2026-11-03T12:00:01Z",
+          "attrs" => %{"tool_use_id" => "t1", "duration_ms" => 2_500}
+        }
+      ])
+
+    assert render(view) =~ "1 s"
+    assert has_element?(view, "[data-testid=job-audit-api]", "1 requisição")
+    assert has_element?(view, "[data-testid=job-audit-tool-time-Bash]", "2 s")
+  end
+
   test "cancels a queued job", %{conn: conn, workspace: workspace, runner: runner, job: job} do
     Jobs.subscribe({:runner, runner.id})
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")

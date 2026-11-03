@@ -3,8 +3,9 @@ defmodule ClaudeControlPlane.Maintenance do
   Housekeeping that runs on its own, every `:every` ms (default one hour):
 
     * sign-in requests of runners (device flow) a day past their expiry go;
-    * the events of jobs that ended more than `:job_events_days` ago (default
-      30) go: the job keeps its outcome, cost and artifact;
+    * the events and the OpenTelemetry records of jobs that ended more than
+      `:job_events_days` ago (default 30) go: the job keeps its outcome, cost,
+      tokens, artifact and the totals of its run;
     * audit entries older than `:audit_days` (default 365) go.
 
   A process on each node of the control plane; with more than one node, a
@@ -15,7 +16,7 @@ defmodule ClaudeControlPlane.Maintenance do
   import Ecto.Query
 
   alias ClaudeControlPlane.{Audit, Repo}
-  alias ClaudeControlPlane.Jobs.{Event, Job}
+  alias ClaudeControlPlane.Jobs.{Event, Job, Telemetry}
   alias ClaudeControlPlane.Runners.DeviceAuthorization
 
   @doc "Starts the periodic housekeeping. Options: `:every` (ms)."
@@ -40,9 +41,13 @@ defmodule ClaudeControlPlane.Maintenance do
 
     {job_events, _} = Repo.delete_all(from e in Event, where: e.job_id in subquery(old_jobs))
 
+    {job_telemetry, _} =
+      Repo.delete_all(from t in Telemetry, where: t.job_id in subquery(old_jobs))
+
     %{
       device_authorizations: device_authorizations,
       job_events: job_events,
+      job_telemetry: job_telemetry,
       audit_events: Audit.prune(DateTime.add(now, -audit_days, :day))
     }
   end

@@ -193,6 +193,25 @@ defmodule ClaudeControlPlaneWeb.RunnerChannelTest do
       ref = push(channel, "job:finished", %{"job_id" => job.id, "status" => "canceled"})
       assert_reply ref, :ok
 
+      # The CLI's telemetry may follow the end.
+      ref =
+        push(channel, "job:telemetry", %{
+          "job_id" => job.id,
+          "records" => [
+            %{
+              "name" => "api_request",
+              "at" => "2026-11-03T12:00:00Z",
+              "attrs" => %{"duration_ms" => 9}
+            }
+          ]
+        })
+
+      assert_reply ref, :ok
+      assert [%{name: "api_request"}] = Jobs.list_telemetry(Jobs.get_job!(ctx.workspace, job.id))
+
+      ref = push(channel, "job:telemetry", %{"job_id" => job.id, "records" => "não é lista"})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+
       ref = push(channel, "job:finished", %{"job_id" => job.id, "status" => "failed"})
       assert_reply ref, :error, %{"reason" => "finished"}
 

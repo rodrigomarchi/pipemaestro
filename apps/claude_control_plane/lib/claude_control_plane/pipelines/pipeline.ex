@@ -22,7 +22,7 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
 
   import Ecto.Changeset
 
-  alias ClaudeControlPlane.Pipelines.Stage
+  alias ClaudeControlPlane.Pipelines.{Json, Stage}
   alias ClaudeControlPlane.Workspaces.Workspace
 
   @type t :: %__MODULE__{
@@ -109,12 +109,12 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
   @doc "The MCP servers as the form shows them: pretty JSON, or empty."
   @spec mcp_config_json(t()) :: String.t()
   def mcp_config_json(%__MODULE__{mcp_config: nil}), do: ""
-  def mcp_config_json(%__MODULE__{mcp_config: config}), do: Jason.encode!(config, pretty: true)
+  def mcp_config_json(%__MODULE__{mcp_config: config}), do: Json.pretty(config)
 
   @doc "The agents as the form shows them: pretty JSON, or empty."
   @spec agents_json(t()) :: String.t()
   def agents_json(%__MODULE__{agents: nil}), do: ""
-  def agents_json(%__MODULE__{agents: agents}), do: Jason.encode!(agents, pretty: true)
+  def agents_json(%__MODULE__{agents: agents}), do: Json.pretty(agents)
 
   @doc "What a task keeps of the pipeline's context when it starts."
   @spec context(t()) :: map()
@@ -144,7 +144,7 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
   defp put_json(changeset, field, nil, _valid?, _message), do: put_change(changeset, field, nil)
 
   defp put_json(changeset, field, json, valid?, message) do
-    case Jason.decode(json) do
+    case JSON.decode(json) do
       {:ok, value} ->
         if valid?.(value),
           do: put_change(changeset, field, value),

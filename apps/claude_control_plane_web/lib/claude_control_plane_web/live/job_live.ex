@@ -2,13 +2,15 @@ defmodule ClaudeControlPlaneWeb.JobLive do
   @moduledoc """
   One job: its prompt, status and numbers, and the agent's run as a timeline
   that grows live while the runner reports events. A queued or running job can
-  be canceled from here.
+  be canceled from here. Once it ends, its audit (`ClaudeControlPlaneWeb.AuditComponents`)
+  shows how the agent worked, kept up to date as the CLI's telemetry arrives.
   """
   use ClaudeControlPlaneWeb, :live_view
 
   import ClaudeControlPlaneWeb.JobComponents
+  import ClaudeControlPlaneWeb.AuditComponents
 
-  alias ClaudeControlPlane.Jobs
+  alias ClaudeControlPlane.{Insights, Jobs}
   alias ClaudeControlPlane.Jobs.Job
   alias ClaudeControlPlaneWeb.Markdown
 
@@ -32,8 +34,13 @@ defmodule ClaudeControlPlaneWeb.JobLive do
     {:ok,
      socket
      |> assign(page_title: "Execução", job: job, event_count: last_seq(events), typing: nil)
+     |> assign_insights()
      |> stream(:events, events)}
   end
+
+  # The audit, once the run has ended.
+  defp assign_insights(%{assigns: %{job: job}} = socket),
+    do: assign(socket, insights: if(Job.active?(job), do: nil, else: Insights.job(job)))
 
   defp last_seq([]), do: 0
   defp last_seq(events), do: events |> List.last() |> Map.fetch!(:seq)
@@ -42,7 +49,15 @@ defmodule ClaudeControlPlaneWeb.JobLive do
   def handle_info({:job_updated, %Job{} = job}, socket),
     do:
       {:noreply,
-       assign(socket, job: job, typing: if(Job.active?(job), do: socket.assigns.typing))}
+       socket
+       |> assign(job: job, typing: if(Job.active?(job), do: socket.assigns.typing))
+       |> assign_insights()}
+
+  # Telemetry may arrive after the end: the job's totals and the audit follow.
+  def handle_info({:job_telemetry, _id}, socket) do
+    job = Jobs.get_job!(socket.assigns.current_scope.workspace, socket.assigns.job.id)
+    {:noreply, socket |> assign(job: job) |> assign_insights()}
+  end
 
   def handle_info({:job_delta, _id, text}, socket), do: {:noreply, assign(socket, typing: text)}
 
@@ -169,6 +184,8 @@ defmodule ClaudeControlPlaneWeb.JobLive do
               <.typing :if={@typing} text={@typing} />
             </.card_content>
           </.card>
+
+          <.job_audit :if={@insights} job={@job} insights={@insights} />
         </div>
 
         <.card variant="outline" class="h-fit">

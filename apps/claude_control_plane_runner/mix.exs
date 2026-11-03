@@ -42,10 +42,11 @@ defmodule ClaudeControlPlaneRunner.MixProject do
       {:claude_control_plane_protocol, in_umbrella: true},
       {:slipstream, "~> 1.3"},
       {:req, "~> 0.7.5"},
-      {:jason, "~> 1.2"},
 
       # Test dependencies: Req.Test stands in for the platform's HTTP API
-      {:plug, "~> 1.18", only: :test}
+      # The local receiver of the CLI's OpenTelemetry (Telemetry.Receiver).
+      {:bandit, "~> 1.14"},
+      {:plug, "~> 1.18"}
     ]
   end
 

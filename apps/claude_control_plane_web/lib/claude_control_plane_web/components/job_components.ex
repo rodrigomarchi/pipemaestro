@@ -41,7 +41,12 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
     assigns = assign(assigns, :look, event_look(assigns.event))
 
     ~H"""
-    <li id={@id} class="flex gap-3" data-testid="job-event" data-type={@event.type}>
+    <li
+      id={@id}
+      class={["flex gap-3", @event.data["parent_tool_use_id"] && "ml-8"]}
+      data-testid="job-event"
+      data-type={@event.type}
+    >
       <div class={[
         "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
         @look.bubble
@@ -54,8 +59,15 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
           <span :if={@event.data["name"]} class="font-mono">
             · {@event.data["name"]}
           </span>
+          <span :if={@event.data["parent_tool_use_id"]} class="font-normal">· subagente</span>
           <span :if={@event.data["usage"]} class="font-normal">
             · {tokens_label(@event.data["usage"])}
+          </span>
+          <span
+            :if={get_in(@event.data, ["decision", "decision"]) == "reject"}
+            class="font-normal text-danger-700 dark:text-danger-400"
+          >
+            · negada ({@event.data["decision"]["source"]})
           </span>
         </p>
         <.event_body event={@event} body={@look.body} />
@@ -98,6 +110,60 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
       >
         · {@event.data["permission_mode"]}
       </span>
+    </p>
+    """
+  end
+
+  defp event_body(%{event: %Event{type: "thinking"}} = assigns) do
+    ~H"""
+    <details class="mt-1 text-sm">
+      <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
+        Pensou por {format_duration(@event.data["duration_ms"])}
+      </summary>
+      <p
+        :if={@event.data["text"] in [nil, ""]}
+        class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+      >
+        O CLI não mostra o raciocínio nesta execução, só quanto tempo levou.
+      </p>
+      <pre
+        :if={@event.data["text"] not in [nil, ""]}
+        class={[
+          "mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-sans text-xs",
+          @body
+        ]}
+      >{@event.data["text"]}</pre>
+    </details>
+    """
+  end
+
+  defp event_body(%{event: %Event{type: "compact"}} = assigns) do
+    ~H"""
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+      {@event.data["text"]}
+      <span :if={@event.data["pre_tokens"]} class="text-gray-500 dark:text-gray-400">
+        · tinha {short_number(@event.data["pre_tokens"])} tokens
+      </span>
+    </p>
+    """
+  end
+
+  defp event_body(%{event: %Event{type: "rate_limit"}} = assigns) do
+    ~H"""
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+      {@event.data["status"]}
+      <span :for={{window, used} <- Enum.sort(@event.data["utilization"] || %{})}>
+        · {window} {round(used * 100)}%
+      </span>
+    </p>
+    """
+  end
+
+  defp event_body(%{event: %Event{type: "permission_denied"}} = assigns) do
+    ~H"""
+    <p class="mt-1 text-sm text-danger-700 dark:text-danger-400">
+      <span :if={@event.data["tool_name"]} class="font-mono">{@event.data["tool_name"]}:</span>
+      {@event.data["text"]}
     </p>
     """
   end
@@ -204,22 +270,43 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
     """
   end
 
-  # The CLI's `apiKeySource`: "none" is the login of whoever ran `claude`.
-  defp auth_label("none"), do: "login pessoal"
-  defp auth_label(_source), do: "chave de API"
+  @doc ~s(How the CLI signed in, from its `apiKeySource`: "none" is the login of whoever ran `claude`.)
+  @spec auth_label(String.t() | nil) :: String.t()
+  def auth_label(nil), do: "—"
+  def auth_label("none"), do: "login pessoal"
+  def auth_label(_source), do: "chave de API"
 
-  defp tokens_label(%{"input" => input, "output" => output}),
-    do: "#{short_number(input)} → #{short_number(output)} tokens"
+  @doc ~s(A share from 0 to 1 as a percentage: "91%".)
+  @spec format_percent(float() | nil) :: String.t()
+  def format_percent(nil), do: "—"
+  def format_percent(share), do: "#{round(share * 100)}%"
 
-  defp short_number(n) when n >= 1000, do: "#{Float.round(n / 1000, 1)}k"
-  defp short_number(n), do: Integer.to_string(n)
+  # A message's tokens carry their input summed; the run's totals (on the
+  # result) carry its parts.
+  defp tokens_label(%{"input" => input} = usage),
+    do: "#{short_number(input)} → #{short_number(usage["output"] || 0)} tokens"
+
+  defp tokens_label(usage) do
+    input =
+      ~w(fresh_input cache_read cache_creation) |> Enum.map(&(usage[&1] || 0)) |> Enum.sum()
+
+    "#{short_number(input)} → #{short_number(usage["output"] || 0)} tokens"
+  end
+
+  @doc ~s(A count, short: "850", "12.3k", "4.1M".)
+  @spec short_number(number() | nil) :: String.t()
+  def short_number(nil), do: "—"
+  def short_number(n) when n >= 1_000_000, do: "#{Float.round(n / 1_000_000, 1)}M"
+  def short_number(n) when n >= 1000, do: "#{Float.round(n / 1000, 1)}k"
+  def short_number(n), do: to_string(n)
 
   @reading_tools ~w(Read Grep Glob LS)
 
   @doc """
   A finished run's events as the steps screen shows them, after `filter`
   (`"all"`; `"agent"`: what the agent said; `"tools"`: tool calls and their
-  answers; `"errors"`: what failed): `{:event, event}`, or `{:group, label,
+  answers; `"thinking"`: what the model thought; `"errors"`: what failed,
+  retried or was refused): `{:event, event}`, or `{:group, label,
   events}` for two or more consecutive reads and searches with their answers.
   """
   @spec timeline_items([Event.t()], String.t()) ::
@@ -239,7 +326,11 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
 
   defp shown?(%Event{type: type}, "agent"), do: type in ~w(system assistant_text result)
   defp shown?(%Event{type: type}, "tools"), do: type in ~w(tool_use tool_result)
-  defp shown?(%Event{data: data}, "errors"), do: data["is_error"] == true
+  defp shown?(%Event{type: type}, "thinking"), do: type == "thinking"
+
+  defp shown?(%Event{type: type, data: data}, "errors"),
+    do: data["is_error"] == true or type in ~w(api_retry permission_denied)
+
   defp shown?(_event, _all), do: true
 
   defp reading?(%Event{type: "tool_use", data: %{"name" => name}}), do: name in @reading_tools
@@ -272,8 +363,10 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
     |> String.capitalize()
   end
 
-  defp count_label(1, one, _many), do: "1 #{one}"
-  defp count_label(n, _one, many), do: "#{n} #{many}"
+  @doc ~s(A count with its noun: "1 arquivo", "3 arquivos".)
+  @spec count_label(non_neg_integer(), String.t(), String.t()) :: String.t()
+  def count_label(1, one, _many), do: "1 #{one}"
+  def count_label(n, _one, many), do: "#{n} #{many}"
 
   @doc "A finished run's steps: events, and groups of reads that open to show theirs."
   attr :items, :list, required: true
@@ -414,6 +507,46 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
       body: @neutral
     }
 
+  defp event_look(%Event{type: "thinking"}),
+    do: %{
+      icon: "hero-light-bulb",
+      label: "Pensou",
+      bubble: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+      body: @neutral
+    }
+
+  defp event_look(%Event{type: "api_retry"}),
+    do: %{
+      icon: "hero-arrow-path",
+      label: "Nova tentativa da API",
+      bubble: "bg-warning-100 text-warning-700 dark:bg-warning-900/50 dark:text-warning-300",
+      body: "bg-warning-50 text-warning-900 dark:bg-warning-950/40 dark:text-warning-100"
+    }
+
+  defp event_look(%Event{type: "compact"}),
+    do: %{
+      icon: "hero-archive-box-arrow-down",
+      label: "Compactação",
+      bubble: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+      body: @neutral
+    }
+
+  defp event_look(%Event{type: "permission_denied"}),
+    do: %{
+      icon: "hero-no-symbol",
+      label: "Permissão negada",
+      bubble: "bg-danger-100 text-danger-700 dark:bg-danger-900/50 dark:text-danger-300",
+      body: @neutral
+    }
+
+  defp event_look(%Event{type: "rate_limit"}),
+    do: %{
+      icon: "hero-chart-bar",
+      label: "Limites da conta",
+      bubble: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+      body: @neutral
+    }
+
   defp event_look(%Event{}),
     do: %{
       icon: "hero-flag",
@@ -435,11 +568,14 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
   end
 
   @doc ~s(A cost in US dollars with four decimals: "US$ 0.0037".)
-  @spec format_cost(Decimal.t() | nil) :: String.t()
+  @spec format_cost(Decimal.t() | number() | nil) :: String.t()
   def format_cost(nil), do: "—"
 
   def format_cost(%Decimal{} = cost),
     do: "US$ " <> (cost |> Decimal.round(4) |> Decimal.to_string(:normal))
+
+  def format_cost(cost) when is_float(cost), do: cost |> Decimal.from_float() |> format_cost()
+  def format_cost(cost) when is_integer(cost), do: cost |> Decimal.new() |> format_cost()
 
   @doc "The first line of a prompt, cut to `max` characters."
   @spec prompt_summary(String.t(), pos_integer()) :: String.t()

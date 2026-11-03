@@ -72,7 +72,6 @@ defmodule ClaudeControlPlaneWeb.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:claude_control_plane, in_umbrella: true},
-      {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"},
       {:petal_components, "~> 4.17"},
       # Markdown of the agents' artifacts, rendered and sanitized on the server.

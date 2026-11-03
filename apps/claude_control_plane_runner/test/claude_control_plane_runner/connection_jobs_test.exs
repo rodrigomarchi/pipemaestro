@@ -56,7 +56,7 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
     assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
     assert_receive {:runner_connection, {:job_started, "j1"}}
     assert_push("runner:r1", "job:event", %{"job_id" => "j1", "seq" => 1, "type" => "system"})
-    assert_events(2..5)
+    assert_events(2..6)
 
     assert_push(
       "runner:r1",
@@ -74,7 +74,7 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
   test "a rejoin announces the job still running; cancel stops it", %{client: client} do
     push(client, "runner:r1", "job:assign", %{"id" => "j1", "prompt" => "devagar [lento]"})
     assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
-    assert_events(1..3)
+    assert_events(1..4)
 
     disconnect(client, :closed)
     assert_receive {:runner_connection, {:disconnected, :closed}}
@@ -83,7 +83,7 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
 
     # Nothing was confirmed: it all goes again, before anything new.
     assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
-    assert_events(1..3)
+    assert_events(1..4)
     assert_usage()
 
     push(client, "runner:r1", "job:cancel", %{"job_id" => "j1"})
@@ -150,7 +150,7 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
     assert_push("runner:r1", "job:started", %{"job_id" => ^id}, ref, 5_000)
     if reply, do: reply(client, ref, reply)
 
-    for seq <- 1..5 do
+    for seq <- 1..6 do
       assert_push("runner:r1", "job:event", %{"job_id" => ^id, "seq" => ^seq}, ref, 5_000)
       if reply, do: reply(client, ref, reply)
     end
@@ -191,7 +191,7 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
   test "relays what the agent is writing without keeping it", %{client: client} do
     push(client, "runner:r1", "job:assign", %{"id" => "j1", "prompt" => "oi [digitando]"})
     assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
-    assert_events(1..3)
+    assert_events(1..4)
 
     for text <- [
           "Pronto: ",
@@ -201,14 +201,14 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
       assert_push("runner:r1", "job:delta", %{"job_id" => "j1", "text" => ^text}, _ref, 5_000)
     end
 
-    assert_events(4..5)
+    assert_events(5..6)
     assert_push("runner:r1", "job:finished", %{"job_id" => "j1"}, _ref, 5_000)
 
     # Unanswered, the deltas are not sent again after reconnecting.
     disconnect(client, :closed)
     connect_and_assert_join(client, "runner:r1", _params, :ok)
     assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
-    assert_events(1..5)
+    assert_events(1..6)
     assert_push("runner:r1", "job:finished", %{"job_id" => "j1"}, _ref, 5_000)
     refute_push("runner:r1", "job:delta", _params)
   end

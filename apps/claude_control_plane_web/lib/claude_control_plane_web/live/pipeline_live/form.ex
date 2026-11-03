@@ -8,7 +8,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
 
   alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Pipelines
-  alias ClaudeControlPlane.Pipelines.{Pipeline, Prompt, Stage}
+  alias ClaudeControlPlane.Pipelines.{Json, Pipeline, Prompt, Stage}
 
   @impl true
   def mount(params, session, socket) do
@@ -74,7 +74,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
       "allowed_tools_text" => Stage.allowed_tools_text(stage),
       "denied_tools_text" => Stage.denied_tools_text(stage),
       "output_schema_json" =>
-        if(stage.output_schema, do: Jason.encode!(stage.output_schema, pretty: true), else: "")
+        if(stage.output_schema, do: Json.pretty(stage.output_schema), else: "")
     }
   end
 

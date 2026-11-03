@@ -18,9 +18,11 @@ defmodule ClaudeControlPlane.Jobs do
 
   alias ClaudeControlPlane.Accounts.User
   alias ClaudeControlPlane.Jobs.{Event, Job}
+  alias ClaudeControlPlane.Jobs.Telemetry, as: JobTelemetry
   alias ClaudeControlPlane.Repo
   alias ClaudeControlPlane.Runners.Runner
   alias ClaudeControlPlane.Workspaces.Workspace
+  alias ClaudeControlPlaneProtocol.Telemetry
 
   @pubsub ClaudeControlPlane.PubSub
   @list_limit 100
@@ -291,6 +293,85 @@ defmodule ClaudeControlPlane.Jobs do
       {:ok, %Job{status: :running} = job} -> broadcast({:job, job.id}, {:job_delta, job.id, text})
       _missing_or_not_running -> {:error, :not_found}
     end
+  end
+
+  @doc """
+  Stores the OpenTelemetry records the runner relayed for one of its jobs
+  (`ClaudeControlPlaneProtocol.Telemetry`), finished or not: they may arrive
+  after the job's end. Records the protocol does not know are skipped, and
+  metric increments add up in the job's `telemetry_totals`. Whoever watches
+  the job (`{:job, id}`) gets `{:job_telemetry, id}`. Returns how many were
+  stored.
+  """
+  @spec record_telemetry(Runner.t(), String.t(), [map()]) ::
+          {:ok, non_neg_integer()} | {:error, :not_found}
+  def record_telemetry(%Runner{} = runner, job_id, records) when is_list(records) do
+    with {:ok, job} <- fetch_for_runner(runner, job_id) do
+      inserted_at = DateTime.utc_now()
+
+      rows =
+        records
+        |> Enum.take(Telemetry.max_records())
+        |> Enum.flat_map(&telemetry_row(&1, job, inserted_at))
+
+      {count, _rows} = Repo.insert_all(JobTelemetry, rows)
+      add_totals(job, rows)
+      if count > 0, do: broadcast({:job, job.id}, {:job_telemetry, job.id})
+      {:ok, count}
+    end
+  end
+
+  # A record the protocol knows, with a valid time, as a row; else nothing.
+  defp telemetry_row(%{"name" => name, "at" => at} = record, job, inserted_at)
+       when is_binary(at) do
+    with true <- name in Telemetry.names(),
+         {:ok, time, _offset} <- DateTime.from_iso8601(at) do
+      attrs = if is_map(record["attrs"]), do: record["attrs"], else: %{}
+
+      [
+        %{
+          id: Ecto.UUID.generate(),
+          job_id: job.id,
+          workspace_id: job.workspace_id,
+          name: name,
+          at: usec(time),
+          attrs: Telemetry.record(name, at, attrs)["attrs"],
+          inserted_at: inserted_at
+        }
+      ]
+    else
+      _unknown_or_bad_time -> []
+    end
+  end
+
+  defp telemetry_row(_record, _job, _inserted_at), do: []
+
+  defp usec(%DateTime{microsecond: {value, _precision}} = at), do: %{at | microsecond: {value, 6}}
+
+  defp add_totals(job, rows) do
+    increments = JobTelemetry.increments(rows)
+    if increments != %{}, do: add_increments(job, increments)
+    :ok
+  end
+
+  # The job's row is locked while its totals are read and written, so two
+  # batches arriving at once both count.
+  defp add_increments(job, increments) do
+    Repo.transaction(fn ->
+      current =
+        Repo.one!(
+          from j in Job, where: j.id == ^job.id, lock: "FOR UPDATE", select: j.telemetry_totals
+        )
+
+      totals = Map.merge(current || %{}, increments, fn _key, a, b -> a + b end)
+      Repo.update_all(from(j in Job, where: j.id == ^job.id), set: [telemetry_totals: totals])
+    end)
+  end
+
+  @doc "A job's OpenTelemetry records, in the order they happened."
+  @spec list_telemetry(Job.t()) :: [JobTelemetry.t()]
+  def list_telemetry(%Job{id: job_id}) do
+    Repo.all(from t in JobTelemetry, where: t.job_id == ^job_id, order_by: [asc: t.at, asc: t.id])
   end
 
   @doc "Records how one of the runner's jobs ended."

@@ -167,7 +167,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert data["text"] =~ "claude-haiku-5-5"
     end
 
-    test "assistant text and tool calls, skipping thinking blocks" do
+    test "assistant text and tool calls, after the thinking" do
       line = %{
         "type" => "assistant",
         "message" => %{
@@ -182,6 +182,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       }
 
       assert [
+               %JobEvent{type: "thinking", data: %{"text" => ""}},
                %JobEvent{type: "assistant_text", data: %{"text" => "feito"}},
                %JobEvent{type: "tool_use", data: %{"name" => "Bash", "text" => "ls -la"}},
                %JobEvent{type: "tool_use", data: %{"text" => "/w/a.txt"}},
@@ -214,12 +215,15 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       }
 
       assert [first, second] = JobEvent.from_stream_json(line)
-      assert first.data["usage"] == %{"input" => 2_310, "output" => 150}
+
+      assert %{"input" => 2_310, "output" => 150, "cache_read" => 2_000, "cache_creation" => 300} =
+               first.data["usage"]
+
       refute Map.has_key?(second.data, "usage")
     end
 
     test "tool calls carry their id and the input worth showing, cut" do
-      long = String.duplicate("x", 5_000)
+      long = String.duplicate("x", JobEvent.max_input_bytes() + 1_000)
 
       line = %{
         "type" => "assistant",
@@ -271,7 +275,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert edit.data["id"] == "toolu_1"
       assert edit.data["input"]["file_path"] == "/w/lib/a.ex"
       assert edit.data["input"]["old_string"] == "velho"
-      assert byte_size(edit.data["input"]["new_string"]) <= 4_000
+      assert byte_size(edit.data["input"]["new_string"]) <= JobEvent.max_input_bytes()
       refute Map.has_key?(edit.data["input"], "replace_all")
 
       assert bash.data["input"] == %{"command" => "mix test", "description" => "Roda a suíte"}
@@ -347,14 +351,14 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
 
       assert [%JobEvent{type: "result", data: data}] = JobEvent.from_stream_json(line)
 
-      assert data == %{
+      assert %{
                "text" => "feito",
                "is_error" => false,
                "cost_usd" => 0.0037,
                "duration_ms" => 5591,
                "num_turns" => 3,
-               "structured_output" => nil
-             }
+               "subtype" => "success"
+             } = data
     end
 
     test "partial message lines give the text being written, and are no events" do
@@ -382,7 +386,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert JobEvent.from_stream_json(%{"type" => "system", "subtype" => "thinking_tokens"}) ==
                []
 
-      assert JobEvent.from_stream_json(%{"type" => "rate_limit_event"}) == []
+      assert JobEvent.from_stream_json(%{"type" => "system", "subtype" => "status"}) == []
       assert JobEvent.from_stream_json(%{"anything" => true}) == []
     end
 

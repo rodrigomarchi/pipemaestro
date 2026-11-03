@@ -160,8 +160,31 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=task-link-#{task.id}]", "Corrigir login")
       assert has_element?(view, "[data-testid=task-progress-#{task.id}]", "1/2 · Etapa A")
 
-      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"}, %{
+        "usage" => %{
+          "fresh_input" => 100,
+          "cache_read" => 2_900,
+          "cache_creation" => 0,
+          "output" => 500
+        }
+      })
+
       assert has_element?(view, "[data-testid=task-progress-#{task.id}]", "2/2 · Etapa B")
+
+      # Each attempt shows its tokens and leads to its audit.
+      {:ok, show, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(
+               show,
+               "[data-testid=stage-run-tokens-a-1]",
+               "3.5k tokens · 97% do cache"
+             )
+
+      assert has_element?(show, "[data-testid=stage-run-audit-a-1]")
+
+      # The CLI's telemetry for a job of the task does not disturb this page.
+      send(show.pid, {:job_telemetry, Ecto.UUID.generate()})
+      assert has_element?(show, "[data-testid=stage-run-tokens-a-1]")
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
       assert has_element?(view, "[data-testid=task-status-#{task.id}]", "Concluída")

@@ -30,7 +30,13 @@ defmodule ClaudeControlPlane.UsageTest do
             "structured_output" => %{"status" => "ok", "resumo" => "ok"},
             "artifact" => "# a",
             "cost_usd" => 0.5,
-            "duration_ms" => 1_000
+            "duration_ms" => 1_000,
+            "usage" => %{
+              "fresh_input" => 10,
+              "cache_read" => 70,
+              "cache_creation" => 10,
+              "output" => 10
+            }
           },
           report
         )
@@ -57,13 +63,14 @@ defmodule ClaudeControlPlane.UsageTest do
     assert Decimal.equal?(report.total.cost_usd, Decimal.new("0.75"))
     assert report.total.runs == 2
     assert report.total.duration_ms == 2_000
+    assert report.total.tokens == 200
 
     assert [%{name: "Duas etapas", runs: 2, tasks: 1} = by_pipeline] = report.by_pipeline
     assert Decimal.equal?(by_pipeline.cost_usd, Decimal.new("0.75"))
-    assert [%{name: "mac", runs: 2}] = report.by_runner
+    assert [%{name: "mac", runs: 2, tokens: 200}] = report.by_runner
     assert [%{name: "Ana", runs: 2}] = report.by_person
 
-    assert [%{stage: "a", runs: 2, failed: 1}] =
+    assert [%{stage: "a", runs: 2, failed: 1, tokens: 200}] =
              Enum.filter(report.by_stage, &(&1.pipeline == "Duas etapas"))
 
     assert [%{date: date, runs: 2}] = report.by_day

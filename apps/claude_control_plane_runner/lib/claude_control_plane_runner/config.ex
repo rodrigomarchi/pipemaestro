@@ -46,7 +46,7 @@ defmodule ClaudeControlPlaneRunner.Config do
   @spec load(Path.t()) :: {:ok, t()} | {:error, :not_found | :invalid}
   def load(dir \\ dir()) do
     with {:ok, body} <- read(path(dir)),
-         {:ok, %{} = map} <- Jason.decode(body),
+         {:ok, %{} = map} <- JSON.decode(body),
          config = Map.new(@fields, &{&1, map[Atom.to_string(&1)]}),
          true <- Enum.all?(Map.values(config), &is_binary/1),
          {:ok, labels} <- labels(map["labels"]),
@@ -66,7 +66,7 @@ defmodule ClaudeControlPlaneRunner.Config do
     target = path(dir)
     temp = target <> ".tmp"
 
-    File.write!(temp, Jason.encode_to_iodata!(Map.take(config, @fields ++ @optional_fields)))
+    File.write!(temp, JSON.encode_to_iodata!(Map.take(config, @fields ++ @optional_fields)))
     File.chmod!(temp, 0o600)
     File.rename!(temp, target)
   end

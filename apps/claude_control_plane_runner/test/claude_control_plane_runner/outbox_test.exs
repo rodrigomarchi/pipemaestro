@@ -47,6 +47,18 @@ defmodule ClaudeControlPlaneRunner.OutboxTest do
            ]
   end
 
+  test "telemetry goes like the events when the outbox is full" do
+    outbox =
+      add_all(Outbox.new(2), [
+        {"job:telemetry", %{"job_id" => "j1", "records" => []}},
+        {"job:started", %{"job_id" => "j2"}},
+        {"job:finished", %{"job_id" => "j2"}}
+      ])
+
+    assert Enum.map(Outbox.pending(outbox), fn {_id, event, _p} -> event end) ==
+             ["job:started", "job:finished"]
+  end
+
   @tag :tmp_dir
   test "a job's end survives a restart; its events do not", %{tmp_dir: dir} do
     path = Path.join(dir, "outbox.bin")

@@ -48,10 +48,10 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     {messages, finished} = collect_until_finished("j1")
 
     assert [{"job:started", %{"job_id" => "j1"}} | events] = messages
-    assert Enum.map(events, fn {"job:event", e} -> e["seq"] end) == [1, 2, 3, 4, 5]
+    assert Enum.map(events, fn {"job:event", e} -> e["seq"] end) == [1, 2, 3, 4, 5, 6]
 
     assert Enum.map(events, fn {_, e} -> e["type"] end) ==
-             ~w(system tool_use tool_result assistant_text result)
+             ~w(system thinking tool_use tool_result assistant_text result)
 
     assert {_, %{"data" => %{"cwd" => cwd}}} = hd(events)
     assert Path.basename(cwd) == "workdir"
@@ -66,6 +66,76 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
 
     assert File.read!(Path.join(workdir, "fake-claude.txt")) == "diga oi\n"
     assert JobRunner.running_job_ids(runner) == []
+  end
+
+  test "the outcome carries what the run reported about itself, for auditing", %{tmp_dir: dir} do
+    runner = start_runner(dir)
+    JobRunner.enqueue(runner, job("j1", "diga oi"))
+    {messages, finished} = collect_until_finished("j1")
+
+    assert finished["session_id"] == "fake-session"
+    assert finished["cli_version"] == "0.0.0-fake"
+    assert finished["model"] == "fake-model"
+    assert finished["stop_reason"] == "end_turn"
+    assert finished["result_subtype"] == "success"
+    assert finished["duration_api_ms"] == 900
+    assert finished["ttft_ms"] == 300
+    assert is_integer(finished["wall_ms"]) and finished["wall_ms"] >= 0
+
+    assert finished["usage"] == %{
+             "fresh_input" => 7,
+             "cache_read" => 2_200,
+             "cache_creation" => 200,
+             "output" => 33,
+             "thinking" => 0
+           }
+
+    assert %{"fake-model" => %{"cost_usd" => 0.0042}} = finished["model_usage"]
+    assert finished["permission_denials"] == []
+
+    assert %{
+             "tools" => ["Bash", "Read", "Write"],
+             "mcp_servers" => [%{"name" => "grafana", "status" => "connected"}],
+             "permission_mode" => "bypassPermissions",
+             "auth" => "none"
+           } = finished["environment"]
+
+    # The CLI's stderr is kept even when the job succeeds.
+    assert finished["stderr"] =~ "aviso de exemplo"
+
+    # A message split over two lines counts its tokens once.
+    usages =
+      for {"job:event", %{"type" => type, "data" => %{"usage" => usage}}} <- messages,
+          type != "result",
+          do: usage["message_id"]
+
+    assert usages == ["msg_1", "msg_2"]
+  end
+
+  test "relays the CLI's OpenTelemetry for the job", %{tmp_dir: dir} do
+    runner = start_runner(dir, telemetry: true)
+    JobRunner.enqueue(runner, job("j1", "diga oi"))
+    {messages, finished} = collect_until_finished("j1")
+    assert finished["status"] == "succeeded"
+
+    # The export (logs and metrics, one batch each) may come in before or
+    # after the outcome.
+    before = for {"job:telemetry", %{"records" => records}} <- messages, do: records
+
+    later =
+      for _batch <- 1..(2 - length(before))//1 do
+        assert_receive {:job_out, "job:telemetry", %{"job_id" => "j1", "records" => records}},
+                       5_000
+
+        records
+      end
+
+    records = List.flatten(before ++ later)
+
+    names = Enum.map(records, & &1["name"])
+    assert "api_request" in names
+    assert "tool_result" in names
+    assert "metric:lines_of_code" in names
   end
 
   test "a stage runs in its task's worktree and reports its artifact and output", %{tmp_dir: dir} do
@@ -129,7 +199,7 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     {messages, finished} = collect_until_finished("j1")
     assert finished["status"] == "succeeded"
     # The deltas are not events: the sequence is the usual one.
-    assert Enum.count(messages, &match?({"job:event", _}, &1)) == 5
+    assert Enum.count(messages, &match?({"job:event", _}, &1)) == 6
   end
 
   test "a failing CLI fails the job with its stderr", %{tmp_dir: dir} do
@@ -640,6 +710,23 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     test "env passes the workspace's secrets to the CLI" do
       env = Claude.env(%Job{id: "j", prompt: "p", env: %{"GRAFANA_TOKEN" => "s3"}})
       assert {~c"GRAFANA_TOKEN", ~c"s3"} in env
+    end
+
+    test "env points the CLI's OpenTelemetry at the runner, naming the job" do
+      env = Claude.env(job("j9", "p"), "http://127.0.0.1:4318")
+      assert {~c"CLAUDE_CODE_ENABLE_TELEMETRY", ~c"1"} in env
+      assert {~c"OTEL_EXPORTER_OTLP_PROTOCOL", ~c"http/json"} in env
+      assert {~c"OTEL_EXPORTER_OTLP_ENDPOINT", ~c"http://127.0.0.1:4318"} in env
+      assert {~c"OTEL_LOGS_EXPORTER", ~c"otlp"} in env
+      assert {~c"OTEL_METRICS_EXPORTER", ~c"otlp"} in env
+      assert {~c"OTEL_RESOURCE_ATTRIBUTES", ~c"cp.job_id=j9"} in env
+      # Prompts and answers stay out of the telemetry: the events carry them.
+      assert {~c"OTEL_LOG_USER_PROMPTS", false} in env
+
+      refute Enum.any?(
+               Claude.env(job("j", "p")),
+               &match?({~c"CLAUDE_CODE_ENABLE_TELEMETRY", _}, &1)
+             )
     end
 
     test "env unsets the nested-session markers and gives the artifact path" do

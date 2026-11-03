@@ -276,7 +276,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   end
 
   defp decode_schema(changeset, json) do
-    case Jason.decode(json) do
+    case JSON.decode(json) do
       {:ok, %{"type" => "object", "properties" => properties} = schema}
       when is_map(properties) ->
         put_change(changeset, :output_schema, schema)

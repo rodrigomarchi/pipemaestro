@@ -135,4 +135,81 @@ defmodule ClaudeControlPlaneWeb.JobComponentsTest do
     assert [{:group, _, _}, {:event, %{seq: 9}}, {:event, %{seq: 10}}] =
              JobComponents.timeline_items(events, "tools")
   end
+
+  describe "what a run reports for auditing" do
+    test "thinking is folded with how long it took; hidden thinking says so" do
+      html = render_event("thinking", %{"text" => "Ler o arquivo antes.", "duration_ms" => 1_500})
+      assert html =~ "Pensou"
+      assert html =~ "1 s"
+      assert html =~ "Ler o arquivo antes."
+      assert render_event("thinking", %{"text" => "", "duration_ms" => 300}) =~ "não mostra"
+    end
+
+    test "the end of the run shows its total tokens" do
+      html =
+        render_event("result", %{
+          "text" => "feito",
+          "usage" => %{
+            "fresh_input" => 7,
+            "cache_read" => 2_200,
+            "cache_creation" => 200,
+            "output" => 33
+          }
+        })
+
+      assert html =~ "2.4k → 33 tokens"
+    end
+
+    test "API retries, compactions, denied permissions and the account's limits" do
+      assert render_event("api_retry", %{"text" => "Tentativa 2 de 10 da API: overloaded"}) =~
+               "Nova tentativa da API"
+
+      assert render_event("compact", %{
+               "text" => "Conversa compactada (auto)",
+               "pre_tokens" => 150_000
+             }) =~
+               "150.0k tokens"
+
+      assert render_event("permission_denied", %{"tool_name" => "Bash", "text" => "rm"}) =~
+               "Permissão negada"
+
+      html =
+        render_event("rate_limit", %{
+          "status" => "allowed",
+          "utilization" => %{"five_hour" => 0.2}
+        })
+
+      assert html =~ "Limites da conta"
+      assert html =~ "five_hour 20%"
+    end
+
+    test "a subagent's call is indented and a refused tool says so" do
+      html =
+        render_event("tool_use", %{"name" => "Bash", "text" => "ls", "parent_tool_use_id" => "t"})
+
+      assert html =~ "subagente"
+      assert html =~ "ml-8"
+
+      html =
+        render_event("tool_result", %{
+          "text" => "negado",
+          "is_error" => true,
+          "decision" => %{"decision" => "reject", "source" => "config"}
+        })
+
+      assert html =~ "negada (config)"
+    end
+
+    test "the reasoning filter shows the thinking; errors include retries and denials" do
+      events =
+        for {type, seq} <-
+              Enum.with_index(~w(thinking api_retry permission_denied assistant_text), 1),
+            do: %Event{id: seq, seq: seq, type: type, data: %{}}
+
+      assert [{:event, %{type: "thinking"}}] = JobComponents.timeline_items(events, "thinking")
+
+      assert [{:event, %{type: "api_retry"}}, {:event, %{type: "permission_denied"}}] =
+               JobComponents.timeline_items(events, "errors")
+    end
+  end
 end

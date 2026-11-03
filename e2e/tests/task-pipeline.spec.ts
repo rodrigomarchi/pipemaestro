@@ -178,6 +178,8 @@ test.describe("Task pipeline", () => {
 
     await app.page.getByTestId("sidebar-usage").click();
     await expect(app.page.getByTestId("usage-by-runner")).toContainText(runnerName);
+    await expect(app.page.getByTestId("usage-agent-cache-hit")).toHaveText("91%");
+    await expect(app.page.getByTestId("usage-agent-tool-errors-Write")).toHaveText("0");
     await shot(app.page, "usage");
 
     await context.close();

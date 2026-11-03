@@ -49,7 +49,6 @@ defmodule ClaudeControlPlane.MixProject do
       {:phoenix_pubsub, "~> 2.4"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, ">= 0.0.0"},
-      {:jason, "~> 1.2"},
       {:bcrypt_elixir, "~> 3.0"},
       # Reading pipelines exported as YAML.
       {:yaml_elixir, "~> 2.11"},

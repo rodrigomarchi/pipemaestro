@@ -56,7 +56,7 @@ defmodule ClaudeControlPlaneWeb.GithubWebhookControllerTest do
   end
 
   defp deliver(conn, workspace, payload, opts \\ []) do
-    body = Jason.encode!(payload)
+    body = JSON.encode!(payload)
     secret = Keyword.get(opts, :secret, @secret)
 
     signature =

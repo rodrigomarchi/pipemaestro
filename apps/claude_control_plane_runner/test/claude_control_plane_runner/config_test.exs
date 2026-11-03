@@ -38,13 +38,13 @@ defmodule ClaudeControlPlaneRunner.ConfigTest do
     assert Config.load(dir) == {:error, :invalid}
 
     base = Map.new(Map.drop(@config, [:labels, :capacity]), fn {k, v} -> {to_string(k), v} end)
-    File.write!(Config.path(dir), Jason.encode!(Map.put(base, "capacity", 0)))
+    File.write!(Config.path(dir), JSON.encode!(Map.put(base, "capacity", 0)))
     assert Config.load(dir) == {:error, :invalid}
 
-    File.write!(Config.path(dir), Jason.encode!(Map.put(base, "labels", [1])))
+    File.write!(Config.path(dir), JSON.encode!(Map.put(base, "labels", [1])))
     assert Config.load(dir) == {:error, :invalid}
 
-    File.write!(Config.path(dir), Jason.encode!(base))
+    File.write!(Config.path(dir), JSON.encode!(base))
     assert {:ok, %{labels: [], capacity: nil}} = Config.load(dir)
   end
 

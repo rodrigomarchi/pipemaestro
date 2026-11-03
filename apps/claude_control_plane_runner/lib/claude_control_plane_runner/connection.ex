@@ -20,6 +20,9 @@ defmodule ClaudeControlPlaneRunner.Connection do
   running, so a reconnection does not fail it. With an `:outbox_path`, the
   ends survive a restart too.
 
+  With `telemetry: true`, the jobs' CLIs report their OpenTelemetry to the
+  runner, which relays it (`job:telemetry`, `ClaudeControlPlaneProtocol.Telemetry`).
+
   Given a `:root`, it offers the code directories under it
   (`ClaudeControlPlaneRunner.Directories`): announced on every join and sent
   again (`runner:directories`) when they change, checked every `:rescan_every`
@@ -99,7 +102,7 @@ defmodule ClaudeControlPlaneRunner.Connection do
     case Keyword.fetch(opts, :workdir) do
       {:ok, workdir} ->
         %Hello{capacity: capacity} = Keyword.fetch!(opts, :hello)
-        job_opts = Keyword.take(opts, [:executable, :kill_after, :root])
+        job_opts = Keyword.take(opts, [:executable, :kill_after, :root, :telemetry])
 
         {:ok, pid} =
           JobRunner.start_link([owner: self(), workdir: workdir, capacity: capacity] ++ job_opts)

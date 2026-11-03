@@ -57,18 +57,29 @@ test.describe("Job execution", () => {
     const doneId = await jobs.create(runnerName, prompt);
     await expect(jobs.status).toHaveText("Concluído");
     await expect(jobs.result).toContainText("fake-claude.txt");
-    await expect(jobs.events).toHaveCount(5);
+    await expect(jobs.events).toHaveCount(6);
     await expect(app.page.getByTestId("job-cost")).toHaveText("US$ 0.0042");
     await expect(app.page.getByTestId("job-duration")).toHaveText("1 s");
     await runner.waitFor(new RegExp(`Job ${doneId} concluído`));
     expect(readFileSync(join(runner.workdir, "fake-claude.txt"), "utf8")).toBe(`${prompt}\n`);
     await shot(app.page, "job-succeeded");
 
+    // The audit: what the run reported, and the CLI's telemetry relayed by the
+    // runner (the Write took 12 ms in the fake CLI's export).
+    const audit = app.page.getByTestId("job-audit");
+    await expect(app.page.getByTestId("job-audit-session")).toContainText("fake-session");
+    await expect(app.page.getByTestId("job-audit-cache-hit")).toHaveText("91%");
+    await expect(app.page.getByTestId("job-audit-tool-calls-Write")).toHaveText("1");
+    await expect(app.page.getByTestId("job-audit-tool-time-Write")).toHaveText("12 ms");
+    await expect(app.page.getByTestId("job-audit-api")).toContainText("1 requisição");
+    await expect(app.page.getByTestId("job-audit-mcp-grafana")).toBeAttached();
+    await shot(audit, "job-audit");
+
     // Flow B: a long job is canceled while it runs.
     await jobs.backToList();
     const slowId = await jobs.create(runnerName, "Demore bastante [lento]");
     await expect(jobs.status).toHaveText("Executando");
-    await expect(jobs.events).toHaveCount(3);
+    await expect(jobs.events).toHaveCount(4);
     await shot(app.page, "job-running");
     await jobs.cancel();
     await expect(jobs.status).toHaveText("Cancelado");

@@ -37,7 +37,7 @@ defmodule ClaudeControlPlaneRunner.Changes do
     with {:ok, base, exclude} <- base(file, new?, exclude),
          {:ok, start} <- snapshot(dir, exclude) do
       base = base || start
-      if new?, do: File.write!(file, Jason.encode!(%{"base" => base, "exclude" => exclude}))
+      if new?, do: File.write!(file, JSON.encode!(%{"base" => base, "exclude" => exclude}))
       %{base: base, start: start, exclude: exclude}
     else
       _no_base_or_snapshot -> nil
@@ -67,7 +67,7 @@ defmodule ClaudeControlPlaneRunner.Changes do
 
   defp base(file, false, _exclude) do
     with {:ok, body} <- File.read(file),
-         {:ok, %{"base" => base, "exclude" => exclude}} <- Jason.decode(body) do
+         {:ok, %{"base" => base, "exclude" => exclude}} <- JSON.decode(body) do
       {:ok, base, exclude}
     end
   end

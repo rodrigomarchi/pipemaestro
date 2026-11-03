@@ -54,7 +54,9 @@ defmodule ClaudeControlPlaneRunner.Commands.Start do
         notify: self(),
         workdir: workdir,
         outbox_path: Path.join(Config.dir(), "outbox.bin"),
-        root: config.root
+        root: config.root,
+        # The CLI's OpenTelemetry, received on this machine and relayed.
+        telemetry: true
       )
 
     ref = Process.monitor(pid)

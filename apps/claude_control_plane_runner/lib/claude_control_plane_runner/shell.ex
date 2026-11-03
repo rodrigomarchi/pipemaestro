@@ -7,6 +7,8 @@ defmodule ClaudeControlPlaneRunner.Shell do
   the group.
   """
 
+  alias ClaudeControlPlaneProtocol.Text
+
   @output_bytes 8_192
 
   @doc """
@@ -26,8 +28,11 @@ defmodule ClaudeControlPlaneRunner.Shell do
         {:args, ["-c", command <> " < /dev/null"]}
       ])
 
-    {:os_pid, os_pid} = Port.info(port, :os_pid)
-    if on_os_pid, do: on_os_pid.(os_pid)
+    # A quick command may already be gone: nothing left to stop then.
+    with {:os_pid, os_pid} <- Port.info(port, :os_pid),
+         true <- on_os_pid != nil,
+         do: on_os_pid.(os_pid)
+
     collect(port, "")
   end
 
@@ -49,7 +54,7 @@ defmodule ClaudeControlPlaneRunner.Shell do
   defp collect(port, output) do
     receive do
       {^port, {:data, data}} -> collect(port, tail(output <> data))
-      {^port, {:exit_status, code}} -> {code, valid_utf8(output)}
+      {^port, {:exit_status, code}} -> {code, Text.valid_utf8(output)}
     end
   end
 
@@ -57,14 +62,4 @@ defmodule ClaudeControlPlaneRunner.Shell do
 
   defp tail(output),
     do: binary_part(output, byte_size(output) - @output_bytes, @output_bytes)
-
-  # The tail may start inside a character: its continuation bytes go.
-  defp valid_utf8(<<0b10::2, _bits::6, rest::binary>>), do: valid_utf8(rest)
-
-  defp valid_utf8(data) do
-    case :unicode.characters_to_binary(data) do
-      binary when is_binary(binary) -> binary
-      {_error, valid, _rest} -> valid
-    end
-  end
 end

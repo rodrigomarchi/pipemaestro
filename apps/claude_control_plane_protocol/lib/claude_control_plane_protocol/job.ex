@@ -62,6 +62,19 @@ defmodule ClaudeControlPlaneProtocol.Job do
       "exit_code", "output", "passed", "duration_ms"}`. `delivery` reports
       what the runner delivered: `%{"commit", "pushed", "pr_url",
       "commented", "error"}`.
+
+      For auditing, it also carries what the run reported about itself:
+      `session_id`, `cli_version`, `model`, `stop_reason`, `result_subtype`,
+      `duration_api_ms`, `ttft_ms`, `wall_ms` (the agent's process, timed by
+      the runner), `usage` (`%{"fresh_input", "cache_read", "cache_creation",
+      "output", "thinking"}`), `model_usage` (per model: those tokens and
+      `cost_usd`), `permission_denials`, `environment` (what the agent had at
+      hand: `tools`, `mcp_servers`, `agents`, `skills`, `slash_commands`,
+      `plugins`, `permission_mode`, `auth`, `output_style`), `subagents` and
+      `stderr` (the last of what the CLI wrote there).
+    * `"job:telemetry"` — what the CLI's OpenTelemetry reported
+      (`ClaudeControlPlaneProtocol.Telemetry`); may arrive after
+      `"job:finished"`.
   """
 
   alias ClaudeControlPlaneProtocol.Hello

@@ -78,11 +78,11 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
         "#{pad}#{key}: #{block(value, indent + 2)}"
 
       is_list(value) ->
-        "#{pad}#{key}:\n" <> Enum.map_join(value, "", &"#{pad}  - #{Jason.encode!(&1)}\n")
+        "#{pad}#{key}:\n" <> Enum.map_join(value, "", &"#{pad}  - #{JSON.encode!(&1)}\n")
 
       true ->
         # Strings, numbers, booleans and maps (JSON is YAML).
-        "#{pad}#{key}: #{Jason.encode!(value)}\n"
+        "#{pad}#{key}: #{JSON.encode!(value)}\n"
     end
   end
 
@@ -151,7 +151,7 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
   defp put_json(attrs, source, key) do
     case source[key] do
       nil -> attrs
-      value -> Map.put(attrs, key <> "_json", Jason.encode!(value))
+      value -> Map.put(attrs, key <> "_json", JSON.encode!(value))
     end
   end
 end

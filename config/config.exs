@@ -61,8 +61,8 @@ config :petal_components,
        :error_translator_function,
        {ClaudeControlPlaneWeb.ErrorHelpers, :translate_error}
 
-# Use Jason for JSON parsing in Phoenix
-config :phoenix, :json_library, Jason
+# Elixir's own JSON (1.18+) for Phoenix, as everywhere in our code
+config :phoenix, :json_library, JSON
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

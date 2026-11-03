@@ -142,8 +142,11 @@ defmodule ClaudeControlPlaneRunner.Outbox do
       else: outbox
   end
 
+  # What can go when full: a job's events and telemetry, never its start or end.
+  @droppable ~w(job:event job:telemetry)
+
   defp drop_oldest_event(outbox) do
-    case Enum.find(pending(outbox), fn {_id, event, _payload} -> event == "job:event" end) do
+    case Enum.find(pending(outbox), fn {_id, event, _payload} -> event in @droppable end) do
       nil -> outbox
       {id, _event, _payload} -> trim(%{outbox | entries: :gb_trees.delete(id, outbox.entries)})
     end

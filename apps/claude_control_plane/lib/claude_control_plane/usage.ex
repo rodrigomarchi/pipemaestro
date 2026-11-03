@@ -3,7 +3,8 @@ defmodule ClaudeControlPlane.Usage do
   What a workspace's agents did in a period, from the jobs that ran and
   ended in it (a job canceled before it started did not run): cost,
   runs and time in total, by day, by pipeline, runner and person, and by
-  pipeline stage (with the failed runs, a stage's retries).
+  pipeline stage (with the failed runs, a stage's retries). `tokens` counts
+  everything the model read (fresh, from the cache, written to it) and wrote.
   """
 
   import Ecto.Query
@@ -15,12 +16,34 @@ defmodule ClaudeControlPlane.Usage do
   alias ClaudeControlPlane.Tasks.{StageRun, Task}
   alias ClaudeControlPlane.Workspaces.Workspace
 
-  @typedoc "Cost, runs and time of a group of jobs."
+  @typedoc "Cost, runs, time and tokens of a group of jobs."
   @type totals :: %{
           cost_usd: Decimal.t(),
           runs: non_neg_integer(),
-          duration_ms: non_neg_integer()
+          duration_ms: non_neg_integer(),
+          tokens: non_neg_integer()
         }
+
+  # The tokens a group of jobs read and wrote, in a query's select.
+  defmacrop tokens(job) do
+    quote do
+      type(
+        coalesce(
+          sum(
+            fragment(
+              "coalesce(?, 0) + coalesce(?, 0) + coalesce(?, 0) + coalesce(?, 0)",
+              unquote(job).input_tokens,
+              unquote(job).cache_read_tokens,
+              unquote(job).cache_creation_tokens,
+              unquote(job).output_tokens
+            )
+          ),
+          0
+        ),
+        :integer
+      )
+    end
+  end
 
   @typedoc "The usage report: totals, then the same broken down."
   @type report :: %{
@@ -47,7 +70,8 @@ defmodule ClaudeControlPlane.Usage do
         |> select([j], %{
           cost_usd: sum(j.cost_usd),
           runs: count(j.id),
-          duration_ms: sum(j.duration_ms)
+          duration_ms: sum(j.duration_ms),
+          tokens: tokens(j)
         })
         |> Repo.one()
         |> normalize(),
@@ -73,7 +97,8 @@ defmodule ClaudeControlPlane.Usage do
         date: fragment("date(?)", j.finished_at),
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
-        duration_ms: sum(j.duration_ms)
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
       }
     )
     |> Repo.all()
@@ -93,7 +118,8 @@ defmodule ClaudeControlPlane.Usage do
         tasks: count(t.id, :distinct),
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
-        duration_ms: sum(j.duration_ms)
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
       }
     )
     |> Repo.all()
@@ -110,7 +136,8 @@ defmodule ClaudeControlPlane.Usage do
         name: r.name,
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
-        duration_ms: sum(j.duration_ms)
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
       }
     )
     |> Repo.all()
@@ -127,7 +154,8 @@ defmodule ClaudeControlPlane.Usage do
         name: u.name,
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
-        duration_ms: sum(j.duration_ms)
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
       }
     )
     |> Repo.all()
@@ -149,7 +177,8 @@ defmodule ClaudeControlPlane.Usage do
         failed: filter(count(j.id), j.status == :failed),
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
-        duration_ms: sum(j.duration_ms)
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
       }
     )
     |> Repo.all()

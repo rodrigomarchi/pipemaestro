@@ -15,12 +15,15 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
       timeline_items: 2,
       typing: 1,
       format_cost: 1,
-      format_duration: 1
+      format_duration: 1,
+      format_percent: 1,
+      short_number: 1
     ]
 
   import ClaudeControlPlaneWeb.TaskComponents
 
   alias ClaudeControlPlane.{Jobs, Tasks}
+  alias ClaudeControlPlane.Jobs.Job
   alias ClaudeControlPlane.Tasks.{StageRun, Task}
   alias ClaudeControlPlaneWeb.Markdown
 
@@ -50,6 +53,9 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   @impl true
   def handle_info({:task_updated, %Task{} = task}, socket),
     do: {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
+
+  # The CLI's telemetry shows on the job's own page, not here.
+  def handle_info({:job_telemetry, _job_id}, socket), do: {:noreply, socket}
 
   def handle_info({:job_event, event}, socket) do
     if event.job_id == socket.assigns.live_job_id,
@@ -198,7 +204,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   end
 
   def handle_event("filter_steps", %{"job" => job_id, "filter" => filter}, socket)
-      when filter in ~w(all agent tools errors),
+      when filter in ~w(all agent tools thinking errors),
       do: {:noreply, update(socket, :step_filters, &Map.put(&1, job_id, filter))}
 
   defp instructions(params), do: get_in(params, ["decision", "instructions"])
@@ -765,11 +771,18 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
         <span :if={@run.job} class="flex items-center gap-3">
           <span>{format_duration(@run.job.duration_ms)}</span>
           <span>{format_cost(@run.job.cost_usd)}</span>
+          <span
+            :if={Job.tokens(@run.job) > 0}
+            data-testid={"stage-run-tokens-#{@run.key}-#{@run.attempt}"}
+          >
+            {short_number(Job.tokens(@run.job))} tokens · {format_percent(Job.cache_hit(@run.job))} do cache
+          </span>
           <.link
             navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}"}
             class="text-primary-600 hover:underline dark:text-primary-400"
+            data-testid={"stage-run-audit-#{@run.key}-#{@run.attempt}"}
           >
-            Execução
+            Execução e auditoria
           </.link>
         </span>
       </div>
@@ -905,6 +918,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                   {"all", "Tudo"},
                   {"agent", "Agente"},
                   {"tools", "Ferramentas"},
+                  {"thinking", "Raciocínio"},
                   {"errors", "Erros"}
                 ]
               }

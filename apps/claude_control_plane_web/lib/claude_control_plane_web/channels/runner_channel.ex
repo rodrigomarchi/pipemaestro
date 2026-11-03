@@ -96,6 +96,14 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
     socket.assigns.runner |> Jobs.finish_job(job_id, payload) |> reply_to(socket)
   end
 
+  def handle_in("job:telemetry", %{"job_id" => job_id, "records" => records}, socket)
+      when is_list(records) do
+    socket.assigns.runner |> Jobs.record_telemetry(job_id, records) |> reply_to(socket)
+  end
+
+  def handle_in("job:telemetry", _payload, socket),
+    do: {:reply, {:error, %{"reason" => "invalid"}}, socket}
+
   def handle_in("runner:directories", %{"directories" => directories}, socket) do
     case Runners.update_directories(socket.assigns.runner, directories) do
       {:ok, runner} ->

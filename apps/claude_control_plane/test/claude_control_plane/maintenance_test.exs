@@ -30,6 +30,11 @@ defmodule ClaudeControlPlane.MaintenanceTest do
         "data" => %{"text" => "x"}
       })
 
+    {:ok, 1} =
+      Jobs.record_telemetry(runner, old_job.id, [
+        %{"name" => "api_request", "at" => "2026-10-01T10:00:00Z", "attrs" => %{}}
+      ])
+
     {:ok, _} = Jobs.finish_job(runner, old_job.id, %{"status" => "succeeded"})
 
     old_job
@@ -52,13 +57,14 @@ defmodule ClaudeControlPlane.MaintenanceTest do
     |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -400, :day))
     |> Repo.update!()
 
-    assert %{device_authorizations: 1, job_events: 1, audit_events: 1} =
+    assert %{device_authorizations: 1, job_events: 1, job_telemetry: 1, audit_events: 1} =
              Maintenance.run(DateTime.utc_now())
 
     refute Repo.get(DeviceAuthorization, stale.id)
     assert Repo.get(DeviceAuthorization, fresh.id)
     assert [%Event{}] = Jobs.list_events(new_job)
     assert Jobs.list_events(old_job) == []
+    assert Jobs.list_telemetry(old_job) == []
     # The job itself (its outcome and cost) stays.
     assert Jobs.get_job!(workspace, old_job.id).status == :succeeded
   end

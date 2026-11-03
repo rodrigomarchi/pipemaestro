@@ -1,14 +1,19 @@
 defmodule ClaudeControlPlaneWeb.UsageLive do
   @moduledoc """
   The workspace's usage in the last 7 or 30 days (`ClaudeControlPlane.Usage`):
-  cost, runs and time in total and by day, and by pipeline, runner, person and
-  pipeline stage, where the failed runs show which stages retry the most.
+  cost, runs, time and tokens in total and by day, and by pipeline, runner,
+  person and pipeline stage, where the failed runs show which stages retry the
+  most; and how the agent worked (`ClaudeControlPlane.Insights`): tokens and
+  cache, models, API, tools and permissions.
   """
   use ClaudeControlPlaneWeb, :live_view
 
-  import ClaudeControlPlaneWeb.JobComponents, only: [format_cost: 1, format_duration: 1]
+  import ClaudeControlPlaneWeb.JobComponents,
+    only: [format_cost: 1, format_duration: 1, short_number: 1]
 
-  alias ClaudeControlPlane.Usage
+  import ClaudeControlPlaneWeb.AuditComponents, only: [workspace_audit: 1]
+
+  alias ClaudeControlPlane.{Insights, Usage}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -23,7 +28,8 @@ defmodule ClaudeControlPlaneWeb.UsageLive do
     since = DateTime.add(DateTime.utc_now(), -socket.assigns.days, :day)
     report = Usage.report(socket.assigns.current_scope.workspace, since)
     peak = report.by_day |> Enum.map(&Decimal.to_float(&1.cost_usd)) |> Enum.max(fn -> 0.0 end)
-    assign(socket, report: report, peak: peak)
+    insights = Insights.workspace(socket.assigns.current_scope.workspace, socket.assigns.days)
+    assign(socket, report: report, peak: peak, insights: insights)
   end
 
   defp bar_height(_cost, peak) when peak == 0.0, do: 4
@@ -63,7 +69,7 @@ defmodule ClaudeControlPlaneWeb.UsageLive do
           Execuções que rodaram e terminaram nos últimos {@days} dias.
         </p>
 
-        <div class="grid gap-4 sm:grid-cols-3">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <.card variant="outline">
             <.card_content>
               <p class="text-sm text-gray-500 dark:text-gray-400">Custo</p>
@@ -94,6 +100,17 @@ defmodule ClaudeControlPlaneWeb.UsageLive do
                 data-testid="usage-total-time"
               >
                 {format_duration(@report.total.duration_ms)}
+              </p>
+            </.card_content>
+          </.card>
+          <.card variant="outline">
+            <.card_content>
+              <p class="text-sm text-gray-500 dark:text-gray-400">Tokens</p>
+              <p
+                class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
+                data-testid="usage-total-tokens"
+              >
+                {short_number(@report.total.tokens)}
               </p>
             </.card_content>
           </.card>
@@ -153,8 +170,11 @@ defmodule ClaudeControlPlaneWeb.UsageLive do
             <:col :let={row} label="Falharam">{row.failed}</:col>
             <:col :let={row} label="Custo">{format_cost(row.cost_usd)}</:col>
             <:col :let={row} label="Tempo">{format_duration(row.duration_ms)}</:col>
+            <:col :let={row} label="Tokens">{short_number(row.tokens)}</:col>
           </.table>
         </.card>
+
+        <.workspace_audit insights={@insights} />
       </div>
     </Layouts.app>
     """
