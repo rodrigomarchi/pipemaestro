@@ -31,6 +31,21 @@ defmodule ClaudeControlPlaneRunner.Shell do
     collect(port, "")
   end
 
+  @doc """
+  Sends `signal` to the process group led by `os_pid`, which takes everything
+  the command started. Right after the command is spawned the group may not
+  exist yet; then the signal goes to the process itself.
+  """
+  @spec signal(non_neg_integer(), String.t()) :: :ok
+  def signal(os_pid, signal) do
+    case System.cmd("kill", ["-s", signal, "--", "-#{os_pid}"], stderr_to_stdout: true) do
+      {_output, 0} -> :ok
+      _no_group -> _sent = System.cmd("kill", ["-s", signal, "#{os_pid}"], stderr_to_stdout: true)
+    end
+
+    :ok
+  end
+
   defp collect(port, output) do
     receive do
       {^port, {:data, data}} -> collect(port, tail(output <> data))

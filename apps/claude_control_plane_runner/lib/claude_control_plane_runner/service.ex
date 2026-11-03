@@ -2,8 +2,8 @@ defmodule ClaudeControlPlaneRunner.Service do
   @moduledoc """
   The runner as a background service of the user who runs it
   (`mix runner.service`): a launchd agent on macOS, a systemd user unit on
-  Linux. It starts at login, runs `mix runner.start` in the runner app,
-  restarts when it stops, and writes its output to `runner.log` next to the
+  Linux. It starts at login, runs the runner (`cp-runner start` from a
+  release, or `mix runner.start` in the runner app), restarts when it stops, and writes its output to `runner.log` next to the
   credentials. A restarted runner rejoins and the control plane reconciles
   its jobs (`ClaudeControlPlaneProtocol.Hello`'s `running_job_ids`).
   """
@@ -15,9 +15,9 @@ defmodule ClaudeControlPlaneRunner.Service do
   @type definition :: %{path: Path.t(), content: String.t()}
 
   @doc """
-  The service file for `os` (`:os.type/0`). Options: `:runner_dir`,
-  `:config_dir`, `:mix` (the executable), `:path` (the `PATH` it runs with)
-  and `:home`.
+  The service file for `os` (`:os.type/0`). Options: `:program` (the command
+  that runs the runner, as a list), `:runner_dir` (where it runs),
+  `:config_dir`, `:path` (the `PATH` it runs with) and `:home`.
   """
   @spec definition({atom(), atom()}, keyword()) :: definition()
   def definition({:unix, :darwin}, opts) do
@@ -34,8 +34,7 @@ defmodule ClaudeControlPlaneRunner.Service do
         <string>#{@label}</string>
         <key>ProgramArguments</key>
         <array>
-          <string>#{opts[:mix]}</string>
-          <string>runner.start</string>
+      #{Enum.map_join(opts[:program], "\n", &"    <string>#{&1}</string>")}
         </array>
         <key>WorkingDirectory</key>
         <string>#{opts[:runner_dir]}</string>
@@ -68,7 +67,7 @@ defmodule ClaudeControlPlaneRunner.Service do
 
       [Service]
       WorkingDirectory=#{opts[:runner_dir]}
-      ExecStart=#{opts[:mix]} runner.start
+      ExecStart=#{Enum.join(opts[:program], " ")}
       Environment=PATH=#{opts[:path]}
       Restart=always
       RestartSec=5

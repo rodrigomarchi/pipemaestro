@@ -21,6 +21,7 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
       {"description", pipeline.description},
       {"system_prompt", pipeline.system_prompt},
       {"max_task_cost_usd", decimal(pipeline.max_task_cost_usd)},
+      {"delivery", if(pipeline.delivery == "none", do: nil, else: pipeline.delivery)},
       {"mcp_config", pipeline.mcp_config},
       {"agents", pipeline.agents}
     ]
@@ -117,7 +118,7 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
 
   defp attrs(map) do
     map
-    |> Map.take(~w(name description system_prompt max_task_cost_usd))
+    |> Map.take(~w(name description system_prompt max_task_cost_usd delivery))
     |> put_json(map, "mcp_config")
     |> put_json(map, "agents")
     |> Map.put("stages", Enum.map(List.wrap(map["stages"]), &stage_attrs/1))

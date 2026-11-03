@@ -1,0 +1,29 @@
+#!/bin/sh
+# Stands in for the GitHub CLI in tests: appends each call to $FAKE_GH_LOG and
+# keeps one pull request per branch in $FAKE_GH_LOG.prs.
+#
+#   gh pr view --json url -q .url   -> the branch's PR URL, or exit 1
+#   gh pr create ...                -> creates it, prints its URL
+#   gh pr edit | gh pr ready | gh issue comment -> succeed
+#
+# A title with "[gh-falha]" makes `pr create` fail.
+
+echo "$*" >> "$FAKE_GH_LOG"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+prs="$FAKE_GH_LOG.prs"
+touch "$prs"
+
+case "$1 $2" in
+  "pr view")
+    url="$(grep "^$branch " "$prs" | cut -d' ' -f2)"
+    [ -n "$url" ] || exit 1
+    echo "$url"
+    ;;
+  "pr create")
+    case "$*" in *"[gh-falha]"*) echo "gh: falha simulada" >&2; exit 1 ;; esac
+    url="https://github.com/acme/app/pull/$(wc -l < "$prs" | tr -d ' ')1"
+    echo "$branch $url" >> "$prs"
+    echo "$url"
+    ;;
+esac
+exit 0

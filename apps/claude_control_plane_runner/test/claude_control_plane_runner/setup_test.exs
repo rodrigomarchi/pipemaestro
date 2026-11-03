@@ -82,7 +82,7 @@ defmodule ClaudeControlPlaneRunner.SetupTest do
       end)
 
     assert_receive {:os_pid, os_pid}
-    System.cmd("kill", ["-s", "TERM", "--", "-#{os_pid}"])
+    ClaudeControlPlaneRunner.Shell.signal(os_pid, "TERM")
     assert %{"exit_code" => code} = Task.await(task)
     assert code != 0
   end

@@ -150,7 +150,14 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               active={@active == :tasks}
               data-testid="sidebar-tasks"
             />
-            <.sidebar_item label="Pull requests" path={@home} icon="hero-arrow-up-tray" />
+            <.sidebar_item
+              label="Pull requests"
+              path={@home <> "/pull-requests"}
+              icon="hero-arrow-up-tray"
+              link_type="live_redirect"
+              active={@active == :pull_requests}
+              data-testid="sidebar-pull-requests"
+            />
           </.sidebar_group>
 
           <.sidebar_group label="Infraestrutura">

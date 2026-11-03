@@ -120,6 +120,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
         "name" => "Completo",
         "system_prompt" => "Nunca altere código.",
         "max_task_cost_usd" => "2.5",
+        "delivery" => "commit",
         "mcp_config_json" => ~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}}),
         "stages" => [
           %{
@@ -162,6 +163,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     pipeline = Pipelines.get_pipeline!(workspace, pipeline.id)
     assert pipeline.system_prompt == "Nunca altere código."
     assert Decimal.equal?(pipeline.max_task_cost_usd, Decimal.new("2.5"))
+    assert pipeline.delivery == "commit"
     assert %{"mcpServers" => %{"grafana" => _}} = pipeline.mcp_config
   end
 

@@ -1,7 +1,8 @@
 defmodule ClaudeControlPlaneRunner.CLI do
   @moduledoc """
   What the `runner.*` Mix tasks share: they run inside the runner app only, so
-  the control plane (database, endpoint) never boots alongside them.
+  the control plane (database, endpoint) never boots alongside them, and they
+  run the same commands as the release (`ClaudeControlPlaneRunner.Commands`).
   """
 
   @doc "Starts the runner app, refusing to run from the umbrella root."
@@ -19,23 +20,15 @@ defmodule ClaudeControlPlaneRunner.CLI do
     :ok
   end
 
-  @doc "Loads the saved credentials or stops with the next step to take."
-  @spec config!() :: ClaudeControlPlaneRunner.Config.t()
-  def config! do
-    case ClaudeControlPlaneRunner.Config.load() do
-      {:ok, config} ->
-        config
-
-      {:error, :not_found} ->
-        Mix.raise(
-          "Este runner ainda não fez login. Rode: make runner.login URL=<url da plataforma>"
-        )
-
-      {:error, :invalid} ->
-        Mix.raise(
-          "As credenciais em #{ClaudeControlPlaneRunner.Config.path()} estão corrompidas. " <>
-            "Rode make runner.logout e depois make runner.login."
-        )
-    end
+  @doc """
+  Runs a runner command (`ClaudeControlPlaneRunner.Commands`) as a Mix task:
+  a command that stops (`ClaudeControlPlaneRunner.Output.fail!/1`) becomes a
+  Mix error.
+  """
+  @spec run(([String.t()] -> any()), [String.t()]) :: any()
+  def run(command, args) do
+    command.(args)
+  rescue
+    error in ClaudeControlPlaneRunner.CommandError -> Mix.raise(error.message)
   end
 end

@@ -1,6 +1,7 @@
 .PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
-	runner.login runner.start runner.doctor runner.service runner.status runner.logout \
+	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
+	runner.status runner.logout \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
 E2E_PORT ?= 4003
@@ -104,6 +105,19 @@ runner.doctor: ## Check this machine as a runner: claude, its sign-in, git, cred
 
 runner.service: ## Run the runner in the background (ACTION=print|install|uninstall; launchd or systemd --user)
 	cd $(RUNNER_DIR) && mix runner.service $(or $(ACTION),print)
+
+runner.release: ## Build the runner's release (cp-runner) into _build/prod/rel
+	MIX_ENV=prod mix release claude_control_plane_runner --overwrite
+
+runner.install: runner.release ## Install cp-runner for this user (~/.local/share and ~/.local/bin)
+	rm -rf $(HOME)/.local/share/claude-control-plane-runner
+	mkdir -p $(HOME)/.local/share $(HOME)/.local/bin
+	cp -R _build/prod/rel/claude_control_plane_runner $(HOME)/.local/share/claude-control-plane-runner
+	ln -sf $(HOME)/.local/share/claude-control-plane-runner/bin/cp-runner $(HOME)/.local/bin/cp-runner
+	@echo "Instalado: $(HOME)/.local/bin/cp-runner (ponha ~/.local/bin no PATH). Comece com: cp-runner login --url <plataforma>"
+
+image: ## Build the control plane's Docker image (claude-control-plane)
+	docker build -t claude-control-plane .
 
 runner.status: ## Show this runner's credentials and whether the platform accepts them
 	cd $(RUNNER_DIR) && mix runner.status

@@ -63,7 +63,7 @@ defmodule ClaudeControlPlaneRunner.DoctorTest do
 
     assert %{status: :error} = check(checks, "Agente (claude)")
     assert %{status: :error, detail: detail} = check(checks, "Credenciais do runner")
-    assert detail =~ "runner.login"
+    assert detail =~ "cp-runner login"
     assert %{status: :warning} = check(checks, "Diretórios")
     assert check(checks, "Plataforma").status == :warning
     refute Doctor.ok?(checks)

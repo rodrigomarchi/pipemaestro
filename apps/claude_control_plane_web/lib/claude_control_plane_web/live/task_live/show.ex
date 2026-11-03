@@ -420,6 +420,28 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                 <dd class="font-mono text-xs text-gray-900 dark:text-white" data-testid="task-branch">
                   {@task.branch || "— (diretório sem git)"}
                 </dd>
+                <dd :if={@task.pr_url} class="mt-1 text-xs">
+                  <a
+                    href={@task.pr_url}
+                    target="_blank"
+                    rel="noopener"
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                    data-testid="task-pr"
+                  >
+                    Pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                  </a>
+                </dd>
+                <dd :if={@task.issue_url} class="mt-1 text-xs">
+                  <a
+                    href={@task.issue_url}
+                    target="_blank"
+                    rel="noopener"
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                    data-testid="task-issue"
+                  >
+                    Issue <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                  </a>
+                </dd>
               </div>
               <div>
                 <dt class="text-gray-500 dark:text-gray-400">Diretório de trabalho</dt>
@@ -776,6 +798,22 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
         >
           {Markdown.to_html(@run.job.result)}
         </div>
+
+        <p
+          :if={@run.job && @run.job.delivery && @run.job.delivery["commit"]}
+          class="text-xs text-gray-500 dark:text-gray-400"
+          data-testid={"stage-run-commit-#{@run.key}-#{@run.attempt}"}
+        >
+          <.icon name="hero-check-badge" class="size-4 text-success-600" /> Commit
+          <span class="font-mono">{String.slice(@run.job.delivery["commit"], 0, 7)}</span>
+          <span :if={@run.job.delivery["pushed"]}>· enviado</span>
+        </p>
+        <p
+          :if={@run.job && @run.job.delivery && @run.job.delivery["error"]}
+          class="text-xs text-danger-700 dark:text-danger-400"
+        >
+          A entrega falhou: {@run.job.delivery["error"]}
+        </p>
 
         <.gate_results
           :if={@run.job && @run.job.gates not in [nil, []]}

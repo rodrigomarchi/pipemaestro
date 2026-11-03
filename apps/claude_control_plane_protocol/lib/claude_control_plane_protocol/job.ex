@@ -16,6 +16,11 @@ defmodule ClaudeControlPlaneProtocol.Job do
   `system_prompt` is appended to the agent's system prompt, `mcp_config`
   (`%{"mcpServers" => ...}`) adds MCP servers, `agents` defines subagents
   (the CLI's `--agents` object) and `agent` names the agent that runs the job.
+  `delivery` asks the runner to deliver a task's stage once it passes: commit
+  what changed in the worktree (`"commit_message"`), push the task's branch
+  (`"push"`), open or update its draft pull request (`"pr"`: `"title"`,
+  `"body"`, `"ready"` to mark it ready) and comment on its issue
+  (`"issue_comment"`: `"url"`, `"body"`).
   `env` holds the workspace's secrets as environment variables for the
   agent's process (`NAME => value`); the runner never stores them.
   `permissions` says what the agent may do: `"profile"` (one of
@@ -44,14 +49,17 @@ defmodule ClaudeControlPlaneProtocol.Job do
       a `job:event`.
     * `"job:finished"` — `%{"job_id", "status", "exit_code", "result",
       "cost_usd", "duration_ms", "num_turns", "structured_output", "artifact",
-      "workdir", "setup", "changes", "gates", "error"}` with `status` one of
+      "workdir", "setup", "changes", "gates", "delivery", "error"}` with
+      `status` one of
       `finished_statuses/0`; all but `job_id` and `status` may be missing.
       `setup` reports a worktree prepared by this job: `%{"duration_ms",
       "copied", "command", "exit_code", "output"}`. `changes` reports, for a
       job in a task's worktree, what it changed there: `%{"files", "patch",
       "truncated", "task_files"}`, each file `%{"path", "added", "removed"}`.
       `gates` reports each gate command run: `%{"command", "expect",
-      "exit_code", "output", "passed", "duration_ms"}`.
+      "exit_code", "output", "passed", "duration_ms"}`. `delivery` reports
+      what the runner delivered: `%{"commit", "pushed", "pr_url",
+      "commented", "error"}`.
   """
 
   alias ClaudeControlPlaneProtocol.Hello
@@ -73,7 +81,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
                 mcp_config: nil,
                 agents: nil,
                 agent: nil,
-                env: nil
+                env: nil,
+                delivery: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -96,7 +105,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
           mcp_config: map() | nil,
           agents: map() | nil,
           agent: String.t() | nil,
-          env: %{String.t() => String.t()} | nil
+          env: %{String.t() => String.t()} | nil,
+          delivery: map() | nil
         }
 
   @optional [
@@ -114,7 +124,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
     :mcp_config,
     :agents,
     :agent,
-    :env
+    :env,
+    :delivery
   ]
 
   @env_name ~r/^[A-Z][A-Z0-9_]{0,63}$/
@@ -263,6 +274,16 @@ defmodule ClaudeControlPlaneProtocol.Job do
   defp check(:agents, value) when is_map(value) and map_size(value) <= 20, do: :ok
   defp check(:agents, _value), do: {:error, "must be an object of agents by name"}
 
+  defp check(:delivery, %{"commit_message" => message} = delivery)
+       when is_binary(message) and byte_size(message) in 1..4_000 do
+    if pr?(delivery["pr"]) and issue_comment?(delivery["issue_comment"]) and
+         delivery["push"] in [nil, true, false],
+       do: :ok,
+       else: {:error, "must have a commit message, a titled pr and a comment with url and body"}
+  end
+
+  defp check(:delivery, _value), do: {:error, "must have a commit message"}
+
   defp check(:env, env) when is_map(env) and map_size(env) <= 50 do
     if Enum.all?(env, fn {name, value} ->
          env_name?(name) and is_binary(value) and byte_size(value) <= 8_192
@@ -311,6 +332,19 @@ defmodule ClaudeControlPlaneProtocol.Job do
   @spec env_name?(term()) :: boolean()
   def env_name?(name),
     do: is_binary(name) and name =~ @env_name and name not in @reserved_env
+
+  defp pr?(nil), do: true
+  defp pr?(%{"title" => title} = pr), do: text?(title, 300) and text?(pr["body"] || "x", 60_000)
+  defp pr?(_pr), do: false
+
+  defp issue_comment?(nil), do: true
+
+  defp issue_comment?(%{"url" => url, "body" => body}),
+    do: text?(url, 500) and text?(body, 60_000)
+
+  defp issue_comment?(_comment), do: false
+
+  defp text?(value, max), do: is_binary(value) and byte_size(value) in 1..max
 
   defp tool_rules?(rules) when is_list(rules) and length(rules) <= 50,
     do: Enum.all?(rules, &(is_binary(&1) and byte_size(&1) in 1..500))

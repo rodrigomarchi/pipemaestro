@@ -44,6 +44,7 @@ defmodule ClaudeControlPlane.Jobs.Job do
           setup: map() | nil,
           changes: map() | nil,
           gates: [map()] | nil,
+          delivery: map() | nil,
           stage_run_id: Ecto.UUID.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
@@ -76,6 +77,7 @@ defmodule ClaudeControlPlane.Jobs.Job do
     field :setup, :map
     field :changes, :map
     field :gates, {:array, :map}
+    field :delivery, :map
 
     belongs_to :workspace, Workspace
     belongs_to :runner, Runner
@@ -121,7 +123,8 @@ defmodule ClaudeControlPlane.Jobs.Job do
       :workdir,
       :setup,
       :changes,
-      :gates
+      :gates,
+      :delivery
     ])
     |> validate_required([:status])
     |> validate_inclusion(:status, @finished)

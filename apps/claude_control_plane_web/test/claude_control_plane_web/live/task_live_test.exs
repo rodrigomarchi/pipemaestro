@@ -104,6 +104,7 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
       |> form("#new-task-form", task: %{runner_id: ctx.runner.id})
       |> render_change()
 
+      assert has_element?(view, "[data-testid=task-issue-url]")
       directories = view |> element("[data-testid=task-directory]") |> render()
       assert directories =~ "app"
       assert directories =~ "notas (sem git: roda na pasta)"

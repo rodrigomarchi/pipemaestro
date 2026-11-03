@@ -10,6 +10,11 @@ defmodule ClaudeControlPlane.Tasks.Task do
   is `running` while a stage runs, `awaiting_decision` when a person must say
   how to go on, and ends `succeeded`, `failed` or `canceled`.
 
+  It may come from a GitHub issue (`issue_url`); with a pipeline that delivers
+  (`ClaudeControlPlane.Pipelines.Pipeline` `delivery`), its draft pull request
+  is `pr_url`, and a decision waits in `pending_issue_comment` to be commented
+  on the issue with the next stage.
+
   While it runs, a person may send instructions (`pending_instructions`, given
   to the next attempt or stage) or ask it to pause once the current stage ends
   (`pause_requested`).
@@ -42,6 +47,9 @@ defmodule ClaudeControlPlane.Tasks.Task do
           worktree_removed_at: DateTime.t() | nil,
           worktree_error: String.t() | nil,
           pending_instructions: String.t() | nil,
+          issue_url: String.t() | nil,
+          pr_url: String.t() | nil,
+          pending_issue_comment: String.t() | nil,
           pause_requested: boolean(),
           status: status(),
           current_stage: non_neg_integer(),
@@ -75,6 +83,9 @@ defmodule ClaudeControlPlane.Tasks.Task do
     field :worktree_removed_at, :utc_datetime
     field :worktree_error, :string
     field :pending_instructions, :string
+    field :issue_url, :string
+    field :pr_url, :string
+    field :pending_issue_comment, :string
     field :pause_requested, :boolean, default: false
 
     field :status, Ecto.Enum,
@@ -119,7 +130,10 @@ defmodule ClaudeControlPlane.Tasks.Task do
   @spec create_changeset(t(), map()) :: Ecto.Changeset.t()
   def create_changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :prompt, :pipeline_id, :runner_id, :directory])
+    |> cast(attrs, [:title, :prompt, :pipeline_id, :runner_id, :directory, :issue_url])
+    |> validate_format(:issue_url, ~r{^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$},
+      message: "use o link de uma issue do GitHub (https://github.com/dono/repo/issues/N)"
+    )
     |> update_change(:title, &String.trim/1)
     |> validate_required([:title], message: "dê um título à tarefa")
     |> validate_required([:prompt], message: "descreva o que deve ser feito")

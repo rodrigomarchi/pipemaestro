@@ -10,6 +10,10 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
   `--agents` object); a form edits the last two as JSON (`mcp_config_json`,
   `agents_json`). `max_task_cost_usd` caps what a task may spend: past it,
   the task pauses for a decision after the stage that crossed it.
+  `delivery` is what the runner does with a stage that passed, in a git
+  directory: `"none"` (whatever the prompts say), `"commit"` (a commit per
+  stage) or `"pr"` (also push the branch and keep a draft pull request,
+  ready after the last stage).
 
   `version` goes up on every save. A task keeps a snapshot of the pipeline it
   started with, so editing one never changes a task already running.
@@ -32,6 +36,7 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
           agents: map() | nil,
           agents_json: String.t() | nil,
           max_task_cost_usd: Decimal.t() | nil,
+          delivery: String.t(),
           stages: [Stage.t()],
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
@@ -51,6 +56,7 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
     field :agents, :map
     field :agents_json, :string, virtual: true
     field :max_task_cost_usd, :decimal
+    field :delivery, :string, default: "none"
 
     embeds_many :stages, Stage, on_replace: :delete
 
@@ -72,8 +78,10 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
       :system_prompt,
       :mcp_config_json,
       :agents_json,
-      :max_task_cost_usd
+      :max_task_cost_usd,
+      :delivery
     ])
+    |> validate_inclusion(:delivery, ~w(none commit pr), message: "escolha como entregar")
     |> validate_number(:max_task_cost_usd, greater_than: 0, message: "use um valor positivo")
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome ao pipeline")
@@ -116,7 +124,8 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
       "mcp_config" => pipeline.mcp_config,
       "agents" => pipeline.agents,
       "max_cost_usd" =>
-        pipeline.max_task_cost_usd && Decimal.to_string(pipeline.max_task_cost_usd)
+        pipeline.max_task_cost_usd && Decimal.to_string(pipeline.max_task_cost_usd),
+      "delivery" => pipeline.delivery
     }
   end
 

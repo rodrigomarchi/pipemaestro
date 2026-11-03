@@ -28,6 +28,15 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                  "agents" => %{"revisor" => %{"description" => "Revisa", "prompt" => "Revise."}},
                  "agent" => "revisor",
                  "env" => %{"GRAFANA_TOKEN" => "segredo"},
+                 "delivery" => %{
+                   "commit_message" => "Triagem: o botão não responde",
+                   "push" => true,
+                   "pr" => %{"title" => "Corrigir login", "body" => "Closes #1", "ready" => false},
+                   "issue_comment" => %{
+                     "url" => "https://github.com/a/b/issues/1",
+                     "body" => "Decisão: x"
+                   }
+                 },
                  "permissions" => %{
                    "profile" => "leitura",
                    "allow" => ["Bash(mix test:*)"],
@@ -75,6 +84,16 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert {:error, "mcp_config" <> _} = Job.new(Map.put(base, :mcp_config, %{"x" => 1}))
       assert {:error, "agents" <> _} = Job.new(Map.put(base, :agents, ["revisor"]))
       assert {:error, "agent" <> _} = Job.new(Map.put(base, :agent, ""))
+      assert {:error, "delivery" <> _} = Job.new(Map.put(base, :delivery, %{}))
+
+      assert {:error, "delivery" <> _} =
+               Job.new(Map.put(base, :delivery, %{"commit_message" => ""}))
+
+      assert {:error, "delivery" <> _} =
+               Job.new(
+                 Map.put(base, :delivery, %{"commit_message" => "x", "pr" => %{"title" => ""}})
+               )
+
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"lower" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"PATH" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"OK" => 1}))

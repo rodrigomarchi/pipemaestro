@@ -6,7 +6,7 @@ defmodule ClaudeControlPlaneRunner.ServiceTest do
   @opts [
     runner_dir: "/home/ana/claude_control_plane/apps/claude_control_plane_runner",
     config_dir: "/home/ana/.config/claude-control-plane",
-    mix: "/home/ana/.asdf/shims/mix",
+    program: ["/home/ana/.asdf/shims/mix", "runner.start"],
     path: "/home/ana/.asdf/shims:/usr/bin:/bin",
     home: "/home/ana"
   ]
@@ -16,8 +16,9 @@ defmodule ClaudeControlPlaneRunner.ServiceTest do
 
     assert path == "/home/ana/Library/LaunchAgents/com.claude-control-plane.runner.plist"
     assert plist =~ "<string>com.claude-control-plane.runner</string>"
-    assert plist =~ "<string>/home/ana/.asdf/shims/mix</string>"
-    assert plist =~ "<string>runner.start</string>"
+
+    assert plist =~
+             "    <string>/home/ana/.asdf/shims/mix</string>\n    <string>runner.start</string>"
 
     assert plist =~
              "<key>WorkingDirectory</key>\n  <string>/home/ana/claude_control_plane/apps/claude_control_plane_runner</string>"

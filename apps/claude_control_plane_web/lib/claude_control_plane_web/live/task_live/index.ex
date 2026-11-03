@@ -256,6 +256,13 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
             data-testid="task-prompt"
           />
           <.field
+            field={@form[:issue_url]}
+            label="Issue do GitHub (opcional)"
+            placeholder="https://github.com/dono/repo/issues/42"
+            help_text="Com um pipeline que abre PR, o PR fecha a issue e as decisões viram comentários nela."
+            data-testid="task-issue-url"
+          />
+          <.field
             field={@form[:pipeline_id]}
             type="select"
             label="Pipeline"

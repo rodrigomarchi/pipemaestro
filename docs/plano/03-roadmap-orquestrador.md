@@ -1,6 +1,6 @@
 # Roadmap — um orquestrador de Claude poderoso (antes da integração com git)
 
-> Versão 0.1 — 03/11/2026
+> Versão 0.2 — 03/11/2026 (marcos 1 a 6 implementados; pendências na seção 5)
 > Companheiro de [`01-visao-arquitetura.md`](01-visao-arquitetura.md). Registra o
 > estado atual e o caminho até um orquestrador completo **operando como hoje**: o
 > runner roda na máquina do dev, a tarefa trabalha num diretório dela, e commit,
@@ -200,21 +200,26 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 
 ### Marco 5 — Distribuição
 
-1. Release do runner e binário único (Burrito), instalação em um comando,
-   atualização.
-2. Deploy do control plane: release, migrations, `PHX_HOST` e TLS para o WebSocket.
-3. Guia de instalação e de primeiro pipeline.
+1. **✓ Release do runner com `cp-runner`, instalação em um comando**
+   ([ADR 0013](../adr/0013-distribuicao-e-entrega-no-git.md); o binário único via
+   Burrito fica para depois).
+2. **✓ Deploy do control plane** (ADR 0013): release, migrations, `PHX_HOST` e TLS
+   para o WebSocket.
+3. **✓ Guia de instalação e de primeiro pipeline** ([`guias/instalacao.md`](../guias/instalacao.md)).
 
 ### Marco 6 — Integração com git e GitHub (por último)
 
 O que o plano original chama de "PR como canvas":
 
-1. Entrega determinística no runner: commit dos artefatos e mudanças por etapa, push do
+1. **✓ Entrega determinística no runner** (ADR 0013): commit dos artefatos e mudanças por etapa, push do
    branch da tarefa, PR em rascunho aberto no início e atualizado a cada etapa,
    marcado como pronto no fim.
-2. Issue do GitHub como origem da tarefa (URL, depois webhook por label), com decisões
+2. **✓ Issue do GitHub como origem da tarefa, pela URL** (ADR 0013; o webhook por
+   label fica para depois).
+   Issue do GitHub como origem da tarefa (URL, depois webhook por label), com decisões
    refletidas como comentários.
-3. Credenciais: o `gh` do dev para o runner local; GitHub App com token por tarefa para
+3. **✓ Credenciais: o `gh` do dev** (ADR 0013; o GitHub App fica para depois).
+   Credenciais: o `gh` do dev para o runner local; GitHub App com token por tarefa para
    runners de cliente.
 
 ---
@@ -246,3 +251,21 @@ O que o plano original chama de "PR como canvas":
    a etapa ou espera ela terminar?
 4. **✓ Respondida no ADR 0007: `mdex` no servidor.** **Markdown:** `mdex` (NIF em Rust, a mesma escolha do Petal) ou renderização no
    cliente?
+
+## 5. O que ficou para depois
+
+Os seis marcos estão implementados (ADRs 0006 a 0013). Ficaram de fora, cada um com
+o motivo no ADR indicado:
+
+| Item | Por quê | ADR |
+|---|---|---|
+| Etapas em paralelo (fan-out) | grupos de etapas no motor, dois agentes num worktree, tela em grafo | 0011 |
+| Binário único do runner (Burrito) | exige Zig no build; a release com `cp-runner` cobre o uso atual | 0013 |
+| Webhook por label e GitHub App | exigem receber eventos do GitHub e um app instalado nos repositórios | 0013 |
+| Outbox que sobrevive a restart do runner | só pesa num job que termina durante uma queda seguida de restart | 0006, 0009 |
+| Destaque de sintaxe nos artefatos | o tema do `mdex` usa cores fixas, ruins no modo escuro | 0007 |
+| Agrupamento, tokens por turno e filtros na linha do tempo | refinamento da visualização | 0007 |
+| Responsável e prazo de uma decisão | precisam de uma fila de responsáveis sobre os papéis | 0011, 0012 |
+| Limite de tarefas simultâneas por workspace | a `capacity` por runner já limita a concorrência | 0011 |
+| Diff em diretório sem git; `gh` no `doctor` | pequenos complementos | 0007, 0013 |
+

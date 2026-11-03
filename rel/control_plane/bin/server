@@ -1,0 +1,7 @@
+#!/bin/sh
+# Starts the control plane from its release: runs the pending migrations,
+# then the web server (PHX_SERVER), as a container's command.
+set -e
+cd -P -- "$(dirname -- "$0")/.."
+./bin/claude_control_plane eval 'ClaudeControlPlane.Release.migrate()'
+PHX_SERVER=true exec ./bin/claude_control_plane start

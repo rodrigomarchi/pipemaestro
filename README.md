@@ -47,6 +47,9 @@ bin/claude_control_plane eval 'ClaudeControlPlane.Release.create_operator("ops@e
 
 ### Runner
 
+Para instalar em produção e em outras máquinas (imagem do control plane, `cp-runner`,
+TLS, primeiro pipeline), veja [`docs/guias/instalacao.md`](docs/guias/instalacao.md).
+
 ```bash
 make runner.login URL=http://localhost:4000   # mostra um código; aprove no navegador
 make runner.start ROOT=~/src                  # fica online oferecendo os diretórios de ~/src (Ctrl+C para parar)

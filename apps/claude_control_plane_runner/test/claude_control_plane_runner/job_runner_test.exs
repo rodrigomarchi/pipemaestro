@@ -249,6 +249,34 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
       assert is_integer(hd(finished["gates"])["duration_ms"])
     end
 
+    test "delivers a stage that passed: a commit on the task's branch", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      worktree = Path.join([ctx.workdir, "worktrees", "t1"])
+
+      stage = %{
+        stage("j1", "t1", nil)
+        | output_schema: %{"type" => "object"},
+          delivery: %{"commit_message" => "Etapa A: feito"}
+      }
+
+      JobRunner.enqueue(runner, stage)
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert %{"commit" => sha, "pushed" => false} = finished["delivery"]
+      assert sha =~ ~r/^[0-9a-f]{40}$/
+      {subject, 0} = System.cmd("git", ["-C", worktree, "log", "-1", "--format=%s"])
+      assert String.trim(subject) == "Etapa A: feito"
+      # The cloned dependencies stay out of it.
+      {files, 0} = System.cmd("git", ["-C", worktree, "show", "--name-only", "--format=", "HEAD"])
+      refute files =~ "deps/"
+
+      # A stage the agent blocked is not delivered.
+      blocked = %{stage | id: "j2", prompt: "x [bloqueio]"}
+      JobRunner.enqueue(runner, blocked)
+      {_messages, finished} = collect_until_finished("j2")
+      refute Map.has_key?(finished, "delivery")
+    end
+
     test "a failed agent run skips the gates", ctx do
       runner = start_runner(ctx.workdir, root: ctx.root)
       gates = [%{"command" => "touch gate-rodou", "expect" => "pass"}]

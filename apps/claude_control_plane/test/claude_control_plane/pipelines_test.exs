@@ -293,7 +293,7 @@ defmodule ClaudeControlPlane.PipelinesTest do
       assert {:ok, imported} = Pipelines.import_yaml(other, yaml)
 
       fields = fn p ->
-        Map.take(p, [:name, :description, :system_prompt, :mcp_config, :agents])
+        Map.take(p, [:name, :description, :system_prompt, :mcp_config, :agents, :delivery])
         |> Map.put(:max, p.max_task_cost_usd && Decimal.to_string(p.max_task_cost_usd))
       end
 

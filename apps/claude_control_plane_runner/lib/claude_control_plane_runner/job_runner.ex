@@ -30,7 +30,7 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   use GenServer
 
   alias ClaudeControlPlaneProtocol.{Job, JobEvent, Worktree}
-  alias ClaudeControlPlaneRunner.{Changes, Claude, Gates, Setup, Workspace}
+  alias ClaudeControlPlaneRunner.{Changes, Claude, Delivery, Gates, Setup, Shell, Workspace}
 
   @line_bytes 1_048_576
   @artifact_bytes 65_536
@@ -139,17 +139,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
 
   def handle_info({port, {:exit_status, code}}, state) when is_port(port) do
     case run_for(state, port) do
-      nil ->
-        {:noreply, state}
-
-      run ->
-        gates = if agent_succeeded?(run, code), do: run.job.gates || [], else: []
-
-        if run.tracking == nil and gates == [] do
-          {:noreply, finish(state, run, code, %{})}
-        else
-          {:noreply, put_run(state, after_agent(run, code, gates))}
-        end
+      nil -> {:noreply, state}
+      run -> {:noreply, after_exit(state, run, code)}
     end
   end
 
@@ -198,9 +189,21 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     end
   end
 
-  # After the agent: the gates, then what the stage changed, both off this
-  # process (they take a while).
-  defp after_agent(run, code, gates) do
+  # What follows the agent's exit: the job ends now, or once the gates, the
+  # delivery and the changes are measured.
+  defp after_exit(state, run, code) do
+    succeeded = agent_succeeded?(run, code)
+    gates = if succeeded, do: run.job.gates || [], else: []
+    delivery = if succeeded and stage_ok?(run), do: run.job.delivery
+
+    if run.tracking == nil and gates == [] and delivery == nil,
+      do: finish(state, run, code, %{}),
+      else: put_run(state, after_agent(run, code, gates, delivery))
+  end
+
+  # After the agent, off this process (they take a while): the gates, the
+  # delivery when every gate passed, then what the stage changed.
+  defp after_agent(run, code, gates, delivery) do
     runner = self()
     %{dir: dir, tracking: tracking, job: job} = run
 
@@ -208,12 +211,22 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
       Task.async(fn ->
         on_os_pid = &send(runner, {:child_os_pid, job.id, &1})
         results = if gates == [], do: nil, else: Gates.run(dir, gates, on_os_pid)
+        gates_passed = Enum.all?(results || [], & &1["passed"])
+        exclude = (tracking && tracking.exclude) || []
+
+        delivered =
+          if delivery && gates_passed, do: Delivery.deliver(dir, delivery, exclude)
+
         changes = if tracking, do: Changes.report(dir, tracking)
-        %{"gates" => results, "changes" => changes}
+        %{"gates" => results, "changes" => changes, "delivery" => delivered}
       end)
 
     %{run | port: nil, os_pid: nil, finishing: {task.ref, code}}
   end
+
+  # A stage the agent did not block (when it was asked for structured output).
+  defp stage_ok?(%{result: %{"structured_output" => %{"status" => status}}}), do: status == "ok"
+  defp stage_ok?(_run), do: true
 
   defp agent_succeeded?(run, code),
     do:
@@ -528,9 +541,7 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   # the CLI starts (the shell commands of the agent's tools) joins that group.
   # Signaling the group reaches them all, even a child orphaned by the CLI's
   # exit, which would otherwise hold the port's pipe open and the job with it.
-  defp signal_group(os_pid, signal) do
-    System.cmd("kill", ["-s", signal, "--", "-#{os_pid}"], stderr_to_stdout: true)
-  end
+  defp signal_group(os_pid, signal), do: Shell.signal(os_pid, signal)
 
   defp out(state, event, payload), do: send(state.owner, {:job_out, event, payload})
 end

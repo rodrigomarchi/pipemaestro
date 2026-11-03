@@ -1,0 +1,9 @@
+_build
+deps
+**/node_modules
+e2e
+cover
+priv/plts
+.git
+apps/*/_build
+apps/*/deps

@@ -121,6 +121,18 @@ defmodule ClaudeControlPlane.Tasks do
 
   defp filter(_unknown, query), do: query
 
+  @doc "The workspace's tasks with a pull request, newest first."
+  @spec list_with_pull_request(Workspace.t()) :: [Task.t()]
+  def list_with_pull_request(%Workspace{id: workspace_id}) do
+    Repo.all(
+      from t in Task,
+        where: t.workspace_id == ^workspace_id and not is_nil(t.pr_url),
+        order_by: [desc: t.updated_at, desc: t.id],
+        limit: @list_limit,
+        preload: [:runner, :created_by_user]
+    )
+  end
+
   @doc "How many of the workspace's tasks wait for a decision."
   @spec count_awaiting(Workspace.t()) :: non_neg_integer()
   def count_awaiting(%Workspace{id: workspace_id}) do
@@ -359,6 +371,7 @@ defmodule ClaudeControlPlane.Tasks do
       current_stage: index,
       decision_reason: nil,
       pending_instructions: nil,
+      pending_issue_comment: nil,
       finished_at: nil
     )
     |> Repo.update!()
@@ -406,9 +419,60 @@ defmodule ClaudeControlPlane.Tasks do
       "system_prompt" => context(task, "system_prompt"),
       "mcp_config" => context(task, "mcp_config"),
       "agents" => context(task, "agents"),
-      "agent" => stage.agent
+      "agent" => stage.agent,
+      "delivery" => delivery(task, stage, index)
     }
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  # What the runner delivers once the stage passes.
+  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => mode}} = task, stage, index)
+       when mode in ["commit", "pr"] do
+    base = %{"commit_message" => "#{stage.name}: #{task.title}"}
+
+    base =
+      if mode == "pr",
+        do:
+          Map.merge(base, %{
+            "push" => true,
+            "pr" => %{
+              "title" => task.title,
+              "body" => pr_body(task, index),
+              "ready" => index == length(task.stages) - 1
+            }
+          }),
+        else: base
+
+    if task.issue_url && task.pending_issue_comment,
+      do:
+        Map.put(base, "issue_comment", %{
+          "url" => task.issue_url,
+          "body" => task.pending_issue_comment
+        }),
+      else: base
+  end
+
+  defp delivery(_task, _stage, _index), do: nil
+
+  defp pr_body(task, index) do
+    stages =
+      task.stages
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {stage, i} ->
+        "- [#{if i < index, do: "x", else: " "}] #{stage.name}"
+      end)
+
+    closes = if task.issue_url, do: "Closes #{task.issue_url}\n\n", else: ""
+
+    """
+    #{task.prompt}
+
+    #{closes}## Etapas (#{task.pipeline_name})
+
+    #{stages}
+
+    _Aberto e atualizado pelo Claude Control Plane; os artefatos de cada etapa estão em `.control-plane/#{task.id}/`._
+    """
   end
 
   defp context(%Task{pipeline_context: nil}, _key), do: nil
@@ -463,6 +527,7 @@ defmodule ClaudeControlPlane.Tasks do
 
       task
       |> maybe_record_worktree(job)
+      |> maybe_record_pr(job)
       |> advance_after(stage_run, outcome)
       |> preload()
       |> notify()
@@ -492,6 +557,11 @@ defmodule ClaudeControlPlane.Tasks do
   defp run_status(:canceled), do: {:canceled, nil}
   defp run_status({:blocked, _reason}), do: {:blocked, nil}
   defp run_status({_retry_or_exhausted, error}), do: {:failed, error}
+
+  defp maybe_record_pr(task, %Job{delivery: %{"pr_url" => url}}) when is_binary(url),
+    do: task |> Ecto.Changeset.change(pr_url: url) |> Repo.update!()
+
+  defp maybe_record_pr(task, _job), do: task
 
   defp maybe_record_worktree(%Task{worktree: nil} = task, %Job{workdir: workdir})
        when is_binary(workdir),
@@ -761,6 +831,7 @@ defmodule ClaudeControlPlane.Tasks do
       choice = blank_to_nil(opts[:choice])
       record_decision(task, action, choice, instructions, opts[:by])
       given = join_instructions([choice && "Decisão: #{choice}", instructions])
+      task = %{task | pending_issue_comment: issue_comment(task, action, choice, instructions)}
 
       task = task |> fun.(given) |> preload()
       notify(task)
@@ -768,6 +839,23 @@ defmodule ClaudeControlPlane.Tasks do
     else
       {:error, :not_awaiting}
     end
+  end
+
+  # Told on the task's issue with the next stage, if it came from one.
+  defp issue_comment(%Task{issue_url: nil}, _action, _choice, _instructions), do: nil
+
+  defp issue_comment(task, action, choice, instructions) do
+    stage = Enum.at(task.stages, task.current_stage)
+    what = if action == :retry, do: "refazer a etapa", else: "seguir para a próxima etapa"
+
+    [
+      "**Decisão na etapa \"#{stage.name}\"**: #{what}.",
+      task.decision_reason && "> #{task.decision_reason}",
+      choice && "Escolha: #{choice}",
+      blank_to_nil(instructions) && "Instruções: #{instructions}"
+    ]
+    |> Enum.reject(&(&1 in [nil, false]))
+    |> Enum.join("\n\n")
   end
 
   defp record_decision(task, action, choice, instructions, user) do

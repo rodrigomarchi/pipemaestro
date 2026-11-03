@@ -17,7 +17,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 |---|---|---|
 | 01 | [Visão de arquitetura](plano/01-visao-arquitetura.md) | Rascunho v0.1 — 03/11/2026 |
 | 02 | [Contexto de discovery](plano/02-contexto-discovery.md) | v0.1 — 03/11/2026 |
-| 03 | [Roadmap do orquestrador (antes do git)](plano/03-roadmap-orquestrador.md) | v0.1 — 03/11/2026 |
+| 03 | [Roadmap do orquestrador](plano/03-roadmap-orquestrador.md) | v0.2 — 03/11/2026 |
 
 ## Decisões (ADR)
 
@@ -35,6 +35,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0010 | [Conversa com a tarefa: texto ao vivo, intervenções, notificações e reexecução](adr/0010-conversa-com-a-tarefa.md) | Aceita |
 | 0011 | [Decisões registradas, contexto por pipeline, orçamento por tarefa e pipelines em YAML](adr/0011-decisoes-contexto-orcamento-e-portabilidade.md) | Aceita |
 | 0012 | [Uso, papéis, auditoria, manutenção, alertas e segredos](adr/0012-uso-papeis-auditoria-e-segredos.md) | Aceita |
+| 0013 | [Distribuição e entrega no git e no GitHub](adr/0013-distribuicao-e-entrega-no-git.md) | Aceita |
 
 ## Specs
 
@@ -43,6 +44,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 
 ## Guias
 
+- [Instalação: control plane, runners e o primeiro pipeline](guias/instalacao.md)
 - [Phoenix 1.8](guias/phoenix.md)
 - [UI com petal_components](guias/ui-petal.md)
 - [Testes de tela (e2e) e auditoria visual](../e2e/README.md)

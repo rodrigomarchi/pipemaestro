@@ -47,6 +47,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
       "name" => pipeline.name,
       "description" => pipeline.description || "",
       "system_prompt" => pipeline.system_prompt || "",
+      "delivery" => pipeline.delivery,
       "max_task_cost_usd" =>
         if(pipeline.max_task_cost_usd, do: to_string(pipeline.max_task_cost_usd), else: ""),
       "mcp_config_json" => Pipeline.mcp_config_json(pipeline),
@@ -208,6 +209,18 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
               label="Orçamento por tarefa (US$, opcional)"
               help_text="Passou disso, a tarefa pausa para decisão depois da etapa."
               data-testid="pipeline-max-cost"
+            />
+            <.field
+              field={@form[:delivery]}
+              type="select"
+              label="Entrega (num diretório com git)"
+              options={[
+                {"Nenhuma: os prompts decidem", "none"},
+                {"Um commit por etapa", "commit"},
+                {"Commit, push e PR em rascunho (pronto na última etapa)", "pr"}
+              ]}
+              help_text="O PR usa o gh de quem roda o runner."
+              data-testid="pipeline-delivery"
             />
             <details class="mt-2">
               <summary class="cursor-pointer text-sm font-medium text-gray-600 dark:text-gray-300">

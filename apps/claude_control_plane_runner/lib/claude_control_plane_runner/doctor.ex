@@ -79,7 +79,7 @@ defmodule ClaudeControlPlaneRunner.Doctor do
       )
 
   defp config_check({:error, :not_found}),
-    do: check("Credenciais do runner", :error, "nenhuma: rode make runner.login URL=...")
+    do: check("Credenciais do runner", :error, "nenhuma: rode cp-runner login --url <plataforma>")
 
   defp config_check({:error, :invalid}),
     do:
@@ -101,7 +101,7 @@ defmodule ClaudeControlPlaneRunner.Doctor do
       check(
         "Diretórios",
         :warning,
-        "sem raiz: rode make runner.start ROOT=~/src para oferecer diretórios às tarefas"
+        "sem raiz: rode cp-runner start --root ~/src para oferecer diretórios às tarefas"
       )
 
   defp disk_check(workdir) do

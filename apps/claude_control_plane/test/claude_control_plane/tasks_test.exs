@@ -513,6 +513,89 @@ defmodule ClaudeControlPlane.TasksTest do
     end
   end
 
+  describe "delivery (git and GitHub)" do
+    setup ctx do
+      %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Com PR", "delivery" => "pr"})}
+    end
+
+    test "each stage commits and updates the draft PR; the last one marks it ready", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      issue = "https://github.com/acme/app/issues/42"
+      task = create_task(ctx, %{"issue_url" => issue})
+      assert task.issue_url == issue
+
+      assert_receive {:job_assign, first}
+
+      assert %{
+               "commit_message" => "Etapa A: Corrigir o login",
+               "push" => true,
+               "pr" => %{"title" => "Corrigir o login", "body" => body, "ready" => false}
+             } = first.context["delivery"]
+
+      assert body =~ "Closes #{issue}"
+      assert body =~ "O botão de login não responde"
+
+      task =
+        run_current(ctx, task, %{
+          "delivery" => %{
+            "commit" => "abc123",
+            "pushed" => true,
+            "pr_url" => "https://github.com/acme/app/pull/7"
+          }
+        })
+
+      assert task.pr_url == "https://github.com/acme/app/pull/7"
+
+      assert [%Task{pr_url: "https://github.com/acme/app/pull/7"}] =
+               Tasks.list_with_pull_request(ctx.workspace)
+
+      assert_receive {:job_assign, second}
+      assert second.context["delivery"]["pr"]["ready"] == true
+      assert second.context["delivery"]["pr"]["body"] =~ "Etapa A"
+    end
+
+    test "a decision is commented on the issue with the next stage", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx, %{"issue_url" => "https://github.com/acme/app/issues/42"})
+      assert_receive {:job_assign, _first}
+
+      task =
+        run_current(ctx, task, %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "Qual navegador?"}
+        })
+
+      {:ok, _} = Tasks.retry_stage(task, "No Safari", by: ctx.user)
+      assert_receive {:job_assign, again}
+
+      assert %{"url" => "https://github.com/acme/app/issues/42", "body" => comment} =
+               again.context["delivery"]["issue_comment"]
+
+      assert comment =~ "Qual navegador?"
+      assert comment =~ "No Safari"
+    end
+
+    test "nothing to deliver for a pipeline without delivery or a directory without git", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      create_task(ctx, %{"directory" => "notas"})
+      assert_receive {:job_assign, job}
+      refute Map.has_key?(job.context, "delivery")
+    end
+
+    test "the issue must be a GitHub issue URL", ctx do
+      assert {:error, changeset} =
+               Tasks.create_task(ctx.user, ctx.workspace, %{
+                 "title" => "T",
+                 "prompt" => "p",
+                 "pipeline_id" => ctx.pipeline.id,
+                 "runner_id" => ctx.runner.id,
+                 "directory" => "app",
+                 "issue_url" => "https://exemplo.com/x"
+               })
+
+      assert %{issue_url: [_]} = errors_on(changeset)
+    end
+  end
+
   describe "the task's budget" do
     test "alerts: tasks whose runner is offline and tasks near their budget", ctx do
       pipeline = pipeline_fixture(ctx.workspace, %{"max_task_cost_usd" => "1"})

@@ -11,21 +11,12 @@ defmodule Mix.Tasks.Runner.Doctor do
   """
   use Mix.Task
 
-  alias ClaudeControlPlaneRunner.{CLI, Doctor}
+  alias ClaudeControlPlaneRunner.CLI
+  alias ClaudeControlPlaneRunner.Commands.Doctor
 
   @impl Mix.Task
-  def run(_args) do
+  def run(args) do
     CLI.start!()
-    checks = Doctor.run()
-
-    for %{name: name, status: status, detail: detail} <- checks do
-      Mix.shell().info("#{mark(status)} #{name}: #{detail}")
-    end
-
-    unless Doctor.ok?(checks), do: Mix.raise("Há problemas a resolver antes de rodar tarefas.")
+    CLI.run(&Doctor.run/1, args)
   end
-
-  defp mark(:ok), do: "✓"
-  defp mark(:warning), do: "!"
-  defp mark(:error), do: "✗"
 end

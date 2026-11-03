@@ -9,14 +9,11 @@ defmodule Mix.Tasks.Runner.Logout do
   """
   use Mix.Task
 
-  alias ClaudeControlPlaneRunner.Config
+  alias ClaudeControlPlaneRunner.CLI
+  alias ClaudeControlPlaneRunner.Commands.Logout
 
   @impl Mix.Task
-  def run(_args) do
-    :ok = Config.delete()
-
-    Mix.shell().info(
-      "Credenciais removidas de #{Config.path()}. Para invalidar o token, revogue o runner na plataforma."
-    )
+  def run(args) do
+    CLI.run(&Logout.run/1, args)
   end
 end
