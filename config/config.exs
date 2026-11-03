@@ -11,11 +11,12 @@ import Config
 
 # Configure Mix tasks and generators
 config :claude_control_plane,
-  ecto_repos: [ClaudeControlPlane.Repo]
+  ecto_repos: [ClaudeControlPlane.Repo],
+  generators: [binary_id: true, timestamp_type: :utc_datetime]
 
 config :claude_control_plane_web,
   ecto_repos: [ClaudeControlPlane.Repo],
-  generators: [context_app: :claude_control_plane]
+  generators: [context_app: :claude_control_plane, binary_id: true]
 
 # Configures the endpoint
 config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
@@ -54,6 +55,11 @@ config :tailwind,
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
+
+# Form field errors go through the app's translator (Portuguese, safe bindings)
+config :petal_components,
+       :error_translator_function,
+       {ClaudeControlPlaneWeb.ErrorHelpers, :translate_error}
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

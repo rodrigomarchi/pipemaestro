@@ -50,6 +50,7 @@ defmodule ClaudeControlPlane.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:postgrex, ">= 0.0.0"},
       {:jason, "~> 1.2"},
+      {:bcrypt_elixir, "~> 3.0"},
       {:claude_control_plane_protocol, in_umbrella: true}
     ]
   end

@@ -21,6 +21,9 @@ config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
   secret_key_base: "l3h40YKVIP2FgWuxJ6mOtdzYm9iDr1wPd/Xk7ZpvZzGJ4tDU2o3tfANRazex433C",
   server: false
 
+# Only for tests: a low cost factor keeps password hashing fast
+config :bcrypt_elixir, log_rounds: 4
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

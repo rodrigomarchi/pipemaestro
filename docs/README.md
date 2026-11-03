@@ -23,8 +23,10 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | # | Decisão | Status |
 |---|---|---|
 | 0001 | [Biblioteca de componentes de UI: petal_components](adr/0001-biblioteca-de-componentes.md) | Aceita |
+| 0002 | [Identidades, workspaces e backoffice](adr/0002-identidades-e-workspaces.md) | Aceita |
 
 ## Guias
 
 - [Phoenix 1.8](guias/phoenix.md)
 - [UI com petal_components](guias/ui-petal.md)
+- [Testes de tela (e2e) e auditoria visual](../e2e/README.md)

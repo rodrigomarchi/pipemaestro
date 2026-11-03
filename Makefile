@@ -1,5 +1,10 @@
 .PHONY: help setup deps docker.up docker.down docker.reset server iex \
-	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick
+	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
+	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
+
+E2E_PORT ?= 4003
+E2E_MIX   = MIX_ENV=e2e E2E_PORT=$(E2E_PORT) mix
+E2E_ENV   = E2E_PORT=$(E2E_PORT)
 
 .DEFAULT_GOAL := help
 
@@ -71,3 +76,47 @@ ci.quick: ## Run every check but Dialyzer (iteration only)
 	mix deps.unlock --check-unused
 	mix credo --strict
 	mix test --warnings-as-errors --cover
+
+# ── Browser E2E (Playwright) ────────────────────────────────────────────────
+
+# A real browser against MIX_ENV=e2e on E2E_PORT, with its own database. Specs
+# create their own data through the UI; see e2e/README.md.
+
+e2e.install: ## First time: install the e2e npm deps and Chromium
+	cd e2e && npm install && npx playwright install chromium
+
+e2e.db.reset: ## Drop and recreate the e2e database (stops the server on E2E_PORT first)
+	@pids=$$(lsof -ti:$(E2E_PORT) 2>/dev/null); [ -z "$$pids" ] || kill -9 $$pids
+	$(E2E_MIX) ecto.drop --quiet
+	$(E2E_MIX) ecto.create --quiet
+	$(E2E_MIX) ecto.migrate --quiet
+
+# Before the server boots: Playwright starts it ahead of global-setup.ts.
+e2e.db: ## Create and migrate the e2e database if needed
+	$(E2E_MIX) ecto.create --quiet
+	$(E2E_MIX) ecto.migrate --quiet
+
+e2e.assets: ## Build the CSS and JS the e2e server serves
+	cd apps/claude_control_plane_web && MIX_ENV=e2e mix assets.build
+
+# The server is restarted on every run: playwright.config.ts reuses whatever is
+# on the port, and a server left from before a fix would validate the old code.
+e2e: e2e.db e2e.assets ## Run the whole suite headless (FILE=tests/x.spec.ts for one spec)
+	@pids=$$(lsof -ti:$(E2E_PORT) 2>/dev/null); [ -z "$$pids" ] || kill -9 $$pids
+	cd e2e && $(E2E_ENV) npx playwright test $(FILE)
+
+e2e.headed: e2e.db e2e.assets ## Run with a visible browser and slow motion (FILE=..., SLOW_MO=300)
+	@pids=$$(lsof -ti:$(E2E_PORT) 2>/dev/null); [ -z "$$pids" ] || kill -9 $$pids
+	cd e2e && $(E2E_ENV) SLOW_MO=$${SLOW_MO:-300} npx playwright test --headed $(FILE)
+
+e2e.ui: e2e.db e2e.assets ## Open the Playwright UI mode
+	cd e2e && $(E2E_ENV) npx playwright test --ui
+
+e2e.shots: e2e.db e2e.assets ## Run the suite capturing visual evidence, light and dark (FILE=... for one spec)
+	@pids=$$(lsof -ti:$(E2E_PORT) 2>/dev/null); [ -z "$$pids" ] || kill -9 $$pids
+	rm -rf e2e/screenshots
+	cd e2e && $(E2E_ENV) E2E_SHOTS=1 E2E_SHOTS_DARK=$${DARK:-1} npx playwright test $(FILE)
+	@echo "Evidence: e2e/screenshots/<spec>/<test>/  (HTML report: cd e2e && npx playwright show-report)"
+
+e2e.typecheck: ## Typecheck the specs, page objects and helpers
+	cd e2e && npx tsc --noEmit

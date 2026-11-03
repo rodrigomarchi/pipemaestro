@@ -9,3 +9,11 @@ defmodule ClaudeControlPlaneWeb.PageControllerTest do
     assert html =~ ~s(href="/login")
   end
 end
+
+defmodule ClaudeControlPlaneWeb.HealthControllerTest do
+  use ClaudeControlPlaneWeb.ConnCase, async: true
+
+  test "GET /healthz answers ok", %{conn: conn} do
+    assert conn |> get(~p"/healthz") |> text_response(200) == "ok"
+  end
+end

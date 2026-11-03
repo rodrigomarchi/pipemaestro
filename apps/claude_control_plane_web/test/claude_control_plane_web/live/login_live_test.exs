@@ -3,30 +3,27 @@ defmodule ClaudeControlPlaneWeb.LoginLiveTest do
 
   import Phoenix.LiveViewTest
 
-  test "renders the sign-in form", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/login")
+  test "renders the form, prefilled with a rejected e-mail", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/login?email=ana@acme.dev")
 
-    assert has_element?(view, "#login-form input[type=email]")
+    assert has_element?(view, ~s(#login-form input[type=email][value="ana@acme.dev"]))
     assert has_element?(view, "#login-form input[type=password]")
-    assert render(view) =~ "Continuar com GitHub"
   end
 
-  test "submitting the form goes to the board", %{conn: conn} do
+  test "submitting posts the credentials to the session controller", %{conn: conn} do
+    user = user_fixture()
     {:ok, view, _html} = live(conn, ~p"/login")
 
-    {:ok, _board, html} =
-      view
-      |> form("#login-form", session: %{email: "ana@acme.dev", password: "secret"})
-      |> render_submit()
-      |> follow_redirect(conn, ~p"/app")
+    form = form(view, "#login-form", user: %{email: user.email, password: valid_password()})
+    render_submit(form)
+    conn = follow_trigger_action(form, conn)
 
-    assert html =~ "Pipeline · bug fix"
+    assert redirected_to(conn) == ~p"/workspaces"
   end
 
-  test "signing in with GitHub goes to the board", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/login")
+  test "a signed-in user is sent to their workspaces", %{conn: conn} do
+    conn = log_in_user(conn, user_fixture())
 
-    assert {:error, {:live_redirect, %{to: "/app"}}} =
-             view |> element("button", "Continuar com GitHub") |> render_click()
+    assert {:error, {:redirect, %{to: "/workspaces"}}} = live(conn, ~p"/login")
   end
 end

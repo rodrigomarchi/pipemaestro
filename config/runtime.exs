@@ -13,8 +13,11 @@ if System.get_env("PHX_SERVER") do
   config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint, server: true
 end
 
-config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+# test and e2e fix their own ports in config/{test,e2e}.exs.
+if config_env() in [:dev, :prod] do
+  config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
+    http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+end
 
 if config_env() == :dev do
   # Reload browser tabs when matching files change.

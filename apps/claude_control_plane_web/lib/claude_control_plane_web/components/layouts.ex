@@ -40,7 +40,13 @@ defmodule ClaudeControlPlaneWeb.Layouts do
           </div>
           <div class="flex items-center gap-2">
             <.color_scheme_switch id="public-scheme" variant="toggle" />
-            <.button to={~p"/login"} link_type="live_redirect" variant="ghost" color="gray">
+            <.button
+              to={~p"/login"}
+              link_type="live_redirect"
+              variant="ghost"
+              color="gray"
+              data-testid="nav-login"
+            >
               Entrar
             </.button>
             <.button
@@ -49,6 +55,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               class="hidden sm:inline-flex"
               icon="hero-arrow-right"
               icon_placement="right"
+              data-testid="nav-get-started"
             >
               Começar
             </.button>
@@ -67,23 +74,29 @@ defmodule ClaudeControlPlaneWeb.Layouts do
         </div>
       </footer>
 
-      <.toast_group flash={@flash} position="top-right" />
+      <.toast_group flash={@flash} position="top-center" data-testid="toasts" />
       <.connection_status />
     </div>
     """
   end
 
   @doc """
-  The signed-in app shell: collapsible sidebar, top bar and page content.
+  The signed-in app shell of a workspace: collapsible sidebar, top bar with the
+  workspace switcher and the user menu, and page content.
 
   ## Examples
 
-      <Layouts.app flash={@flash} user={@user} active={:board} title="Board">
+      <Layouts.app flash={@flash} current_scope={@current_scope} workspaces={@workspaces} active={:board} title="Board">
         <p>Content</p>
       </Layouts.app>
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
-  attr :user, :map, required: true, doc: "the signed-in user (name, email, org)"
+
+  attr :current_scope, ClaudeControlPlane.Accounts.Scope,
+    required: true,
+    doc: "the signed-in user and the current workspace"
+
+  attr :workspaces, :list, default: [], doc: "every workspace of the user, for the switcher"
   attr :active, :atom, required: true, doc: "the sidebar item to highlight"
   attr :title, :string, required: true, doc: "the page title shown in the top bar"
   attr :pending_decisions, :integer, default: 0, doc: "badge on the decisions item"
@@ -93,6 +106,8 @@ defmodule ClaudeControlPlaneWeb.Layouts do
 
   @spec app(map()) :: Phoenix.LiveView.Rendered.t()
   def app(assigns) do
+    assigns = assign(assigns, :home, ~p"/w/#{assigns.current_scope.workspace.slug}")
+
     ~H"""
     <.sidebar_shell for="app-sidebar" class="min-h-screen bg-gray-50 dark:bg-gray-950">
       <:sidebar>
@@ -104,39 +119,38 @@ defmodule ClaudeControlPlaneWeb.Layouts do
           <.sidebar_group label="Pipeline">
             <.sidebar_item
               label="Board"
-              path={~p"/app"}
+              path={@home}
               icon="hero-view-columns"
               link_type="live_redirect"
               active={@active == :board}
             />
             <.sidebar_item
               label="Decisões"
-              path={~p"/app"}
+              path={@home}
               icon="hero-hand-raised"
               badge={if @pending_decisions > 0, do: Integer.to_string(@pending_decisions)}
               link_type="live_redirect"
             />
-            <.sidebar_item label="Tarefas" path={~p"/app"} icon="hero-queue-list" />
-            <.sidebar_item label="Pull requests" path={~p"/app"} icon="hero-arrow-up-tray" />
+            <.sidebar_item label="Tarefas" path={@home} icon="hero-queue-list" />
+            <.sidebar_item label="Pull requests" path={@home} icon="hero-arrow-up-tray" />
           </.sidebar_group>
 
           <.sidebar_group label="Infraestrutura">
-            <.sidebar_item label="Executores" path={~p"/app"} icon="hero-server-stack" />
-            <.sidebar_item label="Pipelines" path={~p"/app"} icon="hero-squares-2x2" />
-            <.sidebar_item label="Uso e limites" path={~p"/app"} icon="hero-chart-bar" />
-          </.sidebar_group>
-
-          <.sidebar_group label="Organização">
-            <.sidebar_item label="Projetos" path={~p"/app"} icon="hero-folder" />
-            <.sidebar_item label="Membros" path={~p"/app"} icon="hero-users" />
-            <.sidebar_item label="Configurações" path={~p"/app"} icon="hero-cog-6-tooth" />
+            <.sidebar_item label="Executores" path={@home} icon="hero-server-stack" />
+            <.sidebar_item label="Pipelines" path={@home} icon="hero-squares-2x2" />
+            <.sidebar_item label="Uso e limites" path={@home} icon="hero-chart-bar" />
           </.sidebar_group>
 
           <:footer>
             <.sidebar_item
               label="Sair"
-              path={~p"/"}
+              path={~p"/logout"}
+              link_type="a"
               icon="hero-arrow-left-start-on-rectangle"
+              data-method="delete"
+              data-to={~p"/logout"}
+              data-csrf={Plug.CSRFProtection.get_csrf_token()}
+              data-testid="sidebar-logout"
             />
           </:footer>
         </.sidebar_nav>
@@ -146,21 +160,34 @@ defmodule ClaudeControlPlaneWeb.Layouts do
         <.sidebar_trigger for="app-sidebar" target="mobile" class="md:hidden" />
         <.sidebar_trigger for="app-sidebar" target="collapse" class="hidden md:inline-flex" />
         <div class="min-w-0">
-          <p class="truncate text-xs text-gray-500 dark:text-gray-400">{@user.org}</p>
-          <h1 class="truncate text-base font-semibold text-gray-900 dark:text-white">{@title}</h1>
+          <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
+          <h1
+            class="truncate text-base font-semibold text-gray-900 dark:text-white"
+            data-testid="page-title"
+          >
+            {@title}
+          </h1>
         </div>
         <div class="ml-auto flex items-center gap-2">
           {render_slot(@actions)}
           <.color_scheme_switch id="app-scheme" variant="dropdown" />
-          <.user_dropdown_menu
-            current_user_name={@user.name}
-            current_user_email={@user.email}
-            user_menu_items={[
-              %{path: ~p"/app", icon: "hero-user-circle", label: "Perfil"},
-              %{path: ~p"/app", icon: "hero-cog-6-tooth", label: "Configurações"},
-              %{path: ~p"/", icon: "hero-arrow-left-start-on-rectangle", label: "Sair"}
-            ]}
-          />
+          <.account_menu name={@current_scope.user.name} email={@current_scope.user.email}>
+            <.dropdown_menu_item
+              link_type="a"
+              to={~p"/workspaces"}
+              data-testid="account-switch-workspace"
+            >
+              <.icon name="hero-squares-2x2" class="size-5" /> Trocar de workspace
+            </.dropdown_menu_item>
+            <.dropdown_menu_item
+              link_type="a"
+              to={~p"/logout"}
+              method="delete"
+              data-testid="account-logout"
+            >
+              <.icon name="hero-arrow-left-start-on-rectangle" class="size-5" /> Sair
+            </.dropdown_menu_item>
+          </.account_menu>
         </div>
       </header>
 
@@ -168,9 +195,207 @@ defmodule ClaudeControlPlaneWeb.Layouts do
         {render_slot(@inner_block)}
       </main>
 
-      <.toast_group flash={@flash} position="bottom-right" />
+      <.toast_group flash={@flash} position="bottom-right" data-testid="toasts" />
       <.connection_status />
     </.sidebar_shell>
+    """
+  end
+
+  attr :current, :map, required: true
+  attr :workspaces, :list, required: true
+
+  # The board is a live_session of its own per workspace mount, so switching
+  # workspaces is a full navigation.
+  defp workspace_switcher(%{workspaces: [_, _ | _]} = assigns) do
+    ~H"""
+    <.dropdown id="workspace-switcher" placement="right" trigger_class="!p-0">
+      <:trigger_element>
+        <span
+          class="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+          data-testid="workspace-switcher-trigger"
+        >
+          <span data-testid="current-workspace">{@current.name}</span>
+          <.icon name="hero-chevron-up-down-micro" class="size-3.5" />
+        </span>
+      </:trigger_element>
+      <.dropdown_menu_label>Seus workspaces</.dropdown_menu_label>
+      <.dropdown_menu_item
+        :for={workspace <- @workspaces}
+        link_type="a"
+        to={~p"/w/#{workspace.slug}"}
+        data-testid={"workspace-switcher-item-#{workspace.slug}"}
+      >
+        <.icon
+          name={if workspace.id == @current.id, do: "hero-check", else: "hero-building-office"}
+          class="size-4"
+        />
+        {workspace.name}
+      </.dropdown_menu_item>
+    </.dropdown>
+    """
+  end
+
+  defp workspace_switcher(assigns) do
+    ~H"""
+    <p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="current-workspace">
+      {@current.name}
+    </p>
+    """
+  end
+
+  @doc """
+  The backoffice shell for platform operators: its own sidebar and an amber
+  "Backoffice" mark, so it is never mistaken for a customer workspace.
+
+  ## Examples
+
+      <Layouts.backoffice flash={@flash} current_operator={@current_operator} active={:workspaces} title="Workspaces">
+        <p>Content</p>
+      </Layouts.backoffice>
+  """
+  attr :flash, :map, required: true, doc: "the map of flash messages"
+  attr :current_operator, :map, required: true, doc: "the signed-in operator"
+
+  attr :active, :atom,
+    required: true,
+    values: [:workspaces, :users, :operators],
+    doc: "the sidebar item to highlight"
+
+  attr :title, :string, required: true, doc: "the page title shown in the top bar"
+
+  slot :breadcrumb, doc: "a link back to the parent page, shown above the title"
+  slot :actions, doc: "buttons rendered on the right of the top bar"
+  slot :inner_block, required: true
+
+  @spec backoffice(map()) :: Phoenix.LiveView.Rendered.t()
+  def backoffice(assigns) do
+    ~H"""
+    <.sidebar_shell for="backoffice-sidebar" class="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <:sidebar>
+        <.sidebar_nav id="backoffice-sidebar" label="Backoffice" collapsible="icon">
+          <:header>
+            <.brand compact />
+          </:header>
+
+          <.sidebar_group label="Clientes">
+            <.sidebar_item
+              label="Workspaces"
+              data-testid="sidebar-workspaces"
+              path={~p"/backoffice/workspaces"}
+              icon="hero-building-office-2"
+              link_type="live_redirect"
+              active={@active == :workspaces}
+            />
+            <.sidebar_item
+              label="Usuários"
+              data-testid="sidebar-users"
+              path={~p"/backoffice/users"}
+              icon="hero-users"
+              link_type="live_redirect"
+              active={@active == :users}
+            />
+          </.sidebar_group>
+
+          <.sidebar_group label="Plataforma">
+            <.sidebar_item
+              label="Operadores"
+              data-testid="sidebar-operators"
+              path={~p"/backoffice/operators"}
+              icon="hero-shield-check"
+              link_type="live_redirect"
+              active={@active == :operators}
+            />
+          </.sidebar_group>
+
+          <:footer>
+            <.sidebar_item
+              label="Sair"
+              path={~p"/backoffice/logout"}
+              link_type="a"
+              icon="hero-arrow-left-start-on-rectangle"
+              data-method="delete"
+              data-to={~p"/backoffice/logout"}
+              data-csrf={Plug.CSRFProtection.get_csrf_token()}
+              data-testid="sidebar-logout"
+            />
+          </:footer>
+        </.sidebar_nav>
+      </:sidebar>
+
+      <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
+        <.sidebar_trigger for="backoffice-sidebar" target="mobile" class="md:hidden" />
+        <.sidebar_trigger
+          for="backoffice-sidebar"
+          target="collapse"
+          class="hidden md:inline-flex"
+        />
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <.badge size="xs" color="warning" variant="soft" label="Backoffice" />
+            {render_slot(@breadcrumb)}
+          </div>
+          <h1
+            class="truncate text-base font-semibold text-gray-900 dark:text-white"
+            data-testid="page-title"
+          >
+            {@title}
+          </h1>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+          {render_slot(@actions)}
+          <.color_scheme_switch id="backoffice-scheme" variant="dropdown" />
+          <.account_menu name={@current_operator.name} email={@current_operator.email}>
+            <.dropdown_menu_item
+              link_type="a"
+              to={~p"/backoffice/logout"}
+              method="delete"
+              data-testid="account-logout"
+            >
+              <.icon name="hero-arrow-left-start-on-rectangle" class="size-5" /> Sair
+            </.dropdown_menu_item>
+          </.account_menu>
+        </div>
+      </header>
+
+      <main class="px-4 py-6 sm:px-6 lg:px-8">
+        {render_slot(@inner_block)}
+      </main>
+
+      <.toast_group flash={@flash} position="bottom-right" data-testid="toasts" />
+      <.connection_status />
+    </.sidebar_shell>
+    """
+  end
+
+  @doc """
+  The avatar menu in the top bar. The panel opens with who is signed in, so the
+  account in use is always one click away; the inner block holds the actions.
+  """
+  attr :name, :string, required: true
+  attr :email, :string, required: true
+  slot :inner_block, required: true
+
+  @spec account_menu(map()) :: Phoenix.LiveView.Rendered.t()
+  def account_menu(assigns) do
+    ~H"""
+    <.dropdown id="account-menu" placement="left">
+      <:trigger_element>
+        <.avatar name={@name} size="sm" random_color data-testid="account-menu-trigger" />
+      </:trigger_element>
+      <div class="px-3 py-2">
+        <p
+          class="truncate text-sm font-medium text-gray-900 dark:text-white"
+          data-testid="account-name"
+        >
+          {@name}
+        </p>
+        <p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="account-email">
+          {@email}
+        </p>
+      </div>
+      <.dropdown_menu_separator />
+      {render_slot(@inner_block)}
+    </.dropdown>
     """
   end
 

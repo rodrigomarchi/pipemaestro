@@ -1,23 +1,24 @@
 defmodule ClaudeControlPlaneWeb.LoginLive do
   @moduledoc """
-  The sign-in screen.
-
-  Authentication does not exist yet: any submission goes straight to the board.
+  The workspace sign-in screen. Submitting posts the form to
+  `UserSessionController.create/2`, which checks the credentials and writes the
+  session cookie.
   """
   use ClaudeControlPlaneWeb, :live_view
 
   @impl true
-  def mount(_params, _session, socket) do
-    form = to_form(%{"email" => "", "password" => "", "remember" => "true"}, as: :session)
-    {:ok, assign(socket, page_title: "Entrar", form: form)}
+  def mount(params, _session, socket) do
+    form =
+      to_form(%{"email" => params["email"] || "", "password" => "", "remember_me" => "true"},
+        as: "user"
+      )
+
+    {:ok, assign(socket, page_title: "Entrar", form: form, trigger_submit: false)}
   end
 
   @impl true
-  def handle_event("sign_in", _params, socket) do
-    {:noreply,
-     socket
-     |> put_flash(:info, "Que bom ter você de volta!")
-     |> push_navigate(to: ~p"/app")}
+  def handle_event("submit", _params, socket) do
+    {:noreply, assign(socket, :trigger_submit, true)}
   end
 
   @impl true
@@ -35,60 +36,56 @@ defmodule ClaudeControlPlaneWeb.LoginLive do
             <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
               Entrar na sua organização
             </h1>
-            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Use a conta do GitHub conectada à sua organização ou o seu e-mail.
+            <p class="mt-2 mb-8 text-sm text-gray-600 dark:text-gray-400">
+              Use o e-mail e a senha que a equipe da plataforma criou para você.
             </p>
 
-            <div class="mt-8 space-y-3">
-              <.social_button
-                provider="github"
-                variant="solid"
-                class="w-full"
-                phx-click="sign_in"
-                label="Continuar com GitHub"
-              />
-            </div>
-
-            <div class="my-6 flex items-center gap-3 text-xs uppercase tracking-wide text-gray-400">
-              <.separator class="flex-1" /> ou <.separator class="flex-1" />
-            </div>
-
-            <.form for={@form} id="login-form" phx-submit="sign_in" class="space-y-1">
+            <.form
+              for={@form}
+              id="login-form"
+              action={~p"/login"}
+              phx-submit="submit"
+              phx-trigger-action={@trigger_submit}
+            >
               <.field
                 field={@form[:email]}
                 type="email"
                 label="E-mail"
                 placeholder="voce@empresa.com"
-                autocomplete="email"
+                autocomplete="username"
+                required
+                data-testid="login-email"
+                phx-mounted={JS.focus()}
               />
               <.field
                 field={@form[:password]}
                 type="password"
                 label="Senha"
-                placeholder="••••••••"
                 autocomplete="current-password"
+                required
                 viewable
+                data-testid="login-password"
               />
-              <div class="flex items-center justify-between pb-4">
-                <.field field={@form[:remember]} type="checkbox" label="Manter conectado" />
-                <.link
-                  navigate={~p"/login"}
-                  class="text-sm font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400"
-                >
-                  Esqueceu a senha?
-                </.link>
-              </div>
-              <.button type="submit" class="w-full" size="lg">Entrar</.button>
+              <.field
+                field={@form[:remember_me]}
+                type="checkbox"
+                label="Manter conectado"
+                data-testid="login-remember"
+              />
+              <.button
+                type="submit"
+                class="w-full"
+                size="lg"
+                phx-disable-with="Entrando…"
+                data-testid="login-submit"
+              >
+                Entrar
+              </.button>
             </.form>
 
             <p class="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-              Ainda não tem conta?
-              <.link
-                navigate={~p"/login"}
-                class="font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400"
-              >
-                Fale com a gente
-              </.link>
+              Esqueceu a senha ou ainda não tem acesso? Fale com o administrador da sua
+              organização.
             </p>
           </div>
         </div>

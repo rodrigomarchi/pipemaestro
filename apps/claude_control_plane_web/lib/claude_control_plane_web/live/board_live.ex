@@ -3,7 +3,8 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
   The organization's board: headline numbers, tasks by pipeline stage, pending
   human decisions, runners and recent activity.
 
-  Reads sample data from `ClaudeControlPlaneWeb.Demo` until the domain exists.
+  The workspace comes from the scope; the pipeline data is still sample data
+  from `ClaudeControlPlaneWeb.Demo` until the pipeline domain exists.
   """
   use ClaudeControlPlaneWeb, :live_view
 
@@ -14,7 +15,6 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     {:ok,
      assign(socket,
        page_title: "Board",
-       user: Demo.current_user(),
        stats: Demo.stats(),
        stages: Demo.stages(),
        tasks_by_stage: Demo.tasks_by_stage(),
@@ -42,13 +42,20 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     ~H"""
     <Layouts.app
       flash={@flash}
-      user={@user}
+      current_scope={@current_scope}
+      workspaces={@workspaces}
       active={:board}
       title="Board"
       pending_decisions={length(@decisions)}
     >
       <:actions>
-        <.button size="sm" icon="hero-plus" phx-click="new_task" class="hidden sm:inline-flex">
+        <.button
+          size="sm"
+          icon="hero-plus"
+          phx-click="new_task"
+          class="hidden sm:inline-flex"
+          data-testid="new-task"
+        >
           Nova tarefa
         </.button>
       </:actions>
@@ -105,7 +112,7 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
           <.card variant="outline">
             <.card_header title="Atividade recente" />
             <.card_content>
-              <.timeline variant="compact" label="Atividade recente">
+              <.timeline variant="compact" label="Atividade recente" data-testid="activity">
                 <:item
                   :for={event <- @activity}
                   title={event.title}
@@ -133,7 +140,10 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
           </.card_header>
           <.table id="runners" rows={@runners} row_id={&"runner-#{&1.name}"} density="compact">
             <:col :let={runner} label="Executor">
-              <div class="flex items-center gap-2 font-medium text-gray-900 dark:text-white">
+              <div
+                class="flex items-center gap-2 font-medium text-gray-900 dark:text-white"
+                data-testid={"runner-#{runner.name}"}
+              >
                 <.icon name="hero-server" class="size-4 text-gray-400" />
                 {runner.name}
               </div>
@@ -208,7 +218,10 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
 
   defp stage_column(assigns) do
     ~H"""
-    <div class="flex min-h-64 flex-col rounded-xl border border-gray-200 bg-gray-100/60 p-3 dark:border-gray-800 dark:bg-gray-900/50">
+    <div
+      data-testid={"stage-#{@stage.id}"}
+      class="flex min-h-64 flex-col rounded-xl border border-gray-200 bg-gray-100/60 p-3 dark:border-gray-800 dark:bg-gray-900/50"
+    >
       <div class="mb-3 flex items-center justify-between px-1">
         <p class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200">
           <.icon name={@stage.icon} class="size-4 text-gray-400" />
@@ -235,6 +248,7 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     ~H"""
     <article
       id={"task-#{@task.id}"}
+      data-testid={"task-card-#{@task.id}"}
       class={[
         "rounded-lg border bg-white p-3 shadow-xs transition hover:shadow-md dark:bg-gray-900",
         if(@task.status == :waiting_decision,
@@ -285,7 +299,11 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
 
   defp decision_row(assigns) do
     ~H"""
-    <div id={"decision-#{@decision.id}"} class="flex flex-col gap-3 py-4 first:pt-0 last:pb-0">
+    <div
+      id={"decision-#{@decision.id}"}
+      data-testid={"decision-#{@decision.id}"}
+      class="flex flex-col gap-3 py-4 first:pt-0 last:pb-0"
+    >
       <div class="flex items-start gap-3">
         <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-warning-100 text-warning-600 dark:bg-warning-500/15 dark:text-warning-400">
           <.icon name="hero-hand-raised" class="size-5" />
@@ -309,6 +327,7 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
           color={option_color(option, index)}
           phx-click="decide"
           phx-value-id={@decision.id}
+          data-testid={"decision-#{@decision.id}-option-#{index}"}
           phx-value-option={option}
         >
           {option}

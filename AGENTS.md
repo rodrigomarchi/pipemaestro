@@ -10,7 +10,7 @@ non-trivial change.
 
 | App | Role | May depend on |
 |---|---|---|
-| `apps/claude_control_plane` | Control-plane domain: Ecto, pipeline engine, dispatcher, decisions. **No web layer.** | `protocol` |
+| `apps/claude_control_plane` | Control-plane domain: `Accounts` (workspace users), `Backoffice` (operators), `Workspaces`; later the pipeline engine and dispatcher. **No web layer.** | `protocol` |
 | `apps/claude_control_plane_web` | Phoenix, LiveView board, Channels the runners connect to. The only place web concerns live. | domain, `protocol` |
 | `apps/claude_control_plane_protocol` | The runner ↔ control-plane contract. Public and versioned. | nothing in the umbrella |
 | `apps/claude_control_plane_runner` | The BYO runner installed on the customer's infrastructure. | `protocol` only |
@@ -41,6 +41,11 @@ It runs, cheapest first:
 `make ci.quick` is the same without Dialyzer, for iteration. `make help` lists
 every target.
 
+**Screen changes also need `make e2e`** (Playwright, real browser; see
+[`e2e/README.md`](e2e/README.md)). Use `make e2e.shots` to capture light and dark
+screenshots of each flow and audit them; never drive a browser by hand to check
+a screen.
+
 - **A pipe masks the exit code.** `make ci 2>&1 | tail` returns `tail`'s status.
   Use `make ci > log 2>&1; echo $?`.
 - **Run `mix format` first.** It is the cheapest failure.
@@ -60,7 +65,11 @@ every target.
 - Phoenix 1.8 / LiveView idioms: [`docs/guias/phoenix.md`](docs/guias/phoenix.md).
 - **UI is petal_components.** Use a Petal component before raw Tailwind markup, and
   check its real attrs first: [`docs/guias/ui-petal.md`](docs/guias/ui-petal.md).
-- **Verify screens visually**, light and dark, before calling UI work done.
+- **Every element a test touches has a `data-testid`**, named per
+  [`e2e/README.md`](e2e/README.md) (per-record ids carry the natural key: e-mail
+  or slug). Specs select by test id only.
+- **Verify screens visually** through `make e2e.shots`, light and dark, before
+  calling UI work done.
 
 ## Documentation
 

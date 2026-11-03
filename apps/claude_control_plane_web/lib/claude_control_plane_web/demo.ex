@@ -62,14 +62,6 @@ defmodule ClaudeControlPlaneWeb.Demo do
           trend: [number()]
         }
 
-  @type user :: %{name: String.t(), email: String.t(), org: String.t()}
-
-  @doc "The signed-in user and organization shown in the app chrome."
-  @spec current_user() :: user()
-  def current_user do
-    %{name: "Ana Lima", email: "ana@acme.dev", org: "Acme Engineering"}
-  end
-
   @doc "The stages of the reference bug-fix pipeline, in order."
   @spec stages() :: [stage()]
   def stages do

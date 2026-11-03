@@ -11,5 +11,8 @@ Screens are built with petal_components. Before writing any HEEx, read
 
 - Use a Petal component before raw Tailwind markup for any UI primitive.
 - Check a component's real `attr`/`slot` declarations before using it; never guess.
-- Verify a screen visually (light and dark) before calling it done: a green test
-  suite does not show a collapsed input or an overflowing column.
+- Give every element a test touches a `data-testid` (conventions in
+  [`e2e/README.md`](../../e2e/README.md)).
+- Verify a screen with `make e2e.shots` and read the screenshots (light and dark)
+  before calling it done: a green suite does not show a collapsed input or an
+  overflowing column. Never drive a browser by hand to check a screen.

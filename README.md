@@ -26,4 +26,32 @@ make server   # http://localhost:4000
 make ci       # o gate: compile sem warnings, format, credo, testes com cobertura, dialyzer
 ```
 
+Em dev, `make setup` roda os seeds e imprime as credenciais de dev (um operador
+e dois usuários em dois workspaces).
+
+### Primeiro operador do backoffice
+
+Sem operador, ninguém entra no backoffice. Em dev:
+
+```bash
+mix control_plane.create_operator ops@empresa.com "Nome"
+```
+
+Numa release:
+
+```bash
+bin/claude_control_plane eval 'ClaudeControlPlane.Release.migrate()'
+bin/claude_control_plane eval 'ClaudeControlPlane.Release.create_operator("ops@empresa.com", "Nome", "senha longa")'
+```
+
+### Testes de tela
+
+```bash
+make e2e.install   # primeira vez
+make e2e           # Playwright, navegador real
+make e2e.shots     # mesma suíte + screenshots claro/escuro em e2e/screenshots/
+```
+
+Detalhes em [`e2e/README.md`](e2e/README.md).
+
 `make help` lista todos os alvos.
