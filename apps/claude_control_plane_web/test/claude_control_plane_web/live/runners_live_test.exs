@@ -26,7 +26,16 @@ defmodule ClaudeControlPlaneWeb.RunnersLiveTest do
     workspace: workspace,
     user: user
   } do
-    runner_fixture(workspace, user, %{name: "build-01", labels: ["docker"], capacity: 6})
+    {runner, _token} =
+      runner_fixture(workspace, user, %{name: "build-01", labels: ["docker"], capacity: 6})
+
+    {:ok, _runner} =
+      ClaudeControlPlane.Runners.update_worktree_usage(runner, %{
+        "count" => 3,
+        "bytes" => 1_610_612_736,
+        "free_bytes" => 53_687_091_200
+      })
+
     other = workspace_fixture()
     runner_fixture(other, member_fixture(other), %{name: "alheio"})
 
@@ -36,6 +45,9 @@ defmodule ClaudeControlPlaneWeb.RunnersLiveTest do
     assert has_element?(view, "[data-testid=runner-status-build-01]", "Offline")
     assert has_element?(view, "[data-testid=runner-labels-build-01]", "docker")
     assert has_element?(view, "[data-testid=runner-capacity-build-01]", "6")
+    assert has_element?(view, "[data-testid=runner-directories-build-01]", "sem raiz")
+    assert has_element?(view, "[data-testid=runner-worktrees-build-01]", "3 · 1,5 GB")
+    assert has_element?(view, "[data-testid=runner-worktrees-build-01]", "50 GB livres")
     refute has_element?(view, "[data-testid=runner-alheio]")
   end
 

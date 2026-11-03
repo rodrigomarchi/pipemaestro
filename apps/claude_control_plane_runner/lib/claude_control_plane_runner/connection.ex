@@ -9,9 +9,25 @@ defmodule ClaudeControlPlaneRunner.Connection do
   help, so the connection stops and reports `:rejected`.
 
   Given a `:workdir`, it also runs jobs: it starts a
-  `ClaudeControlPlaneRunner.JobRunner`, hands it the `job:assign` and
+  `ClaudeControlPlaneRunner.JobRunner` with the capacity announced in the
+  hello, hands it the `job:assign` and
   `job:cancel` messages, pushes back what it reports, and tells the control
   plane which jobs survive a reconnection (`Hello.running_job_ids`).
+
+  What it reports is kept until the control plane replies
+  (`ClaudeControlPlaneRunner.Outbox`) and sent again, in order, after every
+  join; a job whose end the control plane has not confirmed still counts as
+  running, so a reconnection does not fail it.
+
+  Given a `:root`, it offers the code directories under it
+  (`ClaudeControlPlaneRunner.Directories`): announced on every join and sent
+  again (`runner:directories`) when they change, checked every `:rescan_every`
+  ms (default one minute).
+
+  It also looks after the task worktrees: removes one when the platform asks
+  (`worktree:remove`) and reports the space they take (`worktree:usage`)
+  after every join and then every `:usage_every` ms (default five minutes)
+  when it changed.
 
   Progress is reported to `:notify` (a pid) as `{:runner_connection, event}`
   with `event` one of `{:joined, reply}`, `{:disconnected, reason}`,
@@ -21,8 +37,8 @@ defmodule ClaudeControlPlaneRunner.Connection do
 
   require Logger
 
-  alias ClaudeControlPlaneProtocol.{Hello, Job}
-  alias ClaudeControlPlaneRunner.JobRunner
+  alias ClaudeControlPlaneProtocol.{Hello, Job, Worktree}
+  alias ClaudeControlPlaneRunner.{Directories, Disk, JobRunner, Outbox}
 
   @doc "Starts the connection with the runner's credentials and hello."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -58,17 +74,35 @@ defmodule ClaudeControlPlaneRunner.Connection do
         topic: ClaudeControlPlaneProtocol.runner_topic(config.runner_id),
         hello: hello,
         notify: Keyword.get(opts, :notify),
-        job_runner: job_runner
+        job_runner: job_runner,
+        root: Keyword.get(opts, :root),
+        rescan_every: Keyword.get(opts, :rescan_every, 60_000),
+        directories: [],
+        workdir: Keyword.get(opts, :workdir),
+        usage_every: Keyword.get(opts, :usage_every, 300_000),
+        usage: nil,
+        measuring: nil,
+        outbox: Outbox.new()
       )
 
+    schedule_rescan(socket)
     {:ok, socket}
   end
+
+  defp schedule_rescan(%{assigns: %{root: nil}}), do: :ok
+
+  defp schedule_rescan(%{assigns: %{rescan_every: every}}),
+    do: Process.send_after(self(), :rescan, every)
 
   defp start_job_runner(opts) do
     case Keyword.fetch(opts, :workdir) do
       {:ok, workdir} ->
-        job_opts = Keyword.take(opts, [:executable, :kill_after])
-        {:ok, pid} = JobRunner.start_link([owner: self(), workdir: workdir] ++ job_opts)
+        %Hello{capacity: capacity} = Keyword.fetch!(opts, :hello)
+        job_opts = Keyword.take(opts, [:executable, :kill_after, :root])
+
+        {:ok, pid} =
+          JobRunner.start_link([owner: self(), workdir: workdir, capacity: capacity] ++ job_opts)
+
         pid
 
       :error ->
@@ -78,19 +112,38 @@ defmodule ClaudeControlPlaneRunner.Connection do
 
   @impl Slipstream
   def handle_connect(socket) do
+    socket = assign(socket, directories: Directories.scan(socket.assigns.root))
     {:ok, join(socket, socket.assigns.topic, hello_payload(socket))}
   end
 
-  # Sent on every (re)join, so it carries the jobs running at that moment.
-  defp hello_payload(%{assigns: %{hello: hello, job_runner: nil}}), do: Hello.to_map(hello)
-
-  defp hello_payload(%{assigns: %{hello: hello, job_runner: job_runner}}),
-    do: Hello.to_map(%{hello | running_job_ids: JobRunner.running_job_ids(job_runner)})
+  # Sent on every (re)join, so it carries the jobs running and the directories
+  # offered at that moment.
+  defp hello_payload(%{assigns: %{hello: hello, job_runner: job_runner} = assigns}) do
+    running = if job_runner, do: JobRunner.running_job_ids(job_runner), else: []
+    running = Enum.uniq(running ++ Outbox.job_ids(assigns.outbox))
+    Hello.to_map(%{hello | running_job_ids: running, directories: assigns.directories})
+  end
 
   @impl Slipstream
   def handle_join(_topic, reply, socket) do
     notify(socket, {:joined, reply})
-    {:ok, socket}
+    # The platform forgets nothing it was told, but this is a new channel
+    # process: the next measure is pushed even if unchanged.
+    socket = assign(socket, usage: nil, outbox: Outbox.forget_refs(socket.assigns.outbox))
+
+    socket =
+      Enum.reduce(Outbox.pending(socket.assigns.outbox), socket, fn {id, event, payload}, acc ->
+        send_out(acc, id, event, payload)
+      end)
+
+    {:ok, measure_usage(socket)}
+  end
+
+  @impl Slipstream
+  def handle_reply(ref, _reply, socket) do
+    # An error reply settles a message too: sending it again would not change
+    # the answer.
+    {:ok, assign(socket, outbox: Outbox.confirmed(socket.assigns.outbox, ref))}
   end
 
   @impl Slipstream
@@ -111,6 +164,7 @@ defmodule ClaudeControlPlaneRunner.Connection do
 
   @impl Slipstream
   def handle_topic_close(topic, _reason, socket) do
+    socket = assign(socket, directories: Directories.scan(socket.assigns.root))
     rejoin(socket, topic, hello_payload(socket))
   end
 
@@ -136,16 +190,59 @@ defmodule ClaudeControlPlaneRunner.Connection do
     {:ok, socket}
   end
 
+  def handle_message(_topic, "worktree:remove", payload, %{assigns: %{job_runner: pid}} = socket)
+      when is_pid(pid) do
+    case Worktree.parse_remove(payload) do
+      {:ok, %{"task_id" => task_id, "directory" => directory}} ->
+        JobRunner.remove_worktree(pid, task_id, directory)
+
+      {:error, reason} ->
+        Logger.warning("Pedido de remoção de worktree inválido: #{reason}")
+    end
+
+    {:ok, socket}
+  end
+
   def handle_message(_topic, event, _payload, socket) do
     Logger.warning("Mensagem da plataforma ignorada por este runner: #{event}")
     {:ok, socket}
   end
 
-  # What the job runner reports goes to the platform. While disconnected the
-  # push fails and the event is lost; the run itself goes on.
   @impl Slipstream
+  def handle_info(:rescan, socket) do
+    directories = Directories.scan(socket.assigns.root)
+    schedule_rescan(socket)
+
+    if directories != socket.assigns.directories and joined?(socket, socket.assigns.topic) do
+      _pushed =
+        push(socket, socket.assigns.topic, "runner:directories", %{"directories" => directories})
+
+      {:noreply, assign(socket, directories: directories)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(:measure_usage, socket), do: {:noreply, measure_usage(socket)}
+
+  def handle_info({ref, usage}, %{assigns: %{measuring: ref}} = socket) do
+    Process.demonitor(ref, [:flush])
+    Process.send_after(self(), :measure_usage, socket.assigns.usage_every)
+    socket = assign(socket, measuring: nil)
+
+    if usage != socket.assigns.usage and joined?(socket, socket.assigns.topic) do
+      _pushed = push(socket, socket.assigns.topic, Worktree.usage_event(), usage)
+      {:noreply, assign(socket, usage: usage)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # What the job runner reports goes to the platform through the outbox; while
+  # disconnected it waits there for the next join.
   def handle_info({:job_out, event, payload}, socket) do
-    _pushed = push(socket, socket.assigns.topic, event, payload)
+    {id, outbox} = Outbox.add(socket.assigns.outbox, event, payload)
+    socket = send_out(assign(socket, outbox: outbox), id, event, payload)
 
     case event do
       "job:started" -> notify(socket, {:job_started, payload["job_id"]})
@@ -154,6 +251,24 @@ defmodule ClaudeControlPlaneRunner.Connection do
     end
 
     {:noreply, socket}
+  end
+
+  defp send_out(socket, id, event, payload) do
+    with true <- joined?(socket, socket.assigns.topic),
+         {:ok, ref} <- push(socket, socket.assigns.topic, event, payload) do
+      assign(socket, outbox: Outbox.sent(socket.assigns.outbox, id, ref))
+    else
+      _not_sent -> socket
+    end
+  end
+
+  # `du` may take a while on large worktrees: it runs in a task, one at a time.
+  defp measure_usage(%{assigns: %{workdir: nil}} = socket), do: socket
+  defp measure_usage(%{assigns: %{measuring: ref}} = socket) when is_reference(ref), do: socket
+
+  defp measure_usage(socket) do
+    workdir = socket.assigns.workdir
+    assign(socket, measuring: Task.async(fn -> Disk.usage(workdir) end).ref)
   end
 
   defp notify(%{assigns: %{notify: pid}}, event) when is_pid(pid),

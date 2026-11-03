@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -45,6 +45,29 @@ export class RunnerProcess {
   /** The runner's working directory, where its jobs run. */
   get workdir(): string {
     return join(this.configDir, "workdir");
+  }
+
+  /**
+   * A code root for `runner.start --root`, inside the throwaway directory:
+   * `app`, a git repository with one commit, and `notas`, a plain folder.
+   */
+  createCodeRoot(): string {
+    const root = join(this.configDir, "src");
+    const app = join(root, "app");
+    mkdirSync(app, { recursive: true });
+    mkdirSync(join(root, "notas"), { recursive: true });
+    writeFileSync(join(app, "README.md"), "# app\n");
+
+    const git = (...args: string[]) => execFileSync("git", ["-C", app, ...args], { stdio: "ignore" });
+    git("init", "-q", "-b", "main");
+    git("add", ".");
+    git("-c", "user.email=e2e@e2e.test", "-c", "user.name=e2e", "commit", "-q", "-m", "init");
+
+    // Installed dependencies git does not carry: the runner clones them into
+    // each task's worktree.
+    mkdirSync(join(app, "deps", "jason"), { recursive: true });
+    writeFileSync(join(app, "deps", "jason", "mix.exs"), "jason\n");
+    return root;
   }
 
   /** Everything the process printed so far. */

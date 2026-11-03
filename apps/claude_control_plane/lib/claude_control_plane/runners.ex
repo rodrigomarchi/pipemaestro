@@ -17,7 +17,7 @@ defmodule ClaudeControlPlane.Runners do
   alias ClaudeControlPlane.Runners.{DeviceAuthorization, Runner}
   alias ClaudeControlPlane.Workspaces
   alias ClaudeControlPlane.Workspaces.Workspace
-  alias ClaudeControlPlaneProtocol.Hello
+  alias ClaudeControlPlaneProtocol.{Hello, Worktree}
 
   @authorization_ttl_seconds 600
   @poll_interval_seconds 5
@@ -221,6 +221,28 @@ defmodule ClaudeControlPlane.Runners do
   @spec record_hello(Runner.t(), Hello.t()) :: {:ok, Runner.t()}
   def record_hello(%Runner{} = runner, %Hello{} = hello) do
     runner |> Runner.hello_changeset(hello, now()) |> Repo.update()
+  end
+
+  @doc """
+  Records the code directories the runner offers now (sent when they change
+  while it is online), in the wire form of `ClaudeControlPlaneProtocol.Hello`.
+  """
+  @spec update_directories(Runner.t(), term()) :: {:ok, Runner.t()} | {:error, String.t()}
+  def update_directories(%Runner{} = runner, directories) do
+    with {:ok, directories} <- Hello.parse_directories(directories) do
+      runner |> Ecto.Changeset.change(directories: directories) |> Repo.update()
+    end
+  end
+
+  @doc """
+  Records the space the runner's task worktrees take, in the wire form of
+  `ClaudeControlPlaneProtocol.Worktree`'s `worktree:usage`.
+  """
+  @spec update_worktree_usage(Runner.t(), term()) :: {:ok, Runner.t()} | {:error, String.t()}
+  def update_worktree_usage(%Runner{} = runner, usage) do
+    with {:ok, usage} <- Worktree.parse_usage(usage) do
+      runner |> Ecto.Changeset.change(worktree_usage: usage) |> Repo.update()
+    end
   end
 
   @doc "Notes that the runner was just seen (for \"last seen\" after it goes offline)."

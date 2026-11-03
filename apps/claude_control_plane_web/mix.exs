@@ -74,7 +74,9 @@ defmodule ClaudeControlPlaneWeb.MixProject do
       {:claude_control_plane, in_umbrella: true},
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"},
-      {:petal_components, "~> 4.17"}
+      {:petal_components, "~> 4.17"},
+      # Markdown of the agents' artifacts, rendered and sanitized on the server.
+      {:mdex, "~> 0.12"}
     ]
   end
 

@@ -3,23 +3,34 @@ defmodule Mix.Tasks.Runner.Start do
   @moduledoc """
   Connects with the saved credentials and stays online until stopped (Ctrl+C):
 
-      mix runner.start
+      mix runner.start [--root ~/src]
+
+  `--root` is where the code directories it offers are (every directory at its
+  first level); it is saved with the credentials, so later starts reuse it.
 
   Reconnects on its own when the network drops. Stops when the platform
   refuses the runner (revoked), since retrying could not help.
 
   Runs the jobs the platform sends with the agent CLI (`claude`, or
-  `$CLAUDE_BIN`), one at a time, in the runner's working directory (`workdir`
-  next to the credentials). The agent runs with every permission granted.
+  `$CLAUDE_BIN`), up to the runner's capacity at once
+  (`ClaudeControlPlaneRunner.JobRunner`): a task's stages in a git worktree of
+  the task's directory (`ClaudeControlPlaneRunner.Workspace`), a job on its own
+  in the runner's working directory (`workdir` next to the credentials). The
+  agent runs with every permission granted.
   """
   use Mix.Task
 
-  alias ClaudeControlPlaneRunner.{Claude, CLI, Config, Connection, Host}
+  alias ClaudeControlPlaneRunner.{Claude, CLI, Config, Connection, Directories, Host}
+
+  @switches [root: :string]
 
   @impl Mix.Task
-  def run(_args) do
+  def run(args) do
+    {opts, _rest, invalid} = OptionParser.parse(args, strict: @switches)
+    if invalid != [], do: Mix.raise("Opção inválida: #{inspect(invalid)}")
+
     CLI.start!()
-    config = CLI.config!()
+    config = config_with_root(CLI.config!(), opts[:root])
     {:ok, hello} = Host.hello(labels: config.labels, capacity: config.capacity)
 
     workdir = Config.workdir()
@@ -27,6 +38,8 @@ defmodule Mix.Tasks.Runner.Start do
 
     Mix.shell().info("""
     Workdir: #{workdir}
+    Diretórios: #{root_description(config.root)}
+    Capacidade: #{hello.capacity} jobs ao mesmo tempo
     Agente: #{agent_description()}
     Atenção: os jobs rodam o agente com permissões totais nesta máquina (sem container).
     """)
@@ -34,7 +47,13 @@ defmodule Mix.Tasks.Runner.Start do
     Mix.shell().info("Conectando #{config.runner_name} a #{config.url}...")
 
     {:ok, pid} =
-      Connection.start_link(config: config, hello: hello, notify: self(), workdir: workdir)
+      Connection.start_link(
+        config: config,
+        hello: hello,
+        notify: self(),
+        workdir: workdir,
+        root: config.root
+      )
 
     ref = Process.monitor(pid)
     loop(config, ref)
@@ -71,6 +90,22 @@ defmodule Mix.Tasks.Runner.Start do
         Mix.raise("A conexão terminou: #{inspect(reason)}")
     end
   end
+
+  defp config_with_root(config, nil), do: config
+
+  defp config_with_root(config, root) do
+    root = Path.expand(root)
+    unless File.dir?(root), do: Mix.raise("O diretório raiz #{root} não existe.")
+
+    config = Map.put(config, :root, root)
+    Config.save(config)
+    config
+  end
+
+  defp root_description(nil),
+    do: "nenhum (rode com --root, ex.: make runner.start ROOT=~/src, para oferecer tarefas)"
+
+  defp root_description(root), do: "#{root} (#{length(Directories.scan(root))} diretórios)"
 
   defp agent_description do
     case Claude.executable() do

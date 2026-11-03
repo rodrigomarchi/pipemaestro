@@ -123,13 +123,16 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               icon="hero-view-columns"
               link_type="live_redirect"
               active={@active == :board}
+              data-testid="sidebar-board"
             />
             <.sidebar_item
               label="Decisões"
-              path={@home}
+              path={@home <> "/decisions"}
               icon="hero-hand-raised"
               badge={if @pending_decisions > 0, do: Integer.to_string(@pending_decisions)}
               link_type="live_redirect"
+              active={@active == :decisions}
+              data-testid="sidebar-decisions"
             />
             <.sidebar_item
               label="Execuções"
@@ -139,7 +142,14 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               active={@active == :jobs}
               data-testid="sidebar-jobs"
             />
-            <.sidebar_item label="Tarefas" path={@home} icon="hero-queue-list" />
+            <.sidebar_item
+              label="Tarefas"
+              path={@home <> "/tasks"}
+              icon="hero-queue-list"
+              link_type="live_redirect"
+              active={@active == :tasks}
+              data-testid="sidebar-tasks"
+            />
             <.sidebar_item label="Pull requests" path={@home} icon="hero-arrow-up-tray" />
           </.sidebar_group>
 
@@ -152,7 +162,22 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               active={@active == :runners}
               data-testid="sidebar-runners"
             />
-            <.sidebar_item label="Pipelines" path={@home} icon="hero-squares-2x2" />
+            <.sidebar_item
+              label="Projetos"
+              path={@home <> "/projects"}
+              icon="hero-folder"
+              link_type="live_redirect"
+              active={@active == :projects}
+              data-testid="sidebar-projects"
+            />
+            <.sidebar_item
+              label="Pipelines"
+              path={@home <> "/pipelines"}
+              icon="hero-squares-2x2"
+              link_type="live_redirect"
+              active={@active == :pipelines}
+              data-testid="sidebar-pipelines"
+            />
             <.sidebar_item label="Uso e limites" path={@home} icon="hero-chart-bar" />
           </.sidebar_group>
 

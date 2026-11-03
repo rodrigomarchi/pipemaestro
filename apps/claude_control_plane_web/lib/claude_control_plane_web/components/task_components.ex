@@ -1,0 +1,131 @@
+defmodule ClaudeControlPlaneWeb.TaskComponents do
+  @moduledoc """
+  Pieces every task screen shares: statuses, the stage progress and what a
+  stage changed in the task's directory.
+  """
+  use ClaudeControlPlaneWeb, :html
+
+  import ClaudeControlPlaneWeb.JobComponents, only: [patch: 1]
+
+  alias ClaudeControlPlane.Tasks.{StageRun, Task}
+
+  @doc "The task's status as a badge."
+  attr :task, Task, required: true
+  attr :rest, :global
+
+  @spec task_status(map()) :: Phoenix.LiveView.Rendered.t()
+  def task_status(assigns) do
+    {label, color} = task_label(assigns.task.status)
+    assigns = assign(assigns, label: label, color: color)
+
+    ~H"""
+    <.badge size="sm" variant="soft" color={@color} dot label={@label} {@rest} />
+    """
+  end
+
+  defp task_label(:running), do: {"Executando", "info"}
+  defp task_label(:awaiting_decision), do: {"Aguardando decisão", "warning"}
+  defp task_label(:succeeded), do: {"Concluída", "success"}
+  defp task_label(:failed), do: {"Falhou", "danger"}
+  defp task_label(:canceled), do: {"Cancelada", "gray"}
+
+  @doc "A stage attempt's status as a badge."
+  attr :run, StageRun, required: true
+  attr :rest, :global
+
+  @spec stage_run_status(map()) :: Phoenix.LiveView.Rendered.t()
+  def stage_run_status(assigns) do
+    {label, color} = stage_label(assigns.run.status)
+    assigns = assign(assigns, label: label, color: color)
+
+    ~H"""
+    <.badge size="xs" variant="soft" color={@color} label={@label} {@rest} />
+    """
+  end
+
+  defp stage_label(:running), do: {"Executando", "info"}
+  defp stage_label(:passed), do: {"Aprovada no gate", "success"}
+  defp stage_label(:failed), do: {"Falhou", "danger"}
+  defp stage_label(:blocked), do: {"Bloqueada", "warning"}
+  defp stage_label(:canceled), do: {"Cancelada", "gray"}
+
+  @doc "Where the task is: `2/6 · Investigação`, or how it ended."
+  @spec stage_progress(Task.t()) :: String.t()
+  def stage_progress(%Task{status: status} = task)
+      when status in [:running, :awaiting_decision] do
+    "#{task.current_stage + 1}/#{length(task.stages)} · #{Task.current(task).name}"
+  end
+
+  def stage_progress(%Task{stages: [_one]}), do: "1 etapa"
+  def stage_progress(%Task{} = task), do: "#{length(task.stages)} etapas"
+
+  @doc """
+  The files a stage changed (`changes` as the runner reports it): a summary
+  that opens to the files and the patch, its lines colored.
+  """
+  attr :changes, :map, required: true
+  attr :id, :string, required: true, doc: "suffix for the test ids (`<key>-<attempt>`)"
+
+  @spec changes_report(map()) :: Phoenix.LiveView.Rendered.t()
+  def changes_report(assigns) do
+    files = assigns.changes["files"] || []
+
+    assigns =
+      assign(assigns,
+        files: files,
+        added: files |> Enum.map(&(&1["added"] || 0)) |> Enum.sum(),
+        removed: files |> Enum.map(&(&1["removed"] || 0)) |> Enum.sum()
+      )
+
+    ~H"""
+    <details
+      class="rounded-lg border border-gray-200 text-sm dark:border-gray-800"
+      data-testid={"stage-run-changes-#{@id}"}
+    >
+      <summary
+        class="cursor-pointer px-3 py-2 text-gray-700 dark:text-gray-300"
+        data-testid={"stage-run-changes-summary-#{@id}"}
+      >
+        <.icon name="hero-document-text" class="size-4" />
+        {files_label(length(@files))}
+        <span class="ml-1 font-mono text-xs text-success-700 dark:text-success-400">+{@added}</span>
+        <span class="font-mono text-xs text-danger-700 dark:text-danger-400">−{@removed}</span>
+      </summary>
+      <div class="border-t border-gray-200 px-3 py-2 dark:border-gray-800">
+        <.file_list files={@files} />
+        <p :if={@changes["truncated"]} class="mt-2 text-xs text-warning-700 dark:text-warning-400">
+          O diff é grande: o patch foi cortado.
+        </p>
+        <.patch
+          :if={@changes["patch"] not in [nil, ""]}
+          patch={@changes["patch"]}
+          data-testid={"stage-run-patch-#{@id}"}
+        />
+      </div>
+    </details>
+    """
+  end
+
+  @doc "Changed files with lines added and removed (binary files say so)."
+  attr :files, :list, required: true
+  attr :rest, :global
+
+  @spec file_list(map()) :: Phoenix.LiveView.Rendered.t()
+  def file_list(assigns) do
+    ~H"""
+    <ul class="space-y-0.5 font-mono text-xs" {@rest}>
+      <li :for={file <- @files} class="flex gap-3">
+        <span :if={file["added"]} class="w-20 shrink-0 text-right">
+          <span class="text-success-700 dark:text-success-400">+{file["added"]}</span>
+          <span class="text-danger-700 dark:text-danger-400">−{file["removed"]}</span>
+        </span>
+        <span :if={!file["added"]} class="w-20 shrink-0 text-right text-gray-500">binário</span>
+        <span class="break-all text-gray-800 dark:text-gray-200">{file["path"]}</span>
+      </li>
+    </ul>
+    """
+  end
+
+  defp files_label(1), do: "1 arquivo alterado"
+  defp files_label(n), do: "#{n} arquivos alterados"
+end

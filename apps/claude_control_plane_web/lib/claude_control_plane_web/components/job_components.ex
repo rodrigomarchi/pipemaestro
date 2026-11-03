@@ -1,8 +1,13 @@
 defmodule ClaudeControlPlaneWeb.JobComponents do
-  @moduledoc "Pieces every job screen shares: status, one event of the run, numbers."
+  @moduledoc """
+  Pieces every job screen shares: status, one event of the run (each tool
+  call shown for what it is: a command, an edit as a diff, a file read), a
+  colored diff, numbers.
+  """
   use ClaudeControlPlaneWeb, :html
 
   alias ClaudeControlPlane.Jobs.{Event, Job}
+  alias ClaudeControlPlaneWeb.Markdown
 
   @doc "The job's status as a badge; a running job asked to stop shows it."
   attr :job, Job, required: true
@@ -27,7 +32,7 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
   defp status_label(%Job{status: :failed}), do: {"Falhou", "danger"}
   defp status_label(%Job{status: :canceled}), do: {"Cancelado", "gray"}
 
-  @doc "One event of a run: an icon for its kind and its text."
+  @doc "One event of a run: an icon for its kind and what happened."
   attr :id, :string, required: true
   attr :event, Event, required: true
 
@@ -50,17 +55,180 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
             · {@event.data["name"]}
           </span>
         </p>
-        <pre
-          :if={@event.data["text"] not in [nil, ""]}
-          class={[
-            "mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-xs",
-            @look.body
-          ]}
-        >{@event.data["text"]}</pre>
+        <.event_body event={@event} body={@look.body} />
       </div>
     </li>
     """
   end
+
+  attr :event, Event, required: true
+  attr :body, :string, required: true
+
+  defp event_body(%{event: %Event{type: "assistant_text"}} = assigns) do
+    ~H"""
+    <div class={[
+      "prose prose-sm mt-1 max-w-none rounded-lg px-3 py-2 dark:prose-invert",
+      "prose-h1:text-lg prose-h2:text-base prose-h3:text-sm",
+      @body
+    ]}>
+      {Markdown.to_html(@event.data["text"])}
+    </div>
+    """
+  end
+
+  defp event_body(%{event: %Event{type: "tool_use", data: %{"input" => input}}} = assigns)
+       when is_map(input) do
+    assigns = assign(assigns, input: input, name: assigns.event.data["name"])
+    tool_body(assigns)
+  end
+
+  defp event_body(%{event: %Event{type: "tool_result"}} = assigns) do
+    text = assigns.event.data["text"] || ""
+    assigns = assign(assigns, text: text, lines: length(String.split(text, "\n")))
+
+    ~H"""
+    <details
+      :if={@text != ""}
+      open={@event.data["is_error"] == true}
+      class="mt-1 text-xs"
+    >
+      <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
+        Saída · {lines_label(@lines)}
+      </summary>
+      <pre class={[
+        "mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono",
+        @body
+      ]}>{@text}</pre>
+    </details>
+    """
+  end
+
+  defp event_body(assigns) do
+    ~H"""
+    <pre
+      :if={@event.data["text"] not in [nil, ""]}
+      class={[
+        "mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono text-xs",
+        @body
+      ]}
+    >{@event.data["text"]}</pre>
+    """
+  end
+
+  defp tool_body(%{name: "Bash"} = assigns) do
+    ~H"""
+    <p :if={@input["description"]} class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+      {@input["description"]}
+    </p>
+    <pre class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-900 px-3 py-2 font-mono text-xs text-gray-100 dark:bg-black">$ {@input["command"]}</pre>
+    """
+  end
+
+  defp tool_body(%{name: "Edit"} = assigns) do
+    assigns =
+      assign(assigns,
+        removed: lines(assigns.input["old_string"]),
+        added: lines(assigns.input["new_string"])
+      )
+
+    ~H"""
+    <p class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
+      {@input["file_path"]}
+    </p>
+    <pre class="mt-1 max-h-64 overflow-auto rounded-lg bg-gray-50 py-2 font-mono text-xs leading-5 dark:bg-gray-950"><code><span
+      :for={line <- @removed}
+      class={["block px-3", diff_class(:del)]}
+    >-{line}</span><span
+      :for={line <- @added}
+      class={["block px-3", diff_class(:add)]}
+    >+{line}</span></code></pre>
+    """
+  end
+
+  defp tool_body(%{name: "Write"} = assigns) do
+    ~H"""
+    <details class="mt-1 text-xs">
+      <summary class="cursor-pointer break-all font-mono text-gray-700 dark:text-gray-300">
+        {@input["file_path"]}
+      </summary>
+      <pre class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-3 py-2 font-mono text-gray-800 dark:bg-gray-950 dark:text-gray-100">{@input["content"]}</pre>
+    </details>
+    """
+  end
+
+  defp tool_body(%{name: "TodoWrite"} = assigns) do
+    ~H"""
+    <ul class="mt-1 space-y-0.5 text-sm">
+      <li
+        :for={todo <- @input["todos"] || []}
+        data-status={todo["status"]}
+        class="flex items-center gap-2 text-gray-800 dark:text-gray-200"
+      >
+        <.icon name={todo_icon(todo["status"])} class={["size-4", todo_color(todo["status"])]} />
+        <span class={todo["status"] == "completed" && "text-gray-500 line-through"}>
+          {todo["content"]}
+        </span>
+      </li>
+    </ul>
+    """
+  end
+
+  # Reads, searches and the rest: their arguments in one line.
+  defp tool_body(assigns) do
+    assigns = assign(assigns, parts: assigns.input |> Map.values() |> Enum.map(&to_string/1))
+
+    ~H"""
+    <p class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
+      {Enum.join(@parts, " · ")}
+    </p>
+    """
+  end
+
+  defp lines(nil), do: []
+  defp lines(text), do: String.split(text, "\n")
+
+  defp lines_label(1), do: "1 linha"
+  defp lines_label(n), do: "#{n} linhas"
+
+  defp todo_icon("completed"), do: "hero-check-circle"
+  defp todo_icon("in_progress"), do: "hero-arrow-path"
+  defp todo_icon(_pending), do: "hero-stop-circle"
+
+  defp todo_color("completed"), do: "text-success-600 dark:text-success-400"
+  defp todo_color("in_progress"), do: "text-info-600 dark:text-info-400"
+  defp todo_color(_pending), do: "text-gray-400"
+
+  @doc "A unified diff, its added, removed and hunk lines colored."
+  attr :patch, :string, required: true
+  attr :rest, :global
+
+  @spec patch(map()) :: Phoenix.LiveView.Rendered.t()
+  def patch(assigns) do
+    assigns = assign(assigns, lines: String.split(assigns.patch, "\n"))
+
+    ~H"""
+    <pre
+      class="mt-3 max-h-[40rem] overflow-auto rounded-lg bg-gray-50 py-2 font-mono text-xs leading-5 dark:bg-gray-950"
+      {@rest}
+    ><code><span :for={line <- @lines} class={["block px-3", line_class(line)]}>{line}</span></code></pre>
+    """
+  end
+
+  defp line_class("+++" <> _rest), do: "font-semibold text-gray-700 dark:text-gray-300"
+  defp line_class("---" <> _rest), do: "font-semibold text-gray-700 dark:text-gray-300"
+
+  defp line_class("+" <> _rest), do: diff_class(:add)
+  defp line_class("-" <> _rest), do: diff_class(:del)
+
+  defp line_class("@@" <> _rest), do: "text-info-700 dark:text-info-400"
+  defp line_class("diff --git" <> _rest), do: "mt-2 font-semibold text-gray-900 dark:text-white"
+  defp line_class(_line), do: "text-gray-700 dark:text-gray-300"
+
+  defp diff_class(:add),
+    do: "diff-add bg-success-50 text-success-800 dark:bg-success-950/40 dark:text-success-300"
+
+  defp diff_class(:del),
+    do: "diff-del bg-danger-50 text-danger-800 dark:bg-danger-950/40 dark:text-danger-300"
 
   @neutral "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
 

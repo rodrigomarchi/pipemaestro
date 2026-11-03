@@ -189,4 +189,98 @@ defmodule ClaudeControlPlaneWeb.RunnerChannelTest do
       assert [%{seq: 1}] = Jobs.list_events(job)
     end
   end
+
+  describe "tasks" do
+    setup %{token: token, workspace: workspace, runner: runner} do
+      {:ok, socket} = connect(RunnerSocket, params(token))
+      user = member_fixture(workspace)
+      %{socket: socket, user: user, runner: runner}
+    end
+
+    test "announces directories, updates them, and stage jobs carry their context", ctx do
+      RunnerStatus.subscribe(ctx.workspace.id)
+      hello = Hello.to_map(hello_fixture(%{directories: [%{"name" => "app", "git" => true}]}))
+
+      {:ok, _reply, channel} =
+        subscribe_and_join(ctx.socket, RunnerChannel, "runner:" <> ctx.runner.id, hello)
+
+      assert_receive :runners_changed
+
+      assert [%{"name" => "app"}] =
+               Runners.get_runner!(ctx.workspace, ctx.runner.id).directories
+
+      ref =
+        push(channel, "runner:directories", %{
+          "directories" => [%{"name" => "api", "git" => false}, %{"name" => "app", "git" => true}]
+        })
+
+      assert_reply ref, :ok
+      assert_receive :runners_changed
+      assert [_, _] = Runners.get_runner!(ctx.workspace, ctx.runner.id).directories
+
+      ref = push(channel, "runner:directories", %{"directories" => [%{"name" => "../x"}]})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+
+      pipeline = pipeline_fixture(ctx.workspace)
+
+      {:ok, task} =
+        ClaudeControlPlane.Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Tarefa",
+          "prompt" => "faça",
+          "pipeline_id" => pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+
+      assert_push "job:assign", %{
+        "directory" => "app",
+        "worktree" => %{"task_id" => task_id},
+        "artifact_path" => ".control-plane/" <> _,
+        "output_schema" => %{"required" => ["status", "resumo"]}
+      }
+
+      assert task_id == task.id
+    end
+
+    test "worktree removals reach the runner, again on join, and its reports are stored", ctx do
+      runner = with_directories(ctx.runner, [%{"name" => "app", "git" => true}])
+
+      {:ok, task} =
+        ClaudeControlPlane.Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Tarefa",
+          "prompt" => "faça",
+          "pipeline_id" => pipeline_fixture(ctx.workspace).id,
+          "runner_id" => runner.id,
+          "directory" => "app"
+        })
+
+      task =
+        task
+        |> Ecto.Changeset.change(status: :canceled, worktree: "/w/worktrees/x")
+        |> ClaudeControlPlane.Repo.update!()
+
+      channel = join_runner(ctx.socket, runner)
+      {:ok, _task} = ClaudeControlPlane.Tasks.remove_worktree(task)
+      assert_push "worktree:remove", %{"task_id" => task_id, "directory" => "app"}
+      assert task_id == task.id
+
+      # Not confirmed: a new join sends it again.
+      Process.unlink(channel.channel_pid)
+      close(channel)
+      channel = join_runner(ctx.socket, runner)
+      assert_push "worktree:remove", %{"task_id" => ^task_id}
+
+      ref = push(channel, "worktree:removed", %{"task_id" => task_id})
+      assert_reply ref, :ok
+      assert ClaudeControlPlane.Tasks.get_task!(ctx.workspace, task_id).worktree_removed_at
+
+      ref = push(channel, "worktree:usage", %{"count" => 1, "bytes" => 10, "free_bytes" => 99})
+      assert_reply ref, :ok
+      assert_receive :runners_changed
+      assert %{"count" => 1} = Runners.get_runner!(ctx.workspace, runner.id).worktree_usage
+
+      ref = push(channel, "worktree:usage", %{"count" => -1})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+    end
+  end
 end

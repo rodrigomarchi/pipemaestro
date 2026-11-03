@@ -22,6 +22,8 @@
 /* Form element base styles (border, padding, height) that pc-* inputs build on.
    Bundled with the standalone Tailwind CLI, so no npm install is needed. */
 @plugin "@tailwindcss/forms";
+/* Rendered Markdown (the agents' artifacts): `prose` classes. */
+@plugin "@tailwindcss/typography";
 
 /* Brand ramps. petal_components ships its own as `@theme default`, so these win. */
 @theme inline {

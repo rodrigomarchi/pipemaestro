@@ -36,7 +36,8 @@ defmodule Mix.Tasks.Runner.Login do
         |> Map.merge(%{
           url: String.trim_trailing(url, "/"),
           labels: labels,
-          capacity: opts[:capacity]
+          capacity: opts[:capacity],
+          root: nil
         })
         |> Config.save()
 

@@ -18,6 +18,12 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
 
   @moduletag :tmp_dir
 
+  # After every join the runner reports its worktrees' disk usage; in test
+  # mode the push holds the connection until the test takes it.
+  defp assert_usage do
+    assert_push("runner:r1", "worktree:usage", %{"count" => 0, "bytes" => 0}, _ref, 5_000)
+  end
+
   setup %{tmp_dir: dir} do
     {:ok, hello} = Host.hello()
 
@@ -33,6 +39,7 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
       )
 
     connect_and_assert_join(client, "runner:r1", params, :ok)
+    assert_usage()
     assert params["running_job_ids"] == []
 
     %{client: client}
@@ -74,6 +81,11 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
     connect_and_assert_join(client, "runner:r1", params, :ok)
     assert params["running_job_ids"] == ["j1"]
 
+    # Nothing was confirmed: it all goes again, before anything new.
+    assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
+    assert_events(1..3)
+    assert_usage()
+
     push(client, "runner:r1", "job:cancel", %{"job_id" => "j1"})
 
     assert_push(
@@ -92,5 +104,87 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
 
     refute_push("runner:r1", "job:started", _params)
     assert Process.alive?(client)
+  end
+
+  test "runs as many jobs at once as the capacity it announced", %{tmp_dir: dir} do
+    stop_supervised!(Connection)
+    root = Path.join(dir, "src")
+    for name <- ~w(a b), do: File.mkdir_p!(Path.join(root, name))
+    {:ok, hello} = Host.hello(capacity: 2)
+
+    client =
+      start_supervised!(
+        {Connection,
+         config: @config,
+         hello: hello,
+         notify: self(),
+         workdir: Path.join(dir, "workdir"),
+         root: root,
+         executable: {:ok, @fake},
+         connect_options: [test_mode?: true]}
+      )
+
+    connect_and_assert_join(client, "runner:r1", _params, :ok)
+    assert_usage()
+
+    for {id, directory} <- [{"j1", "a"}, {"j2", "b"}] do
+      push(client, "runner:r1", "job:assign", %{
+        "id" => id,
+        "prompt" => "devagar [lento]",
+        "directory" => directory
+      })
+    end
+
+    assert_push("runner:r1", "job:started", %{"job_id" => "j1"})
+    assert_push("runner:r1", "job:started", %{"job_id" => "j2"})
+  end
+
+  test "removes a task's worktree when asked", %{client: client} do
+    push(client, "runner:r1", "worktree:remove", %{"task_id" => "t1", "directory" => "app"})
+    assert_push("runner:r1", "worktree:removed", %{"task_id" => "t1"}, _ref, 5_000)
+  end
+
+  # Takes the pushes of a whole run of job `id`, answering each with `reply`
+  # (or leaving them unanswered with `nil`).
+  defp take_run(client, id, reply) do
+    assert_push("runner:r1", "job:started", %{"job_id" => ^id}, ref, 5_000)
+    if reply, do: reply(client, ref, reply)
+
+    for seq <- 1..5 do
+      assert_push("runner:r1", "job:event", %{"job_id" => ^id, "seq" => ^seq}, ref, 5_000)
+      if reply, do: reply(client, ref, reply)
+    end
+
+    assert_push("runner:r1", "job:finished", %{"job_id" => ^id}, ref, 5_000)
+    if reply, do: reply(client, ref, reply)
+  end
+
+  test "what the platform did not confirm is sent again after reconnecting", %{client: client} do
+    push(client, "runner:r1", "job:assign", %{"id" => "j1", "prompt" => "diga oi"})
+    take_run(client, "j1", nil)
+
+    disconnect(client, :closed)
+    assert_receive {:runner_connection, {:disconnected, :closed}}
+
+    # Until the platform has the end, the job still counts as running.
+    connect_and_assert_join(client, "runner:r1", params, :ok)
+    assert params["running_job_ids"] == ["j1"]
+    take_run(client, "j1", :ok)
+    assert_usage()
+
+    disconnect(client, :closed)
+    connect_and_assert_join(client, "runner:r1", params, :ok)
+    assert params["running_job_ids"] == []
+    assert_usage()
+    refute_push("runner:r1", "job:started", _params)
+  end
+
+  test "an error reply also settles a message", %{client: client} do
+    push(client, "runner:r1", "job:assign", %{"id" => "j1", "prompt" => "diga oi"})
+    take_run(client, "j1", {:error, %{"reason" => "not_found"}})
+
+    disconnect(client, :closed)
+    connect_and_assert_join(client, "runner:r1", params, :ok)
+    assert params["running_job_ids"] == []
   end
 end

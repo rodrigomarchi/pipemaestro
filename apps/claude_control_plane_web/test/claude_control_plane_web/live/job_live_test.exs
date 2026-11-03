@@ -64,14 +64,14 @@ defmodule ClaudeControlPlaneWeb.JobLiveTest do
     {:ok, _} =
       Jobs.finish_job(runner, job.id, %{
         "status" => "succeeded",
-        "result" => "feito",
+        "result" => "**feito**, sem pendências",
         "exit_code" => 0,
         "num_turns" => 3,
         "duration_ms" => 850
       })
 
     assert has_element?(view, "[data-testid=job-status]", "Concluído")
-    assert has_element?(view, "[data-testid=job-result]", "feito")
+    assert has_element?(view, "[data-testid=job-result] strong", "feito")
     assert has_element?(view, "[data-testid=job-duration]", "850 ms")
     refute has_element?(view, "[data-testid=job-cancel]")
   end

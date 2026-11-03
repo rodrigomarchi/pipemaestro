@@ -1,14 +1,16 @@
 defmodule ClaudeControlPlaneRunner.Config do
   @moduledoc """
   The runner's credentials on disk: which platform it signed in to, its id and
-  token, its workspace, and the labels and capacity it was signed in with (so
-  every later connection announces the same). Stored as JSON readable only by its owner, in
-  `~/.config/claude-control-plane/runner.json` (or `$RUNNER_CONFIG_DIR`).
+  token, its workspace, the labels and capacity it was signed in with (so
+  every later connection announces the same), and the root of the code
+  directories it offers (`root`, set by `runner.start --root`). Stored as JSON
+  readable only by its owner, in `~/.config/claude-control-plane/runner.json`
+  (or `$RUNNER_CONFIG_DIR`).
   """
 
   @file_name "runner.json"
   @fields ~w(url runner_id runner_name token workspace_name workspace_slug)a
-  @optional_fields ~w(labels capacity)a
+  @optional_fields ~w(labels capacity root)a
 
   @type t :: %{
           url: String.t(),
@@ -18,7 +20,8 @@ defmodule ClaudeControlPlaneRunner.Config do
           workspace_name: String.t(),
           workspace_slug: String.t(),
           labels: [String.t()],
-          capacity: pos_integer() | nil
+          capacity: pos_integer() | nil,
+          root: Path.t() | nil
         }
 
   @doc "The directory credentials live in."
@@ -47,8 +50,9 @@ defmodule ClaudeControlPlaneRunner.Config do
          config = Map.new(@fields, &{&1, map[Atom.to_string(&1)]}),
          true <- Enum.all?(Map.values(config), &is_binary/1),
          {:ok, labels} <- labels(map["labels"]),
-         {:ok, capacity} <- capacity(map["capacity"]) do
-      {:ok, Map.merge(config, %{labels: labels, capacity: capacity})}
+         {:ok, capacity} <- capacity(map["capacity"]),
+         {:ok, root} <- root(map["root"]) do
+      {:ok, Map.merge(config, %{labels: labels, capacity: capacity, root: root})}
     else
       {:error, :not_found} -> {:error, :not_found}
       _invalid -> {:error, :invalid}
@@ -82,6 +86,10 @@ defmodule ClaudeControlPlaneRunner.Config do
     do: if(Enum.all?(list, &is_binary/1), do: {:ok, list}, else: :invalid)
 
   defp labels(_other), do: :invalid
+
+  defp root(nil), do: {:ok, nil}
+  defp root(root) when is_binary(root), do: {:ok, root}
+  defp root(_other), do: :invalid
 
   defp capacity(nil), do: {:ok, nil}
   defp capacity(n) when is_integer(n) and n > 0, do: {:ok, n}

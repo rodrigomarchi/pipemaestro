@@ -93,6 +93,7 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
     ~H"""
     <Layouts.app
       flash={@flash}
+      pending_decisions={@pending_decisions}
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:runners}
@@ -150,6 +151,31 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
                 label={label}
               />
             </div>
+          </:col>
+          <:col :let={runner} label="Diretórios">
+            <span
+              :if={runner.directories != []}
+              class="text-gray-600 dark:text-gray-300"
+              data-testid={"runner-directories-#{runner.name}"}
+            >
+              {length(runner.directories)}
+            </span>
+            <.badge
+              :if={runner.directories == []}
+              size="xs"
+              color="warning"
+              variant="soft"
+              label="sem raiz"
+              data-testid={"runner-directories-#{runner.name}"}
+            />
+          </:col>
+          <:col :let={runner} label="Worktrees">
+            <span
+              class="whitespace-nowrap text-gray-600 dark:text-gray-300"
+              data-testid={"runner-worktrees-#{runner.name}"}
+            >
+              {worktree_usage(runner.worktree_usage)}
+            </span>
           </:col>
           <:col :let={runner} label="Capacidade">
             <span data-testid={"runner-capacity-#{runner.name}"}>{runner.capacity}</span>
@@ -235,5 +261,12 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
       </.modal>
     </Layouts.app>
     """
+  end
+
+  defp worktree_usage(nil), do: "—"
+
+  defp worktree_usage(%{"count" => count, "bytes" => bytes} = usage) do
+    free = if usage["free_bytes"], do: " (#{format_bytes(usage["free_bytes"])} livres)", else: ""
+    "#{count} · #{format_bytes(bytes)}#{free}"
   end
 end

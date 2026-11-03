@@ -1,9 +1,10 @@
-# Protocolo runner ↔ control plane (v2)
+# Protocolo runner ↔ control plane (v3)
 
-> Status: v2, implementada em `apps/claude_control_plane_protocol`, que é a fonte da
+> Status: v3, implementada em `apps/claude_control_plane_protocol`, que é a fonte da
 > verdade das constantes e dos formatos `Hello`, `Job` e `JobEvent`. Ela cobre login,
-> conexão e jobs (seção 4). Leases, dispatcher e etapas de pipeline entram em versões
-> seguintes. A v1 (só login e conexão) nunca foi distribuída.
+> conexão, jobs (seção 4) e o contexto das etapas de tarefa (seção 4.4). Leases e
+> dispatcher entram em versões seguintes. As versões anteriores nunca foram
+> distribuídas: v1 cobria só login e conexão, e v2 trazia jobs sem contexto.
 
 ## Princípios
 
@@ -24,7 +25,7 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 ```json
 {
   "hello": {
-    "protocol_version": 2, "runner_version": "0.1.0",
+    "protocol_version": 3, "runner_version": "0.1.0",
     "hostname": "build-01", "os": "linux", "arch": "x86_64",
     "labels": ["linux", "docker"], "capacity": 4
   },
@@ -72,7 +73,7 @@ O token (`cpr_…`) é emitido uma única vez, na primeira consulta depois da ap
 ## 2. Conexão
 
 O runner abre um WebSocket Phoenix (serializador v2) em
-`ws(s)://<plataforma>/runner/socket/websocket?token=<runner_token>&protocol_version=2`.
+`ws(s)://<plataforma>/runner/socket/websocket?token=<runner_token>&protocol_version=3`.
 
 Token inválido, runner revogado ou versão não suportada fazem a plataforma recusar
 o upgrade com **HTTP 403**. Uma nova tentativa não resolve: o runner encerra e
@@ -81,8 +82,11 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
 
 ## 3. Canal `runner:<runner_id>`
 
-- **Join:** o payload é o `Hello` (o mesmo formato da seção 1.1), acrescido de
-  `running_job_ids`: os jobs que o runner ainda está executando (vazio se omitido).
+- **Join:** o payload é o `Hello` (o mesmo formato da seção 1.1), acrescido de:
+  - `running_job_ids`: os jobs que o runner ainda está executando (vazio se omitido);
+  - `directories`: os diretórios de código que ele oferece, ou seja, o primeiro nível
+    da raiz com que foi iniciado (`[{"name": "app", "git": true}, …]`, até 500).
+
   O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
@@ -97,8 +101,11 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
 ## 4. Jobs
 
 Um job é um prompt que um membro do workspace envia a um runner escolhido por ele.
-O runner o executa com o agente CLI no seu workdir, **um por vez**, e reporta eventos
-e o desfecho. Todas as mensagens trafegam no canal `runner:<runner_id>`.
+O runner o executa com o agente CLI e reporta eventos e o desfecho. Executa até
+`capacity` jobs ao mesmo tempo; jobs que dividem o mesmo lugar esperam um pelo outro,
+na ordem: as etapas de uma tarefa (o worktree dela), os jobs num diretório sem
+worktree (o diretório) e os jobs avulsos (o workdir). Todas as mensagens trafegam no
+canal `runner:<runner_id>`.
 
 ### 4.1 Control plane → runner
 
@@ -132,11 +139,70 @@ Os tipos de `job:event` (`ClaudeControlPlaneProtocol.JobEvent`) resumem as linha
 | `tool_result` | `text`, `is_error` |
 | `result` | `text`, `is_error`, `cost_usd`, `duration_ms`, `num_turns` |
 
-O par `(job_id, seq)` é único, então um evento reenviado é ignorado. Eventos
-enviados durante uma queda de conexão se perdem (aparecem como lacuna de `seq`), mas
-o job continua rodando.
+O par `(job_id, seq)` é único, então um evento reenviado é ignorado.
 
-### 4.3 Estados
+**Entrega confiável.** O runner guarda cada mensagem desta seção até receber a
+resposta e, depois de cada join, reenvia em ordem o que não foi respondido. Uma
+resposta `error` também encerra a mensagem, porque reenviar não mudaria a resposta. O
+control plane é idempotente: `seq` repetido é ignorado, e um `job:started` ou
+`job:finished` repetido responde `not_queued` ou `finished`. Um job com mensagens não
+confirmadas entra em `running_job_ids` do `Hello`, para que a reconciliação não o
+falhe antes do reenvio. A outbox vive em memória: se o runner reinicia, ela se perde e
+os jobs em execução viram `failed`.
+
+### 4.3 Diretórios
+
+Se os diretórios da raiz mudam com o runner online, ele envia
+`runner:directories` com `{"directories": [...]}`. O formato é o mesmo do `Hello`, e a
+resposta é `ok` ou `error` (`invalid`). O runner verifica a raiz a cada minuto.
+
+### 4.4 Contexto de etapa
+
+O `job:assign` de uma etapa de tarefa traz, além de `id` e `prompt`, estes campos
+opcionais:
+
+| Campo | Uso no runner |
+|---|---|
+| `directory` | um dos `directories` anunciados; o job roda nele (ou no worktree, abaixo) |
+| `worktree` | `{"task_id", "branch"}`: roda em `<workdir>/worktrees/<task_id>`, um `git worktree` do diretório no branch dado, criado na primeira etapa e reaproveitado nas seguintes |
+| `output_schema` | passado em `--json-schema`; a saída validada volta em `structured_output` |
+| `model`, `max_budget_usd` | passados em `--model` e `--max-budget-usd` |
+| `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB) |
+| `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
+| `gates` | `[{"command", "expect"}]` (até 10, `expect` igual a `pass` ou `fail`): comandos que o runner roda no diretório de trabalho, em ordem, **depois que o agente termina bem**. O `job:finished` traz `gates` com cada um mais `exit_code`, `output` (o fim), `passed` e `duration_ms`. O runner só informa; quem decide é o control plane |
+| `setup` | `{"copy"?, "command"?}`: prepara o worktree **quando ele é criado**. O runner clona os caminhos de `copy` do diretório para o worktree (*copy-on-write*: `cp -c` no APFS, `--reflink` no Linux) e depois roda `command` no worktree. Sem `copy`, clona os que encontrar entre `deps`, `_build`, `node_modules`, `.venv`, `venv`, `vendor/bundle` e `target`. Um caminho que o worktree já tem (versionado) fica como está |
+
+O `job:finished` passa a levar `structured_output`, `artifact` e `workdir` (o
+diretório real em que o job rodou). Leva também `setup`
+(`{"duration_ms", "copied", "command", "exit_code", "output"}`) quando o job criou o
+worktree. Se o comando de setup falha, o job falha, e o worktree é removido para que a
+próxima tentativa recomece.
+
+Num worktree, o `job:finished` leva ainda `changes`: o que a etapa mudou ali, medido
+com git sem tocar no índice nem nos commits do agente. O runner grava a *tree* dos
+arquivos (versionados ou não, sem os ignorados nem os copiados pelo setup) no início e
+no fim da etapa, e na criação do worktree.
+
+| Campo | Conteúdo |
+|---|---|
+| `files` | `[{"path", "added", "removed"}]` alterados na etapa; `added` e `removed` são `null` num arquivo binário |
+| `patch` | o diff unificado da etapa, cortado numa linha inteira em 200 KB |
+| `truncated` | se o patch foi cortado |
+| `task_files` | os arquivos alterados desde a criação do worktree, no mesmo formato de `files` | Um diretório que não existe ou que não é a raiz
+de um repositório git (para `worktree`) faz o job falhar com o motivo em `error`.
+
+### 4.5 Worktrees
+
+O worktree de uma tarefa fica no runner depois que ela termina, até alguém pedir a
+remoção (`ClaudeControlPlaneProtocol.Worktree`).
+
+| Evento | Sentido | Payload |
+|---|---|---|
+| `worktree:remove` | control plane → runner | `{"task_id", "directory"}`: remove o worktree e mantém o branch no repositório. É reenviado a cada join até ser confirmado |
+| `worktree:removed` | runner → control plane | `{"task_id", "error"?}`. O runner recusa (`error`) se a tarefa tem job em execução ou na fila |
+| `worktree:usage` | runner → control plane | `{"count", "bytes", "free_bytes"}`: quantos worktrees o runner guarda, o espaço que ocupam e o espaço livre no disco. É enviado depois de cada join e a cada cinco minutos, se mudou |
+
+### 4.6 Estados
 
 ```
 queued ──job:started──► running ──job:finished──► succeeded | failed | canceled

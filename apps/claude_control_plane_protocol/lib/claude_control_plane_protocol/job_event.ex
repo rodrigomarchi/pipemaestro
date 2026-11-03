@@ -10,10 +10,13 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
 
     * `"system"` — the session started: `text`, `model`, `cwd`, `version`.
     * `"assistant_text"` — something the agent said: `text`.
-    * `"tool_use"` — a tool call: `name`, `text` (its main argument).
-    * `"tool_result"` — a tool's answer: `text`, `is_error`.
+    * `"tool_use"` — a tool call: `id`, `name`, `text` (its main argument)
+      and, for the tools the screens know, `input`: the arguments worth
+      showing (`tool_inputs/0`), texts cut at `max_input_bytes/0`.
+    * `"tool_result"` — a tool's answer: `tool_use_id`, `text`, `is_error`.
     * `"result"` — the run ended: `text`, `is_error`, `cost_usd`,
-      `duration_ms`, `num_turns`.
+      `duration_ms`, `num_turns` and, when the run was given a JSON Schema,
+      `structured_output`.
   """
 
   @enforce_keys [:type, :data]
@@ -23,6 +26,25 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
 
   @types ~w(system assistant_text tool_use tool_result result)
   @max_text_bytes 8_000
+  @max_input_bytes 4_000
+  @max_todos 50
+
+  # The arguments of each known tool that a screen shows.
+  @tool_inputs %{
+    "Bash" => ~w(command description),
+    "Edit" => ~w(file_path old_string new_string),
+    "MultiEdit" => ~w(file_path),
+    "Write" => ~w(file_path content),
+    "Read" => ~w(file_path offset limit),
+    "Grep" => ~w(pattern path glob),
+    "Glob" => ~w(pattern path),
+    "WebFetch" => ~w(url),
+    "WebSearch" => ~w(query),
+    "Task" => ~w(description subagent_type),
+    "Agent" => ~w(description subagent_type),
+    "TodoWrite" => ~w(todos),
+    "NotebookEdit" => ~w(notebook_path)
+  }
 
   # The tool argument worth showing, in order of preference.
   @tool_summary_keys ~w(command file_path pattern url query description prompt)
@@ -34,6 +56,14 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
   @doc "The longest text an event carries, in bytes."
   @spec max_text_bytes() :: pos_integer()
   def max_text_bytes, do: @max_text_bytes
+
+  @doc "The longest text in a tool call's `input`, in bytes."
+  @spec max_input_bytes() :: pos_integer()
+  def max_input_bytes, do: @max_input_bytes
+
+  @doc "The tools whose input events carry, with the arguments kept."
+  @spec tool_inputs() :: %{String.t() => [String.t()]}
+  def tool_inputs, do: @tool_inputs
 
   @doc "The events in one decoded `stream-json` line; lines nobody needs give `[]`."
   @spec from_stream_json(map()) :: [t()]
@@ -65,7 +95,8 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
         "is_error" => line["is_error"] == true,
         "cost_usd" => line["total_cost_usd"],
         "duration_ms" => line["duration_ms"],
-        "num_turns" => line["num_turns"]
+        "num_turns" => line["num_turns"],
+        "structured_output" => line["structured_output"]
       })
     ]
   end
@@ -79,14 +110,25 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
   defp assistant_block(%{"type" => "text", "text" => text}) when text != "",
     do: [event("assistant_text", %{"text" => truncate(text)})]
 
-  defp assistant_block(%{"type" => "tool_use", "name" => name} = block),
-    do: [event("tool_use", %{"name" => name, "text" => truncate(tool_summary(block["input"]))})]
+  defp assistant_block(%{"type" => "tool_use", "name" => name} = block) do
+    data =
+      %{"id" => block["id"], "name" => name, "text" => truncate(tool_summary(block["input"]))}
+
+    data =
+      case tool_input(name, block["input"]) do
+        nil -> data
+        input -> Map.put(data, "input", input)
+      end
+
+    [event("tool_use", data)]
+  end
 
   defp assistant_block(_block), do: []
 
   defp user_block(%{"type" => "tool_result"} = block) do
     [
       event("tool_result", %{
+        "tool_use_id" => block["tool_use_id"],
         "text" => truncate(result_text(block["content"])),
         "is_error" => block["is_error"] == true
       })
@@ -94,6 +136,23 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
   end
 
   defp user_block(_block), do: []
+
+  defp tool_input(name, input) when is_map(input) and is_map_key(@tool_inputs, name) do
+    for key <- @tool_inputs[name], value = input_value(key, input[key]), into: %{} do
+      {key, value}
+    end
+  end
+
+  defp tool_input(_name, _input), do: nil
+
+  defp input_value("todos", todos) when is_list(todos) do
+    for %{"content" => content, "status" => status} <- Enum.take(todos, @max_todos),
+        do: %{"content" => truncate(content, @max_input_bytes), "status" => status}
+  end
+
+  defp input_value(_key, value) when is_binary(value), do: truncate(value, @max_input_bytes)
+  defp input_value(_key, value) when is_number(value), do: value
+  defp input_value(_key, _value), do: nil
 
   defp tool_summary(input) when is_map(input) do
     Enum.find_value(@tool_summary_keys, fn key ->
@@ -108,24 +167,36 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
 
   defp result_text(text) when is_binary(text), do: text
 
+  # Text parts are kept; other parts (images, tool references) only say what
+  # they are, grouped: "[tool_reference ×10]".
   defp result_text(parts) when is_list(parts) do
-    parts
-    |> Enum.map(fn
-      %{"type" => "text", "text" => text} -> text
-      %{"type" => type} -> "[#{type}]"
-      _other -> ""
-    end)
-    |> Enum.join("\n")
+    texts = for %{"type" => "text", "text" => text} <- parts, do: text
+
+    others =
+      for %{"type" => type} <- parts, type != "text" do
+        type
+      end
+      |> Enum.frequencies()
+      |> Enum.sort()
+      |> Enum.map(fn
+        {type, 1} -> "[#{type}]"
+        {type, count} -> "[#{type} ×#{count}]"
+      end)
+
+    Enum.join(texts ++ others, "\n")
   end
 
   defp result_text(_content), do: ""
 
-  defp truncate(text) when byte_size(text) <= @max_text_bytes, do: text
+  defp truncate(text, max \\ @max_text_bytes)
+
+  defp truncate(text, max) when byte_size(text) <= max, do: text
 
   # Cuts at a byte count, dropping a UTF-8 character split by the cut, and
   # leaves room for the ellipsis (3 bytes).
-  defp truncate(text) do
-    <<head::binary-size(@max_text_bytes - 3), _rest::binary>> = text
+  defp truncate(text, max) do
+    keep = max - 3
+    <<head::binary-size(^keep), _rest::binary>> = text
 
     valid =
       case :unicode.characters_to_binary(head) do

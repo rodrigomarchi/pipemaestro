@@ -13,7 +13,8 @@ defmodule ClaudeControlPlaneRunner.ConfigTest do
     workspace_name: "Acme",
     workspace_slug: "acme",
     labels: ["gpu"],
-    capacity: 2
+    capacity: 2,
+    root: "/home/dev/src"
   }
 
   test "saves, loads and deletes the credentials", %{tmp_dir: dir} do

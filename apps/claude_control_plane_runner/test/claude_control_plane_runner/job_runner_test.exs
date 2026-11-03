@@ -15,6 +15,16 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     )
   end
 
+  defp git_repo!(repo) do
+    File.mkdir_p!(repo)
+    {_, 0} = System.cmd("git", ["init", "-q", "-b", "main", repo])
+    File.write!(Path.join(repo, "README.md"), "app")
+    {_, 0} = System.cmd("git", ["-C", repo, "add", "."])
+    git_commit = ~w(-c user.email=t@t -c user.name=t commit -q -m init)
+    {_, 0} = System.cmd("git", ["-C", repo | git_commit])
+    repo
+  end
+
   defp job(id, prompt), do: %Job{id: id, prompt: prompt}
 
   defp collect_until_finished(id, acc \\ []) do
@@ -58,6 +68,53 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     assert JobRunner.running_job_ids(runner) == []
   end
 
+  test "a stage runs in its task's worktree and reports its artifact and output", %{tmp_dir: dir} do
+    root = Path.join(dir, "src")
+    repo = git_repo!(Path.join(root, "app"))
+
+    workdir = Path.join(dir, "workdir")
+    runner = start_runner(workdir, root: root)
+
+    stage = %Job{
+      id: "j1",
+      prompt: "etapa",
+      directory: "app",
+      worktree: %{"task_id" => "t1", "branch" => "cp/t1"},
+      output_schema: %{"type" => "object"},
+      artifact_path: ".control-plane/t1/01-a.md"
+    }
+
+    JobRunner.enqueue(runner, stage)
+    {_messages, finished} = collect_until_finished("j1")
+
+    worktree = Path.join([workdir, "worktrees", "t1"])
+    assert finished["status"] == "succeeded"
+    assert finished["workdir"] == worktree
+
+    assert finished["structured_output"] == %{
+             "status" => "ok",
+             "resumo" => "Etapa concluída pelo fake_claude."
+           }
+
+    assert finished["artifact"] =~ "# Artefato do fake_claude"
+    assert File.read!(Path.join(worktree, "fake-claude.txt")) == "etapa\n"
+    refute File.exists?(Path.join(repo, "fake-claude.txt"))
+
+    {branch, 0} = System.cmd("git", ["-C", worktree, "branch", "--show-current"])
+    assert String.trim(branch) == "cp/t1"
+
+    # The next stage of the same task reuses the worktree.
+    JobRunner.enqueue(runner, %{stage | id: "j2", artifact_path: ".control-plane/t1/02-b.md"})
+    {_messages, finished} = collect_until_finished("j2")
+    assert finished["workdir"] == worktree
+    assert File.exists?(Path.join(worktree, ".control-plane/t1/01-a.md"))
+
+    # A directory that does not exist fails the job before the CLI runs.
+    JobRunner.enqueue(runner, %Job{id: "j3", prompt: "x", directory: "nao-existe"})
+    {[{"job:started", _}], finished} = collect_until_finished("j3")
+    assert finished["error"] =~ "não existe"
+  end
+
   test "a failing CLI fails the job with its stderr", %{tmp_dir: dir} do
     runner = start_runner(dir)
     JobRunner.enqueue(runner, job("j1", "quebre [falha]"))
@@ -88,6 +145,284 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     {_messages, finished} = collect_until_finished("j2")
     assert finished["status"] == "succeeded"
     refute_received {:job_out, "job:started", %{"job_id" => "j1"}}
+  end
+
+  describe "worktree setup" do
+    setup %{tmp_dir: dir} do
+      root = Path.join(dir, "src")
+      repo = git_repo!(Path.join(root, "app"))
+      File.mkdir_p!(Path.join([repo, "deps", "jason"]))
+      %{root: root, workdir: Path.join(dir, "workdir")}
+    end
+
+    defp stage(id, task, setup) do
+      %Job{
+        id: id,
+        prompt: "etapa",
+        directory: "app",
+        worktree: %{"task_id" => task, "branch" => "cp/" <> task},
+        setup: setup
+      }
+    end
+
+    test "a new worktree gets the dependencies and the setup command, once", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      worktree = Path.join([ctx.workdir, "worktrees", "t1"])
+
+      JobRunner.enqueue(runner, stage("j1", "t1", %{"command" => "echo pronto > setup.txt"}))
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+      assert %{"copied" => ["deps"], "exit_code" => 0, "duration_ms" => _} = finished["setup"]
+      assert File.dir?(Path.join([worktree, "deps", "jason"]))
+      assert File.read!(Path.join(worktree, "setup.txt")) == "pronto\n"
+
+      JobRunner.enqueue(runner, stage("j2", "t1", %{"command" => "echo de novo > setup.txt"}))
+      {_messages, finished} = collect_until_finished("j2")
+      refute Map.has_key?(finished, "setup")
+      assert File.read!(Path.join(worktree, "setup.txt")) == "pronto\n"
+    end
+
+    test "reports what each stage changed, and what the task changed so far", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      first = %{stage("j1", "t1", nil) | artifact_path: ".control-plane/t1/01-a.md"}
+
+      JobRunner.enqueue(runner, first)
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert %{"files" => files, "patch" => patch, "task_files" => task_files} =
+               finished["changes"]
+
+      assert Enum.map(files, & &1["path"]) == [".control-plane/t1/01-a.md", "fake-claude.txt"]
+      assert patch =~ "+etapa"
+      assert task_files == files
+
+      second = %{first | id: "j2", prompt: "outra", artifact_path: ".control-plane/t1/02-b.md"}
+      JobRunner.enqueue(runner, second)
+      {_messages, finished} = collect_until_finished("j2")
+
+      assert Enum.map(finished["changes"]["files"], & &1["path"]) ==
+               [".control-plane/t1/02-b.md", "fake-claude.txt"]
+
+      assert Enum.map(finished["changes"]["task_files"], & &1["path"]) ==
+               [".control-plane/t1/01-a.md", ".control-plane/t1/02-b.md", "fake-claude.txt"]
+    end
+
+    test "runs the gates after the agent and reports each against its expectation", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+
+      gates = [
+        %{"command" => "test -f fake-claude.txt", "expect" => "pass"},
+        %{"command" => "echo quebrou; exit 3", "expect" => "fail"},
+        %{"command" => "echo ainda falha >&2; exit 1", "expect" => "pass"}
+      ]
+
+      JobRunner.enqueue(runner, %{stage("j1", "t1", nil) | gates: gates})
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+
+      assert [
+               %{"expect" => "pass", "exit_code" => 0, "passed" => true},
+               %{"expect" => "fail", "exit_code" => 3, "passed" => true, "output" => "quebrou\n"},
+               %{"expect" => "pass", "exit_code" => 1, "passed" => false, "output" => out}
+             ] = finished["gates"]
+
+      assert out =~ "ainda falha"
+      assert is_integer(hd(finished["gates"])["duration_ms"])
+    end
+
+    test "a failed agent run skips the gates", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      gates = [%{"command" => "touch gate-rodou", "expect" => "pass"}]
+
+      JobRunner.enqueue(runner, %{stage("j1", "t1", nil) | prompt: "x [falha]", gates: gates})
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "failed"
+      refute Map.has_key?(finished, "gates")
+      refute File.exists?(Path.join([ctx.workdir, "worktrees", "t1", "gate-rodou"]))
+    end
+
+    test "a job on its own reports no changes", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      JobRunner.enqueue(runner, job("j1", "avulso"))
+      {_messages, finished} = collect_until_finished("j1")
+      refute Map.has_key?(finished, "changes")
+    end
+
+    test "a failing setup fails the job and drops the worktree for the next try", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      worktree = Path.join([ctx.workdir, "worktrees", "t1"])
+
+      JobRunner.enqueue(runner, stage("j1", "t1", %{"command" => "echo sem rede; exit 2"}))
+      {[{"job:started", _}], finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "failed"
+      assert finished["error"] =~ "setup"
+      assert finished["error"] =~ "sem rede"
+      assert finished["setup"]["exit_code"] == 2
+      refute File.exists?(worktree)
+
+      JobRunner.enqueue(runner, stage("j2", "t1", %{"command" => "true"}))
+      {_messages, finished} = collect_until_finished("j2")
+      assert finished["status"] == "succeeded"
+      assert finished["setup"]["exit_code"] == 0
+    end
+
+    test "canceling during the setup stops it", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root, kill_after: 100)
+
+      JobRunner.enqueue(runner, stage("j1", "t1", %{"command" => "sleep 30"}))
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}
+      assert JobRunner.running_job_ids(runner) == ["j1"]
+      Process.sleep(200)
+
+      JobRunner.cancel(runner, "j1")
+      {_messages, finished} = collect_until_finished("j1")
+      assert finished["status"] == "canceled"
+    end
+  end
+
+  describe "removing a worktree" do
+    setup %{tmp_dir: dir} do
+      root = Path.join(dir, "src")
+      repo = git_repo!(Path.join(root, "app"))
+      %{root: root, repo: repo, workdir: Path.join(dir, "workdir")}
+    end
+
+    test "removes a task's worktree and keeps its branch", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      JobRunner.enqueue(runner, stage("j1", "t1", nil))
+      collect_until_finished("j1")
+      worktree = Path.join([ctx.workdir, "worktrees", "t1"])
+      assert File.dir?(worktree)
+
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1"} = reply}, 5_000
+      refute Map.has_key?(reply, "error")
+      refute File.exists?(worktree)
+
+      {branches, 0} = System.cmd("git", ["-C", ctx.repo, "branch", "--list", "cp/t1"])
+      assert branches =~ "cp/t1"
+
+      # Removing again is fine.
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1"} = reply}, 5_000
+      refute Map.has_key?(reply, "error")
+    end
+
+    test "refuses while the task has a job running or waiting", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      JobRunner.enqueue(runner, %{stage("j1", "t1", nil) | prompt: "devagar [lento]"})
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}
+
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1", "error" => error}}
+      assert error =~ "em execução"
+
+      JobRunner.cancel(runner, "j1")
+      collect_until_finished("j1")
+    end
+  end
+
+  test "a job that runs past its time limit is stopped and fails", %{tmp_dir: dir} do
+    runner = start_runner(dir, kill_after: 100)
+    JobRunner.enqueue(runner, %Job{id: "j1", prompt: "devagar [lento]", timeout_ms: 300})
+
+    {_messages, finished} = collect_until_finished("j1")
+    assert finished["status"] == "failed"
+    assert finished["error"] =~ "tempo máximo"
+  end
+
+  describe "parallel jobs" do
+    setup %{tmp_dir: dir} do
+      root = Path.join(dir, "src")
+      for name <- ~w(a b c), do: File.mkdir_p!(Path.join(root, name))
+      %{root: root}
+    end
+
+    defp in_dir(id, prompt, directory), do: %Job{id: id, prompt: prompt, directory: directory}
+
+    test "runs jobs in different directories at once, up to the capacity", %{
+      tmp_dir: dir,
+      root: root
+    } do
+      runner = start_runner(Path.join(dir, "workdir"), root: root, capacity: 2)
+
+      JobRunner.enqueue(runner, in_dir("j1", "um [lento]", "a"))
+      JobRunner.enqueue(runner, in_dir("j2", "dois [lento]", "b"))
+      JobRunner.enqueue(runner, in_dir("j3", "tres", "c"))
+
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}
+      assert_receive {:job_out, "job:started", %{"job_id" => "j2"}}
+      refute_receive {:job_out, "job:started", %{"job_id" => "j3"}}, 200
+      assert Enum.sort(JobRunner.running_job_ids(runner)) == ["j1", "j2"]
+
+      JobRunner.cancel(runner, "j1")
+      {_messages, finished} = collect_until_finished("j1")
+      assert finished["status"] == "canceled"
+
+      {_messages, finished} = collect_until_finished("j3")
+      assert finished["status"] == "succeeded"
+
+      JobRunner.cancel(runner, "j2")
+      {_messages, finished} = collect_until_finished("j2")
+      assert finished["status"] == "canceled"
+    end
+
+    test "jobs sharing a place wait for each other; others go ahead", %{
+      tmp_dir: dir,
+      root: root
+    } do
+      runner = start_runner(Path.join(dir, "workdir"), root: root, capacity: 4)
+
+      JobRunner.enqueue(runner, in_dir("j1", "um [lento]", "a"))
+      JobRunner.enqueue(runner, in_dir("j2", "dois", "a"))
+      JobRunner.enqueue(runner, job("j3", "avulso [lento]"))
+      JobRunner.enqueue(runner, job("j4", "outro avulso"))
+
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}
+      assert_receive {:job_out, "job:started", %{"job_id" => "j3"}}
+      refute_receive {:job_out, "job:started", %{"job_id" => _}}, 200
+
+      JobRunner.cancel(runner, "j1")
+      {_messages, _finished} = collect_until_finished("j1")
+      {_messages, finished} = collect_until_finished("j2")
+      assert finished["status"] == "succeeded"
+
+      JobRunner.cancel(runner, "j3")
+      {_messages, _finished} = collect_until_finished("j3")
+      {_messages, finished} = collect_until_finished("j4")
+      assert finished["status"] == "succeeded"
+    end
+
+    test "stages of different tasks in one repository run at once", %{tmp_dir: dir} do
+      root = Path.join(dir, "repos")
+      repo = git_repo!(Path.join(root, "app"))
+      assert File.dir?(repo)
+      runner = start_runner(Path.join(dir, "workdir"), root: root, capacity: 2)
+
+      stage = fn id, task ->
+        %Job{
+          id: id,
+          prompt: "etapa [lento]",
+          directory: "app",
+          worktree: %{"task_id" => task, "branch" => "cp/" <> task}
+        }
+      end
+
+      JobRunner.enqueue(runner, stage.("j1", "t1"))
+      JobRunner.enqueue(runner, stage.("j2", "t2"))
+      JobRunner.enqueue(runner, stage.("j3", "t1"))
+
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}, 5_000
+      assert_receive {:job_out, "job:started", %{"job_id" => "j2"}}, 5_000
+      refute_receive {:job_out, "job:started", %{"job_id" => "j3"}}, 200
+
+      for id <- ~w(j3 j1 j2), do: JobRunner.cancel(runner, id)
+      for id <- ~w(j1 j2), do: collect_until_finished(id)
+    end
   end
 
   test "canceling a waiting job drops it", %{tmp_dir: dir} do
@@ -128,17 +463,42 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
 
   describe "Claude" do
     test "argv runs headless, streaming JSON, with every permission" do
-      argv = Claude.argv("diga oi")
+      argv = Claude.argv(job("j", "diga oi"))
 
       assert ["-p", "diga oi" | _] = argv
       assert "stream-json" in argv
       assert "--verbose" in argv
       assert "--dangerously-skip-permissions" in argv
       assert "--no-session-persistence" in argv
+      refute "--json-schema" in argv
     end
 
-    test "env unsets the nested-session markers" do
-      assert {~c"CLAUDECODE", false} in Claude.env()
+    test "argv adds the stage's schema, model and budget" do
+      argv =
+        Claude.argv(%Job{
+          id: "j",
+          prompt: "p",
+          output_schema: %{"type" => "object"},
+          model: "haiku",
+          max_budget_usd: 0.5
+        })
+
+      assert [
+               "--json-schema",
+               ~s({"type":"object"}),
+               "--model",
+               "haiku",
+               "--max-budget-usd",
+               "0.5"
+             ] =
+               Enum.drop(argv, 7)
+    end
+
+    test "env unsets the nested-session markers and gives the artifact path" do
+      env = Claude.env(%Job{id: "j", prompt: "p", artifact_path: ".cp/a.md"})
+      assert {~c"CLAUDECODE", false} in env
+      assert {~c"CP_ARTIFACT_PATH", ~c".cp/a.md"} in env
+      refute Enum.any?(Claude.env(job("j", "p")), &match?({~c"CP_ARTIFACT_PATH", _}, &1))
     end
 
     test "executable honors CLAUDE_BIN only when it exists" do

@@ -90,6 +90,35 @@ defmodule ClaudeControlPlane.Fixtures do
     {runner, token}
   end
 
+  @doc "`runner` after announcing `directories` (maps with a name and a git flag)."
+  @spec with_directories(ClaudeControlPlane.Runners.Runner.t(), [map()]) ::
+          ClaudeControlPlane.Runners.Runner.t()
+  def with_directories(runner, directories) do
+    {:ok, runner} =
+      ClaudeControlPlane.Runners.record_hello(runner, hello_fixture(%{directories: directories}))
+
+    runner
+  end
+
+  @doc "A pipeline of `workspace`; by default two stages, `a` and `b`."
+  @spec pipeline_fixture(Workspaces.Workspace.t(), map()) ::
+          ClaudeControlPlane.Pipelines.Pipeline.t()
+  def pipeline_fixture(workspace, attrs \\ %{}) do
+    {:ok, pipeline} =
+      ClaudeControlPlane.Pipelines.create_pipeline(
+        workspace,
+        Enum.into(attrs, %{
+          "name" => "Pipeline #{System.unique_integer([:positive])}",
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça A: {{tarefa.descricao}}"},
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+          ]
+        })
+      )
+
+    pipeline
+  end
+
   @doc "A job `user` sent to `runner` (both of `runner`'s workspace), still queued."
   @spec job_fixture(ClaudeControlPlane.Runners.Runner.t(), Accounts.User.t(), map()) ::
           ClaudeControlPlane.Jobs.Job.t()

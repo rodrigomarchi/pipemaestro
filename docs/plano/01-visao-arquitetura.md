@@ -32,7 +32,7 @@ O produto não substitui a revisão humana: ele a concentra nos pontos onde ela 
 | Isolamento | Container efêmero por tarefa no executor | Executor orquestra containers; caches compartilhados via volumes |
 | Executores | BYO primeiro; hospedado depois, mesmo protocolo | Protocolo executor↔servidor é contrato público e estável |
 | Integrações MVP | GitHub (código) + GitHub Issues (tarefas) | Camada de adaptadores existe, mas só GitHub é implementado no MVP |
-| Definição do pipeline | Totalmente definido pelo projeto, versionado no repo do cliente | Produto fornece motor + templates de partida; pipeline é dado, não código do produto |
+| Definição do pipeline | ~~Totalmente definido pelo projeto, versionado no repo do cliente~~ → **persistido no control plane, por workspace, genérico e reutilizável entre projetos** ([ADR 0005](../adr/0005-pipelines-e-tarefas.md)) | Produto fornece motor + templates de partida; pipeline é dado, não código do produto; o específico de cada projeto vem do próprio repo (`CLAUDE.md`, `AGENTS.md`) |
 | Custo de LLM | Cliente usa a própria API key | Chave do cliente nunca transita pelo control plane; medição de uso é informativa, não base de cobrança |
 | Motor de agente | Claude Code via CLI (modo headless) dentro do container do executor | Agentes, skills, hooks e permissões definidos em arquivos no repositório do cliente |
 

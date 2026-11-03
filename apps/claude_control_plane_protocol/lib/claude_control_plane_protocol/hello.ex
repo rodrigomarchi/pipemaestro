@@ -7,10 +7,14 @@ defmodule ClaudeControlPlaneProtocol.Hello do
   `running_job_ids` lists the jobs the runner is still executing. A runner sends
   a new hello on every (re)join, so the control plane can tell a job that lost
   its runner (not listed) from one that survived a dropped connection.
+
+  `directories` lists the code directories the runner offers, the first level
+  of the root it was started with (`%{"name" => "my_app", "git" => true}`). A
+  task picks one of them to work in.
   """
 
   @enforce_keys [:protocol_version, :runner_version, :hostname, :os, :arch, :labels, :capacity]
-  defstruct @enforce_keys ++ [running_job_ids: []]
+  defstruct @enforce_keys ++ [running_job_ids: [], directories: []]
 
   @type t :: %__MODULE__{
           protocol_version: pos_integer(),
@@ -20,11 +24,16 @@ defmodule ClaudeControlPlaneProtocol.Hello do
           arch: String.t(),
           labels: [String.t()],
           capacity: pos_integer(),
-          running_job_ids: [String.t()]
+          running_job_ids: [String.t()],
+          directories: [directory()]
         }
+
+  @typedoc "A code directory the runner offers, in the wire form."
+  @type directory :: %{String.t() => String.t() | boolean()}
 
   @max_labels 32
   @max_running_jobs 64
+  @max_directories 500
   @label_format ~r/^[a-z0-9][a-z0-9._-]{0,39}$/
 
   @doc """
@@ -40,7 +49,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
          {:ok, arch} <- text(attrs, :arch),
          {:ok, labels} <- labels(attrs),
          {:ok, capacity} <- positive_integer(attrs, :capacity),
-         {:ok, running_job_ids} <- running_job_ids(attrs) do
+         {:ok, running_job_ids} <- running_job_ids(attrs),
+         {:ok, directories} <- parse_directories(fetch(attrs, :directories) || []) do
       {:ok,
        %__MODULE__{
          protocol_version: protocol_version,
@@ -50,7 +60,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
          arch: arch,
          labels: labels,
          capacity: capacity,
-         running_job_ids: running_job_ids
+         running_job_ids: running_job_ids,
+         directories: directories
        }}
     end
   end
@@ -96,6 +107,40 @@ defmodule ClaudeControlPlaneProtocol.Hello do
         {:error, "labels must be a list of at most #{@max_labels} strings"}
     end
   end
+
+  @doc """
+  Parses a list of directories from the wire: each a map with a `name` (one
+  path segment, never `.` or `..`) and a `git` flag. Sorted by name.
+  """
+  @spec parse_directories(term()) :: {:ok, [directory()]} | {:error, String.t()}
+  def parse_directories(list) when is_list(list) and length(list) <= @max_directories do
+    parsed = Enum.map(list, &parse_directory/1)
+
+    if Enum.all?(parsed, &is_map/1),
+      do: {:ok, parsed |> Enum.uniq_by(& &1["name"]) |> Enum.sort_by(& &1["name"])},
+      else: {:error, "directories must be maps with a name (one path segment) and a git flag"}
+  end
+
+  def parse_directories(_list),
+    do: {:error, "directories must be a list of at most #{@max_directories} entries"}
+
+  defp parse_directory(%{} = dir) do
+    name = Map.get(dir, "name", Map.get(dir, :name))
+    git = Map.get(dir, "git", Map.get(dir, :git, false))
+
+    if valid_directory_name?(name) and is_boolean(git),
+      do: %{"name" => name, "git" => git},
+      else: :invalid
+  end
+
+  defp parse_directory(_dir), do: :invalid
+
+  @doc "Whether `name` is a single directory name: no separator, not `.` or `..`."
+  @spec valid_directory_name?(term()) :: boolean()
+  def valid_directory_name?(name) when is_binary(name) and byte_size(name) in 1..255,
+    do: name not in [".", ".."] and not String.contains?(name, ["/", "\\", <<0>>])
+
+  def valid_directory_name?(_name), do: false
 
   defp running_job_ids(attrs) do
     case fetch(attrs, :running_job_ids) do

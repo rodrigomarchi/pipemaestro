@@ -7,12 +7,21 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
   Jobs travel on it too (`ClaudeControlPlaneProtocol.Job`): the channel pushes
   `job:assign` and `job:cancel` as the runner's jobs are created and canceled,
   hands over the queued ones again on every join, and stores what the runner
-  reports (`job:started`, `job:event`, `job:finished`).
+  reports (`job:started`, `job:event`, `job:finished`). A job of a task's
+  stage carries its context (directory, worktree, schema, artifact path).
+
+  So do the task worktrees (`ClaudeControlPlaneProtocol.Worktree`): the channel
+  pushes `worktree:remove` when someone asks for a task's worktree to go, and
+  the unconfirmed ones again on every join; the runner answers
+  `worktree:removed` and reports the space they take (`worktree:usage`).
+
+  The runner also sends `runner:directories` when the code directories it
+  offers change while it is online.
   """
   use Phoenix.Channel
 
-  alias ClaudeControlPlane.{Jobs, Runners}
-  alias ClaudeControlPlaneProtocol.{Hello, Job}
+  alias ClaudeControlPlane.{Jobs, Runners, Tasks}
+  alias ClaudeControlPlaneProtocol.{Hello, Job, Worktree}
   alias ClaudeControlPlaneWeb.RunnerStatus
 
   @impl true
@@ -42,6 +51,14 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
     :ok = Jobs.subscribe({:runner, runner.id})
     for job <- Jobs.reconcile(runner, hello.running_job_ids), do: push_assign(socket, job)
 
+    for task <- Tasks.pending_worktree_removals(runner),
+        do: push(socket, Worktree.remove_event(), Tasks.removal(task))
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:worktree_remove, removal}, socket) do
+    push(socket, Worktree.remove_event(), removal)
     {:noreply, socket}
   end
 
@@ -68,6 +85,34 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
     socket.assigns.runner |> Jobs.finish_job(job_id, payload) |> reply_to(socket)
   end
 
+  def handle_in("runner:directories", %{"directories" => directories}, socket) do
+    case Runners.update_directories(socket.assigns.runner, directories) do
+      {:ok, runner} ->
+        RunnerStatus.notify_changed(runner.workspace_id)
+        {:reply, :ok, assign(socket, runner: runner)}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("worktree:removed", %{"task_id" => task_id} = payload, socket) do
+    socket.assigns.runner
+    |> Tasks.worktree_removed(task_id, payload["error"])
+    |> reply_to(socket)
+  end
+
+  def handle_in("worktree:usage", usage, socket) do
+    case Runners.update_worktree_usage(socket.assigns.runner, usage) do
+      {:ok, runner} ->
+        RunnerStatus.notify_changed(runner.workspace_id)
+        {:reply, :ok, assign(socket, runner: runner)}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
   def handle_in(_event, _payload, socket),
     do: {:reply, {:error, %{"reason" => "unknown_message"}}, socket}
 
@@ -80,7 +125,7 @@ defmodule ClaudeControlPlaneWeb.RunnerChannel do
     do: {:reply, {:error, %{"reason" => Atom.to_string(reason)}}, socket}
 
   defp push_assign(socket, job) do
-    {:ok, wire} = Job.new(%{id: job.id, prompt: job.prompt})
+    {:ok, wire} = job.context |> Map.merge(%{"id" => job.id, "prompt" => job.prompt}) |> Job.new()
     push(socket, Job.assign_event(), Job.to_map(wire))
   end
 

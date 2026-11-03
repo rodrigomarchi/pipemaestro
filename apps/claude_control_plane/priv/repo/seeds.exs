@@ -1,10 +1,11 @@
-# Development data: an operator, two workspaces and their users.
+# Development data: an operator, two workspaces, their users and the
+# ready-made pipelines.
 #
 #     mix run priv/repo/seeds.exs
 #
 # Safe to run again: existing records are kept.
 
-alias ClaudeControlPlane.{Accounts, Backoffice, Workspaces}
+alias ClaudeControlPlane.{Accounts, Backoffice, Pipelines, Workspaces}
 
 password = "senha-de-dev-123"
 
@@ -37,6 +38,8 @@ bruno = user.("bruno@acme.dev", "Bruno Costa")
 for {ws, member} <- [{acme, ana}, {acme, bruno}, {globex, bruno}] do
   Workspaces.add_member(ws, member)
 end
+
+for ws <- [acme, globex], do: Pipelines.create_defaults(ws)
 
 IO.puts("""
 

@@ -49,7 +49,7 @@ bin/claude_control_plane eval 'ClaudeControlPlane.Release.create_operator("ops@e
 
 ```bash
 make runner.login URL=http://localhost:4000   # mostra um código; aprove no navegador
-make runner.start                             # fica online no workspace (Ctrl+C para parar)
+make runner.start ROOT=~/src                  # fica online oferecendo os diretórios de ~/src (Ctrl+C para parar)
 make runner.status                            # credenciais e se a plataforma ainda aceita
 make runner.logout                            # remove as credenciais locais
 ```
@@ -63,6 +63,15 @@ roda no `claude` da máquina do runner (`claude -p`, com permissões totais), de
 workdir `~/.config/claude-control-plane/workdir/`, e a execução aparece ao vivo.
 `CLAUDE_BIN=...` troca o executável (os testes usam
 `apps/claude_control_plane_runner/test/support/fake_claude`).
+
+Em **Tarefas** (`/w/<workspace>/tasks`), uma tarefa percorre as etapas de um
+**Pipeline** (`/w/<workspace>/pipelines`; "Criar pipelines padrão" traz "Prompt único"
+e "Correção de bug") num dos diretórios que o runner oferece. Num repositório git,
+cada tarefa ganha um worktree próprio em
+`~/.config/claude-control-plane/workdir/worktrees/<tarefa>`, e o seu checkout não é
+tocado. Cada etapa grava um artefato em `.control-plane/<tarefa>/`. Quando uma etapa
+bloqueia ou esgota as tentativas, a tarefa espera uma decisão na tela. O `ROOT` fica
+salvo, então os próximos `make runner.start` não precisam dele.
 
 ### Testes de tela
 

@@ -31,7 +31,7 @@ test.describe("Workspace user sessions", () => {
     const app = new AppPage(await context.newPage());
     await app.signIn(user.email, userPassword);
     await app.expectBoard(workspace);
-    await expect(app.page.getByTestId("stage-triage")).toBeVisible();
+    await expect(app.page.getByTestId("board-column-running")).toBeVisible();
     await shot(app.page, "board");
 
     await app.openAccountMenu();

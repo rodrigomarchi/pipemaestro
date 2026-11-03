@@ -49,6 +49,32 @@ defmodule ClaudeControlPlaneProtocolTest do
       assert {:error, _} = Hello.new("not a map")
     end
 
+    test "directories are validated, deduplicated and sorted" do
+      dirs = [
+        %{"name" => "b", "git" => false},
+        %{name: "a", git: true},
+        %{"name" => "a", "git" => true}
+      ]
+
+      assert {:ok,
+              %Hello{
+                directories: [%{"name" => "a", "git" => true}, %{"name" => "b", "git" => false}]
+              }} =
+               Hello.new(Map.put(@valid, :directories, dirs))
+
+      assert {:ok, %Hello{directories: []}} = Hello.new(@valid)
+
+      for bad <- [
+            [%{"name" => ".."}],
+            [%{"name" => "a/b", "git" => true}],
+            [%{"name" => "a", "git" => "yes"}],
+            ["a"],
+            "a"
+          ] do
+        assert {:error, "directories" <> _} = Hello.new(Map.put(@valid, :directories, bad))
+      end
+    end
+
     test "running_job_ids defaults to none and is validated" do
       assert {:ok, %Hello{running_job_ids: []}} = Hello.new(@valid)
 

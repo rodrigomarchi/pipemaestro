@@ -1,8 +1,18 @@
 defmodule ClaudeControlPlaneRunner.JobRunner do
   @moduledoc """
-  Runs the jobs the control plane hands this runner, one at a time, in the
-  runner's working directory: they share it, so two at once would step on each
-  other. Jobs that arrive meanwhile wait in order.
+  Runs the jobs the control plane hands this runner, up to `:capacity` at a
+  time. Jobs that share a place to run wait for each other, in order:
+
+    * the stages of one task share its worktree;
+    * jobs in a directory without a worktree share that directory;
+    * jobs on their own share the runner's workdir.
+
+  Jobs in different places (two tasks, each in its own worktree) run at once.
+
+  Before the agent starts, the job's place is prepared off this process (a
+  worktree may take a while to create and set up,
+  `ClaudeControlPlaneRunner.Setup`), so the other jobs' output keeps flowing.
+  A worktree whose setup fails is removed, so the next try starts it over.
 
   Each job is the agent CLI (`ClaudeControlPlaneRunner.Claude`) in a port. Its
   `stream-json` lines become `ClaudeControlPlaneProtocol.JobEvent`s, and every
@@ -10,15 +20,18 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   `{:job_out, event_name, payload}`, in the wire form of
   `ClaudeControlPlaneProtocol.Job`.
 
-  Canceling a waiting job drops it; canceling the running one sends the CLI
-  SIGTERM, then SIGKILL if it is still there after `:kill_after` ms.
+  Canceling a waiting job drops it; canceling a running one (in its setup or
+  in the CLI) sends SIGTERM, then SIGKILL if it is still there after
+  `:kill_after` ms. A job past its `timeout_ms` is stopped the same way and
+  fails.
   """
   use GenServer
 
-  alias ClaudeControlPlaneProtocol.{Job, JobEvent}
-  alias ClaudeControlPlaneRunner.Claude
+  alias ClaudeControlPlaneProtocol.{Job, JobEvent, Worktree}
+  alias ClaudeControlPlaneRunner.{Changes, Claude, Gates, Setup, Workspace}
 
   @line_bytes 1_048_576
+  @artifact_bytes 65_536
   @stderr_tail 20
 
   # The CLI reads piped stdin as extra prompt; the shell gives it /dev/null
@@ -27,7 +40,9 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
 
   @doc """
   Starts the runner. Options: `:owner` (pid, required), `:workdir` (required),
-  `:executable` (default: `Claude.executable/0`), `:kill_after` (default 5000).
+  `:root` (where the code directories are, `ClaudeControlPlaneRunner.Workspace`),
+  `:executable` (default: `Claude.executable/0`), `:kill_after` (default 5000),
+  `:capacity` (jobs at once, default 1).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -39,6 +54,16 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   @doc "Drops a waiting job or stops the running one."
   @spec cancel(GenServer.server(), String.t()) :: :ok
   def cancel(server, job_id), do: GenServer.cast(server, {:cancel, job_id})
+
+  @doc """
+  Removes a task's worktree (`ClaudeControlPlaneRunner.Workspace`), unless a
+  job of the task is running or waiting. Reports to the owner as
+  `{:job_out, "worktree:removed", %{"task_id" => id}}`, with `"error"` when it
+  could not.
+  """
+  @spec remove_worktree(GenServer.server(), String.t(), String.t()) :: :ok
+  def remove_worktree(server, task_id, directory),
+    do: GenServer.cast(server, {:remove_worktree, task_id, directory})
 
   @doc "The jobs this runner is executing right now."
   @spec running_job_ids(GenServer.server()) :: [String.t()]
@@ -53,115 +78,322 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
      %{
        owner: Keyword.fetch!(opts, :owner),
        workdir: workdir,
+       root: Keyword.get(opts, :root),
        executable: Keyword.get_lazy(opts, :executable, &Claude.executable/0),
        kill_after: Keyword.get(opts, :kill_after, 5_000),
-       queue: :queue.new(),
-       current: nil
+       capacity: Keyword.get(opts, :capacity) || 1,
+       queue: [],
+       running: %{}
      }}
   end
 
   @impl true
   def handle_call(:running_job_ids, _from, state) do
-    {:reply, if(state.current, do: [state.current.job.id], else: []), state}
+    {:reply, Map.keys(state.running), state}
   end
 
   @impl true
   def handle_cast({:enqueue, %Job{id: id} = job}, state) do
     if known?(state, id),
       do: {:noreply, state},
-      else: {:noreply, maybe_start(%{state | queue: :queue.in(job, state.queue)})}
+      else: {:noreply, start_ready(%{state | queue: state.queue ++ [job]})}
   end
 
-  def handle_cast({:cancel, id}, %{current: %{job: %Job{id: id}} = current} = state) do
-    signal_group(current.os_pid, "TERM")
-    Process.send_after(self(), {:force_kill, id}, state.kill_after)
-    {:noreply, %{state | current: %{current | canceled: true}}}
-  end
+  def handle_cast({:remove_worktree, task_id, directory}, state) do
+    if task_in_use?(state, task_id) do
+      out(state, Worktree.removed_event(), %{
+        "task_id" => task_id,
+        "error" => "A tarefa tem uma etapa em execução neste runner."
+      })
+    else
+      remove_in_background(state, task_id, directory)
+    end
 
-  def handle_cast({:cancel, id}, state) do
-    {:noreply, %{state | queue: :queue.filter(&(&1.id != id), state.queue)}}
-  end
-
-  @impl true
-  def handle_info({port, {:data, {:noeol, part}}}, %{current: %{port: port} = current} = state) do
-    {:noreply, %{state | current: %{current | partial: current.partial <> part}}}
-  end
-
-  def handle_info({port, {:data, {:eol, part}}}, %{current: %{port: port} = current} = state) do
-    line = current.partial <> part
-    {:noreply, %{state | current: handle_line(state, %{current | partial: ""}, line)}}
-  end
-
-  def handle_info({port, {:exit_status, code}}, %{current: %{port: port} = current} = state) do
-    finish(state, current, code)
-    {:noreply, maybe_start(%{state | current: nil})}
-  end
-
-  def handle_info({:force_kill, id}, %{current: %{job: %Job{id: id}} = current} = state) do
-    signal_group(current.os_pid, "KILL")
     {:noreply, state}
   end
 
-  # The job ended before the deadline.
-  def handle_info({:force_kill, _id}, state), do: {:noreply, state}
+  def handle_cast({:cancel, id}, state) do
+    case state.running do
+      %{^id => run} ->
+        {:noreply, put_run(state, stop(state, %{run | canceled: true}))}
 
-  defp known?(state, id) do
-    (state.current && state.current.job.id == id) ||
-      Enum.any?(:queue.to_list(state.queue), &(&1.id == id))
-  end
-
-  defp maybe_start(%{current: nil} = state) do
-    case :queue.out(state.queue) do
-      {{:value, job}, queue} -> start(%{state | queue: queue}, job)
-      {:empty, _queue} -> state
+      _waiting ->
+        {:noreply, %{state | queue: Enum.reject(state.queue, &(&1.id == id))}}
     end
   end
 
-  defp maybe_start(state), do: state
+  @impl true
+  def handle_info({port, {:data, {:noeol, part}}}, state) when is_port(port) do
+    with_run(state, port, fn run -> %{run | partial: run.partial <> part} end)
+  end
+
+  def handle_info({port, {:data, {:eol, part}}}, state) when is_port(port) do
+    with_run(state, port, fn run ->
+      handle_line(state, %{run | partial: ""}, run.partial <> part)
+    end)
+  end
+
+  def handle_info({port, {:exit_status, code}}, state) when is_port(port) do
+    case run_for(state, port) do
+      nil ->
+        {:noreply, state}
+
+      run ->
+        gates = if agent_succeeded?(run, code), do: run.job.gates || [], else: []
+
+        if run.tracking == nil and gates == [] do
+          {:noreply, finish(state, run, code, %{})}
+        else
+          {:noreply, put_run(state, after_agent(run, code, gates))}
+        end
+    end
+  end
+
+  def handle_info({:force_kill, id}, state) do
+    # The job may have ended before the deadline.
+    with %{^id => %{os_pid: os_pid}} when is_integer(os_pid) <- state.running,
+         do: signal_group(os_pid, "KILL")
+
+    {:noreply, state}
+  end
+
+  def handle_info({:timeout, id, port}, state) do
+    case state.running do
+      %{^id => %{port: ^port} = run} ->
+        {:noreply, put_run(state, stop(state, %{run | timed_out: true}))}
+
+      _ended ->
+        {:noreply, state}
+    end
+  end
+
+  # A setup or gate command started: it can now be stopped, or must be at once.
+  def handle_info({:child_os_pid, id, os_pid}, state) do
+    case state.running do
+      %{^id => run} ->
+        run = %{run | os_pid: os_pid}
+        {:noreply, put_run(state, if(run.canceled, do: stop(state, run), else: run))}
+
+      _ended ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_info({ref, result}, state) when is_reference(ref) do
+    Process.demonitor(ref, [:flush])
+
+    case Enum.find(Map.values(state.running), &(&1.preparing == ref or task_ref(&1) == ref)) do
+      nil ->
+        {:noreply, state}
+
+      %{preparing: ^ref} = run ->
+        {:noreply, launch(state, %{run | preparing: nil, os_pid: nil}, result)}
+
+      %{finishing: {^ref, code}} = run ->
+        {:noreply, finish(state, run, code, result)}
+    end
+  end
+
+  # After the agent: the gates, then what the stage changed, both off this
+  # process (they take a while).
+  defp after_agent(run, code, gates) do
+    runner = self()
+    %{dir: dir, tracking: tracking, job: job} = run
+
+    task =
+      Task.async(fn ->
+        on_os_pid = &send(runner, {:child_os_pid, job.id, &1})
+        results = if gates == [], do: nil, else: Gates.run(dir, gates, on_os_pid)
+        changes = if tracking, do: Changes.report(dir, tracking)
+        %{"gates" => results, "changes" => changes}
+      end)
+
+    %{run | port: nil, os_pid: nil, finishing: {task.ref, code}}
+  end
+
+  defp agent_succeeded?(run, code),
+    do:
+      code == 0 and not run.canceled and not run.timed_out and
+        (run.result || %{})["is_error"] != true
+
+  defp task_ref(%{finishing: {ref, _code}}), do: ref
+  defp task_ref(_run), do: nil
+
+  defp with_run(state, port, fun) do
+    case run_for(state, port) do
+      nil -> {:noreply, state}
+      run -> {:noreply, put_run(state, fun.(run))}
+    end
+  end
+
+  defp run_for(state, port),
+    do: Enum.find_value(state.running, fn {_id, r} -> r.port == port && r end)
+
+  defp put_run(state, run), do: %{state | running: Map.put(state.running, run.job.id, run)}
+
+  defp task_in_use?(state, task_id) do
+    Enum.any?(Map.values(state.running), &(place(&1.job) == {:task, task_id})) or
+      Enum.any?(state.queue, &(place(&1) == {:task, task_id}))
+  end
+
+  # Removing a large worktree takes a while; the reply goes straight out.
+  defp remove_in_background(state, task_id, directory) do
+    %{owner: owner, root: root, workdir: workdir} = state
+
+    Task.start(fn ->
+      reply =
+        case Workspace.remove_task_worktree(root, workdir, task_id, directory) do
+          :ok -> %{"task_id" => task_id}
+          {:error, message} -> %{"task_id" => task_id, "error" => message}
+        end
+
+      send(owner, {:job_out, Worktree.removed_event(), reply})
+    end)
+  end
+
+  defp known?(state, id),
+    do: Map.has_key?(state.running, id) or Enum.any?(state.queue, &(&1.id == id))
+
+  # Where a job runs, as far as waiting goes: jobs with the same place never run
+  # at once.
+  defp place(%Job{directory: nil}), do: :workdir
+  defp place(%Job{worktree: %{"task_id" => task_id}}), do: {:task, task_id}
+  defp place(%Job{directory: directory}), do: {:directory, directory}
+
+  # Starts, in queue order, every waiting job whose place is free, while there
+  # is capacity.
+  defp start_ready(state) do
+    busy = MapSet.new(Map.values(state.running), &place(&1.job))
+
+    with true <- map_size(state.running) < state.capacity,
+         %Job{} = job <- Enum.find(state.queue, &(not MapSet.member?(busy, place(&1)))) do
+      state
+      |> Map.update!(:queue, &List.delete(&1, job))
+      |> start(job)
+      |> start_ready()
+    else
+      _full_or_nothing_ready -> state
+    end
+  end
 
   defp start(state, job) do
     out(state, Job.started_event(), %{"job_id" => job.id})
+    runner = self()
+    %{root: root, workdir: workdir, executable: executable} = state
 
-    case state.executable do
-      {:ok, path} ->
-        port =
-          Port.open({:spawn_executable, "/bin/sh"}, [
-            :binary,
-            :exit_status,
-            :stderr_to_stdout,
-            {:line, @line_bytes},
-            {:cd, state.workdir},
-            {:env, Claude.env()},
-            {:args, ["-c", @launcher, path | Claude.argv(job.prompt)]}
-          ])
+    task =
+      Task.async(fn ->
+        on_os_pid = &send(runner, {:child_os_pid, job.id, &1})
+        prepare(job, executable, root, workdir, on_os_pid)
+      end)
 
-        {:os_pid, os_pid} = Port.info(port, :os_pid)
+    put_run(state, %{
+      job: job,
+      preparing: task.ref,
+      dir: nil,
+      setup: nil,
+      port: nil,
+      os_pid: nil,
+      seq: 0,
+      partial: "",
+      result: nil,
+      stderr: [],
+      canceled: false,
+      timed_out: false,
+      tracking: nil,
+      finishing: nil
+    })
+  end
 
-        %{
-          state
-          | current: %{
-              job: job,
-              port: port,
-              os_pid: os_pid,
-              seq: 0,
-              partial: "",
-              result: nil,
-              stderr: [],
-              canceled: false
-            }
-        }
+  # Runs in a task: the working directory, set up when it is a new worktree.
+  defp prepare(job, executable, root, workdir, on_os_pid) do
+    with {:ok, path} <- executable(executable),
+         {:ok, dir, source} <- Workspace.prepare(job, root, workdir) do
+      setup = if source, do: Setup.run(source, dir, job.setup, on_os_pid: on_os_pid)
 
-      {:error, :not_found} ->
-        out(state, Job.finished_event(), %{
-          "job_id" => job.id,
-          "status" => "failed",
-          "error" =>
-            "O CLI do claude não foi encontrado no PATH deste runner (ou em $CLAUDE_BIN)."
-        })
-
-        maybe_start(state)
+      if setup_failed?(setup) do
+        _removed = Workspace.remove_worktree(source, dir)
+        message = "O setup do worktree falhou (código #{setup["exit_code"]}).\n#{setup["output"]}"
+        {:error, String.trim(message), setup}
+      else
+        {:ok, path, dir, setup, track(job, workdir, dir, setup)}
+      end
+    else
+      {:error, message} -> {:error, message, nil}
     end
   end
+
+  # A task's worktree is compared before and after each stage.
+  defp track(%Job{worktree: %{"task_id" => task_id}}, workdir, dir, setup) do
+    Changes.start(workdir, task_id, dir, setup != nil, (setup && setup["copied"]) || [])
+  end
+
+  defp track(_job, _workdir, _dir, _setup), do: nil
+
+  defp setup_failed?(%{"exit_code" => code}) when code != 0, do: true
+  defp setup_failed?(_setup), do: false
+
+  defp launch(state, %{canceled: true} = run, prepared) do
+    done(state, run, %{"status" => "canceled", "setup" => setup_of(prepared)})
+  end
+
+  defp launch(state, run, {:error, message, setup}) do
+    done(state, run, %{"status" => "failed", "error" => message, "setup" => setup})
+  end
+
+  defp launch(state, run, {:ok, path, dir, setup, tracking}) do
+    job = run.job
+
+    port =
+      Port.open({:spawn_executable, "/bin/sh"}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        {:line, @line_bytes},
+        {:cd, dir},
+        {:env, Claude.env(job)},
+        {:args, ["-c", @launcher, path | Claude.argv(job)]}
+      ])
+
+    {:os_pid, os_pid} = Port.info(port, :os_pid)
+    if job.timeout_ms, do: Process.send_after(self(), {:timeout, job.id, port}, job.timeout_ms)
+
+    put_run(state, %{
+      run
+      | dir: dir,
+        setup: setup,
+        tracking: tracking,
+        port: port,
+        os_pid: os_pid
+    })
+  end
+
+  defp setup_of({:ok, _path, _dir, setup, _tracking}), do: setup
+  defp setup_of({:error, _message, setup}), do: setup
+
+  # A job that ended before its agent ran.
+  defp done(state, run, payload) do
+    payload =
+      for {key, value} <- payload, value != nil, into: %{"job_id" => run.job.id}, do: {key, value}
+
+    out(state, Job.finished_event(), payload)
+    start_ready(%{state | running: Map.delete(state.running, run.job.id)})
+  end
+
+  # Stops what the job is running now (the setup command or the CLI); a job
+  # still creating its worktree stops once that is done.
+  defp stop(state, %{os_pid: os_pid, job: job} = run) when is_integer(os_pid) do
+    signal_group(os_pid, "TERM")
+    Process.send_after(self(), {:force_kill, job.id}, state.kill_after)
+    run
+  end
+
+  defp stop(_state, run), do: run
+
+  defp executable({:ok, path}), do: {:ok, path}
+
+  defp executable(_not_found),
+    do: {:error, "O CLI do claude não foi encontrado no PATH deste runner (ou em $CLAUDE_BIN)."}
 
   defp handle_line(state, current, line) do
     case Jason.decode(line) do
@@ -188,12 +420,15 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
     %{current | seq: seq, result: result}
   end
 
-  defp finish(state, current, exit_code) do
+  # Reports how the job ended (with what was measured after the agent) and
+  # frees its place.
+  defp finish(state, current, exit_code, measured) do
     result = current.result || %{}
 
     status =
       cond do
         current.canceled -> "canceled"
+        current.timed_out -> "failed"
         exit_code == 0 and result["is_error"] != true -> "succeeded"
         true -> "failed"
       end
@@ -205,10 +440,42 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
       "result" => result["text"],
       "cost_usd" => result["cost_usd"],
       "duration_ms" => result["duration_ms"],
-      "num_turns" => result["num_turns"]
+      "num_turns" => result["num_turns"],
+      "structured_output" => result["structured_output"],
+      "artifact" => read_artifact(current),
+      "workdir" => current.dir
     }
 
+    payload =
+      for {key, value} <- Map.put(measured, "setup", current.setup),
+          value != nil,
+          into: payload,
+          do: {key, value}
+
     out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+    start_ready(%{state | running: Map.delete(state.running, current.job.id)})
+  end
+
+  defp read_artifact(%{job: %Job{artifact_path: nil}}), do: nil
+
+  defp read_artifact(%{job: %Job{artifact_path: path}, dir: dir}) do
+    case File.open(Path.join(dir, path), [:read, :binary], &IO.binread(&1, @artifact_bytes)) do
+      {:ok, data} when is_binary(data) -> valid_utf8(data)
+      _missing -> nil
+    end
+  end
+
+  # An artifact cut at the byte limit may end inside a character.
+  defp valid_utf8(data) do
+    case :unicode.characters_to_binary(data) do
+      binary when is_binary(binary) -> binary
+      {_incomplete_or_error, valid, _rest} -> valid
+    end
+  end
+
+  defp maybe_error(payload, "failed", _exit_code, %{timed_out: true, job: job}) do
+    minutes = Float.round(job.timeout_ms / 60_000, 1)
+    Map.put(payload, "error", "O tempo máximo da etapa (#{minutes} min) se esgotou.")
   end
 
   defp maybe_error(payload, "failed", exit_code, current) do

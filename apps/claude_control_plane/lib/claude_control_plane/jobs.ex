@@ -36,6 +36,13 @@ defmodule ClaudeControlPlane.Jobs do
   defp topic({:workspace, id}), do: "jobs:workspace:" <> id
   defp topic({:runner, id}), do: "jobs:runner:" <> id
 
+  @doc """
+  Sends a message to the channel of the runner `runner_id` (subscribed to
+  `{:runner, id}`), for what other contexts ask of a runner.
+  """
+  @spec tell_runner(Ecto.UUID.t(), term()) :: :ok | {:error, term()}
+  def tell_runner(runner_id, message), do: broadcast({:runner, runner_id}, message)
+
   defp broadcast(subject, message), do: Phoenix.PubSub.broadcast(@pubsub, topic(subject), message)
 
   # ── Members ───────────────────────────────────────────────────────────────
@@ -64,6 +71,33 @@ defmodule ClaudeControlPlane.Jobs do
     end
   end
 
+  @doc """
+  Creates the job that runs one attempt of a task's stage and hands it to the
+  task's runner. `context` is the wire form of the job's context
+  (`ClaudeControlPlaneProtocol.Job`).
+  """
+  @spec create_stage_job(map()) :: Job.t()
+  def create_stage_job(attrs) do
+    job =
+      %Job{}
+      |> Ecto.Changeset.change(
+        Map.take(attrs, [
+          :workspace_id,
+          :runner_id,
+          :created_by_user_id,
+          :stage_run_id,
+          :prompt,
+          :context
+        ])
+      )
+      |> Repo.insert!()
+      |> preload()
+
+    broadcast({:workspace, job.workspace_id}, {:job_updated, job})
+    broadcast({:runner, job.runner_id}, {:job_assign, job})
+    job
+  end
+
   defp validate_runner(changeset, workspace) do
     Ecto.Changeset.validate_change(changeset, :runner_id, fn :runner_id, runner_id ->
       if Repo.exists?(
@@ -88,6 +122,27 @@ defmodule ClaudeControlPlane.Jobs do
     )
   end
 
+  @doc """
+  How busy the workspace's runners are: for each runner with unfinished jobs,
+  how many are running and how many wait.
+  """
+  @spec load_by_runner(Workspace.t()) :: %{
+          Ecto.UUID.t() => %{running: non_neg_integer(), queued: non_neg_integer()}
+        }
+  def load_by_runner(%Workspace{id: workspace_id}) do
+    from(j in Job,
+      where: j.workspace_id == ^workspace_id and j.status in [:queued, :running],
+      group_by: [j.runner_id, j.status],
+      select: {j.runner_id, j.status, count(j.id)}
+    )
+    |> Repo.all()
+    |> Enum.reduce(%{}, fn {runner_id, status, count}, acc ->
+      acc
+      |> Map.put_new(runner_id, %{running: 0, queued: 0})
+      |> put_in([runner_id, status], count)
+    end)
+  end
+
   @doc "One of the workspace's jobs. Raises when it is not there."
   @spec get_job!(Workspace.t(), Ecto.UUID.t()) :: Job.t()
   def get_job!(%Workspace{id: workspace_id}, id) do
@@ -110,6 +165,7 @@ defmodule ClaudeControlPlane.Jobs do
   def request_cancel(%Job{status: :queued} = job) do
     job = update!(job, status: :canceled, finished_at: now(), cancel_requested_at: now())
     broadcast({:runner, job.runner_id}, {:job_cancel, job.id})
+    finished(job)
     {:ok, job}
   end
 
@@ -149,11 +205,13 @@ defmodule ClaudeControlPlane.Jobs do
       )
 
     for job <- lost do
-      update!(job,
+      job
+      |> update!(
         status: :failed,
         error: "O runner reiniciou durante a execução.",
         finished_at: now()
       )
+      |> finished()
     end
 
     queued_for_runner(runner)
@@ -221,9 +279,14 @@ defmodule ClaudeControlPlane.Jobs do
          {:ok, job} <- job |> Job.finish_changeset(attrs, now()) |> Repo.update() do
       job = preload(job)
       notify(job)
+      finished(job)
       {:ok, job}
     end
   end
+
+  # A job that runs a task's stage moves its task along once it ends.
+  defp finished(%Job{stage_run_id: nil}), do: :ok
+  defp finished(%Job{} = job), do: ClaudeControlPlane.Tasks.job_finished(job)
 
   defp fetch_for_runner(%Runner{id: runner_id}, job_id) do
     with {:ok, id} <- Ecto.UUID.cast(job_id),

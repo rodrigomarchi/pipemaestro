@@ -96,8 +96,8 @@ runner.login: ## Sign this machine in as a runner (URL=http://localhost:4000 [NA
 	cd $(RUNNER_DIR) && mix runner.login --url $(URL) $(if $(NAME),--name "$(NAME)") \
 		$(foreach label,$(LABELS),--label $(label)) $(if $(CAPACITY),--capacity $(CAPACITY))
 
-runner.start: ## Connect this runner and stay online (Ctrl+C to stop)
-	cd $(RUNNER_DIR) && mix runner.start
+runner.start: ## Connect this runner and stay online (Ctrl+C to stop) ([ROOT=~/src] code directories offered; remembered)
+	cd $(RUNNER_DIR) && mix runner.start $(if $(ROOT),--root $(ROOT))
 
 runner.status: ## Show this runner's credentials and whether the platform accepts them
 	cd $(RUNNER_DIR) && mix runner.status

@@ -3,6 +3,14 @@ defmodule ClaudeControlPlane.Jobs.Job do
   A prompt a workspace member sent to one of the workspace's runners, and how
   its run went: `queued` until the runner starts it, `running`, then
   `succeeded`, `failed` or `canceled`.
+
+  A job is either sent on its own or runs one attempt of a task's stage
+  (`stage_run`). `context` holds what the runner needs besides the prompt, in
+  the wire form of `ClaudeControlPlaneProtocol.Job` (directory, worktree,
+  output schema, model, budget, artifact path); `structured_output`,
+  `artifact`, `workdir`, `setup` (how it prepared a new worktree) and
+  `changes` (what the stage changed in the worktree) and `gates` (the stage's
+  gate commands and how each went) are what the runner reported back.
   """
   use ClaudeControlPlane.Schema
 
@@ -29,6 +37,14 @@ defmodule ClaudeControlPlane.Jobs.Job do
           started_at: DateTime.t() | nil,
           finished_at: DateTime.t() | nil,
           cancel_requested_at: DateTime.t() | nil,
+          context: map(),
+          structured_output: map() | nil,
+          artifact: String.t() | nil,
+          workdir: String.t() | nil,
+          setup: map() | nil,
+          changes: map() | nil,
+          gates: [map()] | nil,
+          stage_run_id: Ecto.UUID.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
           runner_id: Ecto.UUID.t() | nil,
@@ -53,10 +69,18 @@ defmodule ClaudeControlPlane.Jobs.Job do
     field :started_at, :utc_datetime
     field :finished_at, :utc_datetime
     field :cancel_requested_at, :utc_datetime
+    field :context, :map, default: %{}
+    field :structured_output, :map
+    field :artifact, :string
+    field :workdir, :string
+    field :setup, :map
+    field :changes, :map
+    field :gates, {:array, :map}
 
     belongs_to :workspace, Workspace
     belongs_to :runner, Runner
     belongs_to :created_by_user, User
+    belongs_to :stage_run, ClaudeControlPlane.Tasks.StageRun
     has_many :events, Event
 
     timestamps()
@@ -84,7 +108,21 @@ defmodule ClaudeControlPlane.Jobs.Job do
   @spec finish_changeset(t(), map(), DateTime.t()) :: Ecto.Changeset.t()
   def finish_changeset(job, attrs, now) do
     job
-    |> cast(attrs, [:status, :exit_code, :result, :error, :cost_usd, :duration_ms, :num_turns])
+    |> cast(attrs, [
+      :status,
+      :exit_code,
+      :result,
+      :error,
+      :cost_usd,
+      :duration_ms,
+      :num_turns,
+      :structured_output,
+      :artifact,
+      :workdir,
+      :setup,
+      :changes,
+      :gates
+    ])
     |> validate_required([:status])
     |> validate_inclusion(:status, @finished)
     |> validate_number(:duration_ms, greater_than_or_equal_to: 0)

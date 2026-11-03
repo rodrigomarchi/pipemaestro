@@ -3,50 +3,136 @@ defmodule ClaudeControlPlaneWeb.BoardLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias ClaudeControlPlaneWeb.Demo
+  alias ClaudeControlPlane.{Jobs, Tasks}
 
   setup :register_and_log_in_member
 
-  test "renders every stage with its tasks", %{conn: conn, workspace: workspace} do
-    {:ok, view, html} = live(conn, ~p"/w/#{workspace.slug}")
+  defp board_setup(%{workspace: workspace, user: user}) do
+    {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
 
-    for stage <- Demo.stages(), do: assert(html =~ stage.name)
-    for task <- Demo.tasks(), do: assert(has_element?(view, "#task-#{task.id}"))
+    runner =
+      with_directories(runner, [
+        %{"name" => "app", "git" => true},
+        %{"name" => "notas", "git" => false}
+      ])
+
+    %{runner: runner, pipeline: pipeline_fixture(workspace, %{"name" => "Duas etapas"})}
   end
 
-  test "lists pending decisions", %{conn: conn, workspace: workspace} do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+  defp create_task(ctx, title, attrs \\ %{}) do
+    {:ok, task} =
+      Tasks.create_task(
+        ctx.user,
+        ctx.workspace,
+        Enum.into(attrs, %{
+          "title" => title,
+          "prompt" => "faça",
+          "pipeline_id" => ctx.pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+      )
 
-    for decision <- Demo.decisions(), do: assert(has_element?(view, "#decision-#{decision.id}"))
+    task
   end
 
-  test "deciding removes the decision and confirms it", %{conn: conn, workspace: workspace} do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
-    [decision | _] = Demo.decisions()
-    [option | _] = decision.options
+  defp finish_current(ctx, task, output) do
+    job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+    {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
 
-    view
-    |> element("#decision-#{decision.id} button", option)
-    |> render_click()
-
-    refute has_element?(view, "#decision-#{decision.id}")
-    assert render(view) =~ "Decisão registrada: #{option}"
+    {:ok, _} =
+      Jobs.finish_job(ctx.runner, job.id, %{
+        "status" => "succeeded",
+        "exit_code" => 0,
+        "cost_usd" => 0.5,
+        "structured_output" => output,
+        "artifact" => "# ok"
+      })
   end
 
-  test "shows the empty state once every decision is taken", %{conn: conn, workspace: workspace} do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+  describe "with tasks" do
+    setup :board_setup
 
-    for decision <- Demo.decisions() do
-      view |> element("#decision-#{decision.id} button", hd(decision.options)) |> render_click()
+    test "groups the tasks by state, live, with the numbers", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      assert has_element?(view, "[data-testid=board-column-running]", "Nenhuma tarefa")
+
+      running = create_task(ctx, "Corrigir login")
+      blocked = create_task(ctx, "Tela branca")
+      done = create_task(ctx, "Ajustar rodapé")
+
+      assert has_element?(
+               view,
+               "[data-testid=board-column-running] [data-testid=board-task-#{running.id}]",
+               "Corrigir login"
+             )
+
+      assert has_element?(view, "[data-testid=board-task-#{running.id}]", "1/2 · Etapa A")
+      assert has_element?(view, "[data-testid=board-task-#{running.id}]", "mac:app")
+
+      finish_current(ctx, blocked, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
+
+      assert has_element?(
+               view,
+               "[data-testid=board-column-awaiting] [data-testid=board-task-#{blocked.id}]"
+             )
+
+      finish_current(ctx, done, %{"status" => "ok", "resumo" => "a"})
+      finish_current(ctx, done, %{"status" => "ok", "resumo" => "b"})
+
+      assert has_element?(
+               view,
+               "[data-testid=board-column-done] [data-testid=board-task-#{done.id}]"
+             )
+
+      assert has_element?(view, "[data-testid=board-stat-running]", "1")
+      assert has_element?(view, "[data-testid=board-stat-awaiting]", "1")
+      assert has_element?(view, "[data-testid=board-stat-succeeded]", "1")
+      assert has_element?(view, "[data-testid=board-stat-cost]", "US$ 1.5000")
+
+      assert has_element?(view, "[data-testid=board-decision-#{blocked.id}]", "Qual navegador?")
+      assert has_element?(view, "[data-testid=board-activity]", "Ajustar rodapé")
     end
 
-    assert render(view) =~ "Nenhuma decisão pendente"
+    test "filters by pipeline, runner, directory and person", ctx do
+      other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
+      a = create_task(ctx, "Na app")
+      b = create_task(ctx, "Nas notas", %{"directory" => "notas", "pipeline_id" => other.id})
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      assert has_element?(view, "[data-testid=board-task-#{a.id}]")
+      assert has_element?(view, "[data-testid=board-task-#{b.id}]")
+
+      view |> form("#board-filters", filters: %{pipeline: "Outro"}) |> render_change()
+      refute has_element?(view, "[data-testid=board-task-#{a.id}]")
+      assert has_element?(view, "[data-testid=board-task-#{b.id}]")
+
+      view
+      |> form("#board-filters", filters: %{pipeline: "", directory: "app"})
+      |> render_change()
+
+      assert has_element?(view, "[data-testid=board-task-#{a.id}]")
+      refute has_element?(view, "[data-testid=board-task-#{b.id}]")
+
+      view
+      |> form("#board-filters",
+        filters: %{directory: "", user_id: ctx.user.id, runner_id: ctx.runner.id}
+      )
+      |> render_change()
+
+      assert has_element?(view, "[data-testid=board-task-#{a.id}]")
+      assert has_element?(view, "[data-testid=board-task-#{b.id}]")
+    end
   end
 
-  test "explains where new tasks come from", %{conn: conn, workspace: workspace} do
+  test "an empty workspace points to the first task", %{conn: conn, workspace: workspace} do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+    assert has_element?(view, "[data-testid=board-no-decisions]")
 
-    assert view |> element("button", "Nova tarefa") |> render_click() =~ "issues do GitHub"
+    assert {:error, {:live_redirect, %{to: path}}} =
+             view |> element("[data-testid=new-task]") |> render_click()
+
+    assert path == "/w/#{workspace.slug}/tasks"
   end
 
   test "shows the signed-in user and the workspace", %{conn: conn, workspace: workspace} do

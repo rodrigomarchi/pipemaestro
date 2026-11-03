@@ -3,6 +3,23 @@ defmodule ClaudeControlPlaneProtocol.Job do
   A job the control plane hands to a runner, and the names of the messages
   that carry it on the runner's channel (`runner:<id>`).
 
+  A job runs in the runner's own workdir unless it names a `directory` (one of
+  those the runner announced, `ClaudeControlPlaneProtocol.Hello`). A job of a
+  task also carries a `worktree`: the runner works in a git worktree of that
+  directory, one per task, on the given branch, shared by the task's stages.
+  `output_schema`, `model` and `max_budget_usd` go to the agent CLI as they
+  are; `artifact_path` is where the agent writes its artifact, relative to
+  the working directory, and the runner sends it back when the job ends.
+  `timeout_ms` is how long the agent may run before the runner stops it.
+  `gates` are shell commands the runner runs in the working directory after
+  the agent ends well, each expected to `"pass"` (exit 0) or `"fail"`.
+
+  `setup` prepares a task's worktree once, when the runner creates it:
+  `"copy"` names paths of the directory (dependencies, build output) the runner
+  clones into the worktree, copy-on-write where the file system allows, and
+  `"command"` is a shell command run in the worktree afterwards. Without
+  `"copy"` the runner picks the usual ones for the toolchains it finds.
+
   Control plane → runner:
 
     * `"job:assign"` — the job (`to_map/1`); the runner queues it.
@@ -14,14 +31,65 @@ defmodule ClaudeControlPlaneProtocol.Job do
     * `"job:event"` — `%{"job_id", "seq", "type", "data"}`, one per
       `ClaudeControlPlaneProtocol.JobEvent`, `seq` counting from 1.
     * `"job:finished"` — `%{"job_id", "status", "exit_code", "result",
-      "cost_usd", "duration_ms", "num_turns"}` with `status` one of
-      `finished_statuses/0`.
+      "cost_usd", "duration_ms", "num_turns", "structured_output", "artifact",
+      "workdir", "setup", "changes", "gates", "error"}` with `status` one of
+      `finished_statuses/0`; all but `job_id` and `status` may be missing.
+      `setup` reports a worktree prepared by this job: `%{"duration_ms",
+      "copied", "command", "exit_code", "output"}`. `changes` reports, for a
+      job in a task's worktree, what it changed there: `%{"files", "patch",
+      "truncated", "task_files"}`, each file `%{"path", "added", "removed"}`.
+      `gates` reports each gate command run: `%{"command", "expect",
+      "exit_code", "output", "passed", "duration_ms"}`.
   """
 
-  @enforce_keys [:id, :prompt]
-  defstruct @enforce_keys
+  alias ClaudeControlPlaneProtocol.Hello
 
-  @type t :: %__MODULE__{id: String.t(), prompt: String.t()}
+  @enforce_keys [:id, :prompt]
+  defstruct @enforce_keys ++
+              [
+                directory: nil,
+                worktree: nil,
+                output_schema: nil,
+                model: nil,
+                max_budget_usd: nil,
+                artifact_path: nil,
+                setup: nil,
+                timeout_ms: nil,
+                gates: nil
+              ]
+
+  @type worktree :: %{String.t() => String.t()}
+  @type setup :: %{optional(String.t()) => String.t() | [String.t()]}
+
+  @type t :: %__MODULE__{
+          id: String.t(),
+          prompt: String.t(),
+          directory: String.t() | nil,
+          worktree: worktree() | nil,
+          output_schema: map() | nil,
+          model: String.t() | nil,
+          max_budget_usd: number() | nil,
+          artifact_path: String.t() | nil,
+          setup: setup() | nil,
+          timeout_ms: pos_integer() | nil,
+          gates: [%{String.t() => String.t()}] | nil
+        }
+
+  @optional [
+    :directory,
+    :worktree,
+    :output_schema,
+    :model,
+    :max_budget_usd,
+    :artifact_path,
+    :setup,
+    :timeout_ms,
+    :gates
+  ]
+
+  @max_gates 10
+
+  @max_timeout_ms 24 * 60 * 60 * 1000
 
   @max_prompt_bytes 32_000
 
@@ -57,16 +125,22 @@ defmodule ClaudeControlPlaneProtocol.Job do
   @spec new(map()) :: {:ok, t()} | {:error, String.t()}
   def new(attrs) when is_map(attrs) do
     with {:ok, id} <- id(attrs),
-         {:ok, prompt} <- prompt(attrs) do
-      {:ok, %__MODULE__{id: id, prompt: prompt}}
+         {:ok, prompt} <- prompt(attrs),
+         {:ok, optional} <- optional(attrs) do
+      {:ok, struct!(%__MODULE__{id: id, prompt: prompt}, optional)}
     end
   end
 
   def new(_attrs), do: {:error, "job must be a map"}
 
   @doc "The wire form: a map with string keys."
-  @spec to_map(t()) :: %{String.t() => String.t()}
-  def to_map(%__MODULE__{id: id, prompt: prompt}), do: %{"id" => id, "prompt" => prompt}
+  @spec to_map(t()) :: %{String.t() => term()}
+  def to_map(%__MODULE__{} = job) do
+    for {key, value} <- Map.from_struct(job),
+        value != nil,
+        into: %{},
+        do: {Atom.to_string(key), value}
+  end
 
   @doc "Parses the wire form."
   @spec from_map(map()) :: {:ok, t()} | {:error, String.t()}
@@ -90,4 +164,80 @@ defmodule ClaudeControlPlaneProtocol.Job do
         {:error, "prompt must be a string of 1 to #{@max_prompt_bytes} bytes"}
     end
   end
+
+  defp optional(attrs) do
+    Enum.reduce_while(@optional, {:ok, []}, fn key, {:ok, acc} ->
+      case optional_value(key, fetch(attrs, key)) do
+        :absent -> {:cont, {:ok, acc}}
+        {:ok, value} -> {:cont, {:ok, [{key, value} | acc]}}
+        {:error, message} -> {:halt, {:error, "#{key} #{message}"}}
+      end
+    end)
+  end
+
+  defp optional_value(_key, nil), do: :absent
+
+  defp optional_value(key, value) do
+    with :ok <- check(key, value), do: {:ok, value}
+  end
+
+  defp check(:directory, value) do
+    if Hello.valid_directory_name?(value), do: :ok, else: {:error, "must be a directory name"}
+  end
+
+  defp check(:worktree, %{"task_id" => task_id, "branch" => branch})
+       when is_binary(task_id) and byte_size(task_id) in 1..64 and is_binary(branch) and
+              byte_size(branch) in 1..200,
+       do: :ok
+
+  defp check(:worktree, _value), do: {:error, "must have a task_id and a branch"}
+  defp check(:output_schema, value) when is_map(value), do: :ok
+  defp check(:output_schema, _value), do: {:error, "must be a JSON Schema object"}
+  defp check(:model, value) when is_binary(value) and byte_size(value) in 1..80, do: :ok
+  defp check(:model, _value), do: {:error, "must be a model name"}
+  defp check(:max_budget_usd, value) when is_number(value) and value > 0, do: :ok
+  defp check(:max_budget_usd, _value), do: {:error, "must be a positive number"}
+
+  defp check(:artifact_path, value) do
+    if inner_path?(value),
+      do: :ok,
+      else: {:error, "must be a relative path inside the working directory"}
+  end
+
+  defp check(:timeout_ms, value) when is_integer(value) and value in 1..@max_timeout_ms, do: :ok
+  defp check(:timeout_ms, _value), do: {:error, "must be a number of milliseconds up to a day"}
+
+  defp check(:gates, gates) when is_list(gates) and length(gates) <= @max_gates do
+    if Enum.all?(gates, &gate?/1),
+      do: :ok,
+      else: {:error, "must be commands, each expected to pass or fail"}
+  end
+
+  defp check(:gates, _value), do: {:error, "must be a list of up to #{@max_gates} commands"}
+
+  defp check(:setup, %{} = setup) when map_size(setup) > 0 do
+    if Enum.all?(setup, &setup_entry?/1),
+      do: :ok,
+      else: {:error, "must have a command and paths inside the directory to copy"}
+  end
+
+  defp check(:setup, _value), do: {:error, "must be a map with a command or paths to copy"}
+
+  defp gate?(%{"command" => command, "expect" => expect}),
+    do: is_binary(command) and byte_size(command) in 1..4_000 and expect in ["pass", "fail"]
+
+  defp gate?(_gate), do: false
+
+  defp setup_entry?({"command", command}),
+    do: is_binary(command) and byte_size(command) in 1..4_000
+
+  defp setup_entry?({"copy", paths}),
+    do: is_list(paths) and length(paths) <= 50 and Enum.all?(paths, &inner_path?/1)
+
+  defp setup_entry?(_other), do: false
+
+  defp inner_path?(value) when is_binary(value) and byte_size(value) in 1..255,
+    do: Path.type(value) == :relative and ".." not in Path.split(value)
+
+  defp inner_path?(_value), do: false
 end

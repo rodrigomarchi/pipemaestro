@@ -8,7 +8,7 @@ defmodule ClaudeControlPlaneProtocol do
   The written spec is `docs/specs/protocolo-runner.md`.
   """
 
-  @version 2
+  @version 3
 
   @device_errors ~w(authorization_pending slow_down expired_token access_denied invalid_request)
 

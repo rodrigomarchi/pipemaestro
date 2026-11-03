@@ -10,6 +10,7 @@ defmodule ClaudeControlPlaneWeb.JobLive do
 
   alias ClaudeControlPlane.Jobs
   alias ClaudeControlPlane.Jobs.Job
+  alias ClaudeControlPlaneWeb.Markdown
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -65,6 +66,7 @@ defmodule ClaudeControlPlaneWeb.JobLive do
     ~H"""
     <Layouts.app
       flash={@flash}
+      pending_decisions={@pending_decisions}
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:jobs}
@@ -116,11 +118,13 @@ defmodule ClaudeControlPlaneWeb.JobLive do
               <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">
                 {if @job.error, do: "Erro", else: "Resultado"}
               </h2>
-              <pre
+              <div
                 :if={@job.result}
-                class="mt-2 whitespace-pre-wrap font-sans text-gray-900 dark:text-white"
+                class="prose prose-sm mt-2 max-w-none dark:prose-invert"
                 data-testid="job-result"
-              >{@job.result}</pre>
+              >
+                {Markdown.to_html(@job.result)}
+              </div>
               <pre
                 :if={@job.error}
                 class="mt-2 whitespace-pre-wrap font-sans text-danger-700 dark:text-danger-400"

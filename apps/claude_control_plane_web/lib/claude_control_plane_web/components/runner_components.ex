@@ -30,6 +30,26 @@ defmodule ClaudeControlPlaneWeb.RunnerComponents do
     end
   end
 
+  @doc ~s(A size in bytes, short, with a decimal comma: "1,5 GB", "50 GB", "0 B".)
+  @spec format_bytes(non_neg_integer()) :: String.t()
+  def format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"
+
+  def format_bytes(bytes) do
+    {value, unit} = scale(bytes / 1024, ~w(KB MB GB TB))
+
+    number =
+      if value >= 10,
+        do: value |> round() |> Integer.to_string(),
+        else: :erlang.float_to_binary(value, decimals: 1)
+
+    "#{String.replace(number, ".", ",")} #{unit}"
+  end
+
+  defp scale(value, [_unit | rest]) when value >= 1024 and rest != [],
+    do: scale(value / 1024, rest)
+
+  defp scale(value, [unit | _rest]), do: {value, unit}
+
   @doc "The commands that connect a new runner to this platform."
   attr :url, :string, required: true, doc: "the platform URL the runner should use"
 

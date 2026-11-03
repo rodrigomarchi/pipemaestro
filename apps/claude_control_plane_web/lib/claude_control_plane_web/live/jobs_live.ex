@@ -83,6 +83,7 @@ defmodule ClaudeControlPlaneWeb.JobsLive do
     ~H"""
     <Layouts.app
       flash={@flash}
+      pending_decisions={@pending_decisions}
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:jobs}

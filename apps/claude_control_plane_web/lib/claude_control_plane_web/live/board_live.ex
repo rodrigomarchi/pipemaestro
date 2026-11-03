@@ -1,34 +1,60 @@
 defmodule ClaudeControlPlaneWeb.BoardLive do
   @moduledoc """
-  The organization's board: headline numbers, tasks by pipeline stage, pending
-  human decisions, runners and recent activity.
-
-  The workspace and its runners are real (runner status is live); the pipeline
-  data is still sample data from `ClaudeControlPlaneWeb.Demo` until the
-  pipeline domain exists.
+  The workspace's board: the week in numbers, the tasks by state (running,
+  waiting for a decision, done, failed), filterable by pipeline, runner,
+  directory and person, the decisions waiting, recent activity and the
+  runners. Everything updates live.
   """
   use ClaudeControlPlaneWeb, :live_view
 
   import ClaudeControlPlaneWeb.RunnerComponents
+  import ClaudeControlPlaneWeb.TaskComponents, only: [task_status: 1]
+  import ClaudeControlPlaneWeb.JobComponents, only: [format_cost: 1]
 
-  alias ClaudeControlPlane.Runners
-  alias ClaudeControlPlaneWeb.{Demo, RunnerStatus}
+  alias ClaudeControlPlane.{Jobs, Pipelines, Runners, Tasks, Workspaces}
+  alias ClaudeControlPlane.Tasks.Task
+  alias ClaudeControlPlaneWeb.RunnerStatus
   alias Phoenix.Socket.Broadcast
+
+  @period_days 7
+
+  @columns [
+    %{id: "running", name: "Em execução", icon: "hero-play", statuses: [:running]},
+    %{
+      id: "awaiting",
+      name: "Aguardando decisão",
+      icon: "hero-hand-raised",
+      statuses: [:awaiting_decision]
+    },
+    %{id: "done", name: "Concluídas", icon: "hero-check-circle", statuses: [:succeeded]},
+    %{
+      id: "failed",
+      name: "Falharam ou canceladas",
+      icon: "hero-x-circle",
+      statuses: [:failed, :canceled]
+    }
+  ]
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: RunnerStatus.subscribe(socket.assigns.current_scope.workspace.id)
+    workspace = socket.assigns.current_scope.workspace
+
+    if connected?(socket) do
+      RunnerStatus.subscribe(workspace.id)
+      Tasks.subscribe({:workspace, workspace.id})
+      Jobs.subscribe({:workspace, workspace.id})
+    end
 
     {:ok,
      socket
      |> assign(
        page_title: "Board",
-       stats: Demo.stats(),
-       stages: Demo.stages(),
-       tasks_by_stage: Demo.tasks_by_stage(),
-       decisions: Demo.decisions(),
-       activity: Demo.activity()
+       columns: @columns,
+       filters: %{},
+       pipelines: Pipelines.list_pipelines(workspace),
+       members: Workspaces.list_members(workspace)
      )
+     |> load_tasks()
      |> load_runners()}
   end
 
@@ -37,6 +63,38 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     do: {:noreply, load_runners(socket)}
 
   def handle_info(:runners_changed, socket), do: {:noreply, load_runners(socket)}
+  def handle_info({:task_updated, _task}, socket), do: {:noreply, load_tasks(socket)}
+
+  # The cost of a job counts as soon as it ends, task or not.
+  def handle_info({:job_updated, _job}, socket), do: {:noreply, load_stats(socket)}
+
+  @impl true
+  def handle_event("filter", %{"filters" => filters}, socket) do
+    {:noreply, socket |> assign(filters: filters) |> load_tasks()}
+  end
+
+  defp load_tasks(socket) do
+    workspace = socket.assigns.current_scope.workspace
+
+    socket
+    |> assign(
+      tasks: Tasks.list_tasks(workspace, socket.assigns.filters),
+      awaiting: Tasks.list_awaiting(workspace),
+      recent:
+        Enum.take(
+          Enum.sort_by(Tasks.list_tasks(workspace), & &1.updated_at, {:desc, DateTime}),
+          8
+        ),
+      directories:
+        workspace |> Tasks.list_tasks() |> Enum.map(& &1.directory) |> Enum.uniq() |> Enum.sort()
+    )
+    |> load_stats()
+  end
+
+  defp load_stats(socket) do
+    since = DateTime.add(DateTime.utc_now(), -@period_days, :day)
+    assign(socket, stats: Tasks.stats(socket.assigns.current_scope.workspace, since))
+  end
 
   defp load_runners(socket) do
     workspace = socket.assigns.current_scope.workspace
@@ -48,35 +106,34 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     )
   end
 
-  @impl true
-  def handle_event("decide", %{"id" => id, "option" => option}, socket) do
-    {:noreply,
-     socket
-     |> update(:decisions, fn decisions -> Enum.reject(decisions, &(&1.id == id)) end)
-     |> put_flash(:info, "Decisão registrada: #{option}. O pipeline retoma desta etapa.")}
+  defp column_tasks(tasks, column), do: Enum.filter(tasks, &(&1.status in column.statuses))
+
+  defp stage_label(%Task{stages: stages, current_stage: index}) do
+    case Enum.at(stages, index) do
+      nil -> "#{length(stages)} etapas"
+      stage -> "#{index + 1}/#{length(stages)} · #{stage.name}"
+    end
   end
 
-  def handle_event("new_task", _params, socket) do
-    {:noreply,
-     put_flash(socket, :info, "Novas tarefas chegam pelas issues do GitHub com o gatilho.")}
-  end
+  defp options(values, prompt), do: [{prompt, ""} | values]
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app
       flash={@flash}
+      pending_decisions={@pending_decisions}
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:board}
       title="Board"
-      pending_decisions={length(@decisions)}
     >
       <:actions>
         <.button
           size="sm"
           icon="hero-plus"
-          phx-click="new_task"
+          to={~p"/w/#{@current_scope.workspace.slug}/tasks"}
+          link_type="live_redirect"
           class="hidden sm:inline-flex"
           data-testid="new-task"
         >
@@ -86,24 +143,85 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
 
       <div class="space-y-6">
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <.stat_card :for={stat <- @stats} stat={stat} />
+          <.stat_card
+            id="running"
+            icon="hero-play"
+            label="Em execução"
+            value={@stats.running}
+            hint="agora"
+          />
+          <.stat_card
+            id="awaiting"
+            icon="hero-hand-raised"
+            label="Aguardando decisão"
+            value={@stats.awaiting}
+            hint="agora"
+          />
+          <.stat_card
+            id="succeeded"
+            icon="hero-check-circle"
+            label="Concluídas"
+            value={@stats.succeeded}
+            hint={"#{@stats.failed} falharam ou canceladas · 7 dias"}
+          />
+          <.stat_card
+            id="cost"
+            icon="hero-currency-dollar"
+            label="Custo"
+            value={format_cost(@stats.cost_usd)}
+            hint="execuções dos últimos 7 dias"
+          />
         </div>
 
-        <section aria-labelledby="pipeline-heading">
-          <div class="mb-3 flex items-center justify-between">
-            <h2 id="pipeline-heading" class="text-sm font-semibold text-gray-900 dark:text-white">
-              Pipeline · bug fix
+        <section aria-labelledby="tasks-heading">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="tasks-heading" class="text-sm font-semibold text-gray-900 dark:text-white">
+              Tarefas
             </h2>
-            <span class="text-xs text-gray-500 dark:text-gray-400">
-              {@tasks_by_stage |> Map.values() |> List.flatten() |> length()} tarefas
-            </span>
+            <.form
+              for={to_form(@filters, as: "filters")}
+              id="board-filters"
+              phx-change="filter"
+              class="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-4"
+            >
+              <.field
+                field={to_form(@filters, as: "filters")[:pipeline]}
+                type="select"
+                label="Pipeline"
+                options={options(Enum.map(@pipelines, & &1.name), "Todos")}
+                data-testid="board-filter-pipeline"
+              />
+              <.field
+                field={to_form(@filters, as: "filters")[:runner_id]}
+                type="select"
+                label="Runner"
+                options={options(Enum.map(@runners, &{&1.name, &1.id}), "Todos")}
+                data-testid="board-filter-runner"
+              />
+              <.field
+                field={to_form(@filters, as: "filters")[:directory]}
+                type="select"
+                label="Diretório"
+                options={options(@directories, "Todos")}
+                data-testid="board-filter-directory"
+              />
+              <.field
+                field={to_form(@filters, as: "filters")[:user_id]}
+                type="select"
+                label="Pessoa"
+                options={options(Enum.map(@members, &{&1.name, &1.id}), "Todas")}
+                data-testid="board-filter-user"
+              />
+            </.form>
           </div>
           <div class="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-            <div class="grid min-w-[66rem] grid-cols-6 gap-4">
-              <.stage_column
-                :for={stage <- @stages}
-                stage={stage}
-                tasks={Map.fetch!(@tasks_by_stage, stage.id)}
+            <div class="grid min-w-[56rem] grid-cols-4 gap-4">
+              <.column
+                :for={column <- @columns}
+                column={column}
+                tasks={column_tasks(@tasks, column)}
+                slug={@current_scope.workspace.slug}
+                now={@now}
               />
             </div>
           </div>
@@ -113,20 +231,51 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
           <.card class="xl:col-span-2" variant="outline">
             <.card_header
               title="Decisões pendentes"
-              description="O pipeline está pausado até alguém decidir."
+              description="Estas tarefas estão pausadas até alguém decidir."
             >
               <:action>
-                <.badge color="warning" variant="soft" label={"#{length(@decisions)} abertas"} />
+                <.button
+                  size="xs"
+                  variant="outline"
+                  color="gray"
+                  icon="hero-hand-raised"
+                  to={~p"/w/#{@current_scope.workspace.slug}/decisions"}
+                  link_type="live_redirect"
+                  data-testid="board-decisions-link"
+                >
+                  Decidir
+                </.button>
               </:action>
             </.card_header>
             <.card_content>
-              <div :if={@decisions != []} class="divide-y divide-gray-200 dark:divide-gray-800">
-                <.decision_row :for={decision <- @decisions} decision={decision} />
+              <div :if={@awaiting != []} class="divide-y divide-gray-200 dark:divide-gray-800">
+                <.link
+                  :for={task <- @awaiting}
+                  navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
+                  class="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
+                  data-testid={"board-decision-#{task.id}"}
+                >
+                  <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-warning-100 text-warning-600 dark:bg-warning-500/15 dark:text-warning-400">
+                    <.icon name="hero-hand-raised" class="size-4" />
+                  </span>
+                  <span class="min-w-0">
+                    <span class="block text-sm font-semibold text-gray-900 dark:text-white">
+                      {task.title}
+                      <span class="font-normal text-gray-500 dark:text-gray-400">
+                        · {stage_label(task)}
+                      </span>
+                    </span>
+                    <span class="block text-sm text-gray-600 dark:text-gray-400">
+                      {task.decision_reason}
+                    </span>
+                  </span>
+                </.link>
               </div>
               <.empty
-                :if={@decisions == []}
+                :if={@awaiting == []}
                 title="Nenhuma decisão pendente"
-                description="Quando um gate falhar além do limite ou uma etapa exigir aprovação, a pergunta aparece aqui."
+                description="Quando uma etapa pedir ajuda, esgotar as tentativas ou pedir aprovação, a tarefa aparece aqui."
+                data-testid="board-no-decisions"
               >
                 <:icon><.icon name="hero-check-circle" /></:icon>
               </.empty>
@@ -136,17 +285,28 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
           <.card variant="outline">
             <.card_header title="Atividade recente" />
             <.card_content>
-              <.timeline variant="compact" label="Atividade recente" data-testid="activity">
-                <:item
-                  :for={event <- @activity}
-                  title={event.title}
-                  description={event.description}
-                  time={event.time}
-                  marker="icon"
-                  icon={event.icon}
-                  color={event.color}
-                />
-              </.timeline>
+              <p
+                :if={@recent == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+              >
+                Nenhuma tarefa ainda.
+              </p>
+              <ul class="space-y-3" data-testid="board-activity">
+                <li :for={task <- @recent} class="flex items-start justify-between gap-3 text-sm">
+                  <.link
+                    navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
+                    class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
+                  >
+                    {task.title}
+                  </.link>
+                  <span class="flex shrink-0 items-center gap-2">
+                    <.task_status task={task} />
+                    <span class="text-xs text-gray-500 dark:text-gray-400">
+                      {time_ago(task.updated_at, @now)}
+                    </span>
+                  </span>
+                </li>
+              </ul>
             </.card_content>
           </.card>
         </div>
@@ -192,17 +352,6 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
                 data-testid={"board-runner-status-#{runner.name}"}
               />
             </:col>
-            <:col :let={runner} label="Labels">
-              <div class="flex flex-wrap gap-1">
-                <.badge
-                  :for={label <- runner.labels}
-                  size="xs"
-                  color="gray"
-                  variant="outline"
-                  label={label}
-                />
-              </div>
-            </:col>
             <:col :let={runner} label="Capacidade">{runner.capacity}</:col>
             <:col :let={runner} label="Versão">
               <span class="font-mono text-xs">{runner.runner_version}</span>
@@ -232,193 +381,87 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
     """
   end
 
-  attr :stat, :map, required: true
+  attr :id, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :value, :any, required: true
+  attr :hint, :string, required: true
 
   defp stat_card(assigns) do
     ~H"""
     <.card variant="outline">
       <.card_content>
         <p class="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-          <.icon name={@stat.icon} class="size-4 shrink-0" />
-          <span class="truncate">{@stat.label}</span>
+          <.icon name={@icon} class="size-4 shrink-0" />
+          <span class="truncate">{@label}</span>
         </p>
-        <div class="mt-3 flex items-end justify-between gap-4">
-          <div>
-            <p class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
-              {@stat.value}
-            </p>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{@stat.delta}</p>
-          </div>
-          <.sparkline data={@stat.trend} smooth class="h-10 w-24 shrink-0 text-primary-500" />
-        </div>
+        <p
+          class="mt-3 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+          data-testid={"board-stat-#{@id}"}
+        >
+          {@value}
+        </p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{@hint}</p>
       </.card_content>
     </.card>
     """
   end
 
-  attr :stage, :map, required: true
+  attr :column, :map, required: true
   attr :tasks, :list, required: true
+  attr :slug, :string, required: true
+  attr :now, DateTime, required: true
 
-  defp stage_column(assigns) do
+  defp column(assigns) do
     ~H"""
     <div
-      data-testid={"stage-#{@stage.id}"}
+      data-testid={"board-column-#{@column.id}"}
       class="flex min-h-64 flex-col rounded-xl border border-gray-200 bg-gray-100/60 p-3 dark:border-gray-800 dark:bg-gray-900/50"
     >
       <div class="mb-3 flex items-center justify-between px-1">
         <p class="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200">
-          <.icon name={@stage.icon} class="size-4 text-gray-400" />
-          {@stage.name}
+          <.icon name={@column.icon} class="size-4 text-gray-400" />
+          {@column.name}
         </p>
         <.badge size="xs" color="gray" variant="soft" label={Integer.to_string(length(@tasks))} />
       </div>
       <div class="flex flex-1 flex-col gap-3">
-        <.task_card :for={task <- @tasks} task={task} />
+        <.link
+          :for={task <- @tasks}
+          navigate={~p"/w/#{@slug}/tasks/#{task.id}"}
+          data-testid={"board-task-#{task.id}"}
+          class={[
+            "block rounded-lg border bg-white p-3 shadow-xs transition hover:shadow-md dark:bg-gray-900",
+            if(task.status == :awaiting_decision,
+              do: "border-warning-300 dark:border-warning-500/40",
+              else: "border-gray-200 dark:border-gray-800"
+            )
+          ]}
+        >
+          <p class="text-sm font-medium leading-snug text-gray-900 dark:text-white">
+            {task.title}
+          </p>
+          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+            {task.pipeline_name} · {stage_label(task)}
+          </p>
+          <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            <span class="flex min-w-0 items-center gap-1 font-mono">
+              <.icon name="hero-server-micro" class="size-3.5 shrink-0" />
+              <span class="truncate">
+                {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
+              </span>
+            </span>
+            <span class="shrink-0">{time_ago(task.updated_at, @now)}</span>
+          </div>
+        </.link>
         <p
           :if={@tasks == []}
           class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs text-gray-400 dark:border-gray-700"
         >
-          Nenhuma tarefa nesta etapa
+          Nenhuma tarefa
         </p>
       </div>
     </div>
     """
   end
-
-  attr :task, :map, required: true
-
-  defp task_card(assigns) do
-    ~H"""
-    <article
-      id={"task-#{@task.id}"}
-      data-testid={"task-card-#{@task.id}"}
-      class={[
-        "rounded-lg border bg-white p-3 shadow-xs transition hover:shadow-md dark:bg-gray-900",
-        if(@task.status == :waiting_decision,
-          do: "border-warning-300 dark:border-warning-500/40",
-          else: "border-gray-200 dark:border-gray-800"
-        )
-      ]}
-    >
-      <div class="flex flex-wrap items-center gap-1">
-        <.badge
-          size="xs"
-          variant="soft"
-          color={kind_color(@task.kind)}
-          label={kind_label(@task.kind)}
-        />
-        <.task_status status={@task.status} />
-      </div>
-      <p class="mt-2 text-sm font-medium leading-snug text-gray-900 dark:text-white">
-        {@task.title}
-      </p>
-      <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" title={@task.repo}>
-        {@task.repo} #{@task.issue}
-      </p>
-      <div class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-        <p class="flex min-w-0 items-center gap-1" title={task_runner(@task)}>
-          <.icon name="hero-server-micro" class="size-3.5 shrink-0" />
-          <span class="truncate">{task_runner(@task)}</span>
-        </p>
-        <p class="flex flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap">
-          <span :if={@task.elapsed} class="flex items-center gap-1">
-            <.icon name="hero-clock-micro" class="size-3.5" />{@task.elapsed}
-          </span>
-          <span :if={@task.tokens}>{@task.tokens} tok</span>
-          <span
-            :if={@task.retries > 0}
-            class="font-medium text-warning-600 dark:text-warning-400"
-            title="Retentativas nesta etapa"
-          >
-            {@task.retries}× retry
-          </span>
-        </p>
-      </div>
-    </article>
-    """
-  end
-
-  attr :decision, :map, required: true
-
-  defp decision_row(assigns) do
-    ~H"""
-    <div
-      id={"decision-#{@decision.id}"}
-      data-testid={"decision-#{@decision.id}"}
-      class="flex flex-col gap-3 py-4 first:pt-0 last:pb-0"
-    >
-      <div class="flex items-start gap-3">
-        <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-warning-100 text-warning-600 dark:bg-warning-500/15 dark:text-warning-400">
-          <.icon name="hero-hand-raised" class="size-5" />
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">
-              #{@decision.issue} · {@decision.title}
-            </p>
-            <.badge size="xs" color="gray" variant="outline" label={@decision.stage} />
-            <span class="text-xs text-gray-500 dark:text-gray-400">prazo {@decision.due}</span>
-          </div>
-          <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{@decision.question}</p>
-        </div>
-      </div>
-      <div class="flex flex-wrap gap-2 pl-12">
-        <.button
-          :for={{option, index} <- Enum.with_index(@decision.options)}
-          size="xs"
-          variant={if index == 0, do: "solid", else: "outline"}
-          color={option_color(option, index)}
-          phx-click="decide"
-          phx-value-id={@decision.id}
-          data-testid={"decision-#{@decision.id}-option-#{index}"}
-          phx-value-option={option}
-        >
-          {option}
-        </.button>
-      </div>
-    </div>
-    """
-  end
-
-  attr :status, :atom, required: true
-
-  defp task_status(assigns) do
-    ~H"""
-    <.badge
-      size="xs"
-      variant="soft"
-      dot
-      color={task_status_color(@status)}
-      label={task_status_label(@status)}
-    />
-    """
-  end
-
-  defp task_runner(%{runner: runner}) when is_binary(runner), do: runner
-  defp task_runner(%{status: :queued}), do: "na fila"
-  defp task_runner(%{status: :ready}), do: "workspace liberado"
-
-  defp kind_label(:bug), do: "bug"
-  defp kind_label(:feature), do: "feature"
-  defp kind_label(:refactor), do: "refactor"
-  defp kind_label(:chore), do: "chore"
-
-  defp kind_color(:bug), do: "danger"
-  defp kind_color(:feature), do: "primary"
-  defp kind_color(:refactor), do: "info"
-  defp kind_color(:chore), do: "gray"
-
-  defp task_status_label(:running), do: "Rodando"
-  defp task_status_label(:waiting_decision), do: "Aguardando decisão"
-  defp task_status_label(:queued), do: "Na fila"
-  defp task_status_label(:ready), do: "Pronto p/ revisão"
-
-  defp task_status_color(:running), do: "info"
-  defp task_status_color(:waiting_decision), do: "warning"
-  defp task_status_color(:queued), do: "gray"
-  defp task_status_color(:ready), do: "success"
-
-  defp option_color("Abortar", _index), do: "danger"
-  defp option_color(_option, 0), do: "primary"
-  defp option_color(_option, _index), do: "gray"
 end

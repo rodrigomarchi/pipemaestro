@@ -94,9 +94,19 @@ defmodule ClaudeControlPlane.JobsTest do
                  "result" => "oi",
                  "cost_usd" => 0.0037,
                  "duration_ms" => 5591,
-                 "num_turns" => 3
+                 "num_turns" => 3,
+                 "setup" => %{"copied" => ["deps"], "duration_ms" => 812},
+                 "changes" => %{
+                   "files" => [%{"path" => "lib/a.ex", "added" => 2, "removed" => 1}],
+                   "patch" => "+x",
+                   "truncated" => false,
+                   "task_files" => []
+                 }
                })
 
+      assert %{"files" => [%{"path" => "lib/a.ex"}]} = finished.changes
+
+      assert finished.setup == %{"copied" => ["deps"], "duration_ms" => 812}
       assert Decimal.equal?(finished.cost_usd, Decimal.from_float(0.0037))
       assert %DateTime{} = finished.finished_at
       assert_receive {:job_updated, %Job{status: :succeeded}}
@@ -160,6 +170,25 @@ defmodule ClaudeControlPlane.JobsTest do
 
       assert %Job{status: :failed, error: "O runner" <> _} = Jobs.get_job!(ctx.workspace, lost.id)
       assert %Job{status: :running} = Jobs.get_job!(ctx.workspace, alive.id)
+    end
+  end
+
+  describe "load_by_runner/1" do
+    test "counts each runner's running and queued jobs", ctx do
+      {other, _token} = runner_fixture(ctx.workspace, ctx.user)
+      running = job_fixture(ctx.runner, ctx.user)
+      _queued = job_fixture(ctx.runner, ctx.user)
+      done = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, running.id)
+      {:ok, _} = Jobs.mark_started(ctx.runner, done.id)
+      {:ok, _} = Jobs.finish_job(ctx.runner, done.id, %{"status" => "succeeded"})
+      elsewhere = workspace_fixture()
+      stranger = member_fixture(elsewhere)
+      {foreign, _token} = runner_fixture(elsewhere, stranger)
+      _foreign_job = job_fixture(foreign, stranger)
+
+      assert Jobs.load_by_runner(ctx.workspace) == %{ctx.runner.id => %{running: 1, queued: 1}}
+      refute Map.has_key?(Jobs.load_by_runner(ctx.workspace), other.id)
     end
   end
 end

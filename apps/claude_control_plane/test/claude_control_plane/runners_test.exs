@@ -122,6 +122,12 @@ defmodule ClaudeControlPlane.RunnersTest do
       assert Repo.reload(updated).last_seen_at
     end
 
+    test "records its worktrees' disk usage", %{runner: runner} do
+      usage = %{"count" => 2, "bytes" => 2_048, "free_bytes" => nil}
+      assert {:ok, %Runner{worktree_usage: ^usage}} = Runners.update_worktree_usage(runner, usage)
+      assert {:error, _} = Runners.update_worktree_usage(runner, %{"count" => "x"})
+    end
+
     test "renames", %{runner: runner} do
       assert {:ok, %Runner{name: "Novo nome"}} =
                Runners.rename_runner(runner, %{name: "Novo nome"})

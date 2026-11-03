@@ -13,22 +13,33 @@ defmodule ClaudeControlPlaneRunner.Host do
   The hello for this machine.
 
   Options: `:labels` (extra labels), `:capacity` (default: the number of
-  schedulers, roughly the CPU count).
+  schedulers, roughly the CPU count), `:directories` (the code directories
+  offered, `ClaudeControlPlaneRunner.Directories`).
   """
   @spec hello(keyword()) :: {:ok, Hello.t()} | {:error, String.t()}
   def hello(opts \\ []) do
     os = os()
     arch = arch()
 
-    Hello.new(%{
-      protocol_version: ClaudeControlPlaneProtocol.version(),
-      runner_version: runner_version(),
-      hostname: hostname(),
-      os: os,
-      arch: arch,
-      labels: [os, arch | detected_tools()] ++ Keyword.get(opts, :labels, []),
-      capacity: Keyword.get(opts, :capacity) || System.schedulers_online()
-    })
+    hello =
+      Hello.new(%{
+        protocol_version: ClaudeControlPlaneProtocol.version(),
+        runner_version: runner_version(),
+        hostname: hostname(),
+        os: os,
+        arch: arch,
+        labels: [os, arch | detected_tools()] ++ Keyword.get(opts, :labels, []),
+        capacity: Keyword.get(opts, :capacity) || System.schedulers_online(),
+        directories: Keyword.get(opts, :directories, [])
+      })
+
+    # Matching the struct makes this module depend on Hello at compile time:
+    # when Hello changes, this module is recompiled with it, instead of keeping
+    # a type inferred from the old struct.
+    case hello do
+      {:ok, %Hello{} = hello} -> {:ok, hello}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @doc "This build's version."

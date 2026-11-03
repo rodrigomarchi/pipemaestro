@@ -11,7 +11,7 @@ defmodule ClaudeControlPlaneWeb.UserAuth do
 
   alias ClaudeControlPlane.Accounts
   alias ClaudeControlPlane.Accounts.{Scope, User}
-  alias ClaudeControlPlane.Workspaces
+  alias ClaudeControlPlane.{Tasks, Workspaces}
   alias Phoenix.LiveView
 
   @remember_me_cookie "_claude_control_plane_user_remember_me"
@@ -143,11 +143,29 @@ defmodule ClaudeControlPlaneWeb.UserAuth do
 
       workspace ->
         {:cont,
-         Phoenix.Component.assign(socket,
+         socket
+         |> Phoenix.Component.assign(
            current_scope: Scope.put_workspace(scope, workspace),
            workspaces: Workspaces.list_workspaces_for_user(user)
-         )}
+         )
+         |> follow_pending_decisions(workspace)}
     end
+  end
+
+  # Every workspace page shows how many decisions wait (the menu's badge),
+  # kept up to date here so no page has to.
+  defp follow_pending_decisions(socket, workspace) do
+    if LiveView.connected?(socket), do: Tasks.subscribe({:decisions, workspace.id})
+
+    socket
+    |> Phoenix.Component.assign(pending_decisions: Tasks.count_awaiting(workspace))
+    |> LiveView.attach_hook(:pending_decisions, :handle_info, fn
+      {:pending_decisions, count}, socket ->
+        {:halt, Phoenix.Component.assign(socket, pending_decisions: count)}
+
+      _other, socket ->
+        {:cont, socket}
+    end)
   end
 
   defp mount_current_scope(socket, session) do

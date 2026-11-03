@@ -10,6 +10,67 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert Job.from_map(Job.to_map(job)) == {:ok, job}
     end
 
+    test "carries a task's context, omitting what is not set" do
+      assert {:ok, job} =
+               Job.new(%{
+                 "id" => "j",
+                 "prompt" => "p",
+                 "directory" => "retro_hex_chat",
+                 "worktree" => %{"task_id" => "t1", "branch" => "cp/t1"},
+                 "output_schema" => %{"type" => "object"},
+                 "model" => "haiku",
+                 "max_budget_usd" => 0.5,
+                 "artifact_path" => ".control-plane/t1/01-triagem.md",
+                 "setup" => %{"command" => "mix deps.get", "copy" => ["deps", "_build"]},
+                 "timeout_ms" => 600_000,
+                 "gates" => [
+                   %{"command" => "mix test", "expect" => "pass"},
+                   %{"command" => "mix test test/repro_test.exs", "expect" => "fail"}
+                 ]
+               })
+
+      wire = Job.to_map(job)
+      assert wire["directory"] == "retro_hex_chat"
+      assert wire["worktree"] == %{"task_id" => "t1", "branch" => "cp/t1"}
+      assert Job.from_map(wire) == {:ok, job}
+      refute Map.has_key?(Job.to_map(%Job{id: "j", prompt: "p"}), "directory")
+
+      # Setup may name only a command, or only what to copy (paths inside the
+      # directory, possibly nested).
+      assert {:ok, %Job{setup: %{"copy" => ["vendor/bundle"]}}} =
+               Job.new(%{id: "j", prompt: "p", setup: %{"copy" => ["vendor/bundle"]}})
+
+      assert {:ok, %Job{setup: %{"command" => "make"}}} =
+               Job.new(%{id: "j", prompt: "p", setup: %{"command" => "make"}})
+    end
+
+    test "rejects a bad context" do
+      base = %{id: "j", prompt: "p"}
+      assert {:error, "directory" <> _} = Job.new(Map.put(base, :directory, "../etc"))
+      assert {:error, "directory" <> _} = Job.new(Map.put(base, :directory, "a/b"))
+      assert {:error, "worktree" <> _} = Job.new(Map.put(base, :worktree, %{"task_id" => "t"}))
+      assert {:error, "output_schema" <> _} = Job.new(Map.put(base, :output_schema, "x"))
+      assert {:error, "model" <> _} = Job.new(Map.put(base, :model, ""))
+      assert {:error, "max_budget_usd" <> _} = Job.new(Map.put(base, :max_budget_usd, 0))
+      assert {:error, "artifact_path" <> _} = Job.new(Map.put(base, :artifact_path, "/etc/x"))
+      assert {:error, "artifact_path" <> _} = Job.new(Map.put(base, :artifact_path, "a/../../x"))
+      assert {:error, "artifact_path" <> _} = Job.new(Map.put(base, :artifact_path, 1))
+      assert {:error, "setup" <> _} = Job.new(Map.put(base, :setup, "mix deps.get"))
+      assert {:error, "setup" <> _} = Job.new(Map.put(base, :setup, %{"command" => ""}))
+      assert {:error, "setup" <> _} = Job.new(Map.put(base, :setup, %{"copy" => ["../x"]}))
+      assert {:error, "setup" <> _} = Job.new(Map.put(base, :setup, %{"copy" => ["/abs"]}))
+      assert {:error, "timeout_ms" <> _} = Job.new(Map.put(base, :timeout_ms, 0))
+      assert {:error, "timeout_ms" <> _} = Job.new(Map.put(base, :timeout_ms, 1.5))
+      assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, "mix test"))
+      assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, [%{"command" => "x"}]))
+
+      assert {:error, "gates" <> _} =
+               Job.new(Map.put(base, :gates, [%{"command" => "", "expect" => "pass"}]))
+
+      assert {:error, "gates" <> _} =
+               Job.new(Map.put(base, :gates, [%{"command" => "x", "expect" => "maybe"}]))
+    end
+
     test "rejects a missing id, an empty or oversized prompt and non-maps" do
       assert {:error, "id" <> _} = Job.new(%{prompt: "x"})
       assert {:error, "prompt" <> _} = Job.new(%{id: "j", prompt: ""})
@@ -77,6 +138,83 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert odd =~ "n"
     end
 
+    test "tool calls carry their id and the input worth showing, cut" do
+      long = String.duplicate("x", 5_000)
+
+      line = %{
+        "type" => "assistant",
+        "message" => %{
+          "content" => [
+            %{
+              "type" => "tool_use",
+              "id" => "toolu_1",
+              "name" => "Edit",
+              "input" => %{
+                "file_path" => "/w/lib/a.ex",
+                "old_string" => "velho",
+                "new_string" => long,
+                "replace_all" => false
+              }
+            },
+            %{
+              "type" => "tool_use",
+              "id" => "toolu_2",
+              "name" => "Bash",
+              "input" => %{
+                "command" => "mix test",
+                "description" => "Roda a suíte",
+                "timeout" => 1
+              }
+            },
+            %{
+              "type" => "tool_use",
+              "id" => "toolu_3",
+              "name" => "TodoWrite",
+              "input" => %{
+                "todos" => [
+                  %{"content" => "Reproduzir", "status" => "completed", "activeForm" => "x"},
+                  %{"content" => "Corrigir", "status" => "in_progress"}
+                ]
+              }
+            },
+            %{
+              "type" => "tool_use",
+              "id" => "toolu_4",
+              "name" => "Mystery",
+              "input" => %{"a" => 1}
+            }
+          ]
+        }
+      }
+
+      assert [edit, bash, todo, mystery] = JobEvent.from_stream_json(line)
+      assert edit.data["id"] == "toolu_1"
+      assert edit.data["input"]["file_path"] == "/w/lib/a.ex"
+      assert edit.data["input"]["old_string"] == "velho"
+      assert byte_size(edit.data["input"]["new_string"]) <= 4_000
+      refute Map.has_key?(edit.data["input"], "replace_all")
+
+      assert bash.data["input"] == %{"command" => "mix test", "description" => "Roda a suíte"}
+
+      assert todo.data["input"]["todos"] == [
+               %{"content" => "Reproduzir", "status" => "completed"},
+               %{"content" => "Corrigir", "status" => "in_progress"}
+             ]
+
+      refute Map.has_key?(mystery.data, "input")
+    end
+
+    test "a tool result names the call it answers" do
+      line = %{
+        "type" => "user",
+        "message" => %{
+          "content" => [%{"type" => "tool_result", "tool_use_id" => "toolu_1", "content" => "ok"}]
+        }
+      }
+
+      assert [%JobEvent{data: %{"tool_use_id" => "toolu_1"}}] = JobEvent.from_stream_json(line)
+    end
+
     test "tool results, as a string or as content parts" do
       line = %{
         "type" => "user",
@@ -85,7 +223,12 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
             %{"type" => "tool_result", "content" => "File created", "is_error" => false},
             %{
               "type" => "tool_result",
-              "content" => [%{"type" => "text", "text" => "boom"}, %{"type" => "image"}],
+              "content" => [
+                %{"type" => "text", "text" => "boom"},
+                %{"type" => "image"},
+                %{"type" => "tool_reference"},
+                %{"type" => "tool_reference"}
+              ],
               "is_error" => true
             }
           ]
@@ -99,9 +242,16 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                },
                %JobEvent{
                  type: "tool_result",
-                 data: %{"text" => "boom\n[image]", "is_error" => true}
+                 data: %{"text" => "boom\n[image]\n[tool_reference ×2]", "is_error" => true}
                }
              ] = JobEvent.from_stream_json(line)
+    end
+
+    test "the result line carries the structured output when there is one" do
+      line = %{"type" => "result", "result" => "{}", "structured_output" => %{"status" => "ok"}}
+
+      assert [%JobEvent{data: %{"structured_output" => %{"status" => "ok"}}}] =
+               JobEvent.from_stream_json(line)
     end
 
     test "the result line carries cost, duration and turns" do
@@ -122,7 +272,8 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                "is_error" => false,
                "cost_usd" => 0.0037,
                "duration_ms" => 5591,
-               "num_turns" => 3
+               "num_turns" => 3,
+               "structured_output" => nil
              }
     end
 

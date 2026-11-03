@@ -51,9 +51,18 @@ defmodule ClaudeControlPlaneWeb.Router do
         {ClaudeControlPlaneWeb.UserAuth, :require_workspace}
       ] do
       live "/w/:workspace_slug", BoardLive
+      live "/w/:workspace_slug/decisions", DecisionsLive
       live "/w/:workspace_slug/runners", RunnersLive
       live "/w/:workspace_slug/jobs", JobsLive
       live "/w/:workspace_slug/jobs/:id", JobLive
+      live "/w/:workspace_slug/tasks", TaskLive.Index
+      live "/w/:workspace_slug/tasks/:id", TaskLive.Show
+      live "/w/:workspace_slug/projects", ProjectLive.Index
+      live "/w/:workspace_slug/projects/new", ProjectLive.Form, :new
+      live "/w/:workspace_slug/projects/:id/edit", ProjectLive.Form, :edit
+      live "/w/:workspace_slug/pipelines", PipelineLive.Index
+      live "/w/:workspace_slug/pipelines/new", PipelineLive.Form, :new
+      live "/w/:workspace_slug/pipelines/:id/edit", PipelineLive.Form, :edit
     end
   end
 
