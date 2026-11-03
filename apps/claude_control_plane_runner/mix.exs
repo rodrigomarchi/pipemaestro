@@ -13,6 +13,7 @@ defmodule ClaudeControlPlaneRunner.MixProject do
       elixirc_options: elixirc_options(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       consolidate_protocols: Mix.env() != :test,
       test_coverage: [
         summary: [threshold: 60],
@@ -40,5 +41,10 @@ defmodule ClaudeControlPlaneRunner.MixProject do
     [
       {:claude_control_plane_protocol, in_umbrella: true}
     ]
+  end
+
+  # `mix setup` at the umbrella root runs `setup` in every child app.
+  defp aliases do
+    [setup: ["deps.get"]]
   end
 end

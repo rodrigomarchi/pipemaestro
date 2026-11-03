@@ -13,6 +13,7 @@ defmodule ClaudeControlPlaneProtocol.MixProject do
       elixirc_options: elixirc_options(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       consolidate_protocols: Mix.env() != :test,
       test_coverage: [summary: [threshold: 60]]
     ]
@@ -34,5 +35,10 @@ defmodule ClaudeControlPlaneProtocol.MixProject do
   # on neither of them and carries no Phoenix or Ecto.
   defp deps do
     []
+  end
+
+  # `mix setup` at the umbrella root runs `setup` in every child app.
+  defp aliases do
+    [setup: ["deps.get"]]
   end
 end

@@ -33,6 +33,7 @@ defmodule ClaudeControlPlane.Umbrella.MixProject do
       ],
       claude_control_plane_runner: [
         applications: [claude_control_plane_runner: :permanent],
+        runtime_config_path: "config/runner_runtime.exs",
         steps: [:assemble, :tar]
       ]
     ]
