@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./_build/**)",
+      "Read(./deps/**)",
+      "Read(./**/node_modules/**)",
+      "Read(./apps/claude_control_plane_web/priv/static/assets/**)",
+      "Read(./**/*.beam)",
+      "Read(./priv/plts/**)",
+      "Read(./cover/**)"
+    ]
+  }
+}

@@ -8,6 +8,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 |---|---|
 | [`plano/`](plano/) | Documentos do plano de produto, numerados em ordem de leitura. |
 | [`adr/`](adr/) | Registros de decisões de arquitetura (ADRs), um arquivo por decisão: `NNNN-titulo-curto.md`. |
+| [`guias/`](guias/) | Guias de uso de bibliotecas e padrões de código (ex.: Phoenix/LiveView). |
 | [`specs/`](specs/) | Especificações técnicas: contrato do protocolo executor ↔ control plane, schema da definição de pipeline, modelo de dados e máquinas de estado. |
 
 ## Plano

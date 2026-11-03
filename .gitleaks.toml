@@ -1,0 +1,17 @@
+title = "ClaudeControlPlane gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Dev/test placeholders"
+paths = [
+  '''config/dev\.exs''',
+  '''config/test\.exs''',
+]
+
+[[allowlists]]
+description = "Third-party dependency example secrets"
+paths = [
+  '''deps/.*''',
+]
