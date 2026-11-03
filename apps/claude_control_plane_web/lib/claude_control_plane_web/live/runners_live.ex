@@ -10,7 +10,7 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
 
   alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Runners
-  alias ClaudeControlPlaneWeb.RunnerStatus
+  alias ClaudeControlPlaneWeb.{RunnerActions, RunnerStatus}
   alias Phoenix.Socket.Broadcast
 
   @impl true
@@ -78,10 +78,7 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
 
   defp admin_event("revoke", %{"id" => id}, socket) do
     runner = Runners.get_runner!(socket.assigns.current_scope.workspace, id)
-    {:ok, runner} = Runners.revoke_runner(runner)
-    audit(socket, "runner.revoked", runner)
-    RunnerStatus.disconnect(runner)
-    RunnerStatus.notify_changed(runner.workspace_id)
+    runner = RunnerActions.revoke(socket.assigns.current_scope, runner)
 
     {:noreply,
      socket
@@ -142,130 +139,132 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
           </:action>
         </.card_header>
 
-        <.table :if={@runners != []} id="runners" rows={@runners} row_id={&"runner-row-#{&1.id}"}>
-          <:col :let={runner} label="Runner">
-            <div class="flex items-center gap-2">
-              <.icon name="hero-server" class="size-4 text-gray-400" />
-              <.link
-                navigate={~p"/w/#{@current_scope.workspace.slug}/runners/#{runner.id}"}
-                class="font-medium text-gray-900 hover:underline dark:text-white"
-                data-testid={"runner-link-#{runner.name}"}
-              >
-                <span data-testid={"runner-#{runner.name}"}>{runner.name}</span>
-              </.link>
-            </div>
-            <p class="mt-0.5 font-mono text-xs text-gray-500 dark:text-gray-400">
-              {runner.hostname} · {runner.os}/{runner.arch}
-            </p>
-          </:col>
-          <:col :let={runner} label="Status">
-            <.runner_status
-              online={MapSet.member?(@online, runner.id)}
-              data-testid={"runner-status-#{runner.name}"}
-            />
-          </:col>
-          <:col :let={runner} label="Labels">
-            <div class="flex flex-wrap gap-1" data-testid={"runner-labels-#{runner.name}"}>
-              <.badge
-                :for={label <- runner.labels}
-                size="xs"
-                color="gray"
-                variant="outline"
-                label={label}
+        <%!-- The card clips what overflows it: a narrow window scrolls the table instead. --%>
+        <div :if={@runners != []} class="w-full overflow-x-auto">
+          <.table id="runners" rows={@runners} row_id={&"runner-row-#{&1.id}"}>
+            <:col :let={runner} label="Runner">
+              <div class="flex items-center gap-2">
+                <.icon name="hero-server" class="size-4 text-gray-400" />
+                <.link
+                  navigate={~p"/w/#{@current_scope.workspace.slug}/runners/#{runner.id}"}
+                  class="font-medium text-gray-900 hover:underline dark:text-white"
+                  data-testid={"runner-link-#{runner.name}"}
+                >
+                  <span data-testid={"runner-#{runner.name}"}>{runner.name}</span>
+                </.link>
+              </div>
+              <p class="mt-0.5 font-mono text-xs text-gray-500 dark:text-gray-400">
+                {runner.hostname} · {runner.os}/{runner.arch} · {runner.runner_version}
+              </p>
+            </:col>
+            <:col :let={runner} label="Status">
+              <.runner_status
+                online={MapSet.member?(@online, runner.id)}
+                data-testid={"runner-status-#{runner.name}"}
               />
-            </div>
-          </:col>
-          <:col :let={runner} label="Diretórios">
-            <span
-              :if={runner.directories != []}
-              class="text-gray-600 dark:text-gray-300"
-              data-testid={"runner-directories-#{runner.name}"}
-            >
-              {length(runner.directories)}
-            </span>
-            <.badge
-              :if={runner.directories == []}
-              size="xs"
-              color="warning"
-              variant="soft"
-              label="sem raiz"
-              data-testid={"runner-directories-#{runner.name}"}
-            />
-          </:col>
-          <:col :let={runner} label="Agente">
-            <span
-              class="flex items-center gap-1.5 whitespace-nowrap text-gray-600 dark:text-gray-300"
-              data-testid={"runner-agent-#{runner.name}"}
-            >
-              <span :if={!runner.agent}>—</span>
-              <span :if={runner.agent} class="font-mono text-xs">
-                {runner.agent["cli_version"] || "sem claude"}
+              <p
+                :if={!MapSet.member?(@online, runner.id)}
+                class="mt-1 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+              >
+                visto {time_ago(runner.last_seen_at, @now)}
+              </p>
+            </:col>
+            <:col :let={runner} label="Labels">
+              <div class="flex flex-wrap gap-1" data-testid={"runner-labels-#{runner.name}"}>
+                <.badge
+                  :for={label <- runner.labels}
+                  size="xs"
+                  color="gray"
+                  variant="outline"
+                  label={label}
+                />
+              </div>
+            </:col>
+            <:col :let={runner} label="Diretórios">
+              <span
+                :if={runner.directories != []}
+                class="text-gray-600 dark:text-gray-300"
+                data-testid={"runner-directories-#{runner.name}"}
+              >
+                {length(runner.directories)}
               </span>
               <.badge
-                :if={runner.agent && runner.agent["auth"] == "login"}
+                :if={runner.directories == []}
                 size="xs"
                 color="warning"
                 variant="soft"
-                label="login pessoal"
+                label="sem raiz"
+                data-testid={"runner-directories-#{runner.name}"}
               />
-              <.badge
-                :if={runner.agent && runner.agent["auth"] == "api_key"}
-                size="xs"
-                color="success"
-                variant="soft"
-                label="chave de API"
-              />
-            </span>
-          </:col>
-          <:col :let={runner} label="Worktrees">
-            <span
-              class="whitespace-nowrap text-gray-600 dark:text-gray-300"
-              data-testid={"runner-worktrees-#{runner.name}"}
-            >
-              {worktree_usage(runner.worktree_usage)}
-            </span>
-          </:col>
-          <:col :let={runner} label="Capacidade">
-            <span data-testid={"runner-capacity-#{runner.name}"}>{runner.capacity}</span>
-          </:col>
-          <:col :let={runner} label="Versão">
-            <span class="font-mono text-xs">{runner.runner_version}</span>
-          </:col>
-          <:col :let={runner} label="Visto">
-            <span class="text-gray-500 dark:text-gray-400">
-              {if MapSet.member?(@online, runner.id),
-                do: "agora",
-                else: time_ago(runner.last_seen_at, @now)}
-            </span>
-          </:col>
-          <:col :let={runner} label="" class="text-right">
-            <div :if={can?(@current_scope, :manage_runners)} class="flex justify-end gap-1">
-              <.button
-                size="xs"
-                variant="ghost"
-                color="gray"
-                icon="hero-pencil-square"
-                phx-click="open_rename"
-                phx-value-id={runner.id}
-                data-testid={"runner-rename-#{runner.name}"}
+            </:col>
+            <:col :let={runner} label="Agente">
+              <span
+                class="flex flex-wrap items-center gap-1.5 text-gray-600 dark:text-gray-300"
+                data-testid={"runner-agent-#{runner.name}"}
               >
-                Renomear
-              </.button>
-              <.button
-                size="xs"
-                variant="ghost"
-                color="danger"
-                icon="hero-no-symbol"
-                phx-click="revoke"
-                phx-value-id={runner.id}
-                data-confirm={"Revogar #{runner.name}? O token deixa de valer e a conexão cai."}
-                data-testid={"runner-revoke-#{runner.name}"}
+                <span :if={!runner.agent}>—</span>
+                <span :if={runner.agent} class="font-mono text-xs">
+                  {runner.agent["cli_version"] || "sem claude"}
+                </span>
+                <.badge
+                  :if={runner.agent && runner.agent["auth"] == "login"}
+                  size="xs"
+                  color="warning"
+                  variant="soft"
+                  label="login pessoal"
+                />
+                <.badge
+                  :if={runner.agent && runner.agent["auth"] == "api_key"}
+                  size="xs"
+                  color="success"
+                  variant="soft"
+                  label="chave de API"
+                />
+              </span>
+            </:col>
+            <:col :let={runner} label="Worktrees">
+              <span
+                class="text-gray-600 dark:text-gray-300"
+                data-testid={"runner-worktrees-#{runner.name}"}
               >
-                Revogar
-              </.button>
-            </div>
-          </:col>
-        </.table>
+                {worktree_usage(runner.worktree_usage)}
+              </span>
+            </:col>
+            <:col :let={runner} label="Capacidade">
+              <span data-testid={"runner-capacity-#{runner.name}"}>{runner.capacity}</span>
+            </:col>
+            <:col :let={runner} label="" class="text-right">
+              <div
+                :if={can?(@current_scope, :manage_runners)}
+                class="flex justify-end gap-1 whitespace-nowrap"
+              >
+                <.button
+                  size="xs"
+                  variant="ghost"
+                  color="gray"
+                  icon="hero-pencil-square"
+                  phx-click="open_rename"
+                  phx-value-id={runner.id}
+                  data-testid={"runner-rename-#{runner.name}"}
+                >
+                  Renomear
+                </.button>
+                <.button
+                  size="xs"
+                  variant="ghost"
+                  color="danger"
+                  icon="hero-no-symbol"
+                  phx-click="revoke"
+                  phx-value-id={runner.id}
+                  data-confirm={"Revogar #{runner.name}? O token deixa de valer e a conexão cai."}
+                  data-testid={"runner-revoke-#{runner.name}"}
+                >
+                  Revogar
+                </.button>
+              </div>
+            </:col>
+          </.table>
+        </div>
 
         <.card_content :if={@runners == []}>
           <.empty

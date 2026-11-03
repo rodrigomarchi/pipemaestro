@@ -10,7 +10,7 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
   import ClaudeControlPlaneWeb.JobComponents, only: [job_status: 1, prompt_summary: 1]
 
   alias ClaudeControlPlane.{Jobs, Runners}
-  alias ClaudeControlPlaneWeb.RunnerStatus
+  alias ClaudeControlPlaneWeb.{RunnerActions, RunnerStatus}
   alias Phoenix.Socket.Broadcast
 
   @impl true
@@ -24,6 +24,22 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
     end
 
     {:ok, socket |> assign(page_title: runner.name, runner_id: runner.id) |> load()}
+  end
+
+  @impl true
+  def handle_event("revoke", _params, socket) do
+    scope = socket.assigns.current_scope
+
+    if can?(scope, :manage_runners) do
+      runner = RunnerActions.revoke(scope, socket.assigns.runner)
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Runner #{runner.name} revogado. A conexão foi encerrada.")
+       |> push_navigate(to: ~p"/w/#{scope.workspace.slug}/runners")}
+    else
+      {:noreply, put_flash(socket, :error, "Só admins do workspace gerenciam os runners.")}
+    end
   end
 
   @impl true
@@ -55,6 +71,18 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
       title={@runner.name}
     >
       <:actions>
+        <.button
+          :if={can?(@current_scope, :manage_runners)}
+          size="sm"
+          variant="ghost"
+          color="danger"
+          icon="hero-no-symbol"
+          phx-click="revoke"
+          data-confirm={"Revogar #{@runner.name}? O token deixa de valer e a conexão cai."}
+          data-testid="runner-detail-revoke"
+        >
+          Revogar
+        </.button>
         <.button
           link_type="live_redirect"
           to={~p"/w/#{@current_scope.workspace.slug}/runners"}

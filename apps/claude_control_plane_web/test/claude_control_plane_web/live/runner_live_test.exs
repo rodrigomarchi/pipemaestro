@@ -48,6 +48,31 @@ defmodule ClaudeControlPlaneWeb.RunnerLiveTest do
     assert has_element?(view, "[data-testid=runner-job-#{job.id}]", "Executando")
   end
 
+  test "an admin revokes the runner from its page and goes back to the list", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    {runner, token} = runner_fixture(workspace, user, %{name: "antigo"})
+
+    ClaudeControlPlaneWeb.Endpoint.subscribe(
+      ClaudeControlPlaneWeb.RunnerStatus.socket_id(runner.id)
+    )
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}")
+
+    {:ok, list, html} =
+      view
+      |> element("[data-testid=runner-detail-revoke]")
+      |> render_click()
+      |> follow_redirect(conn, ~p"/w/#{workspace.slug}/runners")
+
+    assert html =~ "Runner antigo revogado."
+    refute has_element?(list, "[data-testid=runner-antigo]")
+    assert_receive %Phoenix.Socket.Broadcast{event: "disconnect"}
+    refute Runners.authenticate_runner(token)
+  end
+
   test "another workspace's runner is not found", %{conn: conn, workspace: workspace} do
     other = workspace_fixture()
     {runner, _token} = runner_fixture(other, member_fixture(other))
