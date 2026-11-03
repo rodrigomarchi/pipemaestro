@@ -1,0 +1,34 @@
+#!/bin/sh
+# Stands in for `claude -p <prompt> --output-format stream-json ...` in tests:
+# prints the same kind of lines a real run prints, without calling any model.
+#
+# The prompt steers it, so a test (or an e2e spec typing in the browser) picks
+# the outcome:
+#
+#   a prompt with "[lento]" waits 30 s before finishing (to test canceling)
+#   a prompt with "[falha]" writes to stderr and exits 1
+#
+# It writes the prompt to fake-claude.txt in the working directory, so a test
+# can tell where it ran.
+
+prompt="$2"
+printf '%s\n' "$prompt" > fake-claude.txt
+
+echo '{"type":"system","subtype":"init","cwd":"'"$PWD"'","model":"fake-model","claude_code_version":"0.0.0-fake"}'
+echo '{"type":"system","subtype":"thinking_tokens","estimated_tokens":10}'
+echo '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""},{"type":"tool_use","name":"Write","input":{"file_path":"fake-claude.txt","content":"..."}}]}}'
+echo '{"type":"user","message":{"content":[{"type":"tool_result","content":"File created successfully","is_error":false}]}}'
+
+case "$prompt" in
+  *"[lento]"*) sleep 30 ;;
+esac
+
+case "$prompt" in
+  *"[falha]"*)
+    echo "fake_claude: falha simulada" >&2
+    exit 1
+    ;;
+esac
+
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Pronto: gravei o prompt em fake-claude.txt."}]}}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"Pronto: gravei o prompt em fake-claude.txt.","total_cost_usd":0.0042,"duration_ms":1234,"num_turns":2}'

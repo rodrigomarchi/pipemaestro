@@ -21,8 +21,9 @@ determinístico de agentes de IA até um Pull Request pronto para revisão human
 Requer asdf (versões em `.tool-versions`) e Docker.
 
 ```bash
-make setup    # Postgres (dev 5442, test 5443) + deps + banco + assets
-make server   # http://localhost:4000
+make setup        # Postgres (dev 5442, test 5443) + deps + banco + assets
+make db.migrate   # depois de puxar migrações novas
+make server       # http://localhost:4000
 make ci       # o gate: compile sem warnings, format, credo, testes com cobertura, dialyzer
 ```
 
@@ -56,6 +57,12 @@ make runner.logout                            # remove as credenciais locais
 Opções do login: `NAME=...`, `LABELS="gpu cuda"`, `CAPACITY=N`. Na plataforma, os
 runners ficam em **Executores** (`/w/<workspace>/runners`). O protocolo está em
 [`docs/specs/protocolo-runner.md`](docs/specs/protocolo-runner.md).
+
+Com o runner online, em **Execuções** (`/w/<workspace>/jobs`) um prompt enviado a ele
+roda no `claude` da máquina do runner (`claude -p`, com permissões totais), dentro do
+workdir `~/.config/claude-control-plane/workdir/`, e a execução aparece ao vivo.
+`CLAUDE_BIN=...` troca o executável (os testes usam
+`apps/claude_control_plane_runner/test/support/fake_claude`).
 
 ### Testes de tela
 

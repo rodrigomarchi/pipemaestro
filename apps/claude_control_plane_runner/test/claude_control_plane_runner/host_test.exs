@@ -22,7 +22,7 @@ defmodule ClaudeControlPlaneRunner.HostTest do
 
   test "builds the websocket URL from the platform URL" do
     assert Connection.websocket_url("http://localhost:4000", "cpr_x") ==
-             "ws://localhost:4000/runner/socket/websocket?token=cpr_x&protocol_version=1"
+             "ws://localhost:4000/runner/socket/websocket?token=cpr_x&protocol_version=#{ClaudeControlPlaneProtocol.version()}"
 
     assert Connection.websocket_url("https://app.example.com", "cpr_x") =~
              "wss://app.example.com/runner/socket/websocket?"

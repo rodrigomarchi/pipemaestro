@@ -1,4 +1,4 @@
-.PHONY: help setup deps docker.up docker.down docker.reset server iex \
+.PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
 	runner.login runner.start runner.status runner.logout \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
@@ -29,6 +29,12 @@ docker.down: ## Stop and remove the Postgres containers
 
 docker.reset: ## Destroy the containers and their volumes
 	docker compose down -v
+
+db.migrate: ## Run pending migrations on the dev database
+	mix ecto.migrate
+
+db.rollback: ## Roll back the last migration on the dev database (STEP=n for more)
+	mix ecto.rollback --step $${STEP:-1}
 
 # ── Run ──────────────────────────────────────────────────────────────────────
 

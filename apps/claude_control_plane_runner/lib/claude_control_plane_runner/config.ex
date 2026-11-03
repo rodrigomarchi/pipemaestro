@@ -28,6 +28,13 @@ defmodule ClaudeControlPlaneRunner.Config do
       Path.join([System.user_home!(), ".config", "claude-control-plane"])
   end
 
+  @doc """
+  The runner's single working directory, next to its credentials. Every job
+  runs in it, so what one job clones, installs or builds is there for the next.
+  """
+  @spec workdir(Path.t()) :: Path.t()
+  def workdir(dir \\ dir()), do: Path.join(dir, "workdir")
+
   @doc "The credentials file inside `dir`."
   @spec path(Path.t()) :: Path.t()
   def path(dir \\ dir()), do: Path.join(dir, @file_name)

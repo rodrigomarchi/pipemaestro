@@ -3,10 +3,14 @@ defmodule ClaudeControlPlaneProtocol.Hello do
   What a runner announces when it joins its channel: who it is and what it can
   run. The control plane stores it and shows it; later the dispatcher matches
   jobs against `labels` and `capacity`.
+
+  `running_job_ids` lists the jobs the runner is still executing. A runner sends
+  a new hello on every (re)join, so the control plane can tell a job that lost
+  its runner (not listed) from one that survived a dropped connection.
   """
 
   @enforce_keys [:protocol_version, :runner_version, :hostname, :os, :arch, :labels, :capacity]
-  defstruct @enforce_keys
+  defstruct @enforce_keys ++ [running_job_ids: []]
 
   @type t :: %__MODULE__{
           protocol_version: pos_integer(),
@@ -15,10 +19,12 @@ defmodule ClaudeControlPlaneProtocol.Hello do
           os: String.t(),
           arch: String.t(),
           labels: [String.t()],
-          capacity: pos_integer()
+          capacity: pos_integer(),
+          running_job_ids: [String.t()]
         }
 
   @max_labels 32
+  @max_running_jobs 64
   @label_format ~r/^[a-z0-9][a-z0-9._-]{0,39}$/
 
   @doc """
@@ -33,7 +39,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
          {:ok, os} <- text(attrs, :os),
          {:ok, arch} <- text(attrs, :arch),
          {:ok, labels} <- labels(attrs),
-         {:ok, capacity} <- positive_integer(attrs, :capacity) do
+         {:ok, capacity} <- positive_integer(attrs, :capacity),
+         {:ok, running_job_ids} <- running_job_ids(attrs) do
       {:ok,
        %__MODULE__{
          protocol_version: protocol_version,
@@ -42,7 +49,8 @@ defmodule ClaudeControlPlaneProtocol.Hello do
          os: os,
          arch: arch,
          labels: labels,
-         capacity: capacity
+         capacity: capacity,
+         running_job_ids: running_job_ids
        }}
     end
   end
@@ -86,6 +94,21 @@ defmodule ClaudeControlPlaneProtocol.Hello do
 
       _other ->
         {:error, "labels must be a list of at most #{@max_labels} strings"}
+    end
+  end
+
+  defp running_job_ids(attrs) do
+    case fetch(attrs, :running_job_ids) do
+      nil ->
+        {:ok, []}
+
+      list when is_list(list) and length(list) <= @max_running_jobs ->
+        if Enum.all?(list, &(is_binary(&1) and byte_size(&1) in 1..64)),
+          do: {:ok, list},
+          else: {:error, "running_job_ids must be job ids"}
+
+      _other ->
+        {:error, "running_job_ids must be a list of at most #{@max_running_jobs} job ids"}
     end
   end
 

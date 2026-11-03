@@ -52,6 +52,8 @@ defmodule ClaudeControlPlaneWeb.Router do
       ] do
       live "/w/:workspace_slug", BoardLive
       live "/w/:workspace_slug/runners", RunnersLive
+      live "/w/:workspace_slug/jobs", JobsLive
+      live "/w/:workspace_slug/jobs/:id", JobLive
     end
   end
 

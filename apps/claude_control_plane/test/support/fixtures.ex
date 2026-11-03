@@ -89,4 +89,20 @@ defmodule ClaudeControlPlane.Fixtures do
     {:ok, runner, token} = Runners.exchange_device_code(device_code)
     {runner, token}
   end
+
+  @doc "A job `user` sent to `runner` (both of `runner`'s workspace), still queued."
+  @spec job_fixture(ClaudeControlPlane.Runners.Runner.t(), Accounts.User.t(), map()) ::
+          ClaudeControlPlane.Jobs.Job.t()
+  def job_fixture(runner, user, attrs \\ %{}) do
+    workspace = ClaudeControlPlane.Repo.get!(Workspaces.Workspace, runner.workspace_id)
+
+    {:ok, job} =
+      ClaudeControlPlane.Jobs.create_job(
+        user,
+        workspace,
+        Enum.into(attrs, %{"prompt" => "diga oi", "runner_id" => runner.id})
+      )
+
+    job
+  end
 end

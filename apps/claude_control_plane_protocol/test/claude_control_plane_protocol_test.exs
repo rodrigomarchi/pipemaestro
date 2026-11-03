@@ -48,5 +48,16 @@ defmodule ClaudeControlPlaneProtocolTest do
       assert {:error, "labels" <> _} = Hello.new(Map.put(@valid, :labels, "linux"))
       assert {:error, _} = Hello.new("not a map")
     end
+
+    test "running_job_ids defaults to none and is validated" do
+      assert {:ok, %Hello{running_job_ids: []}} = Hello.new(@valid)
+
+      assert {:ok, %Hello{running_job_ids: ["job-1"]} = hello} =
+               Hello.new(Map.put(@valid, :running_job_ids, ["job-1"]))
+
+      assert Hello.to_map(hello)["running_job_ids"] == ["job-1"]
+      assert {:error, "running_job_ids" <> _} = Hello.new(Map.put(@valid, :running_job_ids, [1]))
+      assert {:error, "running_job_ids" <> _} = Hello.new(Map.put(@valid, :running_job_ids, "x"))
+    end
   end
 end

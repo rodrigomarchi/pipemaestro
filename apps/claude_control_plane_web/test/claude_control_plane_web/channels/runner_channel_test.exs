@@ -1,7 +1,7 @@
 defmodule ClaudeControlPlaneWeb.RunnerChannelTest do
   use ClaudeControlPlaneWeb.ChannelCase, async: false
 
-  alias ClaudeControlPlane.Runners
+  alias ClaudeControlPlane.{Jobs, Runners}
   alias ClaudeControlPlaneProtocol.Hello
   alias ClaudeControlPlaneWeb.{RunnerChannel, RunnerSocket, RunnerStatus}
 
@@ -105,6 +105,88 @@ defmodule ClaudeControlPlaneWeb.RunnerChannelTest do
       ref = Process.monitor(channel.channel_pid)
       close(channel)
       assert_receive {:DOWN, ^ref, _, _, _}
+    end
+  end
+
+  describe "jobs" do
+    setup %{token: token, workspace: workspace} do
+      {:ok, socket} = connect(RunnerSocket, params(token))
+      %{socket: socket, user: member_fixture(workspace)}
+    end
+
+    defp join_runner(socket, runner, hello_attrs \\ %{}) do
+      RunnerStatus.subscribe(runner.workspace_id)
+      hello = Hello.to_map(hello_fixture(hello_attrs))
+
+      {:ok, _reply, channel} =
+        subscribe_and_join(socket, RunnerChannel, "runner:" <> runner.id, hello)
+
+      assert_receive :runners_changed
+      channel
+    end
+
+    test "on join, fails lost jobs and hands over the queued ones", ctx do
+      lost = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, lost.id)
+      queued = job_fixture(ctx.runner, ctx.user, %{"prompt" => "fila"})
+
+      join_runner(ctx.socket, ctx.runner)
+
+      assert_push "job:assign", %{"id" => id, "prompt" => "fila"}
+      assert id == queued.id
+      assert Jobs.get_job!(ctx.workspace, lost.id).status == :failed
+    end
+
+    test "a running job the runner still reports survives the join", ctx do
+      alive = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, alive.id)
+
+      join_runner(ctx.socket, ctx.runner, %{running_job_ids: [alive.id]})
+
+      refute_push "job:assign", _
+      assert Jobs.get_job!(ctx.workspace, alive.id).status == :running
+    end
+
+    test "new and canceled jobs reach the runner; its reports are stored", ctx do
+      channel = join_runner(ctx.socket, ctx.runner)
+
+      job = job_fixture(ctx.runner, ctx.user)
+      assert_push "job:assign", %{"id" => job_id}
+      assert job_id == job.id
+
+      ref = push(channel, "job:started", %{"job_id" => job.id})
+      assert_reply ref, :ok
+
+      ref =
+        push(channel, "job:event", %{
+          "job_id" => job.id,
+          "seq" => 1,
+          "type" => "assistant_text",
+          "data" => %{"text" => "oi"}
+        })
+
+      assert_reply ref, :ok
+
+      ref = push(channel, "job:event", %{"job_id" => job.id, "seq" => 2, "type" => "bogus"})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+
+      {:ok, _} = Jobs.request_cancel(Jobs.get_job!(ctx.workspace, job.id))
+      assert_push "job:cancel", %{"job_id" => ^job_id}
+
+      ref = push(channel, "job:finished", %{"job_id" => job.id, "status" => "canceled"})
+      assert_reply ref, :ok
+
+      ref = push(channel, "job:finished", %{"job_id" => job.id, "status" => "failed"})
+      assert_reply ref, :error, %{"reason" => "finished"}
+
+      ref = push(channel, "job:started", %{"job_id" => Ecto.UUID.generate()})
+      assert_reply ref, :error, %{"reason" => "not_found"}
+
+      ref = push(channel, "job:whatever", %{})
+      assert_reply ref, :error, %{"reason" => "unknown_message"}
+
+      assert Jobs.get_job!(ctx.workspace, job.id).status == :canceled
+      assert [%{seq: 1}] = Jobs.list_events(job)
     end
   end
 end

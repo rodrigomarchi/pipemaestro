@@ -5,6 +5,10 @@ import { join, resolve } from "node:path";
 
 const runnerDir = resolve(process.cwd(), "..", "apps", "claude_control_plane_runner");
 
+// Specs never call a real model: jobs run the runner's fake agent CLI, which
+// prints the same kind of stream a real run prints.
+const fakeClaude = join(runnerDir, "test", "support", "fake_claude");
+
 /**
  * A real runner CLI (`mix runner.*`) run as a child process, the way a person
  * runs it in a terminal. Its credentials live in a throwaway directory so a
@@ -25,12 +29,22 @@ export class RunnerProcess {
     this.output = "";
     this.child = spawn("mix", [task, ...args], {
       cwd: runnerDir,
-      env: { ...process.env, MIX_ENV: "e2e", RUNNER_CONFIG_DIR: this.configDir },
+      env: {
+        ...process.env,
+        MIX_ENV: "e2e",
+        RUNNER_CONFIG_DIR: this.configDir,
+        CLAUDE_BIN: fakeClaude,
+      },
     });
     this.child.stdout?.on("data", (chunk) => (this.output += chunk.toString()));
     this.child.stderr?.on("data", (chunk) => (this.output += chunk.toString()));
     const child = this.child;
     this.exit = new Promise((done) => child.on("exit", (code) => done(code)));
+  }
+
+  /** The runner's working directory, where its jobs run. */
+  get workdir(): string {
+    return join(this.configDir, "workdir");
   }
 
   /** Everything the process printed so far. */

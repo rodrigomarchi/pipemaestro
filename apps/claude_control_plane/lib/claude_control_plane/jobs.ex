@@ -1,0 +1,260 @@
+defmodule ClaudeControlPlane.Jobs do
+  @moduledoc """
+  Jobs: a prompt a workspace member sends to one of the workspace's runners,
+  which runs it with the agent CLI and reports back events and the outcome.
+
+  Every change is broadcast on PubSub (`subscribe/1`):
+
+    * `{:job, id}` gets `{:job_updated, job}` and `{:job_event, event}`.
+    * `{:workspace, id}` gets `{:job_updated, job}` for the workspace's jobs.
+    * `{:runner, id}` gets what must reach that runner: `{:job_assign, job}` and
+      `{:job_cancel, job_id}`. The runner's channel subscribes to it.
+
+  The functions a runner calls take the runner first and only touch that
+  runner's jobs.
+  """
+
+  import Ecto.Query
+
+  alias ClaudeControlPlane.Accounts.User
+  alias ClaudeControlPlane.Jobs.{Event, Job}
+  alias ClaudeControlPlane.Repo
+  alias ClaudeControlPlane.Runners.Runner
+  alias ClaudeControlPlane.Workspaces.Workspace
+
+  @pubsub ClaudeControlPlane.PubSub
+  @list_limit 100
+
+  @typedoc "What a PubSub subscription is about."
+  @type subject :: {:job, Ecto.UUID.t()} | {:workspace, Ecto.UUID.t()} | {:runner, Ecto.UUID.t()}
+
+  @doc "Subscribes the calling process to a job's, workspace's or runner's job messages."
+  @spec subscribe(subject()) :: :ok | {:error, term()}
+  def subscribe(subject), do: Phoenix.PubSub.subscribe(@pubsub, topic(subject))
+
+  defp topic({:job, id}), do: "jobs:job:" <> id
+  defp topic({:workspace, id}), do: "jobs:workspace:" <> id
+  defp topic({:runner, id}), do: "jobs:runner:" <> id
+
+  defp broadcast(subject, message), do: Phoenix.PubSub.broadcast(@pubsub, topic(subject), message)
+
+  # ── Members ───────────────────────────────────────────────────────────────
+
+  @doc "A changeset for the new-job form."
+  @spec change_job(map()) :: Ecto.Changeset.t()
+  def change_job(attrs \\ %{}), do: Job.create_changeset(%Job{}, attrs)
+
+  @doc """
+  Creates a job for one of the workspace's runners and hands it to that runner.
+  A revoked runner or one from another workspace is refused.
+  """
+  @spec create_job(User.t(), Workspace.t(), map()) ::
+          {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
+  def create_job(%User{} = user, %Workspace{} = workspace, attrs) do
+    changeset =
+      %Job{workspace_id: workspace.id, created_by_user_id: user.id}
+      |> Job.create_changeset(attrs)
+      |> validate_runner(workspace)
+
+    with {:ok, job} <- Repo.insert(changeset) do
+      job = preload(job)
+      broadcast({:workspace, job.workspace_id}, {:job_updated, job})
+      broadcast({:runner, job.runner_id}, {:job_assign, job})
+      {:ok, job}
+    end
+  end
+
+  defp validate_runner(changeset, workspace) do
+    Ecto.Changeset.validate_change(changeset, :runner_id, fn :runner_id, runner_id ->
+      if Repo.exists?(
+           from r in Runner,
+             where:
+               r.id == ^runner_id and r.workspace_id == ^workspace.id and is_nil(r.revoked_at)
+         ),
+         do: [],
+         else: [runner_id: "não é um runner ativo deste workspace"]
+    end)
+  end
+
+  @doc "The workspace's most recent jobs, newest first."
+  @spec list_jobs(Workspace.t()) :: [Job.t()]
+  def list_jobs(%Workspace{id: workspace_id}) do
+    Repo.all(
+      from j in Job,
+        where: j.workspace_id == ^workspace_id,
+        order_by: [desc: j.inserted_at, desc: j.id],
+        limit: @list_limit,
+        preload: [:runner, :created_by_user]
+    )
+  end
+
+  @doc "One of the workspace's jobs. Raises when it is not there."
+  @spec get_job!(Workspace.t(), Ecto.UUID.t()) :: Job.t()
+  def get_job!(%Workspace{id: workspace_id}, id) do
+    Job
+    |> Repo.get_by!(id: id, workspace_id: workspace_id)
+    |> preload()
+  end
+
+  @doc "A job's events in the order they happened."
+  @spec list_events(Job.t()) :: [Event.t()]
+  def list_events(%Job{id: job_id}) do
+    Repo.all(from e in Event, where: e.job_id == ^job_id, order_by: e.seq)
+  end
+
+  @doc """
+  Asks for a job to stop. A queued job is canceled at once; a running one is
+  marked and its runner told to stop it, and the runner reports the end.
+  """
+  @spec request_cancel(Job.t()) :: {:ok, Job.t()} | {:error, :finished}
+  def request_cancel(%Job{status: :queued} = job) do
+    job = update!(job, status: :canceled, finished_at: now(), cancel_requested_at: now())
+    broadcast({:runner, job.runner_id}, {:job_cancel, job.id})
+    {:ok, job}
+  end
+
+  def request_cancel(%Job{status: :running} = job) do
+    job = update!(job, cancel_requested_at: now())
+    broadcast({:runner, job.runner_id}, {:job_cancel, job.id})
+    {:ok, job}
+  end
+
+  def request_cancel(%Job{}), do: {:error, :finished}
+
+  # ── Runners ───────────────────────────────────────────────────────────────
+
+  @doc "The runner's jobs that still wait to start, oldest first."
+  @spec queued_for_runner(Runner.t()) :: [Job.t()]
+  def queued_for_runner(%Runner{id: runner_id}) do
+    Repo.all(
+      from j in Job,
+        where: j.runner_id == ^runner_id and j.status == :queued,
+        order_by: [asc: j.inserted_at, asc: j.id]
+    )
+  end
+
+  @doc """
+  Squares the runner's jobs with what it says it is running when it joins.
+  A job marked running that the runner no longer runs lost its process (the
+  runner restarted): it fails. Returns the queued jobs to hand over again.
+  """
+  @spec reconcile(Runner.t(), [String.t()]) :: [Job.t()]
+  def reconcile(%Runner{id: runner_id} = runner, running_job_ids) do
+    lost =
+      Repo.all(
+        from j in Job,
+          where:
+            j.runner_id == ^runner_id and j.status == :running and
+              j.id not in ^valid_ids(running_job_ids)
+      )
+
+    for job <- lost do
+      update!(job,
+        status: :failed,
+        error: "O runner reiniciou durante a execução.",
+        finished_at: now()
+      )
+    end
+
+    queued_for_runner(runner)
+  end
+
+  @doc "The runner started one of its queued jobs."
+  @spec mark_started(Runner.t(), String.t()) ::
+          {:ok, Job.t()} | {:error, :not_found | :not_queued}
+  def mark_started(%Runner{} = runner, job_id) do
+    with {:ok, job} <- fetch_for_runner(runner, job_id) do
+      case job.status do
+        :queued -> {:ok, update!(job, status: :running, started_at: now())}
+        _other -> {:error, :not_queued}
+      end
+    end
+  end
+
+  @doc """
+  Stores an event the runner reported for one of its jobs. An event already
+  stored (same `seq`) is ignored.
+  """
+  @spec append_event(Runner.t(), String.t(), map()) ::
+          {:ok, Event.t() | :duplicate} | {:error, :not_found | Ecto.Changeset.t()}
+  def append_event(%Runner{} = runner, job_id, attrs) do
+    with {:ok, job} <- fetch_for_runner(runner, job_id),
+         {:ok, event} <- %Event{job_id: job.id} |> Event.changeset(attrs) |> apply_insert() do
+      case insert_event(event) do
+        {1, [stored]} ->
+          broadcast({:job, job.id}, {:job_event, stored})
+          {:ok, stored}
+
+        {0, []} ->
+          {:ok, :duplicate}
+      end
+    end
+  end
+
+  defp apply_insert(changeset), do: Ecto.Changeset.apply_action(changeset, :insert)
+
+  # insert_all reports whether the row was new; Repo.insert with
+  # `on_conflict: :nothing` cannot tell, since the id is generated client-side.
+  defp insert_event(%Event{} = event) do
+    row = %{
+      id: Ecto.UUID.generate(),
+      job_id: event.job_id,
+      seq: event.seq,
+      type: event.type,
+      data: event.data,
+      inserted_at: now()
+    }
+
+    Repo.insert_all(Event, [row],
+      on_conflict: :nothing,
+      conflict_target: [:job_id, :seq],
+      returning: true
+    )
+  end
+
+  @doc "Records how one of the runner's jobs ended."
+  @spec finish_job(Runner.t(), String.t(), map()) ::
+          {:ok, Job.t()} | {:error, :not_found | :finished | Ecto.Changeset.t()}
+  def finish_job(%Runner{} = runner, job_id, attrs) do
+    with {:ok, job} <- fetch_for_runner(runner, job_id),
+         true <- Job.active?(job) || {:error, :finished},
+         {:ok, job} <- job |> Job.finish_changeset(attrs, now()) |> Repo.update() do
+      job = preload(job)
+      notify(job)
+      {:ok, job}
+    end
+  end
+
+  defp fetch_for_runner(%Runner{id: runner_id}, job_id) do
+    with {:ok, id} <- Ecto.UUID.cast(job_id),
+         %Job{} = job <- Repo.get_by(Job, id: id, runner_id: runner_id) do
+      {:ok, job}
+    else
+      _missing -> {:error, :not_found}
+    end
+  end
+
+  defp valid_ids(ids) do
+    Enum.flat_map(ids, fn id ->
+      case Ecto.UUID.cast(id) do
+        {:ok, uuid} -> [uuid]
+        :error -> []
+      end
+    end)
+  end
+
+  defp update!(job, changes) do
+    job = job |> Ecto.Changeset.change(changes) |> Repo.update!() |> preload()
+    notify(job)
+    job
+  end
+
+  defp notify(job) do
+    broadcast({:job, job.id}, {:job_updated, job})
+    broadcast({:workspace, job.workspace_id}, {:job_updated, job})
+  end
+
+  defp preload(job), do: Repo.preload(job, [:runner, :created_by_user], force: true)
+
+  defp now, do: DateTime.utc_now(:second)
+end

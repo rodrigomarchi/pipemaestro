@@ -131,6 +131,14 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               badge={if @pending_decisions > 0, do: Integer.to_string(@pending_decisions)}
               link_type="live_redirect"
             />
+            <.sidebar_item
+              label="Execuções"
+              path={@home <> "/jobs"}
+              icon="hero-command-line"
+              link_type="live_redirect"
+              active={@active == :jobs}
+              data-testid="sidebar-jobs"
+            />
             <.sidebar_item label="Tarefas" path={@home} icon="hero-queue-list" />
             <.sidebar_item label="Pull requests" path={@home} icon="hero-arrow-up-tray" />
           </.sidebar_group>

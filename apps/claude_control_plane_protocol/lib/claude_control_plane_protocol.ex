@@ -8,7 +8,7 @@ defmodule ClaudeControlPlaneProtocol do
   The written spec is `docs/specs/protocolo-runner.md`.
   """
 
-  @version 1
+  @version 2
 
   @device_errors ~w(authorization_pending slow_down expired_token access_denied invalid_request)
 
@@ -32,7 +32,7 @@ defmodule ClaudeControlPlaneProtocol do
   @spec socket_path() :: String.t()
   def socket_path, do: "/runner/socket"
 
-  @doc "The channel topic of one runner."
+  @doc "The channel topic of one runner. Jobs travel on it too (see `ClaudeControlPlaneProtocol.Job`)."
   @spec runner_topic(String.t()) :: String.t()
   def runner_topic(runner_id) when is_binary(runner_id), do: "runner:" <> runner_id
 

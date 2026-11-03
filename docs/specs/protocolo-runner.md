@@ -1,8 +1,9 @@
-# Protocolo runner ↔ control plane (v1)
+# Protocolo runner ↔ control plane (v2)
 
-> Status: v1, implementada em `apps/claude_control_plane_protocol` (fonte da
-> verdade das constantes e do formato do `Hello`). Esta fase cobre login e
-> conexão; jobs, leases e eventos de execução entram em versões seguintes.
+> Status: v2, implementada em `apps/claude_control_plane_protocol`, que é a fonte da
+> verdade das constantes e dos formatos `Hello`, `Job` e `JobEvent`. Ela cobre login,
+> conexão e jobs (seção 4). Leases, dispatcher e etapas de pipeline entram em versões
+> seguintes. A v1 (só login e conexão) nunca foi distribuída.
 
 ## Princípios
 
@@ -23,7 +24,7 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 ```json
 {
   "hello": {
-    "protocol_version": 1, "runner_version": "0.1.0",
+    "protocol_version": 2, "runner_version": "0.1.0",
     "hostname": "build-01", "os": "linux", "arch": "x86_64",
     "labels": ["linux", "docker"], "capacity": 4
   },
@@ -71,7 +72,7 @@ O token (`cpr_…`) é emitido uma única vez, na primeira consulta depois da ap
 ## 2. Conexão
 
 O runner abre um WebSocket Phoenix (serializador v2) em
-`ws(s)://<plataforma>/runner/socket/websocket?token=<runner_token>&protocol_version=1`.
+`ws(s)://<plataforma>/runner/socket/websocket?token=<runner_token>&protocol_version=2`.
 
 Token inválido, runner revogado ou versão não suportada fazem a plataforma recusar
 o upgrade com **HTTP 403**. Uma nova tentativa não resolve: o runner encerra e
@@ -80,7 +81,9 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
 
 ## 3. Canal `runner:<runner_id>`
 
-- **Join:** o payload é o `Hello` (o mesmo formato da seção 1.1). A resposta é
+- **Join:** o payload é o `Hello` (o mesmo formato da seção 1.1), acrescido de
+  `running_job_ids`: os jobs que o runner ainda está executando (vazio se omitido).
+  O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
 - **O que acontece no join:** o control plane grava o `Hello` (labels, capacidade,
@@ -91,7 +94,59 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
 - **Revogação:** o control plane manda `disconnect` para o socket
   `runner_socket:<id>`. A reconexão que vem em seguida recebe 403.
 
-## 4. Versionamento
+## 4. Jobs
+
+Um job é um prompt que um membro do workspace envia a um runner escolhido por ele.
+O runner o executa com o agente CLI no seu workdir, **um por vez**, e reporta eventos
+e o desfecho. Todas as mensagens trafegam no canal `runner:<runner_id>`.
+
+### 4.1 Control plane → runner
+
+| Evento | Payload | O que o runner faz |
+|---|---|---|
+| `job:assign` | `{"id", "prompt"}` (`ClaudeControlPlaneProtocol.Job`; prompt de até 32 000 bytes) | põe o job na fila local; ignora um job que já tem na fila ou em execução |
+| `job:cancel` | `{"job_id"}` | tira da fila, ou interrompe o job em execução (SIGTERM ao grupo de processos e, depois de 5 s, SIGKILL) |
+
+No join, o control plane reenvia `job:assign` para cada job ainda `queued` daquele
+runner.
+
+### 4.2 Runner → control plane
+
+Cada mensagem recebe uma resposta: `ok`, ou `error` com `{"reason"}`, onde `reason`
+é `not_found`, `not_queued`, `finished`, `invalid` ou `unknown_message`.
+
+| Evento | Payload |
+|---|---|
+| `job:started` | `{"job_id"}` |
+| `job:event` | `{"job_id", "seq", "type", "data"}`, com `seq` contando a partir de 1 |
+| `job:finished` | `{"job_id", "status", "exit_code", "result", "cost_usd", "duration_ms", "num_turns", "error"?}`, com `status` igual a `succeeded`, `failed` ou `canceled` |
+
+Os tipos de `job:event` (`ClaudeControlPlaneProtocol.JobEvent`) resumem as linhas do
+`claude -p --output-format stream-json`. Os textos são cortados em 8 KB.
+
+| `type` | `data` |
+|---|---|
+| `system` | `text`, `model`, `cwd`, `version` (sessão iniciada) |
+| `assistant_text` | `text` |
+| `tool_use` | `name`, `text` (o argumento principal: comando, arquivo, padrão…) |
+| `tool_result` | `text`, `is_error` |
+| `result` | `text`, `is_error`, `cost_usd`, `duration_ms`, `num_turns` |
+
+O par `(job_id, seq)` é único, então um evento reenviado é ignorado. Eventos
+enviados durante uma queda de conexão se perdem (aparecem como lacuna de `seq`), mas
+o job continua rodando.
+
+### 4.3 Estados
+
+```
+queued ──job:started──► running ──job:finished──► succeeded | failed | canceled
+   └──── cancelado antes de começar ──► canceled
+```
+
+No join, um job `running` daquele runner que não está em `running_job_ids` vira
+`failed`, porque o runner reiniciou e perdeu o processo.
+
+## 5. Versionamento
 
 `protocol_version` aumenta quando muda algo que quebra compatibilidade. O control
 plane mantém as versões anteriores em `supported_versions/0` durante a janela de
