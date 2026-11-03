@@ -15,3 +15,4 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | # | Documento | Status |
 |---|---|---|
 | 01 | [Visão de arquitetura](plano/01-visao-arquitetura.md) | Rascunho v0.1 — 03/11/2026 |
+| 02 | [Contexto de discovery](plano/02-contexto-discovery.md) | v0.1 — 03/11/2026 |
