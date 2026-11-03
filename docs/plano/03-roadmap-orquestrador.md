@@ -1,6 +1,6 @@
 # Roadmap — um orquestrador de Claude poderoso (antes da integração com git)
 
-> Versão 0.2 — 03/11/2026 (marcos 1 a 6 implementados; pendências na seção 5)
+> Versão 0.3 — 03/11/2026 (marcos 1 a 6 e as pendências implementados; o que resta na seção 5)
 > Companheiro de [`01-visao-arquitetura.md`](01-visao-arquitetura.md). Registra o
 > estado atual e o caminho até um orquestrador completo **operando como hoje**: o
 > runner roda na máquina do dev, a tarefa trabalha num diretório dela, e commit,
@@ -254,18 +254,22 @@ O que o plano original chama de "PR como canvas":
 
 ## 5. O que ficou para depois
 
-Os seis marcos estão implementados (ADRs 0006 a 0013). Ficaram de fora, cada um com
-o motivo no ADR indicado:
+As pendências deixadas pelos marcos foram resolvidas no
+[ADR 0014](../adr/0014-pendencias-do-roadmap.md):
 
-| Item | Por quê | ADR |
-|---|---|---|
-| Etapas em paralelo (fan-out) | grupos de etapas no motor, dois agentes num worktree, tela em grafo | 0011 |
-| Binário único do runner (Burrito) | exige Zig no build; a release com `cp-runner` cobre o uso atual | 0013 |
-| Webhook por label e GitHub App | exigem receber eventos do GitHub e um app instalado nos repositórios | 0013 |
-| Outbox que sobrevive a restart do runner | só pesa num job que termina durante uma queda seguida de restart | 0006, 0009 |
-| Destaque de sintaxe nos artefatos | o tema do `mdex` usa cores fixas, ruins no modo escuro | 0007 |
-| Agrupamento, tokens por turno e filtros na linha do tempo | refinamento da visualização | 0007 |
-| Responsável e prazo de uma decisão | precisam de uma fila de responsáveis sobre os papéis | 0011, 0012 |
-| Limite de tarefas simultâneas por workspace | a `capacity` por runner já limita a concorrência | 0011 |
-| Diff em diretório sem git; `gh` no `doctor` | pequenos complementos | 0007, 0013 |
+- etapas em paralelo;
+- webhook do GitHub por label;
+- outbox que sobrevive a restart;
+- destaque de sintaxe;
+- tokens, agrupamento e filtros na linha do tempo;
+- responsável e prazo das decisões;
+- limite de tarefas por workspace;
+- mudanças em diretório sem git;
+- `gh` no `doctor`.
 
+Continuam pendentes:
+
+| Item | Por quê |
+|---|---|
+| Binário único do runner (Burrito) | exige o Zig instalado na máquina do build |
+| GitHub App com token por tarefa | exige registrar e instalar um app no GitHub; até lá, o `gh` de quem roda o runner |

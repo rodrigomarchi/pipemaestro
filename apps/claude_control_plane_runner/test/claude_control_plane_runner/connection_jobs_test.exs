@@ -212,4 +212,35 @@ defmodule ClaudeControlPlaneRunner.ConnectionJobsTest do
     assert_push("runner:r1", "job:finished", %{"job_id" => "j1"}, _ref, 5_000)
     refute_push("runner:r1", "job:delta", _params)
   end
+
+  test "after a restart, sends the ends the platform never confirmed", %{tmp_dir: dir} do
+    stop_supervised!(Connection)
+    path = Path.join(dir, "outbox.bin")
+
+    # What a previous run left unconfirmed when it stopped.
+    {_id, _outbox} =
+      ClaudeControlPlaneRunner.Outbox.new(20_000, path)
+      |> ClaudeControlPlaneRunner.Outbox.add("job:finished", %{
+        "job_id" => "j9",
+        "status" => "succeeded"
+      })
+
+    {:ok, hello} = Host.hello()
+
+    client =
+      start_supervised!(
+        {Connection,
+         config: @config,
+         hello: hello,
+         notify: self(),
+         workdir: Path.join(dir, "workdir"),
+         outbox_path: path,
+         executable: {:ok, @fake},
+         connect_options: [test_mode?: true]}
+      )
+
+    connect_and_assert_join(client, "runner:r1", params, :ok)
+    assert params["running_job_ids"] == ["j9"]
+    assert_push("runner:r1", "job:finished", %{"job_id" => "j9", "status" => "succeeded"})
+  end
 end

@@ -7,13 +7,17 @@ defmodule ClaudeControlPlane.Tasks.Task do
   `pipeline_version`, `stages`) and of its directory's project, if any
   (`project`, `ClaudeControlPlane.Projects.Project.snapshot/1`), so editing
   either never changes it. It
-  is `running` while a stage runs, `awaiting_decision` when a person must say
+  is `queued` while it waits for room in its workspace (`max_running_tasks`),
+  `running` while a stage runs, `awaiting_decision` when a person must say
   how to go on, and ends `succeeded`, `failed` or `canceled`.
 
   It may come from a GitHub issue (`issue_url`); with a pipeline that delivers
   (`ClaudeControlPlane.Pipelines.Pipeline` `delivery`), its draft pull request
   is `pr_url`, and a decision waits in `pending_issue_comment` to be commented
   on the issue with the next stage.
+
+  A task waiting for a decision has someone to decide (`decision_owner`, its
+  creator unless passed on) and a deadline (`decision_due_at`).
 
   While it runs, a person may send instructions (`pending_instructions`, given
   to the next attempt or stage) or ask it to pause once the current stage ends
@@ -33,7 +37,7 @@ defmodule ClaudeControlPlane.Tasks.Task do
   alias ClaudeControlPlane.Tasks.StageRun
   alias ClaudeControlPlane.Workspaces.Workspace
 
-  @type status :: :running | :awaiting_decision | :succeeded | :failed | :canceled
+  @type status :: :queued | :running | :awaiting_decision | :succeeded | :failed | :canceled
 
   @type t :: %__MODULE__{
           id: Ecto.UUID.t() | nil,
@@ -47,6 +51,9 @@ defmodule ClaudeControlPlane.Tasks.Task do
           worktree_removed_at: DateTime.t() | nil,
           worktree_error: String.t() | nil,
           pending_instructions: String.t() | nil,
+          decision_owner_id: Ecto.UUID.t() | nil,
+          decision_owner: User.t() | Ecto.Association.NotLoaded.t() | nil,
+          decision_due_at: DateTime.t() | nil,
           issue_url: String.t() | nil,
           pr_url: String.t() | nil,
           pending_issue_comment: String.t() | nil,
@@ -83,13 +90,14 @@ defmodule ClaudeControlPlane.Tasks.Task do
     field :worktree_removed_at, :utc_datetime
     field :worktree_error, :string
     field :pending_instructions, :string
+    field :decision_due_at, :utc_datetime
     field :issue_url, :string
     field :pr_url, :string
     field :pending_issue_comment, :string
     field :pause_requested, :boolean, default: false
 
     field :status, Ecto.Enum,
-      values: [:running, :awaiting_decision, :succeeded, :failed, :canceled],
+      values: [:queued, :running, :awaiting_decision, :succeeded, :failed, :canceled],
       default: :running
 
     field :current_stage, :integer, default: 0
@@ -108,6 +116,7 @@ defmodule ClaudeControlPlane.Tasks.Task do
     belongs_to :workspace, Workspace
     belongs_to :runner, Runner
     belongs_to :created_by_user, User
+    belongs_to :decision_owner, User
     has_many :stage_runs, StageRun
 
     timestamps()
@@ -115,7 +124,8 @@ defmodule ClaudeControlPlane.Tasks.Task do
 
   @doc "Whether the task can still change: running or waiting for a decision."
   @spec active?(t()) :: boolean()
-  def active?(%__MODULE__{status: status}), do: status in [:running, :awaiting_decision]
+  def active?(%__MODULE__{status: status}),
+    do: status in [:queued, :running, :awaiting_decision]
 
   @doc "The stage the task is at."
   @spec current(t()) :: Stage.t()

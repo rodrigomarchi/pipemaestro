@@ -5,8 +5,7 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
   """
   use ClaudeControlPlaneWeb, :live_view
 
-  alias ClaudeControlPlane.Audit
-  alias ClaudeControlPlane.{Projects, Runners}
+  alias ClaudeControlPlane.{Audit, Pipelines, Projects, Runners}
   alias ClaudeControlPlane.Projects.Project
 
   @impl true
@@ -38,7 +37,8 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
      |> assign(
        page_title: if(project.id, do: "Editar projeto", else: "Novo projeto"),
        project: project,
-       directories: directories(workspace, project)
+       directories: directories(workspace, project),
+       pipelines: Pipelines.list_pipelines(workspace)
      )
      |> assign_form(Projects.change_project(project))}
   end
@@ -64,12 +64,12 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
   end
 
   def handle_event("save", %{"project" => params}, socket) do
-    workspace = socket.assigns.current_scope.workspace
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
 
     result =
       if socket.assigns.project.id,
-        do: Projects.update_project(socket.assigns.project, params),
-        else: Projects.create_project(workspace, params)
+        do: Projects.update_project(socket.assigns.project, params, user),
+        else: Projects.create_project(workspace, params, user)
 
     case result do
       {:ok, project} ->
@@ -164,6 +164,42 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
               help_text="Nos prompts: {{projeto.notas}}."
               data-testid="project-notes"
             />
+            <details class="mb-4">
+              <summary class="cursor-pointer text-sm font-medium text-gray-600 dark:text-gray-300">
+                Gatilho do GitHub: uma label numa issue começa uma tarefa
+              </summary>
+              <div class="mt-3 grid gap-4 sm:grid-cols-3">
+                <.field
+                  field={@form[:github_repo]}
+                  label="Repositório"
+                  placeholder="dono/repositorio"
+                  data-testid="project-github-repo"
+                />
+                <.field
+                  field={@form[:trigger_label]}
+                  label="Label"
+                  placeholder="claude"
+                  data-testid="project-trigger-label"
+                />
+                <.field
+                  field={@form[:trigger_pipeline_id]}
+                  type="select"
+                  label="Pipeline"
+                  prompt="Escolha um pipeline"
+                  options={Enum.map(@pipelines, &{&1.name, &1.id})}
+                  data-testid="project-trigger-pipeline"
+                />
+              </div>
+              <p class="text-sm text-gray-600 dark:text-gray-300">
+                No GitHub, crie um webhook de <em>Issues</em>
+                (content type JSON) para
+                <code class="break-all" data-testid="project-webhook-url">{url(
+                  ~p"/api/github/webhook/#{@current_scope.workspace.slug}"
+                )}</code>
+                com o segredo guardado em Segredos como <code>GITHUB_WEBHOOK_SECRET</code>. As tarefas
+                ficam em seu nome e rodam num runner online que ofereça este diretório.
+              </p>
+            </details>
             <div class="flex justify-end">
               <.button icon="hero-check" data-testid="project-save">Salvar</.button>
             </div>

@@ -44,6 +44,7 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
           {"timeout_minutes", stage.timeout_minutes},
           {"permission_profile", stage.permission_profile},
           {"agent", stage.agent},
+          {"group", stage.group},
           {"allowed_tools", stage.allowed_tools},
           {"denied_tools", stage.denied_tools},
           {"gates", lines_of(Stage.gates_text(stage))},
@@ -127,7 +128,7 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
   defp stage_attrs(%{} = stage) do
     stage
     |> Map.take(
-      ~w(key name prompt max_attempts pause_after model max_budget_usd timeout_minutes permission_profile agent)
+      ~w(key name prompt max_attempts pause_after model max_budget_usd timeout_minutes permission_profile agent group)
     )
     |> put_lines(stage, "allowed_tools")
     |> put_lines(stage, "denied_tools")

@@ -23,6 +23,7 @@ defmodule ClaudeControlPlaneWeb.TaskComponents do
     """
   end
 
+  defp task_label(:queued), do: {"Na fila", "gray"}
   defp task_label(:running), do: {"Executando", "info"}
   defp task_label(:awaiting_decision), do: {"Aguardando decisão", "warning"}
   defp task_label(:succeeded), do: {"Concluída", "success"}
@@ -106,7 +107,10 @@ defmodule ClaudeControlPlaneWeb.TaskComponents do
     """
   end
 
-  @doc "Changed files with lines added and removed (binary files say so)."
+  @doc """
+  Changed files with lines added and removed; a binary file says so, and a
+  file of a directory without git says whether it is new, modified or removed.
+  """
   attr :files, :list, required: true
   attr :rest, :global
 
@@ -119,12 +123,20 @@ defmodule ClaudeControlPlaneWeb.TaskComponents do
           <span class="text-success-700 dark:text-success-400">+{file["added"]}</span>
           <span class="text-danger-700 dark:text-danger-400">−{file["removed"]}</span>
         </span>
-        <span :if={!file["added"]} class="w-20 shrink-0 text-right text-gray-500">binário</span>
+        <span :if={!file["added"]} class="w-20 shrink-0 text-right text-gray-500">
+          {file_state(file["status"])}
+        </span>
         <span class="break-all text-gray-800 dark:text-gray-200">{file["path"]}</span>
       </li>
     </ul>
     """
   end
+
+  # Outside git a file has no lines, only what happened to it.
+  defp file_state("new"), do: "novo"
+  defp file_state("modified"), do: "alterado"
+  defp file_state("removed"), do: "removido"
+  defp file_state(_binary), do: "binário"
 
   defp files_label(1), do: "1 arquivo alterado"
   defp files_label(n), do: "#{n} arquivos alterados"

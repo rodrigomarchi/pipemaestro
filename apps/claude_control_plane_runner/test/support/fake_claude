@@ -57,7 +57,7 @@ esac
 
 if [ -n "$CP_ARTIFACT_PATH" ] && [ "$status" = "ok" ]; then
   mkdir -p "$(dirname "$CP_ARTIFACT_PATH")"
-  printf '# Artefato do fake_claude\n\n%s\n' "$summary" > "$CP_ARTIFACT_PATH"
+  printf '# Artefato do fake_claude\n\n%s\n\n```elixir\ndef pronto?, do: true\n```\n' "$summary" > "$CP_ARTIFACT_PATH"
 fi
 
 case "$prompt" in

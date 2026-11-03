@@ -3,7 +3,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   Runs the jobs the control plane hands this runner, up to `:capacity` at a
   time. Jobs that share a place to run wait for each other, in order:
 
-    * the stages of one task share its worktree;
+    * the stages of one task share its worktree, except the stages of a
+      group (`parallel`), which run at once;
     * jobs in a directory without a worktree share that directory;
     * jobs on their own share the runner's workdir.
 
@@ -249,8 +250,8 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   defp put_run(state, run), do: %{state | running: Map.put(state.running, run.job.id, run)}
 
   defp task_in_use?(state, task_id) do
-    Enum.any?(Map.values(state.running), &(place(&1.job) == {:task, task_id})) or
-      Enum.any?(state.queue, &(place(&1) == {:task, task_id}))
+    of_task? = &match?(%Job{worktree: %{"task_id" => ^task_id}}, &1)
+    Enum.any?(Map.values(state.running), &of_task?.(&1.job)) or Enum.any?(state.queue, of_task?)
   end
 
   # Removing a large worktree takes a while; the reply goes straight out.
@@ -274,6 +275,10 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   # Where a job runs, as far as waiting goes: jobs with the same place never run
   # at once.
   defp place(%Job{directory: nil}), do: :workdir
+  # Stages of a group run at once in their task's worktree.
+  defp place(%Job{worktree: %{"task_id" => task_id}, parallel: true, id: id}),
+    do: {:task, task_id, id}
+
   defp place(%Job{worktree: %{"task_id" => task_id}}), do: {:task, task_id}
   defp place(%Job{directory: directory}), do: {:directory, directory}
 
@@ -346,6 +351,10 @@ defmodule ClaudeControlPlaneRunner.JobRunner do
   defp track(%Job{worktree: %{"task_id" => task_id}}, workdir, dir, setup) do
     Changes.start(workdir, task_id, dir, setup != nil, (setup && setup["copied"]) || [])
   end
+
+  # A directory without git: which files the stage created, changed or removed.
+  defp track(%Job{directory: directory}, _workdir, dir, _setup) when is_binary(directory),
+    do: %{files: Changes.file_snapshot(dir), exclude: []}
 
   defp track(_job, _workdir, _dir, _setup), do: nil
 

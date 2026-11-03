@@ -16,7 +16,8 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   (`ClaudeControlPlaneProtocol.Job.permission_profiles/0`), with tool rules
   allowed and denied on top (`allowed_tools`, `denied_tools`, one per line in
   a form). `agent` names the agent the stage runs as: one of the repository's
-  (`.claude/agents/`) or of the pipeline's `agents`.
+  (`.claude/agents/`) or of the pipeline's `agents`. Consecutive stages with
+  the same `group` run at once, in the same worktree (an empty group: alone).
   """
   use Ecto.Schema
 
@@ -42,6 +43,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
           rules_text: String.t() | nil,
           permission_profile: String.t(),
           agent: String.t() | nil,
+          group: String.t() | nil,
           allowed_tools: [String.t()],
           allowed_tools_text: String.t() | nil,
           denied_tools: [String.t()],
@@ -69,6 +71,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     field :rules_text, :string, virtual: true
     field :permission_profile, :string, default: "total"
     field :agent, :string
+    field :group, :string
     field :allowed_tools, {:array, :string}, default: []
     field :allowed_tools_text, :string, virtual: true
     field :denied_tools, {:array, :string}, default: []
@@ -103,6 +106,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
       :rules_text,
       :permission_profile,
       :agent,
+      :group,
       :allowed_tools_text,
       :denied_tools_text
     ])
@@ -129,6 +133,8 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
       message: "escolha um perfil de permissão"
     )
     |> validate_length(:agent, max: 100)
+    |> update_change(:group, &(&1 |> String.trim() |> String.downcase()))
+    |> validate_format(:group, @key_format, message: "use letras minúsculas, números, - ou _")
     |> parse_tools(:allowed_tools)
     |> parse_tools(:denied_tools)
   end

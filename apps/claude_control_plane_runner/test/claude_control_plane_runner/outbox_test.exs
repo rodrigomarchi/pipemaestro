@@ -46,4 +46,36 @@ defmodule ClaudeControlPlaneRunner.OutboxTest do
              {"job:finished", nil}
            ]
   end
+
+  @tag :tmp_dir
+  test "a job's end survives a restart; its events do not", %{tmp_dir: dir} do
+    path = Path.join(dir, "outbox.bin")
+
+    outbox =
+      add_all(Outbox.new(20_000, path), [
+        {"job:event", %{"job_id" => "j1", "seq" => 1}},
+        {"job:finished", %{"job_id" => "j1", "status" => "succeeded"}},
+        {"worktree:removed", %{"task_id" => "t1"}}
+      ])
+
+    # Another process (the runner after a restart) finds what was not confirmed.
+    restarted = Outbox.new(20_000, path)
+
+    assert Enum.map(Outbox.pending(restarted), fn {_id, event, _p} -> event end) ==
+             ["job:finished", "worktree:removed"]
+
+    assert Outbox.job_ids(restarted) == ["j1"]
+
+    # Once confirmed, it is gone from disk too.
+    [{id, _, _} | _] = Outbox.pending(outbox)
+    outbox |> Outbox.sent(id + 1, :r) |> Outbox.confirmed(:r)
+
+    assert Enum.map(Outbox.pending(Outbox.new(20_000, path)), fn {_, e, _} -> e end) == [
+             "worktree:removed"
+           ]
+
+    # A corrupt file is no reason not to start.
+    File.write!(path, "lixo")
+    assert Outbox.pending(Outbox.new(20_000, path)) == []
+  end
 end

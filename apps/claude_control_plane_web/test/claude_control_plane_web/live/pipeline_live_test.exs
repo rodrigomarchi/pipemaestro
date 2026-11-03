@@ -146,6 +146,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     assert has_element?(view, "[data-testid=stage-permission-0] option[selected][value=edicao]")
     assert view |> element("[data-testid=pipeline-mcp-config]") |> render() =~ "grafana"
     assert has_element?(view, "[data-testid=stage-agent-0][value=analista]")
+    assert has_element?(view, "[data-testid=stage-group-0]")
 
     {:error, {:live_redirect, _}} =
       view

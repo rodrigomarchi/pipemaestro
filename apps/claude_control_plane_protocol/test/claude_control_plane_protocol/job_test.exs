@@ -27,6 +27,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                  "mcp_config" => %{"mcpServers" => %{"grafana" => %{"command" => "mcp-grafana"}}},
                  "agents" => %{"revisor" => %{"description" => "Revisa", "prompt" => "Revise."}},
                  "agent" => "revisor",
+                 "parallel" => true,
                  "env" => %{"GRAFANA_TOKEN" => "segredo"},
                  "delivery" => %{
                    "commit_message" => "Triagem: o botão não responde",
@@ -84,6 +85,7 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert {:error, "mcp_config" <> _} = Job.new(Map.put(base, :mcp_config, %{"x" => 1}))
       assert {:error, "agents" <> _} = Job.new(Map.put(base, :agents, ["revisor"]))
       assert {:error, "agent" <> _} = Job.new(Map.put(base, :agent, ""))
+      assert {:error, "parallel" <> _} = Job.new(Map.put(base, :parallel, "sim"))
       assert {:error, "delivery" <> _} = Job.new(Map.put(base, :delivery, %{}))
 
       assert {:error, "delivery" <> _} =
@@ -187,6 +189,33 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
              ] = JobEvent.from_stream_json(line)
 
       assert odd =~ "n"
+    end
+
+    test "the first event of a message carries the turn's tokens" do
+      line = %{
+        "type" => "assistant",
+        "message" => %{
+          "usage" => %{
+            "input_tokens" => 10,
+            "cache_read_input_tokens" => 2_000,
+            "cache_creation_input_tokens" => 300,
+            "output_tokens" => 150
+          },
+          "content" => [
+            %{"type" => "text", "text" => "olhando"},
+            %{
+              "type" => "tool_use",
+              "id" => "t1",
+              "name" => "Read",
+              "input" => %{"file_path" => "a"}
+            }
+          ]
+        }
+      }
+
+      assert [first, second] = JobEvent.from_stream_json(line)
+      assert first.data["usage"] == %{"input" => 2_310, "output" => 150}
+      refute Map.has_key?(second.data, "usage")
     end
 
     test "tool calls carry their id and the input worth showing, cut" do

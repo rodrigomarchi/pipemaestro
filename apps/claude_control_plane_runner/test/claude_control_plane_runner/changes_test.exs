@@ -80,4 +80,30 @@ defmodule ClaudeControlPlaneRunner.ChangesTest do
     File.mkdir_p!(plain)
     assert {:error, _} = Changes.snapshot(plain, [])
   end
+
+  describe "a directory without git" do
+    test "lists the files created, modified and removed", %{tmp_dir: dir} do
+      plain = Path.join(dir, "notas")
+      File.mkdir_p!(Path.join(plain, "node_modules"))
+      File.write!(Path.join(plain, "a.md"), "a")
+      File.write!(Path.join(plain, "b.md"), "b")
+
+      before = Changes.file_snapshot(plain)
+      File.write!(Path.join(plain, "a.md"), "a mudou")
+      File.rm!(Path.join(plain, "b.md"))
+      File.write!(Path.join(plain, "c.md"), "c")
+      File.write!(Path.join([plain, "node_modules", "x.js"]), "ignorado")
+
+      assert Changes.file_report(plain, before) == %{
+               "files" => [
+                 %{"path" => "a.md", "added" => nil, "removed" => nil, "status" => "modified"},
+                 %{"path" => "b.md", "added" => nil, "removed" => nil, "status" => "removed"},
+                 %{"path" => "c.md", "added" => nil, "removed" => nil, "status" => "new"}
+               ],
+               "patch" => "",
+               "truncated" => false,
+               "task_files" => []
+             }
+    end
+  end
 end

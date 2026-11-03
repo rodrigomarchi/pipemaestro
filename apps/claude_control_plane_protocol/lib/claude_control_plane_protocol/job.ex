@@ -21,6 +21,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
   (`"push"`), open or update its draft pull request (`"pr"`: `"title"`,
   `"body"`, `"ready"` to mark it ready) and comment on its issue
   (`"issue_comment"`: `"url"`, `"body"`).
+  `parallel` marks a stage of a group that runs at once with its siblings, in
+  the same worktree: the runner does not make it wait for them.
   `env` holds the workspace's secrets as environment variables for the
   agent's process (`NAME => value`); the runner never stores them.
   `permissions` says what the agent may do: `"profile"` (one of
@@ -82,6 +84,7 @@ defmodule ClaudeControlPlaneProtocol.Job do
                 agents: nil,
                 agent: nil,
                 env: nil,
+                parallel: nil,
                 delivery: nil
               ]
 
@@ -106,6 +109,7 @@ defmodule ClaudeControlPlaneProtocol.Job do
           agents: map() | nil,
           agent: String.t() | nil,
           env: %{String.t() => String.t()} | nil,
+          parallel: boolean() | nil,
           delivery: map() | nil
         }
 
@@ -125,6 +129,7 @@ defmodule ClaudeControlPlaneProtocol.Job do
     :agents,
     :agent,
     :env,
+    :parallel,
     :delivery
   ]
 
@@ -293,6 +298,9 @@ defmodule ClaudeControlPlaneProtocol.Job do
   end
 
   defp check(:env, _value), do: {:error, "must be a map of up to 50 variables"}
+
+  defp check(:parallel, value) when is_boolean(value), do: :ok
+  defp check(:parallel, _value), do: {:error, "must be true or false"}
 
   defp check(:agent, value) when is_binary(value) and byte_size(value) in 1..100, do: :ok
   defp check(:agent, _value), do: {:error, "must be an agent name"}

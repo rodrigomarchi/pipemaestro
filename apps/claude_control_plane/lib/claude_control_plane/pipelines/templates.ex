@@ -30,7 +30,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
     %{
       "name" => "Nova funcionalidade",
       "description" =>
-        "Especificação, plano aprovado por uma pessoa, implementação com testes e revisão.",
+        "Especificação, plano aprovado por uma pessoa, implementação com testes e revisões de código e de segurança em paralelo.",
       "stages" => [
         stage(
           "especificacao",
@@ -63,13 +63,23 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
         """),
         stage(
           "revisao",
-          "Revisão",
+          "Revisão de código",
           """
           Revise a implementação como um revisor exigente que não a escreveu: o diff contra a
-          especificação, testes faltando, nomes, casos de borda, segurança. Liste os problemas por
+          especificação, testes faltando, nomes, casos de borda. Liste os problemas por
           severidade. Se houver algum grave, termine como "bloqueado".
           """,
-          @read_only
+          Map.put(@read_only, "group", "revisoes")
+        ),
+        stage(
+          "seguranca",
+          "Revisão de segurança",
+          """
+          Revise só a segurança da implementação, em paralelo à revisão de código: entradas não
+          validadas, permissões, segredos, injeções, dados sensíveis em logs. Se houver algum risco
+          grave, termine como "bloqueado".
+          """,
+          Map.put(@read_only, "group", "revisoes")
         )
       ]
     }

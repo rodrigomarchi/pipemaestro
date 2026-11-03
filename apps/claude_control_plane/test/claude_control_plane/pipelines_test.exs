@@ -248,6 +248,11 @@ defmodule ClaudeControlPlane.PipelinesTest do
       assert Enum.map(bug_fix.stages, & &1.key) ==
                ~w(triagem investigacao reproducao implementacao auditoria pr)
 
+      feature =
+        Enum.find(Pipelines.list_pipelines(workspace), &(&1.name == "Nova funcionalidade"))
+
+      assert Enum.map(feature.stages, & &1.group) == [nil, nil, nil, "revisoes", "revisoes"]
+
       # Stages that only look do not get to change the code.
       assert Enum.map(bug_fix.stages, & &1.permission_profile) ==
                ~w(leitura leitura total total leitura total)
@@ -277,6 +282,7 @@ defmodule ClaudeControlPlane.PipelinesTest do
               "allowed_tools_text" => "Bash(git log:*)",
               "denied_tools_text" => "WebFetch",
               "agent" => "revisor",
+              "group" => nil,
               "gates_text" => "{{projeto.teste}}\n! mix test test/x.exs",
               "rules_text" => "risco == alto",
               "output_schema_json" =>

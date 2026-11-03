@@ -53,6 +53,7 @@ defmodule ClaudeControlPlaneRunner.Commands.Start do
         hello: hello,
         notify: self(),
         workdir: workdir,
+        outbox_path: Path.join(Config.dir(), "outbox.bin"),
         root: config.root
       )
 

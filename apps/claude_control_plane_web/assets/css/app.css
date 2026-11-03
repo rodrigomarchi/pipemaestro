@@ -62,3 +62,11 @@
 
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
+
+/* Code blocks highlighted by assets/js/highlight.js, in both themes. */
+.tok-kw { @apply font-semibold text-primary-700 dark:text-primary-300; }
+.tok-str { @apply text-success-700 dark:text-success-400; }
+.tok-com { @apply italic text-gray-500 dark:text-gray-400; }
+.tok-num { @apply text-warning-700 dark:text-warning-400; }
+.tok-atom { @apply text-info-700 dark:text-info-400; }
+

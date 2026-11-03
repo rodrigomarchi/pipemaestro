@@ -92,4 +92,47 @@ defmodule ClaudeControlPlaneWeb.JobComponentsTest do
     assert render_event("tool_result", %{"text" => "boom", "is_error" => true}) =~
              ~r/<details[^>]* open/
   end
+
+  test "the first event of a turn shows its tokens" do
+    html =
+      render_event("assistant_text", %{
+        "text" => "oi",
+        "usage" => %{"input" => 12_345, "output" => 678}
+      })
+
+    assert html =~ "12.3k → 678 tokens"
+  end
+
+  defp ev(seq, type, data), do: %Event{id: seq, seq: seq, type: type, data: data}
+
+  test "steps group consecutive reads and searches, and filter by kind" do
+    events = [
+      ev(1, "system", %{"text" => "Sessão"}),
+      ev(2, "tool_use", %{"name" => "Read", "text" => "a.ex"}),
+      ev(3, "tool_result", %{"text" => "...", "is_error" => false}),
+      ev(4, "tool_use", %{"name" => "Grep", "text" => "def x"}),
+      ev(5, "tool_result", %{"text" => "...", "is_error" => false}),
+      ev(6, "tool_use", %{"name" => "Read", "text" => "b.ex"}),
+      ev(7, "tool_result", %{"text" => "...", "is_error" => false}),
+      ev(8, "assistant_text", %{"text" => "Achei"}),
+      ev(9, "tool_use", %{"name" => "Bash", "text" => "mix test"}),
+      ev(10, "tool_result", %{"text" => "falhou", "is_error" => true})
+    ]
+
+    assert [
+             {:event, %{seq: 1}},
+             {:group, "Leu 2 arquivos e fez 1 busca", [_, _, _, _, _, _]},
+             {:event, %{seq: 8}},
+             {:event, %{seq: 9}},
+             {:event, %{seq: 10}}
+           ] = JobComponents.timeline_items(events, "all")
+
+    assert [{:event, %{seq: 1}}, {:event, %{seq: 8}}] =
+             JobComponents.timeline_items(events, "agent")
+
+    assert [{:event, %{seq: 10}}] = JobComponents.timeline_items(events, "errors")
+
+    assert [{:group, _, _}, {:event, %{seq: 9}}, {:event, %{seq: 10}}] =
+             JobComponents.timeline_items(events, "tools")
+  end
 end

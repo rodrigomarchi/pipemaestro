@@ -54,6 +54,9 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
           <span :if={@event.data["name"]} class="font-mono">
             · {@event.data["name"]}
           </span>
+          <span :if={@event.data["usage"]} class="font-normal">
+            · {tokens_label(@event.data["usage"])}
+          </span>
         </p>
         <.event_body event={@event} body={@look.body} />
       </div>
@@ -204,6 +207,103 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
   # The CLI's `apiKeySource`: "none" is the login of whoever ran `claude`.
   defp auth_label("none"), do: "login pessoal"
   defp auth_label(_source), do: "chave de API"
+
+  defp tokens_label(%{"input" => input, "output" => output}),
+    do: "#{short_number(input)} → #{short_number(output)} tokens"
+
+  defp short_number(n) when n >= 1000, do: "#{Float.round(n / 1000, 1)}k"
+  defp short_number(n), do: Integer.to_string(n)
+
+  @reading_tools ~w(Read Grep Glob LS)
+
+  @doc """
+  A finished run's events as the steps screen shows them, after `filter`
+  (`"all"`; `"agent"`: what the agent said; `"tools"`: tool calls and their
+  answers; `"errors"`: what failed): `{:event, event}`, or `{:group, label,
+  events}` for two or more consecutive reads and searches with their answers.
+  """
+  @spec timeline_items([Event.t()], String.t()) ::
+          [{:event, Event.t()} | {:group, String.t(), [Event.t()]}]
+  def timeline_items(events, filter) do
+    {items, run} =
+      events
+      |> Enum.filter(&shown?(&1, filter))
+      |> Enum.reduce({[], []}, fn event, {items, run} ->
+        if reading?(event) or answers_read?(event, run),
+          do: {items, [event | run]},
+          else: {[{:event, event} | flush(run, items)], []}
+      end)
+
+    run |> flush(items) |> Enum.reverse()
+  end
+
+  defp shown?(%Event{type: type}, "agent"), do: type in ~w(system assistant_text result)
+  defp shown?(%Event{type: type}, "tools"), do: type in ~w(tool_use tool_result)
+  defp shown?(%Event{data: data}, "errors"), do: data["is_error"] == true
+  defp shown?(_event, _all), do: true
+
+  defp reading?(%Event{type: "tool_use", data: %{"name" => name}}), do: name in @reading_tools
+  defp reading?(_event), do: false
+
+  # The answer right after a read (an error stays on its own).
+  defp answers_read?(%Event{type: "tool_result", data: data}, [last | _run]),
+    do: reading?(last) and data["is_error"] != true
+
+  defp answers_read?(_event, _run), do: false
+
+  # A run of two or more reads becomes a group; a single one stays as it is.
+  defp flush(run, items) do
+    calls = Enum.filter(run, &reading?/1)
+
+    if length(calls) >= 2,
+      do: [{:group, reading_label(calls), Enum.reverse(run)} | items],
+      else: Enum.map(run, &{:event, &1}) ++ items
+  end
+
+  defp reading_label(calls) do
+    {reads, searches} = Enum.split_with(calls, &(&1.data["name"] == "Read"))
+
+    [
+      reads != [] && "Leu #{count_label(length(reads), "arquivo", "arquivos")}",
+      searches != [] && "fez #{count_label(length(searches), "busca", "buscas")}"
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join(" e ")
+    |> String.capitalize()
+  end
+
+  defp count_label(1, one, _many), do: "1 #{one}"
+  defp count_label(n, _one, many), do: "#{n} #{many}"
+
+  @doc "A finished run's steps: events, and groups of reads that open to show theirs."
+  attr :items, :list, required: true
+  attr :id, :string, required: true
+
+  @spec steps(map()) :: Phoenix.LiveView.Rendered.t()
+  def steps(assigns) do
+    ~H"""
+    <ol class="mt-3 space-y-3" data-testid={"stage-run-steps-#{@id}"}>
+      <%= for item <- @items do %>
+        <.job_event
+          :if={match?({:event, _}, item)}
+          id={"step-#{elem(item, 1).id}"}
+          event={elem(item, 1)}
+        />
+        <li :if={match?({:group, _, _}, item)} class="flex gap-3" data-testid="job-event-group">
+          <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            <.icon name="hero-document-magnifying-glass" class="size-4" />
+          </div>
+          <details class="min-w-0 flex-1 text-sm">
+            <summary class="cursor-pointer text-gray-700 dark:text-gray-300">{elem(item, 1)}</summary>
+            <ol class="mt-3 space-y-3">
+              <.job_event :for={event <- elem(item, 2)} id={"step-#{event.id}"} event={event} />
+            </ol>
+          </details>
+        </li>
+      <% end %>
+    </ol>
+    """
+  end
 
   defp lines(nil), do: []
   defp lines(text), do: String.split(text, "\n")

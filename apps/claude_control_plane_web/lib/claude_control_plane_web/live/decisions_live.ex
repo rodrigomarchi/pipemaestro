@@ -9,14 +9,18 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
 
   import ClaudeControlPlaneWeb.RunnerComponents, only: [time_ago: 2]
 
-  alias ClaudeControlPlane.Tasks
+  alias ClaudeControlPlane.{Tasks, Workspaces}
   alias ClaudeControlPlane.Tasks.Task
 
   @impl true
   def mount(_params, _session, socket) do
     workspace = socket.assigns.current_scope.workspace
     if connected?(socket), do: Tasks.subscribe({:workspace, workspace.id})
-    {:ok, socket |> assign(page_title: "Decisões") |> load()}
+
+    {:ok,
+     socket
+     |> assign(page_title: "Decisões", mine: false, members: Workspaces.list_members(workspace))
+     |> load()}
   end
 
   @impl true
@@ -49,8 +53,30 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
     {:noreply, load(socket)}
   end
 
+  def handle_event("assign", %{"task_id" => id, "owner" => %{"user_id" => user_id}}, socket) do
+    task = Tasks.get_task!(socket.assigns.current_scope.workspace, id)
+    user = Enum.find(socket.assigns.members, &(&1.id == user_id))
+
+    case user && Tasks.assign_decision(task, user) do
+      {:ok, _task} ->
+        {:noreply, socket |> put_flash(:info, "Decisão passada para #{user.name}.") |> load()}
+
+      _not_a_member ->
+        {:noreply, put_flash(socket, :error, "Escolha alguém do workspace.")}
+    end
+  end
+
+  def handle_event("filter", %{"mine" => mine}, socket),
+    do: {:noreply, socket |> assign(mine: mine == "true") |> load()}
+
   defp load(socket) do
+    user = socket.assigns.current_scope.user
     tasks = Tasks.list_awaiting(socket.assigns.current_scope.workspace)
+
+    tasks =
+      if socket.assigns.mine,
+        do: Enum.filter(tasks, &(&1.decision_owner_id == user.id)),
+        else: tasks
 
     assign(socket,
       tasks: tasks,
@@ -58,6 +84,23 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
       now: DateTime.utc_now()
     )
   end
+
+  # "em 23 h" while there is time; "atrasada há 2 h" past it.
+  defp due_label(nil, _now), do: "sem prazo"
+
+  defp due_label(due, now) do
+    minutes = DateTime.diff(due, now, :minute)
+
+    cond do
+      minutes >= 60 -> "em #{div(minutes, 60)} h"
+      minutes >= 0 -> "em #{minutes} min"
+      minutes > -60 -> "atrasada há #{-minutes} min"
+      true -> "atrasada há #{div(-minutes, 60)} h"
+    end
+  end
+
+  defp overdue?(%Task{decision_due_at: nil}, _now), do: false
+  defp overdue?(%Task{decision_due_at: due}, now), do: DateTime.compare(due, now) == :lt
 
   defp stage_name(%Task{stages: stages, current_stage: index}) do
     case Enum.at(stages, index) do
@@ -77,6 +120,29 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
       active={:decisions}
       title="Decisões"
     >
+      <:actions>
+        <.button
+          size="sm"
+          variant={if @mine, do: "outline", else: "solid"}
+          color="gray"
+          phx-click="filter"
+          phx-value-mine="false"
+          data-testid="decisions-all"
+        >
+          Todas
+        </.button>
+        <.button
+          size="sm"
+          variant={if @mine, do: "solid", else: "outline"}
+          color="gray"
+          phx-click="filter"
+          phx-value-mine="true"
+          data-testid="decisions-mine"
+        >
+          Só as minhas
+        </.button>
+      </:actions>
+
       <div class="space-y-4">
         <.empty
           :if={@tasks == []}
@@ -111,9 +177,33 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
                 </p>
               </div>
               <span class="text-xs text-gray-500 dark:text-gray-400">
-                esperando {time_ago(task.updated_at, @now)}
+                esperando {time_ago(task.updated_at, @now)} ·
+                <span
+                  class={overdue?(task, @now) && "font-medium text-danger-600 dark:text-danger-400"}
+                  data-testid={"decision-due-#{task.id}"}
+                >
+                  {due_label(task.decision_due_at, @now)}
+                </span>
               </span>
             </div>
+
+            <.form
+              for={to_form(%{"user_id" => task.decision_owner_id}, as: "owner")}
+              id={"decision-owner-form-#{task.id}"}
+              phx-change="assign"
+              class="mt-2 max-w-xs"
+              data-testid={"decision-owner-form-#{task.id}"}
+            >
+              <input type="hidden" name="task_id" value={task.id} />
+              <.field
+                field={to_form(%{"user_id" => task.decision_owner_id}, as: "owner")[:user_id]}
+                id={"decision-owner-#{task.id}"}
+                type="select"
+                label="Quem decide"
+                options={Enum.map(@members, &{&1.name, &1.id})}
+                data-testid={"decision-owner-#{task.id}"}
+              />
+            </.form>
 
             <.alert color="warning" with_icon class="mt-3">{task.decision_reason}</.alert>
 

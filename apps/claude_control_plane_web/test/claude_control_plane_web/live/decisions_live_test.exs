@@ -81,4 +81,30 @@ defmodule ClaudeControlPlaneWeb.DecisionsLiveTest do
     assert Tasks.get_task!(ctx.workspace, other.id).status == :canceled
     assert has_element?(view, "[data-testid=no-decisions]")
   end
+
+  test "shows who decides and by when, passes it on, and filters mine", ctx do
+    task = blocked_task(ctx, "Tela branca")
+    colleague = member_fixture(ctx.workspace, %{name: "Bia"})
+
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
+
+    assert has_element?(
+             view,
+             "[data-testid=decision-owner-#{task.id}] option[selected]",
+             ctx.user.name
+           )
+
+    assert has_element?(view, "[data-testid=decision-due-#{task.id}]", "em ")
+
+    view
+    |> form("[data-testid=decision-owner-form-#{task.id}]", owner: %{user_id: colleague.id})
+    |> render_change()
+
+    assert Tasks.get_task!(ctx.workspace, task.id).decision_owner_id == colleague.id
+
+    view |> element("[data-testid=decisions-mine]") |> render_click()
+    refute has_element?(view, "[data-testid=decision-#{task.id}]")
+    view |> element("[data-testid=decisions-all]") |> render_click()
+    assert has_element?(view, "[data-testid=decision-#{task.id}]")
+  end
 end

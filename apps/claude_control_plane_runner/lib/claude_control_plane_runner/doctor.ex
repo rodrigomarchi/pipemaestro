@@ -1,7 +1,8 @@
 defmodule ClaudeControlPlaneRunner.Doctor do
   @moduledoc """
   Checks that this machine can work as a runner (`mix runner.doctor`): the
-  agent CLI and how it signs in, git, the saved credentials, the root and its
+  agent CLI and how it signs in, git, the GitHub CLI (for pipelines that
+  deliver a pull request), the saved credentials, the root and its
   directories, the free space for worktrees and whether the platform answers.
 
   Each check is `:ok`, a `:warning` (it runs, but something deserves a look) or
@@ -17,7 +18,8 @@ defmodule ClaudeControlPlaneRunner.Doctor do
   @doc """
   Runs every check. Options (for tests; each defaults to this machine's):
   `:config` (`Config.load/0`'s result), `:executable` (`Claude.executable/0`'s),
-  `:workdir`, `:api_key` (`$RUNNER_ANTHROPIC_API_KEY`) and `:reach` (a function
+  `:workdir`, `:api_key` (`$RUNNER_ANTHROPIC_API_KEY`), `:gh` (the GitHub
+  CLI's path, `nil` when there is none) and `:reach` (a function
   given the platform's health URL, returning `:ok` or `{:error, reason}`).
   """
   @spec run(keyword()) :: [check()]
@@ -32,6 +34,11 @@ defmodule ClaudeControlPlaneRunner.Doctor do
       agent_check(agent),
       auth_check(agent),
       git_check(),
+      gh_check(
+        Keyword.get_lazy(opts, :gh, fn ->
+          System.get_env("GH_BIN") || System.find_executable("gh")
+        end)
+      ),
       config_check(config),
       directories_check(config),
       disk_check(workdir),
@@ -67,6 +74,31 @@ defmodule ClaudeControlPlaneRunner.Doctor do
       git ->
         {version, 0} = System.cmd(git, ["--version"])
         check("git", :ok, String.trim(version))
+    end
+  end
+
+  defp gh_check(nil),
+    do:
+      check(
+        "GitHub CLI (gh)",
+        :warning,
+        "não encontrado: só é preciso para pipelines com entrega em PR"
+      )
+
+  defp gh_check(gh) do
+    case System.cmd(gh, ["auth", "status"], stderr_to_stdout: true) do
+      {output, 0} ->
+        lines = String.split(output, "\n", trim: true)
+        signed_in = Enum.find(lines, List.first(lines, "ok"), &(&1 =~ "Logged in"))
+        # gh marks the line with its own check mark.
+        check("GitHub CLI (gh)", :ok, signed_in |> String.trim() |> String.trim_leading("✓ "))
+
+      _not_signed_in ->
+        check(
+          "GitHub CLI (gh)",
+          :warning,
+          "sem login: rode gh auth login para pipelines com entrega em PR"
+        )
     end
   end
 

@@ -10,9 +10,16 @@ defmodule ClaudeControlPlaneRunner.Changes do
 
   Paths cloned into the worktree by the setup (`ClaudeControlPlaneRunner.Setup`)
   are left out of snapshots: they are dependencies, not the task's work.
+
+  A directory without git gets a plainer measure (`file_snapshot/1`,
+  `file_report/2`): which files were created, modified or removed, without
+  lines or a patch, leaving dependency and build directories out.
   """
 
   @patch_bytes 200_000
+  @skipped_dirs ~w(.git node_modules deps _build .venv venv target .elixir_ls)
+  @max_files 20_000
+  @hashed_bytes 2_000_000
 
   @typedoc "Where a stage started from: the task's first snapshot and this stage's."
   @type tracking :: %{base: String.t(), start: String.t(), exclude: [String.t()]}
@@ -39,9 +46,12 @@ defmodule ClaudeControlPlaneRunner.Changes do
 
   @doc """
   What a stage changed, from where it started (`start/5`): `diff/4` plus
-  `"task_files"`, the files changed since the task's base.
+  `"task_files"`, the files changed since the task's base. For a directory
+  without git (`%{files: snapshot}`), `file_report/2`.
   """
-  @spec report(Path.t(), tracking()) :: map() | nil
+  @spec report(Path.t(), tracking() | %{files: map()}) :: map() | nil
+  def report(dir, %{files: before}), do: file_report(dir, before)
+
   def report(dir, %{base: base, start: start, exclude: exclude}) do
     case snapshot(dir, exclude) do
       {:ok, now} -> dir |> diff(start, now) |> Map.put("task_files", files(dir, base, now))
@@ -114,6 +124,85 @@ defmodule ClaudeControlPlaneRunner.Changes do
   def files(dir, from, to) do
     {:ok, numstat} = git(dir, ["diff", "--no-renames", "--numstat", from, to])
     numstat |> String.split("\n", trim: true) |> Enum.map(&file/1)
+  end
+
+  @doc """
+  The files of a directory without git, each with a fingerprint of its
+  content (a hash up to 2 MB, size and modification time beyond), leaving
+  dependency and build directories out. Stops at #{@max_files} files.
+  """
+  @spec file_snapshot(Path.t()) :: %{String.t() => term()}
+  def file_snapshot(dir) do
+    dir
+    |> walk("", [])
+    |> Enum.take(@max_files)
+    |> Map.new(fn path -> {path, fingerprint(Path.join(dir, path))} end)
+  end
+
+  @doc """
+  What changed in a directory without git since `before`
+  (`file_snapshot/1`), in the shape of `report/2`: the files with a
+  `"status"` (`"new"`, `"modified"`, `"removed"`) and no lines or patch.
+  """
+  @spec file_report(Path.t(), %{String.t() => term()}) :: map()
+  def file_report(dir, before) do
+    now = file_snapshot(dir)
+
+    files =
+      (Map.keys(before) ++ Map.keys(now))
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.flat_map(fn path ->
+        case {Map.fetch(before, path), Map.fetch(now, path)} do
+          {:error, {:ok, _}} -> [plain_file(path, "new")]
+          {{:ok, _}, :error} -> [plain_file(path, "removed")]
+          {{:ok, same}, {:ok, same}} -> []
+          {{:ok, _}, {:ok, _}} -> [plain_file(path, "modified")]
+        end
+      end)
+
+    %{"files" => files, "patch" => "", "truncated" => false, "task_files" => []}
+  end
+
+  defp plain_file(path, status),
+    do: %{"path" => path, "added" => nil, "removed" => nil, "status" => status}
+
+  defp walk(dir, relative, acc) do
+    case File.ls(Path.join(dir, relative)) do
+      {:ok, names} ->
+        Enum.reduce(names, acc, fn name, acc ->
+          walk_entry(dir, Path.join(relative, name), name, acc)
+        end)
+
+      {:error, _reason} ->
+        acc
+    end
+  end
+
+  defp walk_entry(dir, path, name, acc) do
+    full = Path.join(dir, path)
+
+    cond do
+      length(acc) >= @max_files -> acc
+      File.dir?(full) and name in @skipped_dirs -> acc
+      File.dir?(full) -> walk(dir, path, acc)
+      File.regular?(full) -> [path | acc]
+      true -> acc
+    end
+  end
+
+  defp fingerprint(path) do
+    case File.stat(path) do
+      {:ok, %{size: size}} when size <= @hashed_bytes ->
+        # Gone between the stat and the read: no fingerprint.
+        with {:ok, content} <- File.read(path), do: :crypto.hash(:md5, content), else: (_ -> nil)
+
+      {:ok, %{size: size, mtime: mtime}} ->
+        {size, mtime}
+
+      {:error, _reason} ->
+        nil
+    end
   end
 
   defp file(line) do

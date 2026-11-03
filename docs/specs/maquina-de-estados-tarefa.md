@@ -50,6 +50,22 @@ passou; a primeira que casa pausa a tarefa.
 `retry_stage`) recebe no prompt o erro, o resumo que a anterior deu e a saída dos
 gates não atendidos. O feedback fica no `StageRun` (`feedback`).
 
+## Fila e passos em paralelo
+
+- **Fila (`queued`):** com um limite de tarefas simultâneas no workspace, uma tarefa
+  criada além dele entra como `queued` e começa quando outra deixa de rodar (termina
+  ou pausa). Cancelar uma tarefa na fila a encerra direto.
+- **Passos em paralelo:** etapas seguidas com o mesmo `group` formam um passo. Elas
+  começam juntas, e cada uma passa pelo gate e retenta sozinha. O passo fecha quando
+  nenhuma roda mais:
+  - todas passaram: o próximo passo, ou uma pausa se alguma pede aprovação ou casa
+    com uma regra;
+  - alguma bloqueou ou esgotou as tentativas: `awaiting_decision` com o motivo de
+    cada uma.
+
+  A `current_stage` aponta para a primeira etapa do passo. `retry_stage` repete as
+  que não passaram, e `advance` vai para o passo seguinte.
+
 ## Decisões
 
 Valem só em `awaiting_decision`:

@@ -183,6 +183,14 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Index do
             data-testid="workspace-slug"
             help_text="Aparece na URL: /w/endereco. Deixe em branco para gerar a partir do nome."
           />
+          <.field
+            field={@form[:max_running_tasks]}
+            type="number"
+            min="1"
+            label="Tarefas em execução ao mesmo tempo (opcional)"
+            help_text="Passado esse número, novas tarefas esperam na fila."
+            data-testid="workspace-max-running-tasks"
+          />
           <div class="flex justify-end gap-2">
             <.button
               to={~p"/backoffice/workspaces"}

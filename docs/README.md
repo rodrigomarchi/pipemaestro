@@ -17,7 +17,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 |---|---|---|
 | 01 | [Visão de arquitetura](plano/01-visao-arquitetura.md) | Rascunho v0.1 — 03/11/2026 |
 | 02 | [Contexto de discovery](plano/02-contexto-discovery.md) | v0.1 — 03/11/2026 |
-| 03 | [Roadmap do orquestrador](plano/03-roadmap-orquestrador.md) | v0.2 — 03/11/2026 |
+| 03 | [Roadmap do orquestrador](plano/03-roadmap-orquestrador.md) | v0.3 — 03/11/2026 |
 
 ## Decisões (ADR)
 
@@ -36,6 +36,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0011 | [Decisões registradas, contexto por pipeline, orçamento por tarefa e pipelines em YAML](adr/0011-decisoes-contexto-orcamento-e-portabilidade.md) | Aceita |
 | 0012 | [Uso, papéis, auditoria, manutenção, alertas e segredos](adr/0012-uso-papeis-auditoria-e-segredos.md) | Aceita |
 | 0013 | [Distribuição e entrega no git e no GitHub](adr/0013-distribuicao-e-entrega-no-git.md) | Aceita |
+| 0014 | [As pendências do roadmap: paralelo, webhook, outbox, prazos e acabamentos](adr/0014-pendencias-do-roadmap.md) | Aceita |
 
 ## Specs
 

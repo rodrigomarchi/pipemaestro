@@ -1,5 +1,9 @@
 defmodule ClaudeControlPlane.Workspaces.Workspace do
-  @moduledoc "A customer company: the tenant every pipeline, runner and user belongs to."
+  @moduledoc """
+  A customer company: the tenant every pipeline, runner and user belongs to.
+  `max_running_tasks` caps how many of its tasks run at once (none when
+  `nil`); past it, new tasks wait in line (`ClaudeControlPlane.Tasks`).
+  """
   use ClaudeControlPlane.Schema
 
   import Ecto.Changeset
@@ -12,6 +16,7 @@ defmodule ClaudeControlPlane.Workspaces.Workspace do
           name: String.t() | nil,
           slug: String.t() | nil,
           member_count: non_neg_integer() | nil,
+          max_running_tasks: pos_integer() | nil,
           users: [User.t()] | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
@@ -21,6 +26,7 @@ defmodule ClaudeControlPlane.Workspaces.Workspace do
     field :name, :string
     field :slug, :string
     field :member_count, :integer, virtual: true
+    field :max_running_tasks, :integer
 
     has_many :memberships, Membership
     many_to_many :users, User, join_through: Membership
@@ -35,7 +41,8 @@ defmodule ClaudeControlPlane.Workspaces.Workspace do
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(workspace, attrs) do
     workspace
-    |> cast(attrs, [:name, :slug])
+    |> cast(attrs, [:name, :slug, :max_running_tasks])
+    |> validate_number(:max_running_tasks, greater_than: 0, message: "use um número positivo")
     |> validate_required([:name])
     |> validate_length(:name, max: 80)
     |> put_default_slug()

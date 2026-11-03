@@ -68,9 +68,18 @@ defmodule ClaudeControlPlane.Tasks.Engine do
     do: "O gate `#{command}` não foi atendido: esperava falhar e passou."
 
   defp rules(output, rules) do
-    case Enum.find(rules || [], &matches?(&1, output)) do
+    case rule_pause(output, rules) do
       nil -> :passed
-      rule -> {:paused, "a regra #{rule["field"]} #{rule["op"]} #{rule["value"]} se aplicou"}
+      reason -> {:paused, reason}
+    end
+  end
+
+  @doc "Why one of `rules` pauses on `output`, or `nil` when none matches."
+  @spec rule_pause(map() | nil, [map()] | nil) :: String.t() | nil
+  def rule_pause(output, rules) do
+    case Enum.find(rules || [], &matches?(&1, output)) do
+      nil -> nil
+      rule -> "a regra #{rule["field"]} #{rule["op"]} #{rule["value"]} se aplicou"
     end
   end
 

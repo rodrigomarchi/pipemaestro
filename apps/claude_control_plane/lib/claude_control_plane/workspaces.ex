@@ -47,6 +47,10 @@ defmodule ClaudeControlPlane.Workspaces do
     Repo.all(query)
   end
 
+  @doc "The workspace with `slug`, or `nil`."
+  @spec get_workspace_by_slug(String.t()) :: Workspace.t() | nil
+  def get_workspace_by_slug(slug) when is_binary(slug), do: Repo.get_by(Workspace, slug: slug)
+
   @doc "The workspace with `slug` if `user` belongs to it, `nil` otherwise."
   @spec get_workspace_for_user(User.t(), String.t()) :: Workspace.t() | nil
   def get_workspace_for_user(%User{id: user_id}, slug) when is_binary(slug) do

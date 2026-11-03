@@ -96,6 +96,8 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("stage-run-changes-triagem-1")).toContainText("2 arquivos alterados");
     await expect(app.page.getByTestId("task-files")).toContainText("06-pr.md");
     await expect(app.page.getByTestId("task-files")).toContainText("fake-claude.txt");
+    // The artifact's code block is highlighted in the browser.
+    await expect(app.page.getByTestId("stage-run-artifact-triagem-1")).toHaveAttribute("data-highlighted", "true");
     await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
     await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded");

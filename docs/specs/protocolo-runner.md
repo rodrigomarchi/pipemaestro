@@ -175,6 +175,7 @@ opcionais:
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
 | `delivery` | `{"commit_message", "push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou (ADR 0013): commit, push do branch, PR em rascunho (`{"title", "body", "ready"}`) e comentário na issue (`{"url", "body"}`). O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}` |
+| `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |
 | `permissions` | `{"profile", "allow"?, "deny"?}`: o que o agente pode fazer. `profile` é `total` (o padrão, sem o campo), `edicao` ou `leitura`; `allow` e `deny` são regras de ferramenta na sintaxe do CLI (`Bash(mix test:*)`). Detalhes no ADR 0009 |
 | `gates` | `[{"command", "expect"}]` (até 10, `expect` igual a `pass` ou `fail`): comandos que o runner roda no diretório de trabalho, em ordem, **depois que o agente termina bem**. O `job:finished` traz `gates` com cada um mais `exit_code`, `output` (o fim), `passed` e `duration_ms`. O runner só informa; quem decide é o control plane |

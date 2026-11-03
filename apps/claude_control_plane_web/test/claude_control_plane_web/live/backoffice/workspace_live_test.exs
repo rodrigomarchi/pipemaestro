@@ -53,12 +53,14 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLiveTest do
 
       html =
         view
-        |> form("#workspace-form", workspace: %{name: "Renomeado", slug: "renomeado"})
+        |> form("#workspace-form",
+          workspace: %{name: "Renomeado", slug: "renomeado", max_running_tasks: "3"}
+        )
         |> render_submit()
 
       assert_patch(view, ~p"/backoffice/workspaces")
       assert html =~ "Workspace Renomeado atualizado."
-      assert Workspaces.get_workspace!(workspace.id).slug == "renomeado"
+      assert %{slug: "renomeado", max_running_tasks: 3} = Workspaces.get_workspace!(workspace.id)
     end
   end
 

@@ -19,7 +19,12 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
   @period_days 7
 
   @columns [
-    %{id: "running", name: "Em execução", icon: "hero-play", statuses: [:running]},
+    %{
+      id: "running",
+      name: "Em execução ou na fila",
+      icon: "hero-play",
+      statuses: [:queued, :running]
+    },
     %{
       id: "awaiting",
       name: "Aguardando decisão",
@@ -390,6 +395,7 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
   end
 
   defp alert_testid({:runner_offline, task}), do: "board-alert-offline-#{task.id}"
+  defp alert_testid({:decision_overdue, task}), do: "board-alert-overdue-#{task.id}"
   defp alert_testid({:near_budget, task, _spent, _cap}), do: "board-alert-budget-#{task.id}"
 
   attr :alert, :any, required: true
@@ -404,6 +410,18 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
       {@task.title}
     </.link>
     está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
+    """
+  end
+
+  defp alert_line(%{alert: {:decision_overdue, task}} = assigns) do
+    assigns = assign(assigns, task: task)
+
+    ~H"""
+    <.icon name="hero-clock" class="size-4 text-danger-500" />
+    <.link navigate={~p"/w/#{@slug}/tasks/#{@task.id}"} class="font-medium hover:underline">
+      {@task.title}
+    </.link>
+    espera uma decisão além do prazo.
     """
   end
 

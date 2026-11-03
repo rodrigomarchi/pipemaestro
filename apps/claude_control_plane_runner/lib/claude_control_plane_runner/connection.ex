@@ -17,7 +17,8 @@ defmodule ClaudeControlPlaneRunner.Connection do
   What it reports is kept until the control plane replies
   (`ClaudeControlPlaneRunner.Outbox`) and sent again, in order, after every
   join; a job whose end the control plane has not confirmed still counts as
-  running, so a reconnection does not fail it.
+  running, so a reconnection does not fail it. With an `:outbox_path`, the
+  ends survive a restart too.
 
   Given a `:root`, it offers the code directories under it
   (`ClaudeControlPlaneRunner.Directories`): announced on every join and sent
@@ -82,7 +83,7 @@ defmodule ClaudeControlPlaneRunner.Connection do
         usage_every: Keyword.get(opts, :usage_every, 300_000),
         usage: nil,
         measuring: nil,
-        outbox: Outbox.new()
+        outbox: Outbox.new(20_000, Keyword.get(opts, :outbox_path))
       )
 
     schedule_rescan(socket)

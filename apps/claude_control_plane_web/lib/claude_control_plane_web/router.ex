@@ -112,6 +112,7 @@ defmodule ClaudeControlPlaneWeb.Router do
     pipe_through :api
 
     get "/healthz", HealthController, :index
+    post "/api/github/webhook/:workspace_slug", GithubWebhookController, :receive_event
     post "/api/runner/device/code", RunnerDeviceController, :create_code
     post "/api/runner/device/token", RunnerDeviceController, :create_token
   end

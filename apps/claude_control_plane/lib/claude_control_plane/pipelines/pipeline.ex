@@ -165,6 +165,13 @@ defmodule ClaudeControlPlane.Pipelines.Pipeline do
       length(stages) > @max_stages ->
         add_error(changeset, :stages, "no máximo #{@max_stages} etapas")
 
+      match?([%{group: group} | _] when group not in [nil, ""], stages) ->
+        add_error(
+          changeset,
+          :stages,
+          "a primeira etapa não pode estar num grupo em paralelo: é ela que prepara o worktree"
+        )
+
       duplicated_keys(stages) != [] ->
         add_error(
           changeset,

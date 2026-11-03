@@ -380,6 +380,17 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     assert finished["error"] =~ "tempo máximo"
   end
 
+  test "a stage in a directory without git reports the files it touched", %{tmp_dir: dir} do
+    root = Path.join(dir, "src")
+    File.mkdir_p!(Path.join(root, "notas"))
+    runner = start_runner(Path.join(dir, "workdir"), root: root)
+
+    JobRunner.enqueue(runner, %Job{id: "j1", prompt: "anote", directory: "notas"})
+    {_messages, finished} = collect_until_finished("j1")
+
+    assert [%{"path" => "fake-claude.txt", "status" => "new"}] = finished["changes"]["files"]
+  end
+
   describe "parallel jobs" do
     setup %{tmp_dir: dir} do
       root = Path.join(dir, "src")
@@ -466,6 +477,38 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
       refute_receive {:job_out, "job:started", %{"job_id" => "j3"}}, 200
 
       for id <- ~w(j3 j1 j2), do: JobRunner.cancel(runner, id)
+      for id <- ~w(j1 j2), do: collect_until_finished(id)
+    end
+
+    test "stages of one task marked parallel run at once in its worktree", %{tmp_dir: dir} do
+      root = Path.join(dir, "repos")
+      git_repo!(Path.join(root, "app"))
+      runner = start_runner(Path.join(dir, "workdir"), root: root, capacity: 3)
+
+      stage = fn id ->
+        %Job{
+          id: id,
+          prompt: "auditoria [lento]",
+          directory: "app",
+          worktree: %{"task_id" => "t1", "branch" => "cp/t1"},
+          parallel: true
+        }
+      end
+
+      # The worktree exists before the group (the first stage cannot be in one).
+      JobRunner.enqueue(runner, %{stage.("j0") | prompt: "implementar", parallel: nil})
+      collect_until_finished("j0")
+
+      JobRunner.enqueue(runner, stage.("j1"))
+      JobRunner.enqueue(runner, stage.("j2"))
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}, 5_000
+      assert_receive {:job_out, "job:started", %{"job_id" => "j2"}}, 5_000
+
+      # The task is busy: its worktree cannot go while they run.
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"error" => _}}, 5_000
+
+      for id <- ~w(j1 j2), do: JobRunner.cancel(runner, id)
       for id <- ~w(j1 j2), do: collect_until_finished(id)
     end
   end

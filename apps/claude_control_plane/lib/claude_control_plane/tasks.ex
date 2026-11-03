@@ -35,11 +35,14 @@ defmodule ClaudeControlPlane.Tasks do
   alias ClaudeControlPlane.Repo
   alias ClaudeControlPlane.Runners.Runner
   alias ClaudeControlPlane.Tasks.{Decision, Engine, StageRun, Task}
+  alias ClaudeControlPlane.Workspaces
   alias ClaudeControlPlane.Workspaces.Workspace
 
   @pubsub ClaudeControlPlane.PubSub
   @list_limit 100
   @max_artifact_bytes 65_536
+  # How long a decision may wait before it is overdue.
+  @decision_hours 24
 
   @typedoc "What a PubSub subscription is about."
   @type subject ::
@@ -149,7 +152,7 @@ defmodule ClaudeControlPlane.Tasks do
       from t in Task,
         where: t.workspace_id == ^workspace_id and t.status == :awaiting_decision,
         order_by: [asc: t.updated_at, asc: t.id],
-        preload: [:runner, :created_by_user]
+        preload: [:runner, :created_by_user, :decision_owner]
     )
   end
 
@@ -203,7 +206,10 @@ defmodule ClaudeControlPlane.Tasks do
 
   defp preload(task) do
     runs = from r in StageRun, order_by: [asc: r.index, asc: r.attempt], preload: :job
-    Repo.preload(task, [:runner, :created_by_user, stage_runs: runs], force: true)
+
+    Repo.preload(task, [:runner, :created_by_user, :decision_owner, stage_runs: runs],
+      force: true
+    )
   end
 
   @doc "A changeset for the new-task form."
@@ -229,7 +235,7 @@ defmodule ClaudeControlPlane.Tasks do
     # The first stage's job is handed to the runner as it is created, so the
     # task is committed first: the runner may report back at once.
     with {:ok, task} <- Repo.insert(changeset) do
-      task = task |> put_branch() |> start_stage(0, nil) |> preload()
+      task = task |> put_branch() |> start_or_queue() |> preload()
       Audit.record(workspace, user, "task.created", task, %{"pipeline" => task.pipeline_name})
       notify(task)
       {:ok, task}
@@ -309,6 +315,50 @@ defmodule ClaudeControlPlane.Tasks do
     end
   end
 
+  # Past the workspace's limit of tasks at once, the task waits in line.
+  defp start_or_queue(task) do
+    if room?(task.workspace_id, task.id),
+      do: start_stage(task, 0, nil),
+      else: task |> Ecto.Changeset.change(status: :queued) |> Repo.update!()
+  end
+
+  defp room?(workspace_id, except_task_id) do
+    case Repo.one(from w in Workspace, where: w.id == ^workspace_id, select: w.max_running_tasks) do
+      nil ->
+        true
+
+      limit ->
+        running =
+          Repo.aggregate(
+            from(t in Task,
+              where:
+                t.workspace_id == ^workspace_id and t.status == :running and
+                  t.id != ^except_task_id
+            ),
+            :count
+          )
+
+        running < limit
+    end
+  end
+
+  # A task stopped running: the oldest one in line, if any, takes its place.
+  defp start_next_queued(workspace_id) do
+    next =
+      Repo.one(
+        from t in Task,
+          where: t.workspace_id == ^workspace_id and t.status == :queued,
+          order_by: [asc: t.inserted_at, asc: t.id],
+          limit: 1
+      )
+
+    if next && room?(workspace_id, next.id) do
+      next |> start_stage(0, nil) |> preload() |> notify()
+    end
+
+    :ok
+  end
+
   defp put_branch(%Task{git: false} = task), do: task
 
   defp put_branch(%Task{} = task) do
@@ -351,7 +401,7 @@ defmodule ClaudeControlPlane.Tasks do
         directory: task.directory,
         project: task.project,
         stage_index: index,
-        previous: Enum.take(task.stages, index),
+        previous: Enum.take(task.stages, step_first(task, index)),
         instructions: stage_run.instructions,
         feedback: stage_run.feedback
       })
@@ -370,10 +420,13 @@ defmodule ClaudeControlPlane.Tasks do
       status: :running,
       current_stage: index,
       decision_reason: nil,
-      pending_instructions: nil,
+      decision_owner_id: nil,
+      decision_due_at: nil,
       pending_issue_comment: nil,
       finished_at: nil
     )
+    # Written even when the struct already says nil (a step clears it first).
+    |> Ecto.Changeset.force_change(:pending_instructions, nil)
     |> Repo.update!()
   end
 
@@ -420,7 +473,8 @@ defmodule ClaudeControlPlane.Tasks do
       "mcp_config" => context(task, "mcp_config"),
       "agents" => context(task, "agents"),
       "agent" => stage.agent,
-      "delivery" => delivery(task, stage, index)
+      "parallel" => if(grouped?(task, index), do: true),
+      "delivery" => if(not grouped?(task, index), do: delivery(task, stage, index))
     }
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
@@ -525,12 +579,11 @@ defmodule ClaudeControlPlane.Tasks do
 
       record_stage_run(stage_run, job, outcome)
 
-      task
-      |> maybe_record_worktree(job)
-      |> maybe_record_pr(job)
-      |> advance_after(stage_run, outcome)
-      |> preload()
-      |> notify()
+      task = task |> maybe_record_worktree(job) |> maybe_record_pr(job)
+
+      if grouped?(task, stage_run.index),
+        do: task |> after_group_stage(stage_run, outcome) |> preload() |> notify(),
+        else: task |> advance_after(stage_run, outcome) |> preload() |> notify()
     end
 
     :ok
@@ -631,8 +684,117 @@ defmodule ClaudeControlPlane.Tasks do
   # A stage run again (after a redo) keeps counting its attempts.
   defp next_or_finish(task, index, instructions) do
     if index < length(task.stages),
-      do: start_stage(task, index, instructions, last_attempt(task, index) + 1),
+      do: start_step(task, index, instructions),
       else: finish(task, :succeeded)
+  end
+
+  # ── Steps: a stage alone, or a group of stages that run at once ──────────
+
+  defp group_of(task, index) do
+    case Enum.at(task.stages, index) do
+      %{group: group} when group not in [nil, ""] -> group
+      _alone -> nil
+    end
+  end
+
+  defp grouped?(task, index), do: group_of(task, index) != nil
+
+  # The indexes of the step `index` belongs to, in order.
+  defp step(task, index) do
+    case group_of(task, index) do
+      nil ->
+        [index]
+
+      group ->
+        same = fn i -> group_of(task, i) == group end
+
+        first =
+          index
+          |> Stream.iterate(&(&1 - 1))
+          |> Enum.take_while(&(&1 >= 0 and same.(&1)))
+          |> List.last()
+
+        first
+        |> Stream.iterate(&(&1 + 1))
+        |> Enum.take_while(&(&1 < length(task.stages) and same.(&1)))
+    end
+  end
+
+  defp step_first(task, index), do: task |> step(index) |> hd()
+  defp step_last(task, index), do: task |> step(index) |> List.last()
+
+  # Starts the stages of the step at `index` (or `only` some of them), every
+  # one with the instructions; the task's current stage is the step's first.
+  defp start_step(task, index, instructions, only \\ nil) do
+    instructions = join_instructions([instructions, task.pending_instructions])
+    task = %{task | pending_instructions: nil}
+
+    task =
+      Enum.reduce(only || step(task, index), task, fn i, task ->
+        start_stage(task, i, instructions, last_attempt(task, i) + 1)
+      end)
+
+    keep_current(task, step_first(task, index))
+  end
+
+  defp keep_current(%Task{current_stage: index} = task, index), do: task
+
+  defp keep_current(task, index),
+    do: task |> Ecto.Changeset.change(current_stage: index) |> Repo.update!()
+
+  # A stage of a group ended: it retries on its own; once none of the group
+  # runs, the step closes.
+  defp after_group_stage(task, stage_run, outcome) do
+    first = step_first(task, stage_run.index)
+
+    case outcome do
+      :canceled ->
+        finish(task, :canceled)
+
+      {:retry, _error} ->
+        task
+        |> start_stage(stage_run.index, stage_run.instructions, stage_run.attempt + 1)
+        |> keep_current(first)
+
+      _passed_blocked_or_exhausted ->
+        if Enum.any?(latest_runs(task, first), &(&1.status == :running)),
+          do: task,
+          else: close_step(task, first)
+    end
+  end
+
+  defp latest_runs(task, first), do: Enum.map(step(task, first), &latest_run(task, &1))
+
+  # Every stage of the group ended: on to the next step, or a pause that says
+  # what each stage needs.
+  defp close_step(task, first) do
+    runs = latest_runs(task, first)
+
+    problems =
+      for run <- runs, run.status in [:blocked, :failed] do
+        if run.status == :blocked,
+          do: "A etapa \"#{run.name}\" está bloqueada: #{run.summary}",
+          else: "A etapa \"#{run.name}\" falhou: #{run.error}"
+      end
+
+    pauses =
+      for run <- runs,
+          stage = Enum.at(task.stages, run.index),
+          run.status == :passed,
+          reason = pause_reason(stage, run),
+          do: "A etapa \"#{stage.name}\" terminou, mas #{reason}."
+
+    cond do
+      problems != [] -> await(task, Enum.join(problems, " "))
+      pauses != [] -> await(task, Enum.join(pauses, " "))
+      task.pause_requested -> await(task, "Alguém pediu uma pausa depois deste passo.")
+      true -> next_or_finish(task, step_last(task, first) + 1, nil)
+    end
+  end
+
+  defp pause_reason(stage, run) do
+    Engine.rule_pause(run.structured_output, stage.rules) ||
+      if(stage.pause_after, do: "pede aprovação para seguir")
   end
 
   defp await(task, reason) do
@@ -640,10 +802,13 @@ defmodule ClaudeControlPlane.Tasks do
     |> Ecto.Changeset.change(
       status: :awaiting_decision,
       decision_reason: reason,
-      pause_requested: false
+      pause_requested: false,
+      decision_owner_id: task.created_by_user_id,
+      decision_due_at: DateTime.add(now(), @decision_hours, :hour)
     )
     |> Repo.update!()
     |> announce(:awaiting)
+    |> tap(&start_next_queued(&1.workspace_id))
   end
 
   defp finish(task, status) do
@@ -651,6 +816,7 @@ defmodule ClaudeControlPlane.Tasks do
     |> Ecto.Changeset.change(status: status, decision_reason: nil, finished_at: now())
     |> Repo.update!()
     |> announce(status)
+    |> tap(&start_next_queued(&1.workspace_id))
   end
 
   # ── Decisions ─────────────────────────────────────────────────────────────
@@ -664,7 +830,8 @@ defmodule ClaudeControlPlane.Tasks do
   @doc """
   What needs attention among the workspace's tasks that have not ended:
   `{:runner_offline, task}` when its runner is not in `online_runner_ids`
-  (the task cannot move), and `{:near_budget, task, spent, cap}` when it has
+  (the task cannot move), `{:decision_overdue, task}` when its decision is
+  past its deadline, and `{:near_budget, task, spent, cap}` when it has
   spent 80% or more of its pipeline's cap per task.
   """
   @spec alerts(Workspace.t(), MapSet.t()) :: [tuple()]
@@ -683,9 +850,15 @@ defmodule ClaudeControlPlane.Tasks do
           do: [{:runner_offline, task}],
           else: []
 
-      offline ++ near_budget(task)
+      offline ++ overdue(task) ++ near_budget(task)
     end)
   end
+
+  defp overdue(%Task{status: :awaiting_decision, decision_due_at: %DateTime{} = due} = task) do
+    if DateTime.compare(due, DateTime.utc_now()) == :lt, do: [{:decision_overdue, task}], else: []
+  end
+
+  defp overdue(_task), do: []
 
   defp near_budget(%Task{pipeline_context: %{"max_cost_usd" => cap}} = task)
        when is_binary(cap) do
@@ -695,6 +868,16 @@ defmodule ClaudeControlPlane.Tasks do
   end
 
   defp near_budget(_task), do: []
+
+  @doc "Passes a paused task's decision on to `user`, a member of its workspace."
+  @spec assign_decision(Task.t(), User.t()) :: {:ok, Task.t()} | {:error, :not_a_member}
+  def assign_decision(%Task{} = task, %User{} = user) do
+    task = Repo.get!(Task, task.id)
+
+    if Workspaces.member?(%Workspace{id: task.workspace_id}, user),
+      do: update_and_notify(task, decision_owner_id: user.id),
+      else: {:error, :not_a_member}
+  end
 
   @doc "What a task's jobs have cost so far."
   @spec cost(Task.t()) :: Decimal.t()
@@ -741,8 +924,18 @@ defmodule ClaudeControlPlane.Tasks do
           {:ok, Task.t()} | {:error, :not_awaiting}
   def retry_stage(%Task{} = task, instructions, opts \\ []) do
     decide(task, :retry, instructions, opts, fn task, instructions ->
-      attempt = last_attempt(task, task.current_stage) + 1
-      start_stage(task, task.current_stage, instructions, attempt)
+      # In a group, the stages that did not pass (all, if they all did).
+      pending =
+        for i <- step(task, task.current_stage),
+            latest_run(task, i) |> then(&(&1 == nil or &1.status != :passed)),
+            do: i
+
+      start_step(
+        task,
+        task.current_stage,
+        instructions,
+        if(pending == [], do: nil, else: pending)
+      )
     end)
   end
 
@@ -753,7 +946,13 @@ defmodule ClaudeControlPlane.Tasks do
   @spec advance(Task.t(), String.t() | nil, decision_opts()) ::
           {:ok, Task.t()} | {:error, :not_awaiting}
   def advance(%Task{} = task, instructions, opts \\ []) do
-    decide(task, :advance, instructions, opts, &next_or_finish(&1, &1.current_stage + 1, &2))
+    decide(
+      task,
+      :advance,
+      instructions,
+      opts,
+      &next_or_finish(&1, step_last(&1, &1.current_stage) + 1, &2)
+    )
   end
 
   # ── Talking to a task ─────────────────────────────────────────────────────
@@ -811,7 +1010,7 @@ defmodule ClaudeControlPlane.Tasks do
 
       true ->
         task =
-          task |> start_stage(index, instructions, last_attempt(task, index) + 1) |> preload()
+          task |> start_step(step_first(task, index), instructions) |> preload()
 
         notify(task)
         {:ok, task}
@@ -912,6 +1111,12 @@ defmodule ClaudeControlPlane.Tasks do
     task = Repo.get!(Task, task.id)
 
     case task.status do
+      :queued ->
+        Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
+        task = task |> finish(:canceled) |> preload()
+        notify(task)
+        {:ok, task}
+
       :awaiting_decision ->
         record_decision(task, :cancel, nil, nil, opts[:by])
         Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
@@ -921,11 +1126,48 @@ defmodule ClaudeControlPlane.Tasks do
 
       :running ->
         Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
-        task |> running_job() |> Jobs.request_cancel()
+        for job <- running_jobs(task), do: Jobs.request_cancel(job)
         {:ok, get_task!(%Workspace{id: task.workspace_id}, task.id)}
 
       _finished ->
         {:error, :finished}
+    end
+  end
+
+  @doc "Whether a task started from the issue at `url` has not ended yet."
+  @spec active_for_issue?(Workspace.t(), String.t()) :: boolean()
+  def active_for_issue?(%Workspace{id: workspace_id}, url) do
+    Repo.exists?(
+      from t in Task,
+        where:
+          t.workspace_id == ^workspace_id and t.issue_url == ^url and
+            t.status in [:queued, :running, :awaiting_decision]
+    )
+  end
+
+  @doc """
+  Starts a task from a GitHub issue (`"title"`, `"body"`, `"html_url"`) with
+  the project's trigger: its pipeline and directory, on `runner_id`, on
+  behalf of whoever set the trigger up.
+  """
+  @spec create_from_issue(Workspace.t(), Project.t(), map(), Ecto.UUID.t()) ::
+          {:ok, Task.t()} | {:error, Ecto.Changeset.t() | :no_trigger_user}
+  def create_from_issue(%Workspace{} = workspace, %Project{} = project, issue, runner_id) do
+    case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
+      %User{} = user ->
+        body = blank_to_nil(issue["body"]) || issue["title"]
+
+        create_task(user, workspace, %{
+          "title" => String.slice(issue["title"] || "Issue", 0, 120),
+          "prompt" => "#{body}\n\nIssue: #{issue["html_url"]}",
+          "pipeline_id" => project.trigger_pipeline_id,
+          "runner_id" => runner_id,
+          "directory" => project.directory,
+          "issue_url" => issue["html_url"]
+        })
+
+      _nobody ->
+        {:error, :no_trigger_user}
     end
   end
 
@@ -1016,14 +1258,13 @@ defmodule ClaudeControlPlane.Tasks do
     end
   end
 
-  defp running_job(task) do
-    Repo.one!(
+  # Every stage of a group may be running.
+  defp running_jobs(task) do
+    Repo.all(
       from j in Job,
         join: r in StageRun,
         on: r.id == j.stage_run_id,
-        where: r.task_id == ^task.id and r.status == :running,
-        order_by: [desc: j.inserted_at],
-        limit: 1
+        where: r.task_id == ^task.id and r.status == :running
     )
   end
 

@@ -401,12 +401,18 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
 
       view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
+
+      view |> element("[data-testid=stage-run-steps-filter-a-1-errors]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
+      view |> element("[data-testid=stage-run-steps-filter-a-1-agent]") |> render_click()
+      assert has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
       view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
       refute has_element?(view, "[data-testid=stage-run-steps-a-1]")
 
       assert has_element?(view, "[data-testid=stage-run-summary-a-1]", "a feita")
       assert has_element?(view, "[data-testid=task-cost]", "US$")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
+      assert has_element?(view, "[data-testid=stage-run-artifact-a-1][phx-hook=Highlight]")
       refute has_element?(view, "[data-testid=stage-run-artifact-raw-a-1]")
       view |> element("[data-testid=stage-run-artifact-toggle-a-1]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-artifact-raw-a-1]", "# Artefato de a")

@@ -70,6 +70,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
       "rules_text" => Stage.rules_text(stage),
       "permission_profile" => stage.permission_profile,
       "agent" => stage.agent || "",
+      "group" => stage.group || "",
       "allowed_tools_text" => Stage.allowed_tools_text(stage),
       "denied_tools_text" => Stage.denied_tools_text(stage),
       "output_schema_json" =>
@@ -391,13 +392,22 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
                   data-testid={"stage-rules-#{stage.index}"}
                 />
               </div>
-              <.field
-                field={stage[:agent]}
-                label="Rodar como o agente (opcional)"
-                placeholder="revisor"
-                help_text="Um agente do repositório (.claude/agents) ou do pipeline."
-                data-testid={"stage-agent-#{stage.index}"}
-              />
+              <div class="grid gap-4 sm:grid-cols-2">
+                <.field
+                  field={stage[:agent]}
+                  label="Rodar como o agente (opcional)"
+                  placeholder="revisor"
+                  help_text="Um agente do repositório (.claude/agents) ou do pipeline."
+                  data-testid={"stage-agent-#{stage.index}"}
+                />
+                <.field
+                  field={stage[:group]}
+                  label="Grupo em paralelo (opcional)"
+                  placeholder="auditorias"
+                  help_text="Etapas seguidas com o mesmo grupo rodam juntas; a seguinte espera todas."
+                  data-testid={"stage-group-#{stage.index}"}
+                />
+              </div>
               <div class="grid gap-4 sm:grid-cols-3">
                 <.field
                   field={stage[:permission_profile]}

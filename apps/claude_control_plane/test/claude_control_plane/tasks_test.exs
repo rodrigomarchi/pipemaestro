@@ -596,6 +596,151 @@ defmodule ClaudeControlPlane.TasksTest do
     end
   end
 
+  describe "a task from a GitHub issue" do
+    test "takes the issue's title, text and link, with the project's pipeline and directory",
+         ctx do
+      {:ok, project} =
+        ClaudeControlPlane.Projects.create_project(
+          ctx.workspace,
+          %{
+            "name" => "App",
+            "directory" => "app",
+            "github_repo" => "acme/app",
+            "trigger_label" => "claude",
+            "trigger_pipeline_id" => ctx.pipeline.id
+          },
+          ctx.user
+        )
+
+      issue = %{
+        "title" => "Botão quebrado",
+        "body" => "Ao clicar nada acontece.",
+        "html_url" => "https://github.com/acme/app/issues/9"
+      }
+
+      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, issue, ctx.runner.id)
+      assert task.title == "Botão quebrado"
+      assert task.prompt =~ "Ao clicar nada acontece."
+      assert task.issue_url == "https://github.com/acme/app/issues/9"
+      assert task.directory == "app"
+      assert task.pipeline_id == ctx.pipeline.id
+      assert task.created_by_user_id == ctx.user.id
+
+      empty = %{issue | "body" => nil, "html_url" => "https://github.com/acme/app/issues/10"}
+      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, empty, ctx.runner.id)
+      assert task.prompt =~ "Botão quebrado"
+    end
+  end
+
+  describe "stages in parallel" do
+    setup ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "stages" => [
+            %{"key" => "impl", "name" => "Implementar", "prompt" => "p"},
+            %{
+              "key" => "seg",
+              "name" => "Auditoria de segurança",
+              "prompt" => "p",
+              "group" => "auditorias"
+            },
+            %{
+              "key" => "perf",
+              "name" => "Auditoria de desempenho",
+              "prompt" => "p",
+              "group" => "auditorias"
+            },
+            %{"key" => "fim", "name" => "Consolidar", "prompt" => "p"}
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    defp run_stage(ctx, task, key, report) do
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      run = Enum.find(task.stage_runs, &(&1.key == key and &1.status == :running))
+      {:ok, _} = Jobs.mark_started(ctx.runner, run.job.id)
+
+      payload =
+        Map.merge(
+          %{
+            "status" => "succeeded",
+            "exit_code" => 0,
+            "structured_output" => %{"status" => "ok", "resumo" => "feito"},
+            "artifact" => "# Artefato"
+          },
+          report
+        )
+
+      {:ok, _} = Jobs.finish_job(ctx.runner, run.job.id, payload)
+      Tasks.get_task!(ctx.workspace, task.id)
+    end
+
+    test "a group of stages runs at once and the task goes on when all of them pass", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx)
+      assert_receive {:job_assign, _impl}
+      task = run_stage(ctx, task, "impl", %{})
+
+      assert_receive {:job_assign, a}
+      assert_receive {:job_assign, b}
+      assert Enum.sort([a.context["parallel"], b.context["parallel"]]) == [true, true]
+      # Each reads what came before the group, not its sibling's artifact.
+      refute a.prompt =~ "02-seg.md\n- Auditoria"
+      assert a.prompt =~ "01-impl.md"
+      assert %Task{current_stage: 1, status: :running} = task
+
+      task = run_stage(ctx, task, "seg", %{})
+      assert %Task{current_stage: 1, status: :running} = task
+      refute_receive {:job_assign, _}
+
+      task = run_stage(ctx, task, "perf", %{})
+      assert %Task{current_stage: 3, status: :running} = task
+      assert_receive {:job_assign, last}
+      assert last.prompt =~ "02-seg.md"
+      assert last.prompt =~ "03-perf.md"
+    end
+
+    test "a stage of the group that blocks pauses the task once the others end; retry redoes it",
+         ctx do
+      task = create_task(ctx)
+      task = run_stage(ctx, task, "impl", %{})
+
+      task =
+        run_stage(ctx, task, "seg", %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "Falta acesso"}
+        })
+
+      assert %Task{status: :running} = task
+
+      task = run_stage(ctx, task, "perf", %{})
+      assert %Task{status: :awaiting_decision, decision_reason: reason} = task
+      assert reason =~ "Auditoria de segurança"
+      assert reason =~ "Falta acesso"
+
+      {:ok, task} = Tasks.retry_stage(task, "Use o token")
+      running = Enum.filter(task.stage_runs, &(&1.status == :running))
+      assert Enum.map(running, & &1.key) == ["seg"]
+
+      task = run_stage(ctx, task, "seg", %{})
+      assert %Task{current_stage: 3} = task
+    end
+
+    test "the first stage cannot be in a group", ctx do
+      assert {:error, changeset} =
+               Pipelines.create_pipeline(ctx.workspace, %{
+                 "name" => "Ruim",
+                 "stages" => [
+                   %{"name" => "A", "prompt" => "p", "group" => "g"},
+                   %{"name" => "B", "prompt" => "p", "group" => "g"}
+                 ]
+               })
+
+      assert %{stages: [_]} = errors_on(changeset)
+    end
+  end
+
   describe "the task's budget" do
     test "alerts: tasks whose runner is offline and tasks near their budget", ctx do
       pipeline = pipeline_fixture(ctx.workspace, %{"max_task_cost_usd" => "1"})
@@ -633,6 +778,77 @@ defmodule ClaudeControlPlane.TasksTest do
       task = create_task(ctx)
       task = run_current(ctx, task, %{"cost_usd" => 99.0})
       assert %Task{status: :running, current_stage: 1} = task
+    end
+  end
+
+  describe "who decides, and by when" do
+    test "a paused task's decision goes to its creator, due in a day, and can be passed on",
+         ctx do
+      task = create_task(ctx)
+      blocked = %{"structured_output" => %{"status" => "bloqueado", "resumo" => "?"}}
+      task = run_current(ctx, task, blocked)
+
+      assert task.decision_owner_id == ctx.user.id
+      assert DateTime.diff(task.decision_due_at, DateTime.utc_now(), :hour) in 23..24
+
+      colleague = member_fixture(ctx.workspace)
+      assert {:ok, %Task{decision_owner_id: id}} = Tasks.assign_decision(task, colleague)
+      assert id == colleague.id
+      assert [%Task{decision_owner: %{id: ^id}}] = Tasks.list_awaiting(ctx.workspace)
+      assert {:error, :not_a_member} = Tasks.assign_decision(task, user_fixture())
+
+      {:ok, task} = Tasks.retry_stage(task, nil)
+      assert %Task{decision_owner_id: nil, decision_due_at: nil} = task
+    end
+
+    test "an overdue decision is an alert", ctx do
+      task = create_task(ctx)
+
+      task =
+        run_current(ctx, task, %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "?"}
+        })
+
+      task
+      |> Ecto.Changeset.change(decision_due_at: DateTime.add(DateTime.utc_now(:second), -60))
+      |> ClaudeControlPlane.Repo.update!()
+
+      assert [{:decision_overdue, %Task{id: id}}] =
+               Tasks.alerts(ctx.workspace, MapSet.new([ctx.runner.id]))
+
+      assert id == task.id
+    end
+  end
+
+  describe "the workspace's limit of tasks at once" do
+    setup ctx do
+      {:ok, workspace} =
+        ClaudeControlPlane.Workspaces.update_workspace(ctx.workspace, %{"max_running_tasks" => 1})
+
+      %{workspace: workspace}
+    end
+
+    test "past it a task waits in line, and starts when one stops running", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      first = create_task(ctx)
+      assert_receive {:job_assign, _job}
+
+      second = create_task(ctx, %{"title" => "Segunda"})
+      assert %Task{status: :queued, stage_runs: []} = second
+      refute_receive {:job_assign, _job}
+
+      blocked = %{"structured_output" => %{"status" => "bloqueado", "resumo" => "?"}}
+      run_current(ctx, first, blocked)
+
+      assert %Task{status: :running, current_stage: 0} = Tasks.get_task!(ctx.workspace, second.id)
+      assert_receive {:job_assign, job}
+      assert job.prompt =~ "Segunda"
+    end
+
+    test "a task in line can be canceled", ctx do
+      create_task(ctx)
+      queued = create_task(ctx, %{"title" => "Segunda"})
+      assert {:ok, %Task{status: :canceled}} = Tasks.cancel_task(queued)
     end
   end
 

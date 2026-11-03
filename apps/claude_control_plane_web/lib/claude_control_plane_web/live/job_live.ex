@@ -126,6 +126,8 @@ defmodule ClaudeControlPlaneWeb.JobLive do
               </h2>
               <div
                 :if={@job.result}
+                id="job-result"
+                phx-hook="Highlight"
                 class="prose prose-sm mt-2 max-w-none dark:prose-invert"
                 data-testid="job-result"
               >

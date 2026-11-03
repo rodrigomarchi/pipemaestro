@@ -7,8 +7,10 @@ defmodule ClaudeControlPlaneRunner.Outbox do
   event by its `seq`, a start or an end of a job that already started or
   ended).
 
-  It lives in memory: a runner that restarts loses it, and the control plane
-  fails the jobs that were running then (`Hello.running_job_ids`).
+  Given a file, the messages that move a task along (a job's end, a removed
+  worktree) are also kept there, so they survive a restart of the runner: the
+  runner starts with them, still counts their jobs as running, and sends them
+  again. A job's events live only in memory.
 
   It holds at most `max` messages. Past that, the oldest `job:event`s go
   first: a job's start and end are what moves the task along, and are never
@@ -16,24 +18,43 @@ defmodule ClaudeControlPlaneRunner.Outbox do
   """
 
   @default_max 20_000
+  # What a restart must not lose.
+  @durable ~w(job:finished worktree:removed)
 
   @opaque t :: %{
             max: pos_integer(),
+            path: Path.t() | nil,
             next: non_neg_integer(),
             entries: :gb_trees.tree(non_neg_integer(), {String.t(), map()}),
             refs: %{optional(term()) => non_neg_integer()}
           }
 
-  @doc "An empty outbox holding up to `max` messages."
-  @spec new(pos_integer()) :: t()
-  def new(max \\ @default_max), do: %{max: max, next: 0, entries: :gb_trees.empty(), refs: %{}}
+  @doc """
+  An outbox holding up to `max` messages; with a `path`, starting with the
+  messages a previous run kept there.
+  """
+  @spec new(pos_integer(), Path.t() | nil) :: t()
+  def new(max \\ @default_max, path \\ nil) do
+    kept = load(path)
+    entries = kept |> Enum.with_index() |> Enum.map(fn {entry, id} -> {id, entry} end)
+
+    %{
+      max: max,
+      path: path,
+      next: length(kept),
+      entries: :gb_trees.from_orddict(entries),
+      refs: %{}
+    }
+  end
 
   @doc "Adds a message; returns its id, to mark it `sent/3`."
   @spec add(t(), String.t(), map()) :: {non_neg_integer(), t()}
   def add(outbox, event, payload) do
     id = outbox.next
     entries = :gb_trees.insert(id, {event, payload}, outbox.entries)
-    {id, trim(%{outbox | next: id + 1, entries: entries})}
+    outbox = trim(%{outbox | next: id + 1, entries: entries})
+    if event in @durable, do: save(outbox)
+    {id, outbox}
   end
 
   @doc "The message `id` was pushed and `ref` will carry its reply."
@@ -44,8 +65,19 @@ defmodule ClaudeControlPlaneRunner.Outbox do
   @spec confirmed(t(), term()) :: t()
   def confirmed(outbox, ref) do
     case Map.pop(outbox.refs, ref) do
-      {nil, _refs} -> outbox
-      {id, refs} -> %{outbox | refs: refs, entries: :gb_trees.delete_any(id, outbox.entries)}
+      {nil, _refs} ->
+        outbox
+
+      {id, refs} ->
+        durable =
+          match?(
+            {:value, {event, _}} when event in @durable,
+            :gb_trees.lookup(id, outbox.entries)
+          )
+
+        outbox = %{outbox | refs: refs, entries: :gb_trees.delete_any(id, outbox.entries)}
+        if durable, do: save(outbox)
+        outbox
     end
   end
 
@@ -67,6 +99,41 @@ defmodule ClaudeControlPlaneRunner.Outbox do
     |> Enum.map(fn {_id, _event, payload} -> payload["job_id"] end)
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
+  end
+
+  defp load(nil), do: []
+
+  # A missing or unreadable file starts empty: no reason not to start.
+  defp load(path) do
+    with {:ok, binary} <- File.read(path),
+         {:ok, entries} <- decode(binary) do
+      entries
+    else
+      _missing_or_corrupt -> []
+    end
+  end
+
+  defp decode(binary) do
+    case :erlang.binary_to_term(binary, [:safe]) do
+      entries when is_list(entries) -> {:ok, entries}
+      _other -> :error
+    end
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp save(%{path: nil}), do: :ok
+
+  defp save(%{path: path} = outbox) do
+    durable =
+      for {_id, {event, _} = entry} <- :gb_trees.to_list(outbox.entries),
+          event in @durable,
+          do: entry
+
+    temp = path <> ".tmp"
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(temp, :erlang.term_to_binary(durable))
+    File.rename!(temp, path)
   end
 
   defp trim(outbox) do

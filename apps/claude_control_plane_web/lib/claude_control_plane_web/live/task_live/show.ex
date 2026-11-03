@@ -9,7 +9,14 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   use ClaudeControlPlaneWeb, :live_view
 
   import ClaudeControlPlaneWeb.JobComponents,
-    only: [job_event: 1, typing: 1, format_cost: 1, format_duration: 1]
+    only: [
+      job_event: 1,
+      steps: 1,
+      timeline_items: 2,
+      typing: 1,
+      format_cost: 1,
+      format_duration: 1
+    ]
 
   import ClaudeControlPlaneWeb.TaskComponents
 
@@ -34,7 +41,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
     {:ok,
      socket
      |> assign(page_title: task.title, task: task, live_job_id: nil, timelines: %{})
-     |> assign(raw_artifacts: MapSet.new(), typing: nil)
+     |> assign(raw_artifacts: MapSet.new(), typing: nil, step_filters: %{})
      |> load_decisions()
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
      |> follow_running_job()}
@@ -189,6 +196,10 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
     {:noreply, assign(socket, timelines: timelines)}
   end
+
+  def handle_event("filter_steps", %{"job" => job_id, "filter" => filter}, socket)
+      when filter in ~w(all agent tools errors),
+      do: {:noreply, update(socket, :step_filters, &Map.put(&1, job_id, filter))}
 
   defp instructions(params), do: get_in(params, ["decision", "instructions"])
 
@@ -490,6 +501,14 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                   {row.stage.name}
                 </h2>
                 <.stage_state_badge state={row.state} data-testid={"stage-state-#{row.stage.key}"} />
+                <.badge
+                  :if={row.stage.group not in [nil, ""]}
+                  size="xs"
+                  variant="outline"
+                  color="gray"
+                  label={"em paralelo · #{row.stage.group}"}
+                  data-testid={"stage-group-#{row.stage.key}"}
+                />
                 <span :if={length(row.runs) > 1} class="text-xs text-gray-500 dark:text-gray-400">
                   {length(row.runs)} tentativas
                 </span>
@@ -518,6 +537,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                   typing={@typing}
                   streams={@streams}
                   steps={run.job && Map.get(@timelines, run.job.id)}
+                  steps_filter={(run.job && Map.get(@step_filters, run.job.id)) || "all"}
                   raw_artifact={MapSet.member?(@raw_artifacts, run.id)}
                   workspace_slug={@current_scope.workspace.slug}
                 />
@@ -726,6 +746,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   attr :live, :boolean, required: true
   attr :streams, :any, required: true
   attr :steps, :list, default: nil
+  attr :steps_filter, :string, default: "all"
   attr :raw_artifact, :boolean, default: false
   attr :typing, :string, default: nil
   attr :workspace_slug, :string, required: true
@@ -793,6 +814,8 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
         <div
           :if={plain_result?(@run)}
+          id={"result-#{@run.id}"}
+          phx-hook="Highlight"
           class="prose prose-sm max-h-[32rem] max-w-none overflow-auto prose-h1:text-xl prose-h2:text-lg prose-h3:text-base rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950"
           data-testid={"stage-run-result-#{@run.key}-#{@run.attempt}"}
         >
@@ -838,6 +861,8 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
           </div>
           <div
             :if={!@raw_artifact}
+            id={"artifact-#{@run.id}"}
+            phx-hook="Highlight"
             class="prose prose-sm max-h-[40rem] max-w-none overflow-auto prose-h1:text-xl prose-h2:text-lg prose-h3:text-base rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950"
             data-testid={"stage-run-artifact-#{@run.key}-#{@run.attempt}"}
           >
@@ -873,13 +898,32 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
               class="size-4"
             /> Passo a passo do agente
           </button>
-          <ol
+          <div :if={@steps} class="mt-2 flex flex-wrap gap-1">
+            <.button
+              :for={
+                {filter, label} <- [
+                  {"all", "Tudo"},
+                  {"agent", "Agente"},
+                  {"tools", "Ferramentas"},
+                  {"errors", "Erros"}
+                ]
+              }
+              size="xs"
+              variant={if @steps_filter == filter, do: "solid", else: "ghost"}
+              color="gray"
+              phx-click="filter_steps"
+              phx-value-job={@run.job.id}
+              phx-value-filter={filter}
+              data-testid={"stage-run-steps-filter-#{@run.key}-#{@run.attempt}-#{filter}"}
+            >
+              {label}
+            </.button>
+          </div>
+          <.steps
             :if={@steps}
-            class="mt-3 space-y-3"
-            data-testid={"stage-run-steps-#{@run.key}-#{@run.attempt}"}
-          >
-            <.job_event :for={event <- @steps} id={"step-#{event.id}"} event={event} />
-          </ol>
+            items={timeline_items(@steps, @steps_filter)}
+            id={"#{@run.key}-#{@run.attempt}"}
+          />
         </div>
       </div>
     </div>

@@ -35,6 +35,7 @@ defmodule ClaudeControlPlaneRunner.DoctorTest do
         config: {:ok, config(%{root: root})},
         executable: {:ok, @fake},
         api_key: nil,
+        gh: nil,
         workdir: Path.join(dir, "workdir"),
         reach: fn _url -> {:error, "connection refused"} end
       )
@@ -50,6 +51,39 @@ defmodule ClaudeControlPlaneRunner.DoctorTest do
     assert detail =~ "1 diretório"
     assert %{status: :ok} = check(checks, "Disco")
     assert %{status: :error, detail: "connection refused" <> _} = check(checks, "Plataforma")
+    assert %{status: :warning, detail: detail} = check(checks, "GitHub CLI (gh)")
+    assert detail =~ "entrega em PR"
+  end
+
+  test "the GitHub CLI, when there is one, says whether it is signed in", %{tmp_dir: dir} do
+    gh = Path.join(dir, "gh")
+    File.write!(gh, "#!/bin/sh\necho 'Logged in to github.com account ana'\n")
+    File.chmod!(gh, 0o755)
+
+    checks =
+      Doctor.run(
+        config: {:error, :not_found},
+        executable: {:ok, @fake},
+        workdir: dir,
+        gh: gh,
+        reach: fn _url -> :ok end
+      )
+
+    assert %{status: :ok, detail: "Logged in to github.com account ana"} =
+             check(checks, "GitHub CLI (gh)")
+
+    File.write!(gh, "#!/bin/sh\necho 'You are not logged in' >&2; exit 1\n")
+
+    checks =
+      Doctor.run(
+        config: {:error, :not_found},
+        executable: {:ok, @fake},
+        workdir: dir,
+        gh: gh,
+        reach: fn _ -> :ok end
+      )
+
+    assert %{status: :warning, detail: "sem login" <> _} = check(checks, "GitHub CLI (gh)")
   end
 
   test "a machine without the CLI, credentials or root says so", %{tmp_dir: dir} do

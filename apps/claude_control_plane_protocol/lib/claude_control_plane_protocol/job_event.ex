@@ -19,6 +19,9 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
     * `"result"` — the run ended: `text`, `is_error`, `cost_usd`,
       `duration_ms`, `num_turns` and, when the run was given a JSON Schema,
       `structured_output`.
+
+  The first event of each of the agent's messages also carries the turn's
+  `usage`: `%{"input", "output"}` tokens (input counts the cache too).
   """
 
   @enforce_keys [:type, :data]
@@ -84,9 +87,13 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
     ]
   end
 
-  def from_stream_json(%{"type" => "assistant", "message" => %{"content" => content}})
-      when is_list(content),
-      do: Enum.flat_map(content, &assistant_block/1)
+  def from_stream_json(%{"type" => "assistant", "message" => %{"content" => content} = message})
+      when is_list(content) do
+    case Enum.flat_map(content, &assistant_block/1) do
+      [first | rest] -> [put_usage(first, message["usage"]) | rest]
+      [] -> []
+    end
+  end
 
   def from_stream_json(%{"type" => "user", "message" => %{"content" => content}})
       when is_list(content),
@@ -125,6 +132,26 @@ defmodule ClaudeControlPlaneProtocol.JobEvent do
       do: text
 
   def text_delta(_line), do: nil
+
+  # The turn's tokens: everything read (fresh, from the cache, written to it)
+  # and written.
+  defp put_usage(event, %{} = usage) do
+    input =
+      ~w(input_tokens cache_read_input_tokens cache_creation_input_tokens)
+      |> Enum.map(&(usage[&1] || 0))
+      |> Enum.sum()
+
+    %{
+      event
+      | data:
+          Map.put(event.data, "usage", %{
+            "input" => input,
+            "output" => usage["output_tokens"] || 0
+          })
+    }
+  end
+
+  defp put_usage(event, _usage), do: event
 
   @doc "The wire form, without the job id and sequence the runner adds."
   @spec to_map(t()) :: %{String.t() => term()}

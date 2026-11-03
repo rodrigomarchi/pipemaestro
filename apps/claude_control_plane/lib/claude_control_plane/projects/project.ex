@@ -8,6 +8,10 @@ defmodule ClaudeControlPlane.Projects.Project do
   A task started in the directory keeps a `snapshot/1` of it, so editing the
   project never changes a task already running. Prompts reach it as
   `{{projeto.*}}` (`ClaudeControlPlane.Pipelines.Prompt`).
+
+  With a `github_repo` (`dono/repo`) and a `trigger_label`, a GitHub webhook
+  starts a task with the `trigger_pipeline` when an issue of the repository
+  gets the label, on behalf of `trigger_user` (who set the trigger up).
   """
   use ClaudeControlPlane.Schema
 
@@ -26,6 +30,10 @@ defmodule ClaudeControlPlane.Projects.Project do
           copy_paths: [String.t()],
           copy_paths_text: String.t() | nil,
           notes: String.t() | nil,
+          github_repo: String.t() | nil,
+          trigger_label: String.t() | nil,
+          trigger_pipeline_id: Ecto.UUID.t() | nil,
+          trigger_user_id: Ecto.UUID.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
@@ -43,6 +51,10 @@ defmodule ClaudeControlPlane.Projects.Project do
     field :copy_paths, {:array, :string}, default: []
     field :copy_paths_text, :string, virtual: true
     field :notes, :string
+    field :github_repo, :string
+    field :trigger_label, :string
+    field :trigger_pipeline_id, :binary_id
+    field :trigger_user_id, :binary_id
 
     belongs_to :workspace, Workspace
 
@@ -64,8 +76,15 @@ defmodule ClaudeControlPlane.Projects.Project do
       :lint_command,
       :copy_paths,
       :copy_paths_text,
-      :notes
+      :notes,
+      :github_repo,
+      :trigger_label,
+      :trigger_pipeline_id
     ])
+    |> update_change(:github_repo, &String.downcase(String.trim(&1)))
+    |> validate_format(:github_repo, ~r{^[\w.-]+/[\w.-]+$}, message: "use dono/repositório")
+    |> validate_length(:trigger_label, max: 50)
+    |> validate_trigger()
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome ao projeto")
     |> validate_required([:directory], message: "informe o diretório")
@@ -96,6 +115,16 @@ defmodule ClaudeControlPlane.Projects.Project do
   end
 
   # A blank text (cast to nil) clears the paths; no text leaves them alone.
+  # A trigger needs the repository, the label and the pipeline together.
+  defp validate_trigger(changeset) do
+    if get_field(changeset, :github_repo) || get_field(changeset, :trigger_label),
+      do:
+        validate_required(changeset, [:github_repo, :trigger_label, :trigger_pipeline_id],
+          message: "o gatilho do GitHub precisa do repositório, da label e do pipeline"
+        ),
+      else: changeset
+  end
+
   defp parse_copy_paths(changeset) do
     case changeset.params do
       %{"copy_paths_text" => text} ->
