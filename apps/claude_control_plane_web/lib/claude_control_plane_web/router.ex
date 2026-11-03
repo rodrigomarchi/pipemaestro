@@ -18,6 +18,8 @@ defmodule ClaudeControlPlaneWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/login", LoginLive
+    live "/app", BoardLive
   end
 
   # Other scopes may use custom stacks.

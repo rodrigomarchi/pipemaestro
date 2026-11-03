@@ -22,8 +22,6 @@ defmodule ClaudeControlPlaneWeb.MixProject do
           ClaudeControlPlaneWeb,
           ClaudeControlPlaneWeb.Application,
           ClaudeControlPlaneWeb.ConnCase,
-          ClaudeControlPlaneWeb.CoreComponents,
-          ClaudeControlPlaneWeb.Layouts,
           ClaudeControlPlaneWeb.Telemetry
         ]
       ],
@@ -70,18 +68,12 @@ defmodule ClaudeControlPlaneWeb.MixProject do
        app: false,
        compile: false,
        depth: 1},
-      {:daisyui,
-       github: "saadeghi/daisyui",
-       tag: "v5.5.20",
-       sparse: "packages/bundle",
-       app: false,
-       compile: false,
-       depth: 1},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:claude_control_plane, in_umbrella: true},
       {:jason, "~> 1.2"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      {:petal_components, "~> 4.17"}
     ]
   end
 

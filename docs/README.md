@@ -17,3 +17,14 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 |---|---|---|
 | 01 | [Visão de arquitetura](plano/01-visao-arquitetura.md) | Rascunho v0.1 — 03/11/2026 |
 | 02 | [Contexto de discovery](plano/02-contexto-discovery.md) | v0.1 — 03/11/2026 |
+
+## Decisões (ADR)
+
+| # | Decisão | Status |
+|---|---|---|
+| 0001 | [Biblioteca de componentes de UI: petal_components](adr/0001-biblioteca-de-componentes.md) | Aceita |
+
+## Guias
+
+- [Phoenix 1.8](guias/phoenix.md)
+- [UI com petal_components](guias/ui-petal.md)

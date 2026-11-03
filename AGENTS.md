@@ -58,6 +58,9 @@ every target.
 - **Coverage exclusions are for code that cannot run in a test** (macro modules,
   `Application`, generated components) — never to get under the threshold.
 - Phoenix 1.8 / LiveView idioms: [`docs/guias/phoenix.md`](docs/guias/phoenix.md).
+- **UI is petal_components.** Use a Petal component before raw Tailwind markup, and
+  check its real attrs first: [`docs/guias/ui-petal.md`](docs/guias/ui-petal.md).
+- **Verify screens visually**, light and dark, before calling UI work done.
 
 ## Documentation
 

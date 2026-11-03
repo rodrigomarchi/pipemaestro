@@ -79,8 +79,8 @@ defmodule ClaudeControlPlaneWeb do
     quote do
       # HTML escaping functionality
       import Phoenix.HTML
-      # Core UI components
-      import ClaudeControlPlaneWeb.CoreComponents
+      # UI components (petal_components)
+      use PetalComponents
 
       # Common modules used in templates
       alias ClaudeControlPlaneWeb.Layouts

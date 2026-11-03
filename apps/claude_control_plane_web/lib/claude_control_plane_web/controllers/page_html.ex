@@ -1,9 +1,5 @@
 defmodule ClaudeControlPlaneWeb.PageHTML do
-  @moduledoc """
-  This module contains pages rendered by PageController.
-
-  See the `page_html` directory for all templates available.
-  """
+  @moduledoc "Templates rendered by `ClaudeControlPlaneWeb.PageController`."
   use ClaudeControlPlaneWeb, :html
 
   embed_templates "page_html/*"
