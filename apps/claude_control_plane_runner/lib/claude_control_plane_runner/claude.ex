@@ -99,16 +99,18 @@ defmodule ClaudeControlPlaneRunner.Claude do
   Environment changes for `job`'s CLI process: the workspace's secrets the
   job carries (`env`), never written anywhere. The nested-session markers are
   removed (a runner started from inside an agent session would otherwise make
-  the CLI refuse to run), and `CP_ARTIFACT_PATH` tells hooks and scripts where
-  the stage's artifact goes. With a `telemetry_endpoint`, the CLI's
-  OpenTelemetry goes there.
+  the CLI refuse to run), and so is Burrito's `__BURRITO` (with it, any Elixir
+  VM the agent starts that loads the runner app would boot as the runner's CLI).
+  `CP_ARTIFACT_PATH` tells hooks and scripts where the stage's artifact goes,
+  and is unset for a job without one, so the runner's own never leaks in. With a
+  `telemetry_endpoint`, the CLI's OpenTelemetry goes there.
   """
   @spec env(Job.t(), String.t() | nil) :: [{charlist(), charlist() | false}]
   def env(%Job{} = job, telemetry_endpoint \\ nil) do
     artifact =
       if job.artifact_path,
         do: [{~c"CP_ARTIFACT_PATH", String.to_charlist(job.artifact_path)}],
-        else: []
+        else: [{~c"CP_ARTIFACT_PATH", false}]
 
     api_key =
       case System.get_env(@api_key_env) do
@@ -122,7 +124,8 @@ defmodule ClaudeControlPlaneRunner.Claude do
 
     [
       {~c"CLAUDECODE", false},
-      {~c"CLAUDE_CODE_ENTRYPOINT", false}
+      {~c"CLAUDE_CODE_ENTRYPOINT", false},
+      {~c"__BURRITO", false}
       | artifact ++ api_key ++ secrets ++ telemetry(job, telemetry_endpoint)
     ]
   end

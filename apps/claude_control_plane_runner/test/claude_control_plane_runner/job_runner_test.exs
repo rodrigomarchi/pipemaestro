@@ -732,8 +732,9 @@ defmodule ClaudeControlPlaneRunner.JobRunnerTest do
     test "env unsets the nested-session markers and gives the artifact path" do
       env = Claude.env(%Job{id: "j", prompt: "p", artifact_path: ".cp/a.md"})
       assert {~c"CLAUDECODE", false} in env
+      assert {~c"__BURRITO", false} in env
       assert {~c"CP_ARTIFACT_PATH", ~c".cp/a.md"} in env
-      refute Enum.any?(Claude.env(job("j", "p")), &match?({~c"CP_ARTIFACT_PATH", _}, &1))
+      assert {~c"CP_ARTIFACT_PATH", false} in Claude.env(job("j", "p"))
     end
 
     test "the runner's own API key goes to the CLI, and the agent says how it signs in" do
