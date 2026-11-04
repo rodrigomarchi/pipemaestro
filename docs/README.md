@@ -38,6 +38,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0013 | [Distribuição e entrega no git e no GitHub](adr/0013-distribuicao-e-entrega-no-git.md) | Aceita |
 | 0014 | [As pendências do roadmap: paralelo, webhook, outbox, prazos e acabamentos](adr/0014-pendencias-do-roadmap.md) | Aceita |
 | 0015 | [Auditoria da execução do claude](adr/0015-auditoria-da-execucao.md) | Aceita |
+| 0016 | [Linha do tempo compacta: faixas de ícones e painéis](adr/0016-linha-do-tempo-compacta.md) | Aceita |
 
 ## Specs
 

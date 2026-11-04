@@ -114,12 +114,14 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
      contra o início da tarefa e contra a etapa anterior.
    - A tela mostra os arquivos alterados e o diff por etapa.
    - Num diretório sem git: só os arquivos novos e modificados.
-3. **✓ Linha do tempo rica** (ADR 0007; faltam o agrupamento, os tokens por turno e os
-   filtros).
-   - Ferramentas mostradas pelo tipo: o comando do Bash com a saída colapsável, o Edit
-     como diff, o Read como caminho, as buscas com contagem.
-   - Pensamento oculto, agrupamento de chamadas consecutivas, custo e tokens por turno,
-     filtros por tipo.
+3. **✓ Linha do tempo rica** (ADR 0007; tokens por turno e filtros no
+   [ADR 0014](../adr/0014-pendencias-do-roadmap.md); faixas de ícones no
+   [ADR 0016](../adr/0016-linha-do-tempo-compacta.md)).
+   - Ferramentas mostradas pelo tipo: o comando do Bash com a saída, o Edit como diff,
+     o Read como caminho, as buscas com contagem.
+   - Pensamento oculto, custo e tokens por turno, filtros por tipo.
+   - Eventos sem texto seguidos viram uma faixa de ícones com tooltip, que abre o
+     conteúdo completo num painel; as respostas do agente ficam em largura total.
 4. **✓ Texto do agente em tempo real** ([ADR 0010](../adr/0010-conversa-com-a-tarefa.md)): `--include-partial-messages` para ver a resposta
    sendo escrita, com limite de frequência no envio.
 5. **✓ Conversa contínua** (ADR 0010).
