@@ -46,6 +46,22 @@
         </div>
       </div>
 
+      <%!-- The product itself: the board, in a browser window --%>
+      <div
+        class="relative mx-auto mt-16 max-w-6xl motion-safe:animate-[landing-rise_0.9s_ease-out_both] lg:[perspective:2400px]"
+        data-testid="hero-screenshot"
+      >
+        <div
+          class="absolute -inset-x-4 -inset-y-6 -z-10 rounded-[2rem] bg-gradient-to-tr from-primary-500/30 via-secondary-400/20 to-primary-300/30 blur-3xl dark:from-primary-500/25 dark:via-secondary-500/15 dark:to-primary-700/25"
+          aria-hidden="true"
+        />
+        <.landing_shot
+          shot={hd(@shots)}
+          loading="eager"
+          class="lg:origin-top lg:[transform:rotateX(6deg)] lg:motion-reduce:[transform:none]"
+        />
+      </div>
+
       <%!-- The journey of a task, at a glance --%>
       <div
         class="mx-auto mt-16 max-w-5xl rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-xl shadow-primary-500/5 backdrop-blur sm:p-8 dark:border-gray-800 dark:bg-gray-900/80"
@@ -79,6 +95,48 @@
             />
           </li>
         </ol>
+      </div>
+    </div>
+  </section>
+
+  <%!-- A tour of the product, one real screen per block --%>
+  <section
+    id="produto"
+    class="scroll-mt-16 border-t border-gray-200 py-24 dark:border-gray-800"
+    data-testid="product-tour"
+  >
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">O produto</p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          Telas de verdade, de um time de verdade
+        </h2>
+        <p class="mt-4 text-lg text-gray-600 dark:text-gray-300">
+          Uma loja online com cinco tarefas no pipeline "Correção de bug": duas prontas, duas
+          rodando e uma esperando uma decisão.
+        </p>
+      </div>
+
+      <div class="mt-20 space-y-24 lg:space-y-32">
+        <div
+          :for={{shot, index} <- Enum.with_index(@shots)}
+          class="grid items-center gap-10 lg:grid-cols-12 lg:gap-16"
+          data-testid={"tour-#{shot.name}"}
+        >
+          <div class={["lg:col-span-4", rem(index, 2) == 1 && "lg:order-last"]}>
+            <.badge color="primary" variant="soft" size="md">
+              {String.pad_leading(Integer.to_string(index + 1), 2, "0")}
+            </.badge>
+            <h3 class="mt-4 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+              {shot.title}
+            </h3>
+            <p class="mt-3 text-base leading-7 text-gray-600 dark:text-gray-300">{shot.text}</p>
+          </div>
+          <div class="min-w-0 lg:col-span-8">
+            <%!-- The hero already loads the first screen: same file, no reason to wait. --%>
+            <.landing_shot shot={shot} loading={if index == 0, do: "eager", else: "lazy"} />
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -381,16 +439,10 @@
             {icon, title, text} <- [
               {"hero-squares-2x2", "Pipelines prontos e editáveis",
                "Templates para bug, funcionalidade, refatoração e revisão, com um editor de prompt rico."},
-              {"hero-server-stack", "Runners na sua máquina",
-               "Um binário que se conecta para fora. Várias tarefas em paralelo, cada uma no seu worktree."},
               {"hero-document-text", "Artefatos e PR",
                "Cada etapa deixa um Markdown e um commit; o PR abre em rascunho e fica pronto no fim."},
-              {"hero-hand-raised", "Decisões quando importa",
-               "As etapas seguem sozinhas. A tarefa só para quando precisa de ajuda de verdade."},
               {"hero-shield-check", "Gates objetivos",
-               "Quem decide se uma etapa passou são os testes e as regras, não a opinião do agente."},
-              {"hero-chart-bar", "Uso e auditoria",
-               "Custo, tokens, cache, ferramentas e tempo de cada execução, por tarefa e por workspace."}
+               "Quem decide se uma etapa passou são os testes e as regras, não a opinião do agente."}
             ]
           }
           variant="outline"

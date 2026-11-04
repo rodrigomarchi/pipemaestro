@@ -36,6 +36,13 @@ defmodule PipeMaestroWeb.Layouts do
         <nav class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <.brand />
           <div class="hidden items-center gap-8 text-sm font-medium text-gray-600 md:flex dark:text-gray-300">
+            <a
+              href="#produto"
+              class="hover:text-gray-900 dark:hover:text-white"
+              data-testid="nav-product"
+            >
+              Produto
+            </a>
             <a href="#como-funciona" class="hover:text-gray-900 dark:hover:text-white">
               Como funciona
             </a>
