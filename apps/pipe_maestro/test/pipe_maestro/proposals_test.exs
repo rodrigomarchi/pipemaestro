@@ -5,7 +5,7 @@ defmodule PipeMaestro.ProposalsTest do
 
   alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Runners, Tasks}
   alias PipeMaestro.Pipelines.{Prompt, Stage}
-  alias PipeMaestro.Proposals.ImproveKind
+  alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind}
   alias PipeMaestroProtocol.Job, as: WireJob
 
   @directories [%{"name" => "app", "git" => true}, %{"name" => "notas", "git" => false}]
@@ -359,6 +359,121 @@ defmodule PipeMaestro.ProposalsTest do
         Proposals.request("decision", ctx.user, ctx.workspace, %{"task_id" => ctx.task.id})
 
       assert {:error, _} = Proposals.result(succeed(ctx, job, %{"acao" => "pular"}))
+    end
+  end
+
+  describe "analysis" do
+    setup ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça A", "max_attempts" => 1},
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+          ]
+        })
+
+      {:ok, task} =
+        Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Corrigir o login",
+          "prompt" => "O botão não responde",
+          "pipeline_id" => pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+
+      stage_job = hd(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, stage_job.id)
+
+      {:ok, _} =
+        Jobs.finish_job(ctx.runner, stage_job.id, %{
+          "status" => "failed",
+          "exit_code" => 1,
+          "error" => "mix test: 1 failure em LoginTest",
+          "changes" => %{"patch" => "diff --git a/login.ex b/login.ex\n+timeout"}
+        })
+
+      task = Tasks.get_task!(ctx.workspace, task.id)
+
+      # The automatic analysis the failure asked for, if any: each test asserts it.
+      job =
+        case Map.get(task, :decision_analysis_job_id) do
+          nil -> nil
+          id -> Jobs.get_job!(ctx.workspace, id)
+        end
+
+      %{task: task, job: job}
+    end
+
+    defp analysis!(%{job: job}) do
+      assert %PipeMaestro.Jobs.Job{} = job, "expected the failure to ask for an analysis"
+      job
+    end
+
+    @analysis %{
+      "diagnostico" => "O **timeout** do login é curto.",
+      "perguntas" => [
+        %{
+          "titulo" => "Correção",
+          "pergunta" => "Como corrigir a falha?",
+          "multipla" => false,
+          "opcoes" => [
+            %{"rotulo" => "Desistir", "descricao" => "Cancela", "recomendada" => false},
+            %{"rotulo" => "Tentar sem falha", "descricao" => "Timeout", "recomendada" => true}
+          ]
+        }
+      ]
+    }
+
+    test "is a kind of its own, listed and filtered with the others", ctx do
+      assert "analysis" in Proposals.kinds()
+      assert Proposals.kind_module("analysis") == AnalysisKind
+      assert AnalysisKind.label() == "Análise de falha"
+      assert AnalysisKind.icon() == "hero-magnifying-glass"
+
+      job = analysis!(ctx)
+
+      assert [job] = Proposals.list(ctx.workspace, %{"kind" => "analysis"})
+      assert job.id == job.id
+    end
+
+    test "studies the paused task in a disposable worktree when the runner can", ctx do
+      job = analysis!(ctx)
+      assert Proposals.kind(job) == "analysis"
+      assert %WireJob{scratch: true, directory: "app"} = wire!(job)
+      assert job.prompt =~ "O botão não responde"
+      assert job.prompt =~ "1 failure em LoginTest"
+      assert job.prompt =~ "+timeout"
+      assert job.context["max_budget_usd"] == 1
+      assert job.context["timeout_ms"] == 10 * 60 * 1000
+
+      schema = job.context["output_schema"]
+      assert schema == AnalysisKind.schema()
+      assert schema["properties"]["perguntas"] == Prompt.questions_schema()
+      assert Map.has_key?(schema["properties"], "diagnostico")
+    end
+
+    test "the result is a diagnosis and valid questions", ctx do
+      job = analysis!(ctx)
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, @analysis))
+      assert result.task_id == ctx.task.id
+      assert result.diagnosis =~ "timeout"
+      assert [question] = result.questions
+      assert hd(question["opcoes"])["rotulo"] == "Tentar sem falha"
+    end
+
+    test "an answer without valid questions is refused", ctx do
+      job = analysis!(ctx)
+      output = %{"diagnostico" => "x", "perguntas" => [%{"pergunta" => "sem opções"}]}
+      assert {:error, _} = Proposals.result(succeed(ctx, job, output))
+    end
+
+    test "is only current for the pause it was asked about", ctx do
+      job = analysis!(ctx)
+      input = Proposals.input(job)
+      assert AnalysisKind.current?(input, ctx.task)
+
+      {:ok, task} = Tasks.retry_stage(ctx.task, "de novo", by: ctx.user)
+      refute AnalysisKind.current?(input, Tasks.get_task!(ctx.workspace, task.id))
     end
   end
 

@@ -82,6 +82,82 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
     assert has_element?(view, "[data-testid=no-decisions]")
   end
 
+  test "each task's questionnaire is answered from the list", ctx do
+    task = blocked_task(ctx, "Tela branca")
+    other = blocked_task(ctx, "Login lento")
+    asked = questions_task(ctx, "Menu quebrado")
+
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
+
+    assert has_element?(view, "[data-testid=questionnaire-#{asked.id}]")
+
+    assert has_element?(
+             view,
+             "[data-testid=question-0-#{asked.id}]",
+             "Em qual navegador reproduz?"
+           )
+
+    assert has_element?(view, "[data-testid=question-0-option-0-#{asked.id}]", "Safari 17")
+    assert has_element?(view, "[data-testid=question-0-other-#{asked.id}]")
+    assert has_element?(view, "[data-testid=questionnaire-submit-#{asked.id}][disabled]")
+    # A block with nothing to ask has the manual decision, whatever the analysis does.
+    assert has_element?(view, "[data-testid=decision-form-#{task.id}]")
+    assert has_element?(view, "[data-testid=decision-form-#{other.id}]")
+
+    view
+    |> element("[data-testid=questionnaire-form-#{asked.id}]")
+    |> render_change(%{"answers" => %{"0" => %{"escolhas" => [], "outro" => "No Firefox"}}})
+
+    refute has_element?(view, "[data-testid=questionnaire-submit-#{asked.id}][disabled]")
+
+    view |> element("[data-testid=questionnaire-form-#{asked.id}]") |> render_submit()
+    assert has_element?(view, "[data-testid=questionnaire-review-#{asked.id}]", "No Firefox")
+    view |> element("[data-testid=questionnaire-confirm-#{asked.id}]") |> render_click()
+
+    refute has_element?(view, "[data-testid=decision-#{asked.id}]")
+    assert has_element?(view, "[data-testid=decision-#{task.id}]")
+
+    run = List.last(Tasks.get_task!(ctx.workspace, asked.id).stage_runs)
+    assert %{"respostas" => [%{"escolhas" => [], "outro" => "No Firefox"}]} = run.answers
+  end
+
+  defp questions_task(ctx, title) do
+    {:ok, task} =
+      Tasks.create_task(ctx.user, ctx.workspace, %{
+        "title" => title,
+        "prompt" => "faça",
+        "pipeline_id" => ctx.pipeline.id,
+        "runner_id" => ctx.runner.id,
+        "directory" => "app"
+      })
+
+    job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+    {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+    {:ok, _} =
+      Jobs.finish_job(ctx.runner, job.id, %{
+        "status" => "succeeded",
+        "exit_code" => 0,
+        "structured_output" => %{
+          "status" => "bloqueado",
+          "resumo" => "Uma dúvida",
+          "perguntas" => [
+            %{
+              "titulo" => "Navegador",
+              "pergunta" => "Em qual navegador reproduz?",
+              "multipla" => false,
+              "opcoes" => [
+                %{"rotulo" => "Chrome", "descricao" => "", "recomendada" => false},
+                %{"rotulo" => "Safari 17", "descricao" => "", "recomendada" => true}
+              ]
+            }
+          ]
+        }
+      })
+
+    Tasks.get_task!(ctx.workspace, task.id)
+  end
+
   test "shows who decides and by when, passes it on, and filters mine", ctx do
     task = blocked_task(ctx, "Tela branca")
     colleague = member_fixture(ctx.workspace, %{name: "Bia"})
