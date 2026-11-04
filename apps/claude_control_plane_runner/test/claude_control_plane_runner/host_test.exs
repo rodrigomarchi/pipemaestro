@@ -12,7 +12,14 @@ defmodule ClaudeControlPlaneRunner.HostTest do
     assert "gpu" in hello.labels
     assert Host.os() in hello.labels
     assert hello.capacity == 3
-    assert Host.runner_version() =~ ~r/^\d+\.\d+\.\d+/
+    assert hello.runner_version == Host.runner_version()
+  end
+
+  test "the runner's version is its build's: a release, a development build or dev+commit" do
+    assert Host.runner_version() == ClaudeControlPlaneRunner.Version.version()
+
+    assert Host.runner_version() =~
+             ~r/^(\d{4}-\d{2}-\d{2}\.\d{2,}(\+dev\.[0-9a-z]+)?|dev\+[0-9a-z]+)$/
   end
 
   test "defaults the capacity to the scheduler count" do

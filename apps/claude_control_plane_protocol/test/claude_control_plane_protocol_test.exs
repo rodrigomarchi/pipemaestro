@@ -41,6 +41,19 @@ defmodule ClaudeControlPlaneProtocolTest do
       assert Hello.from_map(wire) == {:ok, hello}
     end
 
+    test "runner_version: a release, a development build or an older form, up to 120 bytes" do
+      for version <- ["2026-11-04.01", "2026-11-04.12+dev.abc1234", "dev+abc1234", "0.1.0"] do
+        assert {:ok, %Hello{runner_version: ^version}} =
+                 Hello.new(Map.put(@valid, :runner_version, version))
+      end
+
+      assert {:ok, _hello} =
+               Hello.new(Map.put(@valid, :runner_version, String.duplicate("a", 120)))
+
+      assert {:error, "runner_version" <> _} =
+               Hello.new(Map.put(@valid, :runner_version, String.duplicate("a", 121)))
+    end
+
     test "rejects missing or malformed fields" do
       assert {:error, "capacity" <> _} = Hello.new(Map.put(@valid, :capacity, 0))
       assert {:error, "hostname" <> _} = Hello.new(Map.delete(@valid, :hostname))
