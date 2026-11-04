@@ -55,7 +55,9 @@ pendentes.
    no servidor com o `lumis` e um pacote por linguagem, peso que não se paga aqui.
 7. **Linha do tempo:**
    - tokens de cada turno do agente;
-   - leituras e buscas seguidas agrupadas ("Leu 3 arquivos e fez 1 busca");
+   - leituras e buscas seguidas agrupadas ("Leu 3 arquivos e fez 1 busca"), depois
+     substituídas pelas faixas de ícones do
+     [ADR 0017](0017-linha-do-tempo-compacta.md);
    - filtros (tudo, agente, ferramentas, erros) no passo a passo.
 8. **Pequenos complementos:**
    - num diretório sem git, a etapa mostra os arquivos novos, alterados e removidos

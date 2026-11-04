@@ -11,6 +11,8 @@
 #     "bloqueado" when asked for structured output
 #   a prompt with "[digitando]" writes its answer in partial message lines
 #     first, as `--include-partial-messages` does
+#   a prompt with "[gotejando]" waits 3 s after the first tool result, then
+#     runs one more tool (a Bash call and its result) before answering
 #
 # Its lines have what a real run reports for auditing (session, tools, MCP
 # servers, each message's id, model and tokens, the permission behind each
@@ -53,6 +55,11 @@ fi
 
 case "$prompt" in
   *"[lento]"*) sleep 30 ;;
+  *"[gotejando]"*)
+    sleep 3
+    echo '{"type":"assistant","message":{"id":"msg_3","model":"fake-model","usage":{"input_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":3},"content":[{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"ls","description":"Lista o workdir"}}]}}'
+    echo '{"type":"user","tool_result_meta":[{"id":"toolu_2","permission_decision":{"decision":"accept","source":"config"}}],"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_2","content":"fake-claude.txt","is_error":false}]}}'
+    ;;
 esac
 
 case "$prompt" in

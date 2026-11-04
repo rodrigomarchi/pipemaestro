@@ -7,6 +7,7 @@
  * @flow F [done] A paused task shows in the Decisions page and the menu's counter, and every task on the board, by state
  * @flow G [done] A project of a directory sets up the worktree with its command, and a stage's gate runs the project's test command after the agent
  * @flow D [done] The runner prepares a new worktree with the directory's dependencies, and removes it when the member asks, keeping the branch
+ * @flow H [done] A finished stage's steps are strips of icons that open their panels, filtered by kind (thinking shows only the model's thoughts)
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -17,6 +18,7 @@ import { waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
+import { Timeline } from "../pages/JobsPage";
 import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
@@ -101,6 +103,29 @@ test.describe("Task pipeline", () => {
     await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
     await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded");
+
+    // Flow H: a finished stage's steps; an icon opens its panel, another
+    // switches, the same closes; the reasoning filter keeps only thinking.
+    const steps = new Timeline(await tasks.openSteps("triagem", 1));
+    await expect(steps.icons()).toHaveCount(4);
+    await steps.toggle(3);
+    await expect(steps.panel(3)).toBeVisible();
+    await steps.toggle(1);
+    await expect(steps.panel(1)).toBeVisible();
+    await expect(steps.panel(3)).toBeHidden();
+    await shot(steps.scope, "task-steps-panel-open");
+    await steps.toggle(1);
+    await expect(steps.panel(1)).toBeHidden();
+
+    await tasks.filterSteps("triagem", 1, "thinking");
+    await expect(steps.icons()).toHaveCount(1);
+    await expect(steps.icon(2)).toHaveAttribute("data-type", "thinking");
+    await expect(steps.texts()).toHaveCount(0);
+    await steps.toggle(2);
+    await expect(steps.panel(2)).toBeVisible();
+    await expect(steps.panel(2)).toContainText("não mostra o raciocínio");
+    await shot(steps.scope, "task-steps-thinking");
+    await tasks.filterSteps("triagem", 1, "all");
 
     // Flow D: the worktree was prepared, and goes when asked.
     await expect(app.page.getByTestId("stage-run-setup-triagem-1")).toContainText("copiado: deps");

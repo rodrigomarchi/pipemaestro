@@ -43,4 +43,8 @@ A escolha e as alternativas avaliadas estão no
   é SVG renderizado no servidor e não precisa de nada.
 - `mdex` e `eqrcode` são dependências opcionais do Petal e não estão instaladas: os
   componentes `Chat.markdown` e `<.qr_code>` não funcionam sem elas.
+- Um componente local com o nome de um do Petal colide com o import de
+  `use PetalComponents`. O módulo que define o seu desfaz o do Petal com
+  `import PetalComponents.<Módulo>, only: []` (é o caso de `timeline/1` em
+  `JobComponents`).
 - O Petal fixa `websock_adapter ~> 0.5.7`, o que mantém o projeto na 0.5.x em vez da 0.7.

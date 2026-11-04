@@ -39,6 +39,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0014 | [As pendências do roadmap: paralelo, webhook, outbox, prazos e acabamentos](adr/0014-pendencias-do-roadmap.md) | Aceita |
 | 0015 | [Auditoria da execução do claude](adr/0015-auditoria-da-execucao.md) | Aceita |
 | 0016 | [Esquema de versão do runner e do control plane](adr/0016-esquema-de-versao.md) | Aceita |
+| 0017 | [Linha do tempo compacta: faixas de ícones e painéis](adr/0017-linha-do-tempo-compacta.md) | Aceita |
 
 ## Specs
 

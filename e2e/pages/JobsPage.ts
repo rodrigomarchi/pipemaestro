@@ -1,18 +1,62 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 
+/**
+ * A run's timeline, inside `scope` (the job's `job-events`, a task's
+ * `task-events` or a finished attempt's steps): strips of icons, each opening
+ * its panel, and blocks of text. Events are keyed by their `seq`.
+ */
+export class Timeline {
+  readonly scope: Locator;
+
+  constructor(scope: Locator) {
+    this.scope = scope;
+  }
+
+  /** Every icon of the timeline. */
+  icons(): Locator {
+    return this.scope.getByTestId(/^job-event-icon-\d+$/);
+  }
+
+  /** Every block of text (the agent's answers and the result). */
+  texts(): Locator {
+    return this.scope.getByTestId(/^job-event-\d+$/);
+  }
+
+  strip(seq: number): Locator {
+    return this.scope.getByTestId(`job-event-strip-${seq}`);
+  }
+
+  icon(seq: number): Locator {
+    return this.scope.getByTestId(`job-event-icon-${seq}`);
+  }
+
+  panel(seq: number): Locator {
+    return this.scope.getByTestId(`job-event-panel-${seq}`);
+  }
+
+  text(seq: number): Locator {
+    return this.scope.getByTestId(`job-event-${seq}`);
+  }
+
+  /** Clicks an icon: opens its panel, or closes it when it is the one open. */
+  async toggle(seq: number) {
+    await this.icon(seq).click();
+  }
+}
+
 /** Jobs: the workspace's list, the new-job form and one job's live run. */
 export class JobsPage {
   readonly page: Page;
   readonly status: Locator;
-  readonly events: Locator;
+  readonly timeline: Timeline;
   readonly result: Locator;
   readonly error: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.status = page.getByTestId("job-status");
-    this.events = page.getByTestId("job-event");
+    this.timeline = new Timeline(page.getByTestId("job-events"));
     this.result = page.getByTestId("job-result");
     this.error = page.getByTestId("job-error");
     acceptConfirms(page);

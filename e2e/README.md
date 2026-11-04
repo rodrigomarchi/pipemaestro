@@ -60,5 +60,9 @@ Com `make e2e.shots`, as imagens ficam em
 do fluxo, e também vão anexadas ao relatório HTML
 (`cd e2e && npx playwright show-report`). A pasta está no gitignore.
 
+Para conferir uma tela em largura estreita, a spec muda o viewport com
+`page.setViewportSize` antes do `shot()` e o restaura depois (ver
+`tests/job-execution.spec.ts`).
+
 Nunca escreva uma spec descartável só para tirar um screenshot: ponha o
 `shot()` na spec real do fluxo.

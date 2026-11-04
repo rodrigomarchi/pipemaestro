@@ -12,7 +12,50 @@ defmodule ClaudeControlPlaneWeb.JobLiveTest do
     %{runner: runner, job: job_fixture(runner, user, %{"prompt" => "crie um hello.txt"})}
   end
 
+  # Something inside a strip of the job's timeline.
+  defp strip(seq), do: "[data-testid=job-events] [data-testid=job-event-strip-#{seq}] "
+
   defp event(seq, type, data), do: %{"seq" => seq, "type" => type, "data" => data}
+
+  defp count(view, selector),
+    do: view |> render() |> LazyHTML.from_document() |> LazyHTML.query(selector) |> Enum.count()
+
+  test "icons join the strip read on mount; text closes it; a repeated event shows once", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+
+    {:ok, _} =
+      Jobs.append_event(runner, job.id, event(1, "assistant_text", %{"text" => "Vou ver"}))
+
+    {:ok, _} = Jobs.append_event(runner, job.id, event(2, "thinking", %{"duration_ms" => 300}))
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+    assert has_element?(view, "[data-testid=job-events] [data-testid=job-event-1]", "Vou ver")
+    assert has_element?(view, "#{strip(2)}[data-testid=job-event-icon-2]")
+
+    {:ok, _} =
+      Jobs.append_event(runner, job.id, event(3, "tool_use", %{"name" => "Bash", "text" => "ls"}))
+
+    assert has_element?(view, "#{strip(2)}[data-testid=job-event-icon-3][data-type=tool_use]")
+    assert has_element?(view, "#{strip(2)}[data-testid=job-event-panel-3]", "ls")
+    assert count(view, "[data-testid^=job-event-strip-]") == 1
+
+    # The window between subscribing and reading: the same event arrives twice.
+    send(view.pid, {:job_event, job |> Jobs.list_events() |> List.last()})
+    assert count(view, "[data-testid=job-event-icon-3]") == 1
+
+    {:ok, _} = Jobs.append_event(runner, job.id, event(4, "assistant_text", %{"text" => "Achei"}))
+    {:ok, _} = Jobs.append_event(runner, job.id, event(5, "tool_result", %{"text" => "ok"}))
+
+    assert has_element?(view, "[data-testid=job-events] [data-testid=job-event-4]", "Achei")
+    assert has_element?(view, "#{strip(5)}[data-testid=job-event-icon-5]")
+    refute has_element?(view, "#{strip(2)}[data-testid=job-event-icon-5]")
+    assert has_element?(view, "[data-testid=job-event-count]", "5 eventos")
+  end
 
   test "shows the run growing live until it ends", %{
     conn: conn,
@@ -51,15 +94,31 @@ defmodule ClaudeControlPlaneWeb.JobLiveTest do
 
     assert has_element?(view, "[data-testid=job-status]", "Executando")
     assert has_element?(view, "[data-testid=job-event-count]", "5 eventos")
-    assert has_element?(view, "[data-testid=job-event][data-type=tool_use]", "Write")
 
     assert has_element?(
              view,
-             "[data-testid=job-event][data-type=tool_result]",
-             "Erro da ferramenta"
+             "#{strip(1)}[data-testid=job-event-icon-2][data-type=tool_use][data-state=normal]"
            )
 
-    assert has_element?(view, "[data-testid=job-event][data-type=assistant_text]", "feito")
+    assert has_element?(view, "#{strip(1)}[data-testid=job-event-panel-2]", "Write")
+
+    assert has_element?(
+             view,
+             "#{strip(1)}[data-testid=job-event-icon-3][data-type=tool_result][data-state=error]"
+           )
+
+    assert has_element?(view, "#{strip(1)}[data-testid=job-event-panel-3]", "Erro da ferramenta")
+
+    assert has_element?(
+             view,
+             "[data-testid=job-events] [data-testid=job-event-4][data-type=assistant_text]",
+             "feito"
+           )
+
+    assert has_element?(
+             view,
+             "[data-testid=job-events] [data-testid=job-event-5][data-type=result]"
+           )
 
     refute has_element?(view, "[data-testid=job-typing]")
     Jobs.relay_delta(runner, job.id, "Estou olhando o **login**")

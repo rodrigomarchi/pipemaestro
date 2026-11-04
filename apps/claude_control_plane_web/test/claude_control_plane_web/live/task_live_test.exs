@@ -471,6 +471,55 @@ defmodule ClaudeControlPlaneWeb.TaskLiveTest do
       refute has_element?(view, "[data-testid=task-cancel]")
     end
 
+    test "the running stage's icons grow a strip; the finished steps filter it", ctx do
+      task = create_task(ctx)
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      live = "[data-testid=stage-a] [data-testid=task-events] [data-testid=job-event-strip-2]"
+
+      {:ok, _} =
+        Jobs.append_event(ctx.runner, job.id, %{
+          "seq" => 2,
+          "type" => "thinking",
+          "data" => %{"text" => "Olhar o form", "duration_ms" => 1_500}
+        })
+
+      assert has_element?(view, "#{live} [data-testid=job-event-icon-2][data-type=thinking]")
+
+      {:ok, _} =
+        Jobs.append_event(ctx.runner, job.id, %{
+          "seq" => 3,
+          "type" => "tool_use",
+          "data" => %{"name" => "Bash", "input" => %{"command" => "mix test"}}
+        })
+
+      assert has_element?(view, "#{live} [data-testid=job-event-icon-3][data-type=tool_use]")
+      assert has_element?(view, "#{live} [data-testid=job-event-panel-3]", "$ mix test")
+
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
+
+      steps = "[data-testid=stage-run-steps-a-1]"
+      assert has_element?(view, "#{steps} [data-testid=job-event-1]", "trabalhando")
+
+      assert has_element?(
+               view,
+               "#{steps} [data-testid=job-event-strip-2] [data-testid=job-event-icon-3]"
+             )
+
+      view |> element("[data-testid=stage-run-steps-filter-a-1-thinking]") |> render_click()
+      assert has_element?(view, "#{steps} [data-testid=job-event-icon-2][data-type=thinking]")
+      assert has_element?(view, "#{steps} [data-testid=job-event-panel-2]", "Olhar o form")
+      refute has_element?(view, "#{steps} [data-testid=job-event-icon-3]")
+      refute has_element?(view, "#{steps} [data-testid=job-event-1]")
+
+      view |> element("[data-testid=stage-run-steps-filter-a-1-tools]") |> render_click()
+      assert has_element?(view, "#{steps} [data-testid=job-event-icon-3]")
+      refute has_element?(view, "#{steps} [data-testid=job-event-icon-2]")
+    end
+
     test "a blocked stage takes a decision: retry with instructions, then advance", ctx do
       task = create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")

@@ -2,17 +2,20 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   @moduledoc """
   One task, read as one pipeline from top to bottom: each stage's title and,
   right under it, what its attempts produced (summary, the agent's final
-  answer, the artifact). The stage running now shows the agent's steps live;
-  a finished attempt's steps open on demand. When the task waits for a
+  answer, the artifact). The stage running now shows the agent's steps live,
+  a stream of timeline segments whose last strip grows in place; a finished
+  attempt's steps open on demand, filtered here. When the task waits for a
   decision, the decision form sits under the stage that waits.
   """
   use ClaudeControlPlaneWeb, :live_view
 
   import ClaudeControlPlaneWeb.JobComponents,
     only: [
-      job_event: 1,
       steps: 1,
       timeline_items: 2,
+      timeline_push: 2,
+      timeline_segment: 1,
+      timeline_tail: 1,
       typing: 1,
       format_cost: 1,
       format_duration: 1,
@@ -58,9 +61,16 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
   def handle_info({:job_telemetry, _job_id}, socket), do: {:noreply, socket}
 
   def handle_info({:job_event, event}, socket) do
-    if event.job_id == socket.assigns.live_job_id,
-      do: {:noreply, socket |> stream_insert(:events, event) |> assign(typing: nil)},
-      else: {:noreply, socket}
+    with true <- event.job_id == socket.assigns.live_job_id,
+         {segment, tail} when segment != :seen <-
+           timeline_push(socket.assigns.timeline_tail, event) do
+      {:noreply,
+       socket
+       |> stream_insert(:timeline, segment)
+       |> assign(timeline_tail: tail, typing: nil)}
+    else
+      _other_job_or_seen -> {:noreply, socket}
+    end
   end
 
   def handle_info({:job_delta, job_id, text}, socket) do
@@ -247,7 +257,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
     )
   end
 
-  # The running attempt's steps stream in live.
+  # The running attempt's steps stream in live, as segments of its timeline.
   defp follow_running_job(socket) do
     job =
       Enum.find_value(socket.assigns.task.stage_runs, fn run ->
@@ -256,7 +266,7 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
     cond do
       is_nil(job) ->
-        socket |> assign(live_job_id: nil, typing: nil) |> stream(:events, [], reset: true)
+        socket |> assign(live_job_id: nil, typing: nil) |> live_timeline([])
 
       job.id == socket.assigns.live_job_id ->
         socket
@@ -266,8 +276,16 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
 
         socket
         |> assign(live_job_id: job.id, typing: nil)
-        |> stream(:events, Jobs.list_events(job), reset: true)
+        |> live_timeline(Jobs.list_events(job))
     end
+  end
+
+  defp live_timeline(socket, events) do
+    segments = timeline_items(events, "all")
+
+    socket
+    |> assign(timeline_tail: timeline_tail(segments))
+    |> stream(:timeline, segments, reset: true)
   end
 
   # The pipeline as rows: every stage of the snapshot with its attempts and
@@ -893,7 +911,12 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
             Ao vivo
           </p>
           <ol id="task-events" phx-update="stream" class="space-y-3" data-testid="task-events">
-            <.job_event :for={{id, event} <- @streams.events} id={id} event={event} />
+            <.timeline_segment
+              :for={{id, segment} <- @streams.timeline}
+              id={id}
+              timeline="task-events"
+              segment={segment}
+            />
           </ol>
           <.typing :if={@typing} text={@typing} />
         </div>

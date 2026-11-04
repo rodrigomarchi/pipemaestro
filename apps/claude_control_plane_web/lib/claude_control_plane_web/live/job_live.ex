@@ -1,8 +1,11 @@
 defmodule ClaudeControlPlaneWeb.JobLive do
   @moduledoc """
   One job: its prompt, status and numbers, and the agent's run as a timeline
-  that grows live while the runner reports events. A queued or running job can
-  be canceled from here. Once it ends, its audit (`ClaudeControlPlaneWeb.AuditComponents`)
+  that grows live while the runner reports events. The timeline is a stream of
+  segments (strips of icons and blocks of text, `ClaudeControlPlaneWeb.JobComponents`);
+  only the strip still open at its end is kept here, to grow it in place. A queued or
+  running job can be canceled from here. Once it ends, its audit
+  (`ClaudeControlPlaneWeb.AuditComponents`)
   shows how the agent worked, kept up to date as the CLI's telemetry arrives.
   """
   use ClaudeControlPlaneWeb, :live_view
@@ -20,7 +23,7 @@ defmodule ClaudeControlPlaneWeb.JobLive do
     job = Jobs.get_job!(workspace, id)
 
     # Subscribe before reading, so nothing that happens in between is missed;
-    # an event read and also received is the same stream item.
+    # an event read and also received is shown once (`timeline_push/2`).
     job =
       if connected?(socket) do
         Jobs.subscribe({:job, job.id})
@@ -30,12 +33,14 @@ defmodule ClaudeControlPlaneWeb.JobLive do
       end
 
     events = Jobs.list_events(job)
+    segments = timeline_items(events, "all")
 
     {:ok,
      socket
      |> assign(page_title: "Execução", job: job, event_count: last_seq(events), typing: nil)
+     |> assign(timeline_tail: timeline_tail(segments))
      |> assign_insights()
-     |> stream(:events, events)}
+     |> stream(:timeline, segments)}
   end
 
   # The audit, once the run has ended.
@@ -63,12 +68,21 @@ defmodule ClaudeControlPlaneWeb.JobLive do
 
   # Events are numbered from 1, so the highest seq counts them (a gap only
   # when the runner lost its connection mid-run).
+  #
+  # A new icon joins the open strip in place (its open panel stays open); text
+  # starts a block of its own.
   def handle_info({:job_event, event}, socket) do
-    {:noreply,
-     socket
-     |> stream_insert(:events, event)
-     |> update(:event_count, &max(&1, event.seq))
-     |> assign(typing: nil)}
+    case timeline_push(socket.assigns.timeline_tail, event) do
+      {:seen, _tail} ->
+        {:noreply, socket}
+
+      {segment, tail} ->
+        {:noreply,
+         socket
+         |> stream_insert(:timeline, segment)
+         |> assign(timeline_tail: tail, typing: nil)
+         |> update(:event_count, &max(&1, event.seq))}
+    end
   end
 
   @impl true
@@ -179,7 +193,12 @@ defmodule ClaudeControlPlaneWeb.JobLive do
                   else: "Nenhum evento recebido."}
               </p>
               <ol id="job-events" phx-update="stream" class="space-y-4" data-testid="job-events">
-                <.job_event :for={{id, event} <- @streams.events} id={id} event={event} />
+                <.timeline_segment
+                  :for={{id, segment} <- @streams.timeline}
+                  id={id}
+                  timeline="job-events"
+                  segment={segment}
+                />
               </ol>
               <.typing :if={@typing} text={@typing} />
             </.card_content>

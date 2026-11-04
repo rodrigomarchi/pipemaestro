@@ -1,10 +1,22 @@
 defmodule ClaudeControlPlaneWeb.JobComponents do
   @moduledoc """
-  Pieces every job screen shares: status, one event of the run (each tool
-  call shown for what it is: a command, an edit as a diff, a file read), a
-  colored diff, numbers.
+  Pieces every job screen shares: status, the run's timeline, a colored diff,
+  numbers.
+
+  The timeline is a list of segments (`timeline_items/2`, `timeline_push/2`
+  for a live run): strips of small icons for the events without text to read
+  (the session, thinking, tool calls and their results, limits, retries,
+  compactions, denials), each with a one-line tooltip and colored by state,
+  and blocks for the agent's text and the run's result. Clicking an icon opens,
+  below its strip, a panel with the event in full (each tool call shown for
+  what it is: a command, an edit as a diff, a file read); the panels open and
+  close in the browser (`Phoenix.LiveView.JS`), so an open panel stays open
+  while its strip grows.
   """
   use ClaudeControlPlaneWeb, :html
+
+  # `timeline/1` here is the run's timeline, not Petal's.
+  import PetalComponents.Timeline, only: []
 
   alias ClaudeControlPlane.Jobs.{Event, Job}
   alias ClaudeControlPlaneWeb.Markdown
@@ -32,19 +44,247 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
   defp status_label(%Job{status: :failed}), do: {"Falhou", "danger"}
   defp status_label(%Job{status: :canceled}), do: {"Cancelado", "gray"}
 
-  @doc "One event of a run: an icon for its kind and what happened."
-  attr :id, :string, required: true
-  attr :event, Event, required: true
+  @typedoc """
+  A piece of the timeline: a strip of icons (events without text to read, side
+  by side) or a block of the agent's text. Its `id` comes from its first event,
+  so a strip keeps it while it grows.
+  """
+  @type segment :: %{id: String.t(), kind: :strip | :text, events: [Event.t()]}
 
-  @spec job_event(map()) :: Phoenix.LiveView.Rendered.t()
-  def job_event(assigns) do
-    assigns = assign(assigns, :look, event_look(assigns.event))
+  @typedoc """
+  What a live timeline needs to place the next event: the strip still open at
+  its end, the `seq`s already shown, and the filter that names new strips.
+  """
+  @type tail :: %{strip: segment() | nil, seen: MapSet.t(integer()), filter: String.t()}
+
+  @text_types ~w(assistant_text result)
+
+  @doc "Whether an event is shown as an icon: all but the agent's text and the run's result."
+  @spec icon?(Event.t()) :: boolean()
+  def icon?(%Event{type: type}), do: type not in @text_types
+
+  @doc """
+  How an icon is colored: `:error` for a failed tool and an API retry,
+  `:denied` for a refused permission, `:normal` for the rest.
+  """
+  @spec event_state(Event.t()) :: :normal | :error | :denied
+  def event_state(%Event{type: "permission_denied"}), do: :denied
+
+  def event_state(%Event{type: type, data: data}) do
+    cond do
+      get_in(data, ["decision", "decision"]) == "reject" -> :denied
+      type == "api_retry" or data["is_error"] == true -> :error
+      true -> :normal
+    end
+  end
+
+  @doc """
+  An event in one line, for an icon's tooltip: what a tool did (a command's
+  purpose, a path, a pattern), a result's size, how long the model thought;
+  then the turn's tokens and whether a subagent did it.
+  """
+  @spec event_summary(Event.t()) :: String.t()
+  def event_summary(%Event{data: data} = event) do
+    join_parts([
+      base_summary(event),
+      data["usage"] && tokens_label(data["usage"]),
+      data["parent_tool_use_id"] && "subagente"
+    ])
+  end
+
+  defp base_summary(%Event{type: "tool_use", data: data}) do
+    detail = tool_detail(data["name"], data["input"]) || data["text"]
+    join_parts([data["name"], detail && prompt_summary(detail)])
+  end
+
+  defp base_summary(%Event{type: "tool_result", data: data}) do
+    text = data["text"] || ""
+
+    cond do
+      get_in(data, ["decision", "decision"]) == "reject" ->
+        "Negada (#{data["decision"]["source"]})"
+
+      text == "" ->
+        "Sem saída"
+
+      data["is_error"] == true ->
+        "Erro · #{lines_label(length(lines(text)))}"
+
+      true ->
+        "Saída · #{lines_label(length(lines(text)))}"
+    end
+  end
+
+  defp base_summary(%Event{type: "thinking", data: data}),
+    do: "Pensou por #{format_duration(data["duration_ms"])}"
+
+  defp base_summary(%Event{type: "system", data: data}),
+    do: join_parts([data["text"], data["auth"] && auth_label(data["auth"])])
+
+  defp base_summary(%Event{type: "rate_limit", data: data}),
+    do: join_parts([data["status"] | utilization_labels(data["utilization"])])
+
+  defp base_summary(%Event{type: "compact", data: data}) do
+    join_parts([
+      data["text"],
+      data["pre_tokens"] && "tinha #{short_number(data["pre_tokens"])} tokens"
+    ])
+  end
+
+  defp base_summary(%Event{type: "permission_denied", data: data}) do
+    if data["tool_name"],
+      do: "#{data["tool_name"]}: #{data["text"]}",
+      else: data["text"] || ""
+  end
+
+  defp base_summary(%Event{type: type, data: data}),
+    do: if(data["text"] in [nil, ""], do: type, else: prompt_summary(data["text"]))
+
+  defp tool_detail("Bash", %{} = input),
+    do: input["description"] || input["command"]
+
+  defp tool_detail(name, %{} = input) when name in ~w(Read Edit Write), do: input["file_path"]
+  defp tool_detail(name, %{} = input) when name in ~w(Grep Glob), do: input["pattern"]
+  defp tool_detail(_name, _input), do: nil
+
+  defp utilization_labels(utilization),
+    do:
+      for({window, used} <- Enum.sort(utilization || %{}), do: "#{window} #{round(used * 100)}%")
+
+  defp join_parts(parts),
+    do: parts |> Enum.reject(&(&1 in [nil, false, ""])) |> Enum.join(" · ")
+
+  @doc """
+  A run's events as segments, after `filter` (`"all"`; `"agent"`: what the
+  agent said; `"tools"`: tool calls and their answers; `"thinking"`: what the
+  model thought; `"errors"`: what failed, retried or was refused). Consecutive
+  icons share a strip; the agent's text is a block of its own and breaks the
+  strip. The filter is part of a strip's id, so another filter shows other
+  strips.
+  """
+  @spec timeline_items([Event.t()], String.t()) :: [segment()]
+  def timeline_items(events, filter) do
+    {segments, _tail} =
+      events
+      |> Enum.filter(&shown?(&1, filter))
+      |> Enum.reduce({[], new_tail(filter)}, fn event, {segments, tail} ->
+        case timeline_push(tail, event) do
+          {:seen, tail} -> {segments, tail}
+          {segment, tail} -> {put_segment(segments, segment), tail}
+        end
+      end)
+
+    Enum.reverse(segments)
+  end
+
+  defp put_segment([%{id: id} | rest], %{id: id} = segment), do: [segment | rest]
+  defp put_segment(segments, segment), do: [segment | segments]
+
+  defp new_tail(filter), do: %{strip: nil, seen: MapSet.new(), filter: filter}
+
+  @doc "Where a live timeline stands after `segments`, read when the page opened."
+  @spec timeline_tail([segment()]) :: tail()
+  def timeline_tail(segments) do
+    last = List.last(segments)
+
+    %{
+      new_tail("all")
+      | strip: if(match?(%{kind: :strip}, last), do: last),
+        seen:
+          for(%{events: events} <- segments, event <- events, into: MapSet.new(), do: event.seq)
+    }
+  end
+
+  @doc """
+  Places one more event at the end of a live timeline: the segment to insert
+  (the open strip grown by an icon, a new strip, or a text block) and the new
+  tail; `:seen` for an event already shown.
+  """
+  @spec timeline_push(tail(), Event.t()) :: {segment() | :seen, tail()}
+  def timeline_push(%{seen: seen} = tail, %Event{seq: seq} = event) do
+    cond do
+      MapSet.member?(seen, seq) ->
+        {:seen, tail}
+
+      icon?(event) ->
+        strip =
+          case tail.strip do
+            nil -> %{id: "strip-#{tail.filter}-#{event.id}", kind: :strip, events: [event]}
+            strip -> %{strip | events: strip.events ++ [event]}
+          end
+
+        {strip, %{tail | strip: strip, seen: MapSet.put(seen, seq)}}
+
+      true ->
+        text = %{id: "text-#{event.id}", kind: :text, events: [event]}
+        {text, %{tail | strip: nil, seen: MapSet.put(seen, seq)}}
+    end
+  end
+
+  @doc """
+  A run's timeline: strips of icons and blocks of text. Each icon opens, below
+  its strip, a panel with the event in full; one panel is open at a time per
+  timeline.
+  """
+  attr :id, :string, required: true
+  attr :segments, :list, required: true
+  attr :class, :any, default: "space-y-3"
+  attr :rest, :global
+
+  @spec timeline(map()) :: Phoenix.LiveView.Rendered.t()
+  def timeline(assigns) do
+    ~H"""
+    <ol id={@id} class={@class} {@rest}>
+      <.timeline_segment
+        :for={segment <- @segments}
+        id={"#{@id}-#{segment.id}"}
+        timeline={@id}
+        segment={segment}
+      />
+    </ol>
+    """
+  end
+
+  @doc """
+  One segment of a timeline, `id` its DOM id and `timeline` the id of the list
+  it is in (a stream's container, for a live run).
+  """
+  attr :id, :string, required: true
+  attr :timeline, :string, required: true
+  attr :segment, :map, required: true
+
+  @spec timeline_segment(map()) :: Phoenix.LiveView.Rendered.t()
+  def timeline_segment(%{segment: %{kind: :strip, events: [first | _]}} = assigns) do
+    assigns = assign(assigns, :first, first)
+
+    ~H"""
+    <li id={@id} data-testid={"job-event-strip-#{@first.seq}"}>
+      <div class="flex flex-wrap items-center gap-1">
+        <.event_icon
+          :for={event <- @segment.events}
+          id={"#{@id}-icon-#{event.id}"}
+          panel_id={"#{@id}-panel-#{event.id}"}
+          timeline={@timeline}
+          event={event}
+        />
+      </div>
+      <.event_panel
+        :for={event <- @segment.events}
+        id={"#{@id}-panel-#{event.id}"}
+        event={event}
+      />
+    </li>
+    """
+  end
+
+  def timeline_segment(%{segment: %{kind: :text, events: [event]}} = assigns) do
+    assigns = assign(assigns, event: event, look: event_look(event))
 
     ~H"""
     <li
       id={@id}
       class={["flex gap-3", @event.data["parent_tool_use_id"] && "ml-8"]}
-      data-testid="job-event"
+      data-testid={"job-event-#{@event.seq}"}
       data-type={@event.type}
     >
       <div class={[
@@ -54,25 +294,114 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
         <.icon name={@look.icon} class="size-4" />
       </div>
       <div class="min-w-0 flex-1">
-        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-          {@look.label}
-          <span :if={@event.data["name"]} class="font-mono">
-            · {@event.data["name"]}
-          </span>
-          <span :if={@event.data["parent_tool_use_id"]} class="font-normal">· subagente</span>
-          <span :if={@event.data["usage"]} class="font-normal">
-            · {tokens_label(@event.data["usage"])}
-          </span>
-          <span
-            :if={get_in(@event.data, ["decision", "decision"]) == "reject"}
-            class="font-normal text-danger-700 dark:text-danger-400"
-          >
-            · negada ({@event.data["decision"]["source"]})
-          </span>
-        </p>
+        <.event_header event={@event} look={@look} />
         <.event_body event={@event} body={@look.body} />
       </div>
     </li>
+    """
+  end
+
+  @open_icon "ring-2 ring-primary-500 dark:ring-primary-400"
+
+  attr :id, :string, required: true
+  attr :panel_id, :string, required: true
+  attr :timeline, :string, required: true
+  attr :event, Event, required: true
+
+  defp event_icon(assigns) do
+    event = assigns.event
+    summary = event_summary(event)
+    look = event_look(event)
+    state = event_state(event)
+
+    assigns =
+      assign(assigns,
+        look: look,
+        state: state,
+        summary: summary,
+        subagent: event.data["parent_tool_use_id"] != nil
+      )
+
+    ~H"""
+    <.icon_button
+      id={@id}
+      type="button"
+      size="xs"
+      color={if @state == :normal, do: "gray", else: "danger"}
+      tooltip={@summary}
+      class={@subagent && "outline-dashed outline-1 outline-offset-1 outline-gray-400"}
+      aria-label={"#{@look.label}: #{@summary}"}
+      aria-expanded="false"
+      aria-controls={@panel_id}
+      phx-click={toggle_panel(@timeline, @id, @panel_id)}
+      data-testid={"job-event-icon-#{@event.seq}"}
+      data-type={@event.type}
+      data-state={@state}
+      data-subagent={@subagent}
+      data-event-icon
+    >
+      <.icon name={@look.icon} class="size-4" />
+    </.icon_button>
+    """
+  end
+
+  # Opens an icon's panel and closes any other of the same timeline; the same
+  # icon again closes it.
+  defp toggle_panel(timeline, icon_id, panel_id) do
+    other_icons = "##{timeline} [data-event-icon]:not(##{icon_id})"
+
+    JS.hide(to: "##{timeline} [data-event-panel]:not(##{panel_id})")
+    |> JS.remove_class(@open_icon, to: other_icons)
+    |> JS.set_attribute({"aria-expanded", "false"}, to: other_icons)
+    |> JS.toggle(to: "##{panel_id}")
+    |> JS.toggle_class(@open_icon, to: "##{icon_id}")
+    |> JS.toggle_attribute({"aria-expanded", "true", "false"}, to: "##{icon_id}")
+  end
+
+  attr :id, :string, required: true
+  attr :event, Event, required: true
+
+  defp event_panel(assigns) do
+    assigns = assign(assigns, :look, event_look(assigns.event))
+
+    ~H"""
+    <div
+      id={@id}
+      class={[
+        "hidden mt-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700",
+        @event.data["parent_tool_use_id"] && "border-dashed"
+      ]}
+      data-testid={"job-event-panel-#{@event.seq}"}
+      data-type={@event.type}
+      data-event-panel
+    >
+      <.event_header event={@event} look={@look} />
+      <.event_body event={@event} body={@look.body} />
+    </div>
+    """
+  end
+
+  attr :event, Event, required: true
+  attr :look, :map, required: true
+
+  defp event_header(assigns) do
+    ~H"""
+    <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+      {@look.label}
+      <span :if={@event.data["name"]} class="font-mono">
+        · {@event.data["name"]}
+      </span>
+      <span :if={@event.data["parent_tool_use_id"]} class="font-normal">· subagente</span>
+      <span :if={@event.data["usage"]} class="font-normal">
+        · {tokens_label(@event.data["usage"])}
+      </span>
+      <span
+        :if={get_in(@event.data, ["decision", "decision"]) == "reject"}
+        class="font-normal text-danger-700 dark:text-danger-400"
+      >
+        · negada ({@event.data["decision"]["source"]})
+      </span>
+    </p>
     """
   end
 
@@ -116,10 +445,10 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
 
   defp event_body(%{event: %Event{type: "thinking"}} = assigns) do
     ~H"""
-    <details class="mt-1 text-sm">
-      <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
+    <div class="mt-1 text-sm">
+      <p class="text-gray-500 dark:text-gray-400">
         Pensou por {format_duration(@event.data["duration_ms"])}
-      </summary>
+      </p>
       <p
         :if={@event.data["text"] in [nil, ""]}
         class="mt-1 text-xs text-gray-500 dark:text-gray-400"
@@ -133,7 +462,7 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
           @body
         ]}
       >{@event.data["text"]}</pre>
-    </details>
+    </div>
     """
   end
 
@@ -152,9 +481,7 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
     ~H"""
     <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
       {@event.data["status"]}
-      <span :for={{window, used} <- Enum.sort(@event.data["utilization"] || %{})}>
-        · {window} {round(used * 100)}%
-      </span>
+      <span :for={window <- utilization_labels(@event.data["utilization"])}>· {window}</span>
     </p>
     """
   end
@@ -170,22 +497,17 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
 
   defp event_body(%{event: %Event{type: "tool_result"}} = assigns) do
     text = assigns.event.data["text"] || ""
-    assigns = assign(assigns, text: text, lines: length(String.split(text, "\n")))
+    assigns = assign(assigns, text: text, lines: length(lines(text)))
 
     ~H"""
-    <details
-      :if={@text != ""}
-      open={@event.data["is_error"] == true}
-      class="mt-1 text-xs"
-    >
-      <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
-        Saída · {lines_label(@lines)}
-      </summary>
+    <p :if={@text == ""} class="mt-1 text-xs text-gray-500 dark:text-gray-400">Sem saída.</p>
+    <div :if={@text != ""} class="mt-1 text-xs">
+      <p class="text-gray-500 dark:text-gray-400">Saída · {lines_label(@lines)}</p>
       <pre class={[
         "mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-mono",
         @body
       ]}>{@text}</pre>
-    </details>
+    </div>
     """
   end
 
@@ -300,30 +622,6 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
   def short_number(n) when n >= 1000, do: "#{Float.round(n / 1000, 1)}k"
   def short_number(n), do: to_string(n)
 
-  @reading_tools ~w(Read Grep Glob LS)
-
-  @doc """
-  A finished run's events as the steps screen shows them, after `filter`
-  (`"all"`; `"agent"`: what the agent said; `"tools"`: tool calls and their
-  answers; `"thinking"`: what the model thought; `"errors"`: what failed,
-  retried or was refused): `{:event, event}`, or `{:group, label,
-  events}` for two or more consecutive reads and searches with their answers.
-  """
-  @spec timeline_items([Event.t()], String.t()) ::
-          [{:event, Event.t()} | {:group, String.t(), [Event.t()]}]
-  def timeline_items(events, filter) do
-    {items, run} =
-      events
-      |> Enum.filter(&shown?(&1, filter))
-      |> Enum.reduce({[], []}, fn event, {items, run} ->
-        if reading?(event) or answers_read?(event, run),
-          do: {items, [event | run]},
-          else: {[{:event, event} | flush(run, items)], []}
-      end)
-
-    run |> flush(items) |> Enum.reverse()
-  end
-
   defp shown?(%Event{type: type}, "agent"), do: type in ~w(system assistant_text result)
   defp shown?(%Event{type: type}, "tools"), do: type in ~w(tool_use tool_result)
   defp shown?(%Event{type: type}, "thinking"), do: type == "thinking"
@@ -333,68 +631,24 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
 
   defp shown?(_event, _all), do: true
 
-  defp reading?(%Event{type: "tool_use", data: %{"name" => name}}), do: name in @reading_tools
-  defp reading?(_event), do: false
-
-  # The answer right after a read (an error stays on its own).
-  defp answers_read?(%Event{type: "tool_result", data: data}, [last | _run]),
-    do: reading?(last) and data["is_error"] != true
-
-  defp answers_read?(_event, _run), do: false
-
-  # A run of two or more reads becomes a group; a single one stays as it is.
-  defp flush(run, items) do
-    calls = Enum.filter(run, &reading?/1)
-
-    if length(calls) >= 2,
-      do: [{:group, reading_label(calls), Enum.reverse(run)} | items],
-      else: Enum.map(run, &{:event, &1}) ++ items
-  end
-
-  defp reading_label(calls) do
-    {reads, searches} = Enum.split_with(calls, &(&1.data["name"] == "Read"))
-
-    [
-      reads != [] && "Leu #{count_label(length(reads), "arquivo", "arquivos")}",
-      searches != [] && "fez #{count_label(length(searches), "busca", "buscas")}"
-    ]
-    |> Enum.filter(& &1)
-    |> Enum.join(" e ")
-    |> String.capitalize()
-  end
-
   @doc ~s(A count with its noun: "1 arquivo", "3 arquivos".)
   @spec count_label(non_neg_integer(), String.t(), String.t()) :: String.t()
   def count_label(1, one, _many), do: "1 #{one}"
   def count_label(n, _one, many), do: "#{n} #{many}"
 
-  @doc "A finished run's steps: events, and groups of reads that open to show theirs."
+  @doc "A finished run's steps (`items` from `timeline_items/2`) as a timeline of their own."
   attr :items, :list, required: true
   attr :id, :string, required: true
 
   @spec steps(map()) :: Phoenix.LiveView.Rendered.t()
   def steps(assigns) do
     ~H"""
-    <ol class="mt-3 space-y-3" data-testid={"stage-run-steps-#{@id}"}>
-      <%= for item <- @items do %>
-        <.job_event
-          :if={match?({:event, _}, item)}
-          id={"step-#{elem(item, 1).id}"}
-          event={elem(item, 1)}
-        />
-        <li :if={match?({:group, _, _}, item)} class="flex gap-3" data-testid="job-event-group">
-          <div class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-            <.icon name="hero-document-magnifying-glass" class="size-4" />
-          </div>
-          <details class="min-w-0 flex-1 text-sm">
-            <summary class="cursor-pointer text-gray-700 dark:text-gray-300">{elem(item, 1)}</summary>
-            <ol class="mt-3 space-y-3">
-              <.job_event :for={event <- elem(item, 2)} id={"step-#{event.id}"} event={event} />
-            </ol>
-          </details>
-        </li>
-      <% end %>
-    </ol>
+    <.timeline
+      id={"steps-#{@id}"}
+      segments={@items}
+      class="mt-3 space-y-3"
+      data-testid={"stage-run-steps-#{@id}"}
+    />
     """
   end
 
@@ -547,11 +801,19 @@ defmodule ClaudeControlPlaneWeb.JobComponents do
       body: @neutral
     }
 
-  defp event_look(%Event{}),
+  defp event_look(%Event{type: "result"}),
     do: %{
       icon: "hero-flag",
       label: "Fim da execução",
       bubble: "bg-success-100 text-success-700 dark:bg-success-900/50 dark:text-success-300",
+      body: @neutral
+    }
+
+  defp event_look(%Event{type: type}),
+    do: %{
+      icon: "hero-ellipsis-horizontal-circle",
+      label: type,
+      bubble: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
       body: @neutral
     }
 
