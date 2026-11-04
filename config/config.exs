@@ -64,6 +64,10 @@ config :petal_components,
 # Elixir's own JSON (1.18+) for Phoenix, as everywhere in our code
 config :phoenix, :json_library, JSON
 
+# And for the jsonb columns: Postgrex defaults to Jason, which the domain no
+# longer depends on. Read when Postgrex compiles (mix deps.compile postgrex).
+config :postgrex, :json_library, JSON
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
