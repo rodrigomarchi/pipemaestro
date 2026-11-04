@@ -36,7 +36,8 @@ cinco coisas:
    - A tarefa guarda esse contexto no retrato (`pipeline_context`).
    - Segredos não devem ir na configuração MCP: o formulário avisa, e a entrega
      segura de segredos fica para o Marco 4.
-3. **Orçamento por tarefa.** O pipeline pode ter um teto de custo por tarefa.
+3. **Orçamento por tarefa.** O pipeline pode ter um teto de custo por tarefa. O teto é
+   opcional e vazio por padrão: só existe quando a pessoa o configura (ADR 0028).
    - Passado o teto, a tarefa pausa para decisão em vez de seguir sozinha (para a
      próxima etapa ou para outra tentativa).
    - Quando a etapa já pausaria por outro motivo, vale esse motivo.

@@ -65,7 +65,7 @@ tarefa e melhorar um pipeline a partir de como as suas tarefas correram.
 
 - Um ponto novo do produto que queira "pedir ao agente" declara um tipo e uma revisão.
   Pedido, runner capaz, worktree descartável, timeline e nova rodada já existem.
-- Cada proposta é uma execução do agente, com teto de custo e de tempo por tipo, e
+- Cada proposta é uma execução do agente, com limite de tempo por tipo, sem teto de custo (ADR 0028), e
   aparece em Execuções e em Propostas.
 - A triagem precisa de um runner atualizado. Sem um, o webhook responde 422, como já
   fazia quando nenhum runner servia.

@@ -238,7 +238,7 @@ plane antigo ainda mande.
 | `directory` | um dos `directories` anunciados; o job roda nele (ou no worktree, abaixo) |
 | `worktree` | `{"task_id", "branch"}`: roda em `<workdir>/worktrees/<task_id>`, um `git worktree` do diretório no branch dado, criado na primeira etapa e reaproveitado nas seguintes |
 | `output_schema` | passado em `--json-schema`; a saída validada volta em `structured_output` |
-| `model`, `max_budget_usd` | passados em `--model` e `--max-budget-usd` |
+| `model`, `max_budget_usd` | passados em `--model` e `--max-budget-usd`. `max_budget_usd` só vem quando a pessoa configurou um teto na etapa; sem ele, o runner não passa a flag |
 | `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB). Sem o campo, o runner tira `CP_ARTIFACT_PATH` do ambiente do agente, para que um valor herdado não vaze para o job |
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
