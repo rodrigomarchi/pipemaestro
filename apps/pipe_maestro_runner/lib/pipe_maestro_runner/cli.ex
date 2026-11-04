@@ -8,6 +8,24 @@ defmodule PipeMaestroRunner.CLI do
   @doc "Starts the runner app, refusing to run from the umbrella root."
   @spec start!() :: :ok
   def start! do
+    outside_umbrella!()
+    Mix.Task.run("app.start")
+    :ok
+  end
+
+  @doc """
+  Compiles the runner without starting it, for a command that only reads what
+  was compiled (its version): starting would load config/runtime.exs, which in
+  prod asks for the control plane's settings.
+  """
+  @spec compile!() :: :ok
+  def compile! do
+    outside_umbrella!()
+    Mix.Task.run("compile")
+    :ok
+  end
+
+  defp outside_umbrella! do
     if Mix.Project.umbrella?() do
       Mix.raise("""
       Rode os comandos do runner dentro de apps/pipe_maestro_runner,
@@ -15,9 +33,6 @@ defmodule PipeMaestroRunner.CLI do
       Na raiz, o Mix subiria o control plane junto.
       """)
     end
-
-    Mix.Task.run("app.start")
-    :ok
   end
 
   @doc """

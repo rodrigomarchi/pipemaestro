@@ -13,7 +13,7 @@ defmodule Mix.Tasks.Runner.Version do
 
   @impl Mix.Task
   def run(args) do
-    CLI.start!()
+    CLI.compile!()
     CLI.run(&Version.run/1, args)
   end
 end
