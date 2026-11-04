@@ -51,6 +51,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 ## Guias
 
 - [Instalação: control plane, runners e o primeiro pipeline](guias/instalacao.md)
+- [Deploy em produção (pipemaestro.app)](guias/deploy.md)
 - [Phoenix 1.8](guias/phoenix.md)
 - [UI com petal_components](guias/ui-petal.md)
 - [Testes de tela (e2e) e auditoria visual](../e2e/README.md)

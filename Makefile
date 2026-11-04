@@ -1,6 +1,7 @@
 .PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
 	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
+	deploy deploy.skip-ci \
 	runner.status runner.logout runner.binary runner.rel runner.version \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
@@ -8,6 +9,10 @@
 # sees it. Commands started by the binary (the agent's shell in a job) inherit it, so
 # every recipe drops it: nothing here runs inside the binary.
 unexport __BURRITO
+
+# Deploy settings (DEPLOY_USER, SUN_IP, ...) live in an untracked .env; see .env.example.
+-include .env
+export DEPLOY_USER SUN_IP SSH_PORT DEPLOY_URL
 
 # A git worktree (each task of the control plane runs in one) gets its own e2e
 # port, derived from its name, so tasks running at once never stop each other's
@@ -161,6 +166,14 @@ runner.release: ## Tag the next runner release (runner-AAAA-MM-DD.NN) and build 
 image: ## Build the control plane's Docker image (pipemaestro), with this checkout's version
 	docker build --build-arg CP_VERSION=$$(cd $(RUNNER_DIR) && mix runner.version | tail -n 1) \
 		-t pipemaestro .
+
+REF ?= main
+
+deploy: ci ## make ci, then publish REF (default main) on Sun and wait until it serves
+	@$(MAKE) --no-print-directory deploy.skip-ci REF=$(REF)
+
+deploy.skip-ci: ## Publish REF (default main, pushed to origin) on Sun and wait until it serves
+	scripts/deploy_sun.sh $(REF)
 
 runner.status: ## Show this runner's credentials and whether the platform accepts them
 	cd $(RUNNER_DIR) && mix runner.status

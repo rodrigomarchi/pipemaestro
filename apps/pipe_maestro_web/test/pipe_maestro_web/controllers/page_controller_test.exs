@@ -26,4 +26,12 @@ defmodule PipeMaestroWeb.HealthControllerTest do
   test "GET /healthz answers ok", %{conn: conn} do
     assert conn |> get(~p"/healthz") |> text_response(200) == "ok"
   end
+
+  test "GET /version answers the control plane's version and release", %{conn: conn} do
+    assert %{"version" => version, "release" => release} =
+             conn |> get(~p"/version") |> json_response(200)
+
+    assert version == PipeMaestro.Version.version()
+    assert release == to_string(Application.spec(:pipe_maestro, :vsn))
+  end
 end

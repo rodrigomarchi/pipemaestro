@@ -112,6 +112,7 @@ defmodule PipeMaestroWeb.Router do
     pipe_through :api
 
     get "/healthz", HealthController, :index
+    get "/version", HealthController, :version
     post "/api/github/webhook/:workspace_slug", GithubWebhookController, :receive_event
     post "/api/runner/device/code", RunnerDeviceController, :create_code
     post "/api/runner/device/token", RunnerDeviceController, :create_token

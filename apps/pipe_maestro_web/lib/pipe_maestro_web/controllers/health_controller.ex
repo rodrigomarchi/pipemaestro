@@ -1,11 +1,26 @@
 defmodule PipeMaestroWeb.HealthController do
   @moduledoc """
   Liveness for load balancers and for the e2e suite, which waits on it before
-  starting. Answers without touching the database.
+  starting, and the identity of the running build, which a deploy polls to
+  know its release went live. Neither touches the database.
   """
   use PipeMaestroWeb, :controller
+
+  alias PipeMaestro.Version
 
   @doc "Answers 200 while the endpoint is serving."
   @spec index(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def index(conn, _params), do: text(conn, "ok")
+
+  @doc """
+  The control plane's version (`PipeMaestro.Version`) and the release it runs
+  from: `scripts/deploy.sh` stamps the release with the commit it built.
+  """
+  @spec version(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def version(conn, _params) do
+    json(conn, %{
+      version: Version.version(),
+      release: to_string(Application.spec(:pipe_maestro, :vsn))
+    })
+  end
 end
