@@ -41,7 +41,7 @@ defmodule PipeMaestro.Proposals.Instructions do
         `timeout_minutes`;
       - `group`: etapas seguidas com o mesmo grupo rodam ao mesmo tempo (ex.: revisões).
 
-    As etapas seguem sozinhas: só uma regra, uma falha ou o orçamento param a tarefa. Boas
+    As etapas seguem sozinhas: só uma regra ou uma falha param a tarefa. Boas
     etapas se apoiam nos comandos reais do projeto, com gates de teste e lint onde mudam
     código, e prompts específicos do projeto, não genéricos.
 

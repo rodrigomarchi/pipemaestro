@@ -68,7 +68,6 @@ defmodule PipeMaestro.Proposals.TaskKind do
       system_prompt: system_prompt(),
       output_schema: schema(),
       scratch: true,
-      max_budget_usd: 2,
       timeout_ms: 15 * 60 * 1000
     }
   end

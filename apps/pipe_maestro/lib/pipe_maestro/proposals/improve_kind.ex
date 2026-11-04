@@ -74,7 +74,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
       ## O pipeline atual (v#{pipeline.version})
 
       ```yaml
-      #{Instructions.cut(Yaml.to_yaml(pipeline), 8_000)}
+      #{Instructions.cut(Yaml.to_yaml(uncapped(pipeline)), 8_000)}
       ```
 
       ## O projeto do diretório
@@ -90,8 +90,16 @@ defmodule PipeMaestro.Proposals.ImproveKind do
       system_prompt: system_prompt(),
       output_schema: schema(),
       scratch: true,
-      max_budget_usd: 3,
       timeout_ms: 20 * 60 * 1000
+    }
+  end
+
+  # The agent never sees the pipeline's cost caps: they are the person's.
+  defp uncapped(%Pipeline{} = pipeline) do
+    %{
+      pipeline
+      | max_task_cost_usd: nil,
+        stages: Enum.map(pipeline.stages, &%{&1 | max_budget_usd: nil})
     }
   end
 
@@ -240,6 +248,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
     case output["pipeline"] do
       %{"stages" => [_ | _]} = pipeline ->
         input = Proposals.input(job)
+        current = Pipelines.get_pipeline(job.workspace_id, input["pipeline_id"])
 
         {:ok,
          %{
@@ -254,7 +263,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
              end,
            pipeline_id: input["pipeline_id"],
            directory: input["directory"],
-           pipeline: Yaml.from_map(pipeline),
+           pipeline: pipeline |> Yaml.from_map() |> Yaml.without_caps() |> with_caps_of(current),
            notes: Proposals.text(output["notas"])
          }}
 
@@ -262,4 +271,21 @@ defmodule PipeMaestro.Proposals.ImproveKind do
         {:error, "O agente não devolveu o pipeline revisado com etapas."}
     end
   end
+
+  # The revision keeps the caps the pipeline has now: its own and, on each
+  # stage whose key is still there, the stage's. A pipeline gone has none.
+  defp with_caps_of(attrs, nil), do: attrs
+
+  defp with_caps_of(attrs, %Pipeline{} = pipeline) do
+    caps = Map.new(pipeline.stages, &{&1.key, &1.max_budget_usd})
+
+    attrs
+    |> put_cap("max_task_cost_usd", pipeline.max_task_cost_usd)
+    |> Map.update!("stages", fn stages ->
+      Enum.map(stages, &put_cap(&1, "max_budget_usd", caps[&1["key"]]))
+    end)
+  end
+
+  defp put_cap(attrs, _key, nil), do: attrs
+  defp put_cap(attrs, key, cap), do: Map.put(attrs, key, Decimal.to_string(cap))
 end

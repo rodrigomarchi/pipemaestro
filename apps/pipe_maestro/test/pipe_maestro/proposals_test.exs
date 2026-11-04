@@ -488,7 +488,7 @@ defmodule PipeMaestro.ProposalsTest do
     test "keeps the pipeline's own caps, which the agent never sees", ctx do
       {:ok, capped} =
         Pipelines.create_pipeline(ctx.workspace, %{
-          "name" => "Com teto",
+          "name" => "Limitado",
           "max_task_cost_usd" => "40",
           "stages" => [
             %{"key" => "plano", "name" => "Plano", "prompt" => "p", "max_budget_usd" => "1.5"},
@@ -504,7 +504,7 @@ defmodule PipeMaestro.ProposalsTest do
       # The agent answers with a cap of its own, none on `plano`, drops
       # `codigo` and adds `revisao`.
       revised = %{
-        "name" => "Com teto",
+        "name" => "Limitado",
         "max_task_cost_usd" => 5,
         "stages" => [
           %{"key" => "plano", "name" => "Plano", "prompt" => "p2"},

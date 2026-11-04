@@ -48,7 +48,6 @@ defmodule PipeMaestro.Proposals.PipelineKind do
       system_prompt: system_prompt(),
       output_schema: schema(),
       scratch: true,
-      max_budget_usd: 3,
       timeout_ms: 20 * 60 * 1000
     }
   end
@@ -138,7 +137,6 @@ defmodule PipeMaestro.Proposals.PipelineKind do
         "description" => %{"type" => "string"},
         "delivery" => %{"type" => "string", "enum" => ["none", "commit", "pr"]},
         "system_prompt" => %{"type" => "string"},
-        "max_task_cost_usd" => %{"type" => "number"},
         "stages" => %{
           "type" => "array",
           "minItems" => 1,
@@ -172,7 +170,7 @@ defmodule PipeMaestro.Proposals.PipelineKind do
          analysis: Proposals.text(output["analise"]),
          checks: checks(output["verificacoes"]),
          project: project_attrs(project, Proposals.input(job)["directory"]),
-         pipeline: Yaml.from_map(pipeline)
+         pipeline: pipeline |> Yaml.from_map() |> Yaml.without_caps()
        }}
     else
       _incomplete -> {:error, "O agente não devolveu um projeto e um pipeline com etapas."}
