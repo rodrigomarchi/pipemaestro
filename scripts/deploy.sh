@@ -24,6 +24,10 @@ KEEP_RELEASES=3
 
 GIT_REF="${1:?Usage: deploy.sh <git-ref>}"
 
+# DeployEx runs as another user and reads what this script writes; the
+# server's umask would leave new directories closed to it.
+umask 022
+
 echo "==> Deploy of ${APP_NAME} @ ${GIT_REF}"
 
 # ------------------------------------------------------------------
