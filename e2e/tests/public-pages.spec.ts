@@ -40,6 +40,30 @@ async function expectLoadedShot(
     .toBeGreaterThan(0);
 }
 
+/**
+ * Loads every image of `container`, the lazy ones and those of the other theme included,
+ * so a screenshot taken in either theme never catches an empty frame.
+ */
+async function loadAllShots(container: Locator) {
+  await container.evaluate(async (root) => {
+    const images = Array.from(root.querySelectorAll("img"));
+    images.forEach((img) => {
+      img.loading = "eager";
+    });
+    await Promise.all(
+      images.map(async (img) => {
+        if (!img.complete) {
+          await new Promise((done) => {
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+          });
+        }
+        await img.decode().catch(() => undefined);
+      }),
+    );
+  });
+}
+
 test.describe("Public pages", () => {
   test("the landing page leads to the sign-in", async ({ page }) => {
     await page.goto("/");
@@ -49,6 +73,7 @@ test.describe("Public pages", () => {
     for (const diagram of ["diagram-pipeline", "diagram-architecture", "diagram-stage"]) {
       await expect(page.getByTestId(diagram)).toBeVisible();
     }
+    await loadAllShots(page.locator("body"));
     await shot(page, "landing");
     await shot(page.getByTestId("kid-explainer"), "landing-kid-explainer");
     await shot(page.getByTestId("diagram-architecture"), "landing-architecture");
@@ -79,6 +104,7 @@ test.describe("Public pages", () => {
       await expect(block).toBeVisible();
       await expectLoadedShot(block, name);
     }
+    await loadAllShots(tour);
     await shot(hero, "landing-hero");
     await shot(tour, "landing-tour");
 
@@ -99,6 +125,7 @@ test.describe("Public pages", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+    await loadAllShots(page.getByTestId("product-tour"));
     await shot(page.getByTestId("hero-screenshot"), "landing-hero-phone");
     await shot(page.getByTestId("product-tour"), "landing-tour-phone");
   });
