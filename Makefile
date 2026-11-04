@@ -4,6 +4,11 @@
 	runner.status runner.logout runner.binary \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
+# Burrito's single binary sets __BURRITO, and the runner app boots as the CLI when it
+# sees it. Commands started by the binary (the agent's shell in a job) inherit it, so
+# every recipe drops it: nothing here runs inside the binary.
+unexport __BURRITO
+
 E2E_PORT ?= 4003
 E2E_MIX   = MIX_ENV=e2e E2E_PORT=$(E2E_PORT) mix
 E2E_ENV   = E2E_PORT=$(E2E_PORT)

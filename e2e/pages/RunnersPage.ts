@@ -39,6 +39,28 @@ export class RunnersPage {
     return this.page.getByTestId(`runner-status-${name}`);
   }
 
+  /** From the runners list, opens the page of the runner named `name`. */
+  async openRunner(workspaceSlug: string, name: string) {
+    await this.open(workspaceSlug);
+    await this.page.getByTestId(`runner-link-${name}`).click();
+    await expect(this.recentJobs).toBeVisible();
+    await waitForLiveView(this.page);
+  }
+
+  /** The runner page's card with the latest jobs it finished. */
+  get recentJobs(): Locator {
+    return this.page.getByTestId("runner-recent-jobs");
+  }
+
+  get noRecentJobs(): Locator {
+    return this.page.getByTestId("runner-no-recent-jobs");
+  }
+
+  /** One of a finished job's cells on the runner page: link, status, duration, cost, tokens or cache. */
+  recentJob(jobId: string, part?: "link" | "status" | "duration" | "cost" | "tokens" | "cache"): Locator {
+    return this.page.getByTestId(part ? `runner-recent-job-${part}-${jobId}` : `runner-recent-job-${jobId}`);
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

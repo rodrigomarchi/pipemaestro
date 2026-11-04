@@ -3,8 +3,9 @@ defmodule ClaudeControlPlane.JobsTest do
 
   import ClaudeControlPlane.Fixtures
 
-  alias ClaudeControlPlane.{Jobs, Runners}
+  alias ClaudeControlPlane.{Jobs, Runners, Tasks}
   alias ClaudeControlPlane.Jobs.{Event, Job}
+  alias ClaudeControlPlane.Tasks.{StageRun, Task}
 
   setup do
     workspace = workspace_fixture()
@@ -332,6 +333,95 @@ defmodule ClaudeControlPlane.JobsTest do
                {running.id, :running},
                {waiting.id, :queued}
              ]
+    end
+  end
+
+  describe "recent_for_runner/3" do
+    # Runs `job` on its runner, ends it with `status` and pins its end to
+    # `seconds_ago`, since `finished_at` has a resolution of one second.
+    defp run_and_finish(runner, job, status, seconds_ago) do
+      {:ok, _} = Jobs.mark_started(runner, job.id)
+      {:ok, _} = Jobs.finish_job(runner, job.id, %{"status" => status})
+      pin_finished_at(job, seconds_ago)
+      job
+    end
+
+    defp pin_finished_at(job, seconds_ago) do
+      at = DateTime.utc_now() |> DateTime.add(-seconds_ago, :second) |> DateTime.truncate(:second)
+      {1, _} = Repo.update_all(from(j in Job, where: j.id == ^job.id), set: [finished_at: at])
+    end
+
+    test "the jobs the runner finished, latest first, without active or never-started ones",
+         ctx do
+      succeeded = run_and_finish(ctx.runner, job_fixture(ctx.runner, ctx.user), "succeeded", 30)
+      failed = run_and_finish(ctx.runner, job_fixture(ctx.runner, ctx.user), "failed", 10)
+      canceled = run_and_finish(ctx.runner, job_fixture(ctx.runner, ctx.user), "canceled", 20)
+
+      _queued = job_fixture(ctx.runner, ctx.user)
+      running = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, running.id)
+      {:ok, %Job{status: :canceled}} = Jobs.request_cancel(job_fixture(ctx.runner, ctx.user))
+
+      assert Enum.map(Jobs.recent_for_runner(ctx.workspace, ctx.runner), &{&1.id, &1.status}) == [
+               {failed.id, :failed},
+               {canceled.id, :canceled},
+               {succeeded.id, :succeeded}
+             ]
+    end
+
+    test "at most ten by default, the most recent ones", ctx do
+      jobs =
+        for n <- 1..12 do
+          run_and_finish(ctx.runner, job_fixture(ctx.runner, ctx.user), "succeeded", n * 10)
+        end
+
+      recent = Jobs.recent_for_runner(ctx.workspace, ctx.runner)
+      assert Enum.map(recent, & &1.id) == jobs |> Enum.take(10) |> Enum.map(& &1.id)
+      assert [_, _] = Jobs.recent_for_runner(ctx.workspace, ctx.runner, 2)
+    end
+
+    test "a job the runner lost when it restarted counts as finished", ctx do
+      lost = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, lost.id)
+      [] = Jobs.reconcile(ctx.runner, [])
+
+      assert [%Job{id: id, status: :failed}] = Jobs.recent_for_runner(ctx.workspace, ctx.runner)
+      assert id == lost.id
+    end
+
+    test "only this workspace's jobs on this runner", ctx do
+      {other_runner, _token} = runner_fixture(ctx.workspace, ctx.user)
+      run_and_finish(other_runner, job_fixture(other_runner, ctx.user), "succeeded", 5)
+
+      elsewhere = workspace_fixture()
+      stranger = member_fixture(elsewhere)
+      {foreign, _token} = runner_fixture(elsewhere, stranger)
+      run_and_finish(foreign, job_fixture(foreign, stranger), "succeeded", 5)
+
+      mine = run_and_finish(ctx.runner, job_fixture(ctx.runner, ctx.user), "succeeded", 5)
+
+      assert [%Job{id: id}] = Jobs.recent_for_runner(ctx.workspace, ctx.runner)
+      assert id == mine.id
+      assert Jobs.recent_for_runner(elsewhere, ctx.runner) == []
+    end
+
+    test "a stage's job comes with its stage and task", ctx do
+      runner = with_directories(ctx.runner, [%{"name" => "app", "git" => true}])
+
+      {:ok, task} =
+        Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Corrigir o login",
+          "prompt" => "O botão de login não responde",
+          "pipeline_id" => pipeline_fixture(ctx.workspace).id,
+          "runner_id" => runner.id,
+          "directory" => "app"
+        })
+
+      [stage_run] = task.stage_runs
+      run_and_finish(runner, stage_run.job, "failed", 5)
+
+      assert [%Job{stage_run: %StageRun{name: "Etapa A", task: %Task{title: "Corrigir o login"}}}] =
+               Jobs.recent_for_runner(ctx.workspace, runner)
     end
   end
 end
