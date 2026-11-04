@@ -27,10 +27,10 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   import PipeMaestroWeb.TaskComponents
 
+  alias Phoenix.Socket.Broadcast
   alias PipeMaestro.{Insights, Jobs, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
-  alias Phoenix.Socket.Broadcast
   alias PipeMaestroWeb.{Markdown, ProposalRequest, RunnerStatus}
 
   @live_every 2_000
