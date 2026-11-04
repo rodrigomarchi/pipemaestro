@@ -28,7 +28,8 @@ antigo.
   (`global-setup.ts`), pelo mesmo caminho da produção:
   `PipeMaestro.Release.create_operator/3`. Workspaces, usuários e outros
   operadores, cada spec cria pela interface, com nomes únicos (`uniqueSuffix()`),
-  então as specs não dependem umas das outras nem de um banco limpo.
+  então as specs não dependem umas das outras nem de um banco limpo. A exceção é o
+  diretor da landing (abaixo), que roda à parte, num banco recriado, com nomes fixos.
 - **Seletores: só `data-testid`.** O frontend marca tudo o que um teste toca.
   Specs e Page Objects usam `page.getByTestId(...)`, sem texto, classe CSS,
   posição (`.first()`, `.nth()`) ou estrutura do DOM. Se um elemento não tem
@@ -68,3 +69,34 @@ Para conferir uma tela em largura estreita, a spec muda o viewport com
 
 Nunca escreva uma spec descartável só para tirar um screenshot: ponha o
 `shot()` na spec real do fluxo.
+
+## Diretor da landing (`make landing.shots`)
+
+As telas da landing (`/`) são screenshots reais da plataforma, gerados por um
+**diretor**: `director/landing.spec.ts`, a exceção deliberada à regra acima. Ele monta
+pela interface o workspace **Nimbus** (Marina Costa, o runner `macbook-marina` e o
+diretório `loja-api`, em `director/scenario.ts`), com um runner real, e fotografa
+`board`, `task`, `decision`, `audit`, `usage` e `runners`, claro e escuro, em
+`apps/pipe_maestro_web/priv/static/images/landing/` (`<nome>.png` e
+`<nome>-dark.png`, sempre os mesmos nomes).
+
+```bash
+make landing.shots    # APAGA o banco e2e deste worktree e regrava as 12 imagens
+```
+
+- **Fora da suíte.** O projeto `director` do `playwright.config.ts` só existe com
+  `E2E_DIRECTOR=1`; `make e2e` e `make e2e.shots` não o enxergam e não tocam nas imagens.
+- **Quando rodar:** sempre que uma tela mostrada na landing mudar. Confira as imagens
+  antes do commit; `PipeMaestroWeb.LandingShotsTest` falha se faltar uma, se o tamanho
+  em pixels divergir do declarado em `PipeMaestroWeb.LandingShots` ou se passar de 600 KB.
+- **Enquadramento:** `director/capture.ts` grava o viewport (1440×900, escala 2), com
+  `top` para rolar uma área até logo abaixo do cabeçalho; esconde toasts e o caminho
+  absoluto do worktree, e `retext` troca o que só esta máquina mostraria (hostname,
+  endereço do servidor local).
+- **O agente é o CLI de vitrine** `director/support/showcase_claude`, separado do
+  `fake_claude` do runner (as specs dependem das saídas exatas dele). Imprime o mesmo
+  `stream-json`, lê, edita arquivos do worktree e roda `make test`, escreve o artefato
+  de cada etapa e exporta OTLP. O que cada tarefa faz vem do mapa de cenas
+  (`SHOWCASE_SCENES`, linhas `frase|comportamento|módulo`, escrito pelo diretor):
+  `ok`, `perguntas` (a primeira etapa para com duas perguntas) ou `segura:<etapa>`
+  (a etapa fica rodando até existir `$SHOWCASE_DIR/release`, para a foto).

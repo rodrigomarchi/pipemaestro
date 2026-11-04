@@ -80,6 +80,16 @@ convergem num único pipeline, que passa por uma etapa (o anel) e termina no pul
   16 px, e abaixo de 24 px usar o desenho do favicon; deixar ao redor um respiro de pelo
   menos um quarto do lado do símbolo; sem texto dentro do símbolo.
 
+## Screenshots da landing
+
+`landing_shot/1` (`PipeMaestroWeb.PageHTML`) põe uma tela de
+`PipeMaestroWeb.LandingShots.all/0` numa janela de navegador (markup próprio: o Petal não
+tem esse componente). São duas `<img>`, a clara com `dark:hidden` e a escura com
+`hidden dark:block`, então seguem a classe `dark` do `<html>` que o
+`color_scheme_switch` alterna. Cada uma tem `alt`, `width` e `height` (evitam salto de
+layout) e `loading="lazy"`, salvo a do hero (`eager`). As imagens são geradas por
+`make landing.shots` ([e2e/README.md](../../e2e/README.md)).
+
 ## Tema
 
 - **Cores:** `primary` é violeta e `secondary` é sky, definidos em `@theme inline`
