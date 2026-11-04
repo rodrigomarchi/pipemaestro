@@ -816,7 +816,7 @@ defmodule PipeMaestro.Tasks do
   @doc """
   What needs attention among the workspace's tasks that have not ended:
   `{:runner_offline, task}` when its runner is not in `online_runner_ids`
-  (the task cannot move), `{:decision_overdue, task}` when its decision is
+  (the task cannot move, `runner_offline?/2`), `{:decision_overdue, task}` when its decision is
   past its deadline, and `{:near_budget, task, spent, cap}` when it has
   spent 80% or more of its pipeline's cap per task, and
   `{:runner_near_limit, task, runner}` when it runs on a runner whose account
@@ -834,12 +834,40 @@ defmodule PipeMaestro.Tasks do
 
     Enum.flat_map(active, fn task ->
       offline =
-        if task.status == :running and not MapSet.member?(online_runner_ids, task.runner_id),
-          do: [{:runner_offline, task}],
-          else: []
+        if runner_offline?(task, online_runner_ids), do: [{:runner_offline, task}], else: []
 
       offline ++ overdue(task) ++ near_budget(task) ++ near_limit(task)
     end)
+  end
+
+  @doc """
+  Whether `task` is running on a runner that is not in `online_runner_ids`:
+  it cannot move until the runner comes back. A task in any other status is
+  never held up by its runner.
+  """
+  @spec runner_offline?(Task.t(), MapSet.t()) :: boolean()
+  def runner_offline?(%Task{status: :running, runner_id: runner_id}, online_runner_ids),
+    do: not MapSet.member?(online_runner_ids, runner_id)
+
+  def runner_offline?(%Task{}, _online_runner_ids), do: false
+
+  @doc """
+  The next instant at which one of `alerts` (`alerts/2`) ends by itself, with
+  no event: the earliest future reset among the runners near their limit.
+  `nil` when none of them ends with time.
+  """
+  @spec alerts_change_at([tuple()], DateTime.t()) :: DateTime.t() | nil
+  def alerts_change_at(alerts, now \\ DateTime.utc_now()) do
+    alerts
+    |> Enum.flat_map(fn
+      {:runner_near_limit, _task, %Runner{rate_limit: %{} = limit}} ->
+        [Runners.resets_at(limit["resets_at"])]
+
+      _other ->
+        []
+    end)
+    |> Enum.filter(&(match?(%DateTime{}, &1) and DateTime.compare(&1, now) == :gt))
+    |> Enum.min(DateTime, fn -> nil end)
   end
 
   defp near_limit(%Task{status: :running, runner: %Runner{} = runner} = task) do
