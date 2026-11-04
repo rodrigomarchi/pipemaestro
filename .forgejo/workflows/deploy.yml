@@ -1,0 +1,37 @@
+# Publishes main on Sun after every merge (the main branch only changes
+# through pull requests), or again by hand (workflow_dispatch).
+#
+# Runs on the repository's own runner, on Moon (the infra's forgejo_runner
+# role). The DEPLOY_* secrets come from the infra too: the SSH key is forced on
+# the server to ~/bin/pipemaestro-deploy, which only deploys a branch.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: docker
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH to Sun
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'StrictHostKeyChecking yes\nBatchMode yes\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts ~/.ssh/config
+
+      - name: Deploy main and wait until it serves
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SUN_IP: ${{ secrets.DEPLOY_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: scripts/deploy_sun.sh main

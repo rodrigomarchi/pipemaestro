@@ -81,5 +81,8 @@ a screen.
 
 ## Git
 
+- **`main` only changes through pull requests**: the Forgejo refuses direct pushes,
+  admins included. Work on a branch, push it and open a PR; merging it deploys
+  (`.forgejo/workflows/deploy.yml`, [`docs/guias/deploy.md`](docs/guias/deploy.md)).
 - Stage exact paths — never `git add -A`.
 - Never `git checkout <file>` to undo while other work is uncommitted.

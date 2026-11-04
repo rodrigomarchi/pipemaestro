@@ -9,10 +9,16 @@ set -euo pipefail
 # Needs DEPLOY_USER and SUN_IP (from .env, see .env.example); SSH_PORT
 # defaults to 2222 and DEPLOY_URL to https://pipemaestro.app.
 #
-# Copies scripts/deploy.sh to the server and runs it there: it builds the
-# release from the server's clone and hands it to DeployEx. Then polls
-# DEPLOY_URL/version until the release it built is the one answering.
-# The server clones from the Forgejo, so <ref> must be pushed first.
+# Asks the server to deploy <ref> through ~/bin/pipemaestro-deploy (the
+# infra's deploy_access role): it fetches the server's clone and runs that
+# ref's scripts/deploy.sh, one deploy at a time, which builds the release and
+# hands it to DeployEx. Then polls DEPLOY_URL/version until the release it
+# built is the one answering. The server clones from the Forgejo, so <ref>
+# must be pushed first.
+#
+# Runs on merges to main from the Forgejo (.forgejo/workflows/deploy.yml),
+# whose SSH key the server forces to that same script, and by hand with
+# `make deploy`.
 # ------------------------------------------------------------------
 
 REF="${1:?Usage: deploy_sun.sh <git-ref>}"
@@ -22,7 +28,6 @@ SSH_PORT="${SSH_PORT:-2222}"
 DEPLOY_URL="${DEPLOY_URL:-https://pipemaestro.app}"
 ROLLOUT_TIMEOUT_S="${ROLLOUT_TIMEOUT_S:-300}"
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
 LOG="$(mktemp -t pipemaestro-deploy)"
 trap 'rm -f "${LOG}"' EXIT
 
@@ -32,8 +37,7 @@ if [ -z "$(git ls-remote origin "refs/heads/${REF}" "refs/tags/${REF}" 2>/dev/nu
 fi
 
 echo "==> Building ${REF} on Sun (${DEPLOY_USER}@${SUN_IP}:${SSH_PORT})"
-scp -q -P "${SSH_PORT}" "${HERE}/deploy.sh" "${DEPLOY_USER}@${SUN_IP}:~/deploy_pipemaestro.sh"
-ssh -p "${SSH_PORT}" "${DEPLOY_USER}@${SUN_IP}" "bash ~/deploy_pipemaestro.sh '${REF}'" | tee "${LOG}"
+ssh -p "${SSH_PORT}" "${DEPLOY_USER}@${SUN_IP}" "~/bin/pipemaestro-deploy deploy ${REF}" | tee "${LOG}"
 
 RELEASE="$(sed -n 's/^RELEASE=//p' "${LOG}" | tail -n 1)"
 if [ -z "${RELEASE}" ]; then
