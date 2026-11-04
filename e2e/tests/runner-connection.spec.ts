@@ -1,7 +1,7 @@
 /**
  * @section Runners
  * @flow A [done] A runner signs in with the device flow: the CLI prints a code, a workspace member approves it in the browser, the CLI saves its credentials
- * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice, with its version, marked outdated when older than the control plane's
+ * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice, with its version, marked outdated when older than the control plane's; the page links the deploy's runner binaries per platform and the connect steps use them
  * @flow D [done] A runner's page lists the latest jobs it finished, each leading to its audit
  * @flow C [done] A member renames the runner, then revokes it: the CLI is refused and stops, and the runner leaves the list
  */
@@ -64,6 +64,16 @@ test.describe("Runner connection", () => {
     await expect(runners.outdated(runnerName)).toHaveText("desatualizado");
     await expect(app.page.getByTestId("app-version")).toHaveText(versions.controlPlane);
     await shot(app.page, "runner-online");
+
+    // The deploy's runner binaries, one link per platform, and the connect steps that use them.
+    for (const target of ["macos_arm64", "macos_x86_64", "linux_x86_64", "linux_arm64"]) {
+      await expect(runners.download(target)).toHaveAttribute("href", `/downloads/runner/pipemaestro_${target}`);
+    }
+    await runners.download("macos_arm64").scrollIntoViewIfNeeded();
+    await shot(app.page, "runner-downloads");
+    await expect(await runners.openConnect()).toHaveText(/^pipemaestro login --url http/);
+    await shot(app.page, "runner-connect-downloads");
+    await app.page.keyboard.press("Escape");
 
     await backoffice.openWorkspace(workspace.slug);
     await expect(page.getByTestId(`workspace-runner-status-${runnerName}`)).toHaveText("Online");

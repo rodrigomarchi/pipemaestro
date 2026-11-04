@@ -3,9 +3,9 @@ defmodule Mix.Tasks.Runner.Login do
   @moduledoc """
   Signs this machine in as a runner:
 
-      mix runner.login --url http://localhost:4000 [--name NAME] [--label L]... [--capacity N]
+      mix runner.login [--url http://localhost:4000] [--name NAME] [--label L]... [--capacity N]
 
-  Shows a URL and a code; a workspace member opens the URL, signed in, and
+  Without `--url`, it signs in to `PipeMaestroRunner.Config.default_url/0`. Shows a URL and a code; a workspace member opens the URL, signed in, and
   approves the runner. The credentials are saved for `mix runner.start`.
   """
   use Mix.Task

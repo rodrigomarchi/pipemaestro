@@ -101,20 +101,19 @@ executável por plataforma: `pipemaestro_macos_arm64`, `pipemaestro_macos_x86_64
 basta copiar, renomear para `pipemaestro` e usar os mesmos comandos abaixo. Na primeira
 execução, ele se descompacta na pasta de dados do usuário.
 
-Para gerar os binários, a máquina do build precisa de:
+Para gerar os binários, a máquina precisa só de Docker: o build roda na imagem
+`docker/runner-binary`, a mesma que o deploy usa no servidor (ver a
+[ADR 0020](../adr/0020-binarios-do-runner-no-deploy.md)). `TARGET=linux_x86_64` gera só
+um deles.
 
-- Zig 0.16 (`brew install zig@0.16`);
-- `xz`;
-- o Erlang 28.5 (`asdf install erlang 28.5`): o Burrito publica ERTS por versão do OTP,
-  não por patch.
-
-`TARGET=linux_x86_64` gera só um deles.
+Em produção não é preciso gerar nada: cada deploy publica os binários, e a tela
+**Executores** tem o link de cada plataforma, da mesma versão do control plane.
 
 ### Conectar
 
 ```bash
 pipemaestro doctor                                   # confere claude, git, disco...
-pipemaestro login --url https://plataforma.exemplo.com
+pipemaestro login                                    # https://pipemaestro.app; outra: --url <plataforma>
 pipemaestro start --root ~/src                       # oferece os diretórios de ~/src
 ```
 

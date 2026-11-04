@@ -118,4 +118,8 @@ if config_env() == :prod do
   # Check `Plug.SSL` for all available options in `force_ssl`.
 
   config :pipe_maestro, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
+
+  # Where this deploy published the runner's binaries (scripts/deploy.sh),
+  # e.g. /downloads/runner; the runners page links them. Unset, it does not.
+  config :pipe_maestro_web, :runner_downloads_url, System.get_env("RUNNER_DOWNLOADS_URL")
 end

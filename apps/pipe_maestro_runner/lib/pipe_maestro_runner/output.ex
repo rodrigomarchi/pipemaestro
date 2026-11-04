@@ -34,9 +34,7 @@ defmodule PipeMaestroRunner.Output do
         config
 
       {:error, :not_found} ->
-        fail!(
-          "Este runner ainda não fez login. Rode: pipemaestro login --url <url da plataforma>"
-        )
+        fail!("Este runner ainda não fez login. Rode: pipemaestro login (ou --url <plataforma>)")
 
       {:error, :invalid} ->
         fail!(

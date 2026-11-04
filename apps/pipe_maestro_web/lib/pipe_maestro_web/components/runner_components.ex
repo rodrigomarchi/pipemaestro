@@ -84,10 +84,128 @@ defmodule PipeMaestroWeb.RunnerComponents do
 
   defp scale(value, [unit | _rest]), do: {value, unit}
 
-  @doc "The commands that connect a new runner to this platform."
+  # The binaries scripts/deploy.sh publishes, one per Burrito target (mix.exs).
+  @downloads [
+    {"macos_arm64", "macOS", "Apple Silicon"},
+    {"macos_x86_64", "macOS", "Intel"},
+    {"linux_x86_64", "Linux", "x86_64"},
+    {"linux_arm64", "Linux", "arm64"}
+  ]
+
+  @doc """
+  Where this deploy published the runner's binaries (`:runner_downloads_url`),
+  or nil where none were (development and tests).
+  """
+  @spec downloads_url() :: String.t() | nil
+  def downloads_url, do: Application.get_env(:pipe_maestro_web, :runner_downloads_url)
+
+  @doc """
+  Links to the runner's binary for each platform, built by the same deploy as
+  this control plane, and the command that installs one.
+  """
+  attr :url, :string, required: true, doc: "the platform URL"
+  attr :downloads, :string, required: true, doc: "where the binaries are, under the platform"
+  attr :version, :string, required: true, doc: "the version they were built as"
+
+  @spec runner_downloads(map()) :: Phoenix.LiveView.Rendered.t()
+  def runner_downloads(assigns) do
+    assigns = assign(assigns, targets: @downloads, base: binary_base(assigns))
+
+    ~H"""
+    <div data-testid="runner-downloads">
+      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <a
+          :for={{target, os, arch} <- @targets}
+          href={"#{@downloads}/pipemaestro_#{target}"}
+          download={"pipemaestro_#{target}"}
+          class="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2.5 transition hover:border-primary-400 hover:bg-primary-50 dark:border-gray-700 dark:hover:border-primary-500 dark:hover:bg-gray-800"
+          data-testid={"runner-download-#{target}"}
+        >
+          <.icon
+            name={if os == "macOS", do: "hero-computer-desktop", else: "hero-server"}
+            class="size-5 shrink-0 text-gray-400"
+          />
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">{os}</span>
+            <span class="block text-xs text-gray-500 dark:text-gray-400">{arch}</span>
+          </span>
+          <.icon name="hero-arrow-down-tray" class="size-4 shrink-0 text-primary-500" />
+        </a>
+      </div>
+      <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+        Versão <span class="font-mono" data-testid="runner-download-version">{@version}</span>,
+        a mesma desta plataforma. Pelo terminal, o macOS não pede para liberar o app
+        (troque <span class="font-mono">macos_arm64</span> pelo seu alvo):
+      </p>
+      <pre
+        class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100 dark:bg-gray-950 dark:ring-1 dark:ring-gray-700"
+        data-testid="runner-download-command"
+      >{install_command(@base)}</pre>
+    </div>
+    """
+  end
+
+  defp install_command(base) do
+    Enum.join(
+      [
+        "mkdir -p ~/.local/bin",
+        "curl -fL #{base}_macos_arm64 -o ~/.local/bin/pipemaestro",
+        "chmod +x ~/.local/bin/pipemaestro"
+      ],
+      "\n"
+    )
+  end
+
+  defp binary_base(%{url: url, downloads: downloads}) do
+    base = if String.starts_with?(downloads, "/"), do: url <> downloads, else: downloads
+    base <> "/pipemaestro"
+  end
+
+  @doc """
+  The commands that connect a new runner to this platform: with published
+  binaries, download one and use it (`login` names the platform only when it
+  is not the default one); without them, the repository's make targets.
+  """
   attr :url, :string, required: true, doc: "the platform URL the runner should use"
+  attr :downloads, :string, default: nil, doc: "where the binaries are, if published"
+  attr :version, :string, default: nil, doc: "the version they were built as"
 
   @spec connect_instructions(map()) :: Phoenix.LiveView.Rendered.t()
+  def connect_instructions(%{downloads: downloads} = assigns) when is_binary(downloads) do
+    login =
+      if assigns.url == PipeMaestroProtocol.default_platform_url(),
+        do: "pipemaestro login",
+        else: "pipemaestro login --url #{assigns.url}"
+
+    assigns = assign(assigns, login: login)
+
+    ~H"""
+    <ol class="space-y-4 text-sm text-gray-600 dark:text-gray-300">
+      <li>
+        <p class="font-medium text-gray-900 dark:text-white">
+          1. Baixe o runner da sua plataforma:
+        </p>
+        <div class="mt-2">
+          <.runner_downloads url={@url} downloads={@downloads} version={@version} />
+        </div>
+      </li>
+      <li>
+        <p class="font-medium text-gray-900 dark:text-white">
+          2. Faça login, abra o link que o comando mostrar e aprove o runner neste workspace:
+        </p>
+        <pre
+          class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100 dark:bg-gray-950 dark:ring-1 dark:ring-gray-700"
+          data-testid="connect-login-command"
+        >{@login}</pre>
+      </li>
+      <li>
+        <p class="font-medium text-gray-900 dark:text-white">3. Conecte:</p>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100 dark:bg-gray-950 dark:ring-1 dark:ring-gray-700">pipemaestro start --root ~/src</pre>
+      </li>
+    </ol>
+    """
+  end
+
   def connect_instructions(assigns) do
     ~H"""
     <ol class="space-y-4 text-sm text-gray-600 dark:text-gray-300">
@@ -96,7 +214,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
           1. Na máquina do runner, dentro do repositório:
         </p>
         <pre
-          class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100"
+          class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100 dark:bg-gray-950 dark:ring-1 dark:ring-gray-700"
           data-testid="connect-login-command"
         >make runner.login URL={@url}</pre>
       </li>
@@ -107,7 +225,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
       </li>
       <li>
         <p class="font-medium text-gray-900 dark:text-white">3. Conecte:</p>
-        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100">make runner.start</pre>
+        <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100 dark:bg-gray-950 dark:ring-1 dark:ring-gray-700">make runner.start</pre>
       </li>
     </ol>
     """

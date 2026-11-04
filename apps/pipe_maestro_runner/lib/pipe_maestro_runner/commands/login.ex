@@ -2,9 +2,10 @@ defmodule PipeMaestroRunner.Commands.Login do
   @moduledoc """
   Signs this machine in as a runner:
 
-      pipemaestro login --url http://localhost:4000 [--name NAME] [--label L]... [--capacity N]
+      pipemaestro login [--url URL] [--name NAME] [--label L]... [--capacity N]
 
-  Shows a URL and a code; a workspace member opens the URL, signed in, and
+  Without `--url`, it signs in to `PipeMaestroRunner.Config.default_url/0`
+  (PipeMaestro's production, or `$PIPEMAESTRO_URL`). Shows a URL and a code; a workspace member opens the URL, signed in, and
   approves the runner. The credentials are saved for `pipemaestro start`.
   """
 
@@ -15,7 +16,7 @@ defmodule PipeMaestroRunner.Commands.Login do
   def run(args) do
     {opts, _rest, invalid} = OptionParser.parse(args, strict: @switches)
     if invalid != [], do: Output.fail!("Opção inválida: #{inspect(invalid)}")
-    url = opts[:url] || Output.fail!("Informe a URL da plataforma: --url http://localhost:4000")
+    url = opts[:url] || Config.default_url()
 
     labels = Keyword.get_values(opts, :label)
     {:ok, hello} = Host.hello(labels: labels, capacity: opts[:capacity])

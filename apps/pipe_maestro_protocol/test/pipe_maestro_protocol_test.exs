@@ -7,6 +7,7 @@ defmodule PipeMaestroProtocolTest do
     test "version, socket, topics and paths" do
       assert PipeMaestroProtocol.version() in PipeMaestroProtocol.supported_versions()
       assert PipeMaestroProtocol.socket_path() == "/runner/socket"
+      assert PipeMaestroProtocol.default_platform_url() == "https://pipemaestro.app"
       assert PipeMaestroProtocol.runner_topic("abc") == "runner:abc"
       assert PipeMaestroProtocol.device_code_path() =~ "/device/code"
       assert PipeMaestroProtocol.device_token_path() =~ "/device/token"

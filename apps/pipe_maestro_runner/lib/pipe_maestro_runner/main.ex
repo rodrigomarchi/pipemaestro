@@ -3,7 +3,7 @@ defmodule PipeMaestroRunner.Main do
   The runner's command line in a release (`pipemaestro <comando>`), the same
   commands `mix runner.*` runs in development (`PipeMaestroRunner.Commands`):
 
-      pipemaestro login --url https://plataforma.exemplo.com
+      pipemaestro login [--url https://plataforma.exemplo.com]   (padrão: https://pipemaestro.app)
       pipemaestro start [--root ~/src]
       pipemaestro status | logout | doctor
       pipemaestro service print | install | uninstall

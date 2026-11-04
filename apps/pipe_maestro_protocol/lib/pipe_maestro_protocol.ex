@@ -28,6 +28,14 @@ defmodule PipeMaestroProtocol do
   @spec supported_versions() :: [pos_integer()]
   def supported_versions, do: [@version]
 
+  @doc """
+  The platform a runner signs in to when it is not told another: PipeMaestro's
+  production. A control plane at this URL leaves `--url` out of the login it
+  shows.
+  """
+  @spec default_platform_url() :: String.t()
+  def default_platform_url, do: "https://pipemaestro.app"
+
   @doc "Path of the WebSocket the runner connects to (`<path>/websocket`)."
   @spec socket_path() :: String.t()
   def socket_path, do: "/runner/socket"

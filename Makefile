@@ -106,9 +106,8 @@ ci.quick: ## Run every check but Dialyzer (iteration only)
 # RUNNER_CONFIG_DIR).
 RUNNER_DIR = apps/pipe_maestro_runner
 
-runner.login: ## Sign this machine in as a runner (URL=http://localhost:4000 [NAME=...] [LABELS="gpu cuda"] [CAPACITY=N])
-	@test -n "$(URL)" || { echo "usage: make runner.login URL=http://localhost:4000"; exit 2; }
-	cd $(RUNNER_DIR) && mix runner.login --url $(URL) $(if $(NAME),--name "$(NAME)") \
+runner.login: ## Sign this machine in as a runner ([URL=http://localhost:4000], default https://pipemaestro.app; [NAME=...] [LABELS="gpu cuda"] [CAPACITY=N])
+	cd $(RUNNER_DIR) && mix runner.login $(if $(URL),--url $(URL)) $(if $(NAME),--name "$(NAME)") \
 		$(foreach label,$(LABELS),--label $(label)) $(if $(CAPACITY),--capacity $(CAPACITY))
 
 runner.start: ## Connect this runner and stay online (Ctrl+C to stop) ([ROOT=~/src] code directories offered; remembered)
@@ -130,16 +129,11 @@ runner.install: runner.rel ## Install pipemaestro for this user (~/.local/share 
 	ln -sf $(HOME)/.local/share/pipemaestro-runner/bin/pipemaestro $(HOME)/.local/bin/pipemaestro
 	@echo "Instalado: $(HOME)/.local/bin/pipemaestro (ponha ~/.local/bin no PATH). Comece com: pipemaestro login --url <plataforma>"
 
-# Burrito needs exactly this Zig (brew install zig@0.16, keg-only), plus xz.
-# Its precompiled ERTS exist per OTP release, not per patch: the binary is
-# built on that release (asdf install erlang 28.5), so its OTP apps and the
-# ERTS (with crypto's NIF) of each target match.
-ZIG_BIN ?= $(shell brew --prefix zig@0.16 2>/dev/null)/bin
-BINARY_OTP ?= 28.5
-
-runner.binary: ## Build the runner as one binary per platform into burrito_out/ ([TARGET=linux_x86_64] only one; needs zig 0.16, xz and OTP 28.5)
-	PATH="$(ZIG_BIN):$$PATH" ASDF_ERLANG_VERSION=$(BINARY_OTP) MIX_ENV=prod \
-		$(if $(TARGET),BURRITO_TARGET=$(TARGET)) mix release pipemaestro --overwrite
+# Built in the toolchain image (docker/runner-binary), the same one a deploy
+# builds them with on the server: Burrito needs an OTP its CDN publishes, plus
+# Zig and xz, none of them on this machine.
+runner.binary: ## Build the runner as one binary per platform into burrito_out/, in Docker ([TARGET=linux_x86_64] only one)
+	$(if $(TARGET),BURRITO_TARGET=$(TARGET)) scripts/build_runner_binaries.sh burrito_out
 
 # The version this checkout builds as (AAAA-MM-DD.NN, or +dev.<commit> after one).
 # Mix may print what it compiles first: the version is the last line.

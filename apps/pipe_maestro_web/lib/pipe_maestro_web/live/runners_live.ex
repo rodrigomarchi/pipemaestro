@@ -11,7 +11,8 @@ defmodule PipeMaestroWeb.RunnersLive do
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.Audit
   alias PipeMaestro.Runners
-  alias PipeMaestroWeb.{RunnerActions, RunnerStatus}
+  alias PipeMaestro.Version
+  alias PipeMaestroWeb.{RunnerActions, RunnerComponents, RunnerStatus}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -22,6 +23,7 @@ defmodule PipeMaestroWeb.RunnersLive do
      socket
      |> assign(page_title: "Executores", renaming: nil, rename_form: nil, connecting: false)
      |> assign(platform_url: PipeMaestroWeb.Endpoint.url())
+     |> assign(downloads_url: RunnerComponents.downloads_url(), version: Version.version())
      |> load_runners()}
   end
 
@@ -287,6 +289,17 @@ defmodule PipeMaestroWeb.RunnersLive do
         </.card_content>
       </.card>
 
+      <.card :if={@downloads_url} variant="outline" class="mt-6">
+        <.card_content>
+          <.section_heading
+            icon="hero-arrow-down-tray"
+            title="Baixar o runner"
+            description="Um executável por plataforma, sem instalar nada antes. Depois: pipemaestro login e pipemaestro start."
+          />
+          <.runner_downloads url={@platform_url} downloads={@downloads_url} version={@version} />
+        </.card_content>
+      </.card>
+
       <.modal
         :if={@connecting}
         id="connect-modal"
@@ -294,7 +307,7 @@ defmodule PipeMaestroWeb.RunnersLive do
         max_width="lg"
         on_cancel={JS.push("close_connect")}
       >
-        <.connect_instructions url={@platform_url} />
+        <.connect_instructions url={@platform_url} downloads={@downloads_url} version={@version} />
       </.modal>
 
       <.modal

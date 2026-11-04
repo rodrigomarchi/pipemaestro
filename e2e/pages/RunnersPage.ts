@@ -49,6 +49,19 @@ export class RunnersPage {
     return this.page.getByTestId(`runner-outdated-${name}`);
   }
 
+  /** The link to the runner's binary for a Burrito target (e.g. macos_arm64). */
+  download(target: string): Locator {
+    return this.page.getByTestId(`runner-download-${target}`);
+  }
+
+  /** Opens the "Conectar runner" modal and returns its login command. */
+  async openConnect(): Promise<Locator> {
+    await this.page.getByTestId("connect-runner").click();
+    const login = this.page.getByTestId("connect-login-command");
+    await expect(login).toBeVisible();
+    return login;
+  }
+
   /** The version on the runner's page. */
   get detailVersion(): Locator {
     return this.page.getByTestId("runner-detail-version");

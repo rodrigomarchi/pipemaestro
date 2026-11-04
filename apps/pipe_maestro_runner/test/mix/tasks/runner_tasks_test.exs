@@ -23,9 +23,25 @@ defmodule Mix.Tasks.RunnerTasksTest do
     %{dir: dir}
   end
 
-  test "login needs the platform URL and valid options" do
-    assert_raise Mix.Error, ~r/--url/, fn -> Login.run([]) end
+  test "login rejects invalid options" do
     assert_raise Mix.Error, ~r/Opção inválida/, fn -> Login.run(["--nope"]) end
+  end
+
+  test "login without --url signs in to the default platform" do
+    with_url_env("http://127.0.0.1:1", fn ->
+      assert_raise Mix.Error, ~r{Não foi possível falar com http://127.0.0.1:1}, fn ->
+        Login.run([])
+      end
+    end)
+  end
+
+  test "the default platform is production unless PIPEMAESTRO_URL names another" do
+    with_url_env(nil, fn -> assert Config.default_url() == "https://pipemaestro.app" end)
+    with_url_env("", fn -> assert Config.default_url() == "https://pipemaestro.app" end)
+
+    with_url_env("http://localhost:4000", fn ->
+      assert Config.default_url() == "http://localhost:4000"
+    end)
   end
 
   test "login reports an unreachable platform" do
@@ -103,5 +119,21 @@ defmodule Mix.Tasks.RunnerTasksTest do
     refute File.exists?(Config.path(dir))
     assert_received {:mix_shell, :info, [message]}
     assert message =~ "Credenciais removidas"
+  end
+
+  defp with_url_env(value, fun) do
+    previous = System.get_env("PIPEMAESTRO_URL")
+
+    if value,
+      do: System.put_env("PIPEMAESTRO_URL", value),
+      else: System.delete_env("PIPEMAESTRO_URL")
+
+    try do
+      fun.()
+    after
+      if previous,
+        do: System.put_env("PIPEMAESTRO_URL", previous),
+        else: System.delete_env("PIPEMAESTRO_URL")
+    end
   end
 end

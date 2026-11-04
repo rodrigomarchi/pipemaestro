@@ -24,6 +24,18 @@ defmodule PipeMaestroRunner.Config do
           root: Path.t() | nil
         }
 
+  @doc """
+  The platform a login without `--url` signs in to: `$PIPEMAESTRO_URL`, else
+  PipeMaestro's production (`PipeMaestroProtocol.default_platform_url/0`).
+  """
+  @spec default_url() :: String.t()
+  def default_url do
+    case System.get_env("PIPEMAESTRO_URL") do
+      url when is_binary(url) and url != "" -> url
+      _unset -> PipeMaestroProtocol.default_platform_url()
+    end
+  end
+
   @doc "The directory credentials live in."
   @spec dir() :: Path.t()
   def dir do

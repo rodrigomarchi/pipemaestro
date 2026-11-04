@@ -112,8 +112,7 @@ defmodule PipeMaestroRunner.Doctor do
       )
 
   defp config_check({:error, :not_found}),
-    do:
-      check("Credenciais do runner", :error, "nenhuma: rode pipemaestro login --url <plataforma>")
+    do: check("Credenciais do runner", :error, "nenhuma: rode pipemaestro login")
 
   defp config_check({:error, :invalid}),
     do:

@@ -42,6 +42,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0017 | [Linha do tempo compacta: faixas de ícones e painéis](adr/0017-linha-do-tempo-compacta.md) | Aceita |
 | 0018 | [Etapas autônomas: permissões totais e sem aprovação entre etapas](adr/0018-etapas-autonomas.md) | Aceita |
 | 0019 | [O nome PipeMaestro](adr/0019-o-nome-pipemaestro.md) | Aceita |
+| 0020 | [Binários do runner gerados em contêiner e publicados no deploy](adr/0020-binarios-do-runner-no-deploy.md) | Aceita |
 
 ## Specs
 

@@ -75,7 +75,8 @@ pendentes.
      a VM.
    - O Burrito publica ERTS por versão do OTP, não por patch, e só troca os binários
      e os NIFs. O binário é gerado no OTP 28.5 para que os apps do OTP da release e o
-     NIF do `crypto` de cada alvo coincidam.
+     NIF do `crypto` de cada alvo coincidam. (Hoje o build roda numa imagem Docker;
+     ver a [ADR 0020](0020-binarios-do-runner-no-deploy.md).)
    - A versão do binário leva o commit, porque ele se descompacta uma vez por versão
      e reaproveitaria um payload antigo.
    - O `service install` de dentro do binário aponta para o próprio binário.

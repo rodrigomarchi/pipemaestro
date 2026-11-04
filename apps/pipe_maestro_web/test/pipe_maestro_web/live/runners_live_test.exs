@@ -21,6 +21,67 @@ defmodule PipeMaestroWeb.RunnersLiveTest do
     refute has_element?(view, "[data-testid=connect-login-command]")
   end
 
+  test "without published binaries there are no download links", %{
+    conn: conn,
+    workspace: workspace
+  } do
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+    refute has_element?(view, "[data-testid=runner-downloads]")
+  end
+
+  describe "with the runner's binaries published" do
+    setup do
+      Application.put_env(:pipe_maestro_web, :runner_downloads_url, "/downloads/runner")
+      on_exit(fn -> Application.delete_env(:pipe_maestro_web, :runner_downloads_url) end)
+    end
+
+    test "links each platform's binary and the install command", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+
+      for target <- ~w(macos_arm64 macos_x86_64 linux_x86_64 linux_arm64) do
+        assert view
+               |> element("[data-testid=runner-download-#{target}]")
+               |> render() =~ ~s(href="/downloads/runner/pipemaestro_#{target}")
+      end
+
+      assert has_element?(
+               view,
+               "[data-testid=runner-download-version]",
+               PipeMaestro.Version.version()
+             )
+
+      assert view |> element("[data-testid=runner-download-command]") |> render() =~
+               PipeMaestroWeb.Endpoint.url() <> "/downloads/runner/pipemaestro_macos_arm64"
+    end
+
+    test "connecting a runner means downloading it and signing in", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+      view |> element("[data-testid=connect-runner]") |> render_click()
+
+      # This platform is not the default one, so the login names it.
+      assert view |> element("[data-testid=connect-login-command]") |> render() =~
+               "pipemaestro login --url #{PipeMaestroWeb.Endpoint.url()}"
+    end
+
+    test "on the default platform the login needs no --url" do
+      html =
+        render_component(&PipeMaestroWeb.RunnerComponents.connect_instructions/1,
+          url: PipeMaestroProtocol.default_platform_url(),
+          downloads: "/downloads/runner",
+          version: "2026-11-04.02"
+        )
+
+      assert html =~ "pipemaestro login</pre>"
+      refute html =~ "--url"
+    end
+  end
+
   test "shows each runner's version and marks the ones older than the control plane", %{
     conn: conn,
     workspace: workspace,

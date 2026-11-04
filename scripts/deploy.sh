@@ -21,6 +21,8 @@ SOURCE_DIR="$HOME/pipemaestro"
 DIST_DIR="$HOME/releases/dist/${APP_NAME}"
 VERSIONS_DIR="$HOME/releases/versions/${APP_NAME}/local"
 KEEP_RELEASES=3
+# Served by nginx at /downloads/runner/ (the infra's pipemaestro vhost).
+DOWNLOADS_DIR="${PIPEMAESTRO_DOWNLOADS_DIR:-/var/www/pipemaestro/downloads}"
 
 GIT_REF="${1:?Usage: deploy.sh <git-ref>}"
 
@@ -116,7 +118,23 @@ if [ ! -f "${TARBALL}" ]; then
 fi
 
 # ------------------------------------------------------------------
-# 4. Hand it to DeployEx
+# 4. The runner's binaries, from the same commit, in the toolchain image
+#    (docker/runner-binary). Published before the release goes live: a
+#    binary that fails to build stops the deploy here.
+# ------------------------------------------------------------------
+RUNNER_VERSION="$(cd apps/pipe_maestro_runner && mix runner.version | tail -n 1)"
+RUNNER_STAGE="${DOWNLOADS_DIR}/runner.new"
+rm -rf "${RUNNER_STAGE}"
+CP_VERSION="${RUNNER_VERSION}" scripts/build_runner_binaries.sh "${RUNNER_STAGE}"
+chmod 0755 "${RUNNER_STAGE}"
+rm -rf "${DOWNLOADS_DIR}/runner.old"
+if [ -d "${DOWNLOADS_DIR}/runner" ]; then mv "${DOWNLOADS_DIR}/runner" "${DOWNLOADS_DIR}/runner.old"; fi
+mv "${RUNNER_STAGE}" "${DOWNLOADS_DIR}/runner"
+rm -rf "${DOWNLOADS_DIR}/runner.old"
+echo "==> Runner ${RUNNER_VERSION} published in ${DOWNLOADS_DIR}/runner"
+
+# ------------------------------------------------------------------
+# 5. Hand it to DeployEx
 # ------------------------------------------------------------------
 mkdir -p "${DIST_DIR}" "${VERSIONS_DIR}"
 cp "${TARBALL}" "${DIST_DIR}/${APP_NAME}-${RELEASE_VERSION}.tar.gz"
@@ -135,7 +153,7 @@ chmod o+rx "${DIST_DIR}" "${VERSIONS_DIR}"
 chmod o+r "${DIST_DIR}/${APP_NAME}-${RELEASE_VERSION}.tar.gz" "${CURRENT_JSON}"
 
 # ------------------------------------------------------------------
-# 5. Keep the disk in check
+# 6. Keep the disk in check
 # ------------------------------------------------------------------
 # shellcheck disable=SC2012
 ls -t "${DIST_DIR}"/*.tar.gz 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | xargs -r rm -f

@@ -37,6 +37,10 @@ config :bcrypt_elixir, log_rounds: 4
 
 config :phoenix, :plug_init_mode, :runtime
 
+# As in production, where the deploy publishes the runner's binaries: the
+# runners page shows their links (the files themselves are not served here).
+config :pipe_maestro_web, :runner_downloads_url, "/downloads/runner"
+
 config :phoenix_live_view, enable_expensive_runtime_checks: true
 
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.

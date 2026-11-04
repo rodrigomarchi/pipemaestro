@@ -35,7 +35,7 @@ make deploy             # make ci, build no Sun e espera o rollout
 make deploy.skip-ci     # o mesmo sem o make ci; REF=<branch|tag> escolhe outra ref
 ```
 
-O `scripts/deploy_sun.sh` faz três coisas:
+O `scripts/deploy_sun.sh` faz quatro coisas:
 
 1. copia o `scripts/deploy.sh` para o Sun;
 2. roda esse script lá, e ele:
@@ -43,26 +43,35 @@ O `scripts/deploy_sun.sh` faz três coisas:
    - compila a release `pipe_maestro` com a versão `<mix>-<sha>`;
    - entrega o tarball ao DeployEx, que roda `PipeMaestro.Release.migrate` antes de subir a
      versão nova;
-3. consulta `https://pipemaestro.app/version` até a release nova responder. Desiste depois de
+3. ainda no Sun, o mesmo script gera os binários do runner do mesmo commit, na imagem
+   `docker/runner-binary`, e os publica em `/var/www/pipemaestro/downloads/runner/`.
+   O nginx serve esses binários em `/downloads/runner/`, e a tela de runners tem os
+   links. O primeiro deploy constrói a imagem e o cache, e é mais lento;
+4. consulta `https://pipemaestro.app/version` até a release nova responder. Desiste depois de
    `ROLLOUT_TIMEOUT_S`, que por padrão é 300 segundos.
 
 ## Primeira vez
 
-O primeiro operador do backoffice é criado dentro do nó que está rodando, porque é ele que tem
-o ambiente do DeployEx (`DATABASE_URL` e os segredos). Abra o console remoto do app
-`pipe_maestro` no dashboard do DeployEx e rode:
+O primeiro operador do backoffice é criado dentro do nó que está rodando, porque só ele tem
+o ambiente do DeployEx (`DATABASE_URL` e os segredos): um `bin/pipe_maestro eval` aberto por
+SSH falha ao configurar o banco. Por SSH no Sun, um `rpc` alcança esse nó, usando o nome e o
+cookie com que o DeployEx o iniciou:
 
-```elixir
-PipeMaestro.Release.create_operator("voce@exemplo.com", "Nome", "uma senha longa")
+```bash
+dir=$(ls -d /var/lib/deployex/service/pipe_maestro/*/current | head -1)
+node=$(basename "$(dirname "$dir")")      # pipe_maestro-<instância>
+cookie=$(ps -eo args | grep -- "-sname $node" | grep -o -- '-setcookie [^ ]*' | head -1 | cut -d' ' -f2)
+sudo -u deployex env RELEASE_COOKIE="$cookie" RELEASE_NODE="$node" RELEASE_DISTRIBUTION=sname \
+  HOME=/var/lib/deployex "$dir/bin/pipe_maestro" rpc \
+  'PipeMaestro.Release.create_operator("voce@exemplo.com", "Nome", "uma senha longa") |> IO.inspect()'
 ```
 
-A release fica em `/var/lib/deployex/service/pipe_maestro/<instância>/current`. Um
-`bin/pipe_maestro eval` aberto por SSH não tem o ambiente do app e falha ao configurar o banco.
+Não imprima o cookie: ele é o mesmo de todos os apps do DeployEx.
 
 Os workspaces e os usuários saem do backoffice. Cada runner se conecta com:
 
 ```bash
-pipemaestro login --url https://pipemaestro.app
+pipemaestro login          # sem --url, usa https://pipemaestro.app
 pipemaestro start --root ~/src
 ```
 
