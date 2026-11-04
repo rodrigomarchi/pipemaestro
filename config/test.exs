@@ -1,19 +1,18 @@
 import Config
 
-# Configure your database
-#
-# The MIX_TEST_PARTITION environment variable can be used
-# to provide built-in test partitioning in CI environment.
-# Run `mix help test` for more information.
 # Tests run the housekeeping themselves.
 config :claude_control_plane, ClaudeControlPlane.Maintenance, false
+
+# A git worktree gets its own database (config/worktree.exs);
+# MIX_TEST_PARTITION splits it further (`mix help test`).
+{worktree, _binding} = Code.eval_file("worktree.exs", __DIR__)
 
 config :claude_control_plane, ClaudeControlPlane.Repo,
   username: System.get_env("PGUSER", "postgres"),
   password: System.get_env("PGPASSWORD", "postgres"),
   hostname: System.get_env("PGHOST", "localhost"),
   port: String.to_integer(System.get_env("TEST_DB_PORT", "5443")),
-  database: "claude_control_plane_test#{System.get_env("MIX_TEST_PARTITION")}",
+  database: "claude_control_plane_test#{worktree}#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 

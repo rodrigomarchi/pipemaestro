@@ -8,7 +8,9 @@ import Config
 #      sandbox would hide each one's writes from the other.
 #
 # A dedicated database keeps the suite from touching dev or test data, and the
-# port (E2E_PORT, default 4003) stays clear of dev (4000) and test (4002).
+# port (E2E_PORT, default 4003) stays clear of dev (4000) and test (4002). A git
+# worktree gets its own database (config/worktree.exs) and port (Makefile).
+{worktree, _binding} = Code.eval_file("worktree.exs", __DIR__)
 e2e_http_port = String.to_integer(System.get_env("E2E_PORT", "4003"))
 
 config :claude_control_plane, ClaudeControlPlane.Repo,
@@ -16,7 +18,7 @@ config :claude_control_plane, ClaudeControlPlane.Repo,
   password: System.get_env("PGPASSWORD", "postgres"),
   hostname: System.get_env("PGHOST", "localhost"),
   port: String.to_integer(System.get_env("TEST_DB_PORT", "5443")),
-  database: "claude_control_plane_e2e",
+  database: "claude_control_plane_e2e#{worktree}",
   pool_size: 10
 
 config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
