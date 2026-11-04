@@ -1,7 +1,8 @@
 defmodule PipeMaestroWeb.RunnerStatus do
   @moduledoc """
   Live runner status for the screens: who is online in a workspace, and the
-  notifications that make every open screen reload its runners.
+  notifications that make every open screen reload its runners and the
+  alerts that depend on them.
 
   Screens subscribe to the workspace topic and receive two messages: the
   presence diff (`%Phoenix.Socket.Broadcast{event: "presence_diff"}`) when a

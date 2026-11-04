@@ -48,7 +48,9 @@ a partir dos eventos e da telemetria a cada leitura. Uma revisão encontrou lacu
   - como barras por janela no runner;
   - como selo na lista de runners;
   - num card em Uso;
-  - como alerta no Board para tarefas em andamento naquele runner.
+  - como alerta no Board para tarefas em andamento naquele runner. O alerta aparece
+    assim que o evento chega e some sozinho na hora de renovação: o Board guarda um
+    timer até o `resets_at` mais próximo (`Tasks.alerts_change_at/2`), sem polling.
 - **O tempo decomposto** fica no resumo (`timing`): fila, preparação, gates, API,
   ferramentas (somadas, porque podem rodar ao mesmo tempo) e o processo inteiro. Em
   Uso, cada etapa mostra a média de fila e de gates.
