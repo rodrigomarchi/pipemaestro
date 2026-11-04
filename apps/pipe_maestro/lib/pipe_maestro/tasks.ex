@@ -1188,7 +1188,7 @@ defmodule PipeMaestro.Tasks do
   stages of the group that did not pass), its agent given them in its
   prompt.
   """
-  @spec answer(Task.t(), [Questionnaire.answer()], String.t() | nil, decision_opts()) ::
+  @spec answer(Task.t(), [Questionnaire.answer()] | nil, String.t() | nil, decision_opts()) ::
           {:ok, Task.t()} | {:error, :not_awaiting} | {:error, :invalid_answers, String.t()}
   def answer(%Task{} = task, answers, instructions, opts \\ []) do
     case Repo.get!(Task, task.id) do

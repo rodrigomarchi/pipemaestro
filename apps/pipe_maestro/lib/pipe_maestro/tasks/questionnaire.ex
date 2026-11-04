@@ -167,43 +167,34 @@ defmodule PipeMaestro.Tasks.Questionnaire do
   at least one choice or a filled-in "Outro", a single choice when the
   question takes one, and choices among the labels offered.
   """
-  @spec validate_answers([question()], [answer()]) :: {:ok, [answer()]} | {:error, String.t()}
-  def validate_answers(questions, answers) when is_list(answers) do
-    with :ok <- check_count(questions, answers) do
-      questions
-      |> Enum.zip(answers)
-      |> Enum.with_index(1)
-      |> Enum.find_value({:ok, answers}, fn {{question, answer}, n} ->
-        case check_answer(question, answer, true) do
-          :ok -> nil
-          {:error, reason} -> {:error, "Pergunta #{n}: #{reason}"}
-        end
-      end)
-    end
-  end
-
-  def validate_answers(_questions, _answers), do: {:error, "As respostas não são uma lista."}
+  @spec validate_answers([question()], term()) :: {:ok, [answer()]} | {:error, String.t()}
+  def validate_answers(questions, answers), do: validate(questions, answers, true)
 
   @doc """
   Like `validate_answers/2`, but a question may stay unanswered: what is
   answered must still be valid. For going on without every answer.
   """
-  @spec validate_partial([question()], [answer()]) :: {:ok, [answer()]} | {:error, String.t()}
-  def validate_partial(questions, answers) when is_list(answers) do
+  @spec validate_partial([question()], term()) :: {:ok, [answer()]} | {:error, String.t()}
+  def validate_partial(questions, answers), do: validate(questions, answers, false)
+
+  defp validate(questions, answers, required?) when is_list(answers) do
     with :ok <- check_count(questions, answers) do
       questions
       |> Enum.zip(answers)
       |> Enum.with_index(1)
-      |> Enum.find_value({:ok, answers}, fn {{question, answer}, n} ->
-        case check_answer(question, answer, false) do
-          :ok -> nil
-          {:error, reason} -> {:error, "Pergunta #{n}: #{reason}"}
-        end
-      end)
+      |> Enum.find_value({:ok, answers}, &answer_error(&1, required?))
     end
   end
 
-  def validate_partial(_questions, _answers), do: {:error, "As respostas não são uma lista."}
+  defp validate(_questions, _answers, _required?),
+    do: {:error, "As respostas não são uma lista."}
+
+  defp answer_error({{question, answer}, n}, required?) do
+    case check_answer(question, answer, required?) do
+      :ok -> nil
+      {:error, reason} -> {:error, "Pergunta #{n}: #{reason}"}
+    end
+  end
 
   defp check_count(questions, answers) do
     if length(questions) == length(answers),
