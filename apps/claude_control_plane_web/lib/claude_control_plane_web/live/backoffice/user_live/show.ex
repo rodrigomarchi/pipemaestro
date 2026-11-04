@@ -197,6 +197,7 @@ defmodule ClaudeControlPlaneWeb.Backoffice.UserLive.Show do
                 class="flex items-end gap-2"
               >
                 <div class="flex-1">
+                  <.icon_label icon="hero-building-office" label="Adicionar a um workspace" />
                   <.combo_box
                     id="add-workspace"
                     name="workspace_id"
@@ -289,8 +290,9 @@ defmodule ClaudeControlPlaneWeb.Backoffice.UserLive.Show do
           phx-change="validate_password"
           phx-submit="reset_password"
         >
-          <.field
+          <.icon_field
             field={@password_form[:password]}
+            icon="hero-key"
             type="password"
             label="Nova senha"
             help_text={password_hint()}

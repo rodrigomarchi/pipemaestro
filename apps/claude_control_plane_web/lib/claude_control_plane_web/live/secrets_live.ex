@@ -116,14 +116,16 @@ defmodule ClaudeControlPlaneWeb.SecretsLive do
           />
           <.card_content>
             <.form for={@form} id="secret-form" phx-submit="save" class="grid gap-4 sm:grid-cols-3">
-              <.field
+              <.icon_field
                 field={@form[:name]}
+                icon="hero-variable"
                 label="Nome"
                 placeholder="GRAFANA_TOKEN"
                 data-testid="secret-name"
               />
-              <.field
+              <.icon_field
                 field={@form[:value]}
+                icon="hero-lock-closed"
                 type="password"
                 label="Valor"
                 data-testid="secret-value"

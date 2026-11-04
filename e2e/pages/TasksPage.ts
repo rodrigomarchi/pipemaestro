@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
+import { shot } from "../helpers/screenshots";
 
 /** Tasks: the list, the new-task form and one task's stages and decisions. */
 export class TasksPage {
@@ -29,6 +30,8 @@ export class TasksPage {
     pipeline: string;
     runner: string;
     directory: string;
+    /** Captures the filled form under this name (E2E_SHOTS). */
+    shot?: string;
   }): Promise<string> {
     await this.page.getByTestId("new-task").click();
     await this.page.getByTestId("task-title").fill(task.title);
@@ -36,6 +39,7 @@ export class TasksPage {
     await this.page.getByTestId("task-pipeline").selectOption({ label: task.pipeline });
     await this.selectRunner(task.runner);
     await this.page.getByTestId("task-directory").selectOption(task.directory);
+    if (task.shot) await shot(this.page, task.shot);
     await this.page.getByTestId("task-submit").click();
     await expect(this.page.getByTestId("task-prompt-text")).toHaveText(task.prompt);
     await waitForLiveView(this.page);

@@ -124,15 +124,22 @@ defmodule ClaudeControlPlaneWeb.Backoffice.UserLive.Index do
         on_cancel={JS.patch(~p"/backoffice/users")}
       >
         <.form for={@form} id="user-form" phx-change="validate" phx-submit="save">
-          <.field field={@form[:name]} label="Nome" data-testid="user-form-name" />
-          <.field
+          <.icon_field
+            field={@form[:name]}
+            icon="hero-user"
+            label="Nome"
+            data-testid="user-form-name"
+          />
+          <.icon_field
             field={@form[:email]}
+            icon="hero-envelope"
             type="email"
             label="E-mail"
             data-testid="user-form-email"
           />
-          <.field
+          <.icon_field
             field={@form[:password]}
+            icon="hero-key"
             type="password"
             label="Senha inicial"
             help_text={password_hint()}

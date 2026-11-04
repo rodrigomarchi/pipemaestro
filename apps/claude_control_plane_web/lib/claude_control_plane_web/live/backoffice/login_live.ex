@@ -45,8 +45,9 @@ defmodule ClaudeControlPlaneWeb.Backoffice.LoginLive do
                 phx-submit="submit"
                 phx-trigger-action={@trigger_submit}
               >
-                <.field
+                <.icon_field
                   field={@form[:email]}
+                  icon="hero-envelope"
                   type="email"
                   label="E-mail"
                   autocomplete="username"
@@ -54,8 +55,9 @@ defmodule ClaudeControlPlaneWeb.Backoffice.LoginLive do
                   data-testid="operator-login-email"
                   phx-mounted={JS.focus()}
                 />
-                <.field
+                <.icon_field
                   field={@form[:password]}
+                  icon="hero-lock-closed"
                   type="password"
                   label="Senha"
                   autocomplete="current-password"

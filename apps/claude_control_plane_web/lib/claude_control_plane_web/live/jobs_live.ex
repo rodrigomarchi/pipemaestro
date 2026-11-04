@@ -160,22 +160,24 @@ defmodule ClaudeControlPlaneWeb.JobsLive do
         </.alert>
 
         <.form for={@form} id="new-job-form" phx-submit="create">
-          <.field
+          <.icon_field
             field={@form[:runner_id]}
+            icon="hero-server-stack"
             type="select"
             label="Runner"
             prompt="Escolha um runner online"
             options={@online_runners}
             data-testid="job-runner"
           />
-          <.field
+          <.markdown_editor
+            id="job-prompt"
             field={@form[:prompt]}
-            type="textarea"
             label="Prompt"
-            rows="6"
+            icon="hero-command-line"
+            rows={6}
             placeholder="Ex.: crie um hello.txt com a data de hoje"
             help_text="O agente roda no workdir do runner com permissões totais."
-            data-testid="job-prompt"
+            testid="job-prompt"
           />
           <div class="flex justify-end gap-2">
             <.button type="button" variant="ghost" color="gray" phx-click="close_new">

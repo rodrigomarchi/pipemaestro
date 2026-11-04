@@ -1,18 +1,16 @@
-defmodule ClaudeControlPlaneWeb.EditorComponents do
+defmodule ClaudeControlPlaneWeb.MarkdownEditor do
   @moduledoc """
-  A Markdown editor over a form's textarea: a toolbar that formats the
-  selection and inserts prompt variables (the `MarkdownEditor` hook in
-  `assets/js/markdown_editor.js`), and Write/Preview tabs, the preview rendered
-  on the server (`ClaudeControlPlaneWeb.Markdown`).
+  A Markdown editor over a form's textarea (`ClaudeControlPlaneWeb.FormComponents.markdown_editor/1`
+  renders it): a toolbar that formats the selection and inserts prompt
+  variables (the `MarkdownEditor` hook in `assets/js/markdown_editor.js`), and
+  Write/Preview tabs, the preview rendered on the server
+  (`ClaudeControlPlaneWeb.Markdown`).
 
-  `icon_field/1` is a form field whose label carries an icon.
-
-  The editor's textarea stays the real input, also while the preview shows, so the form
-  keeps its value and tests fill it as any other field. The LiveView owns which
-  editors show their preview: the tabs send `toggle_preview` with the editor's
-  `id`.
+  The editor keeps which tab shows. The textarea stays the real input, also
+  while the preview shows, so the parent form keeps its value, validates it as
+  it is typed, and tests fill it as any other field.
   """
-  use Phoenix.Component
+  use Phoenix.LiveComponent
   use PetalComponents
 
   alias ClaudeControlPlaneWeb.Markdown
@@ -28,22 +26,17 @@ defmodule ClaudeControlPlaneWeb.EditorComponents do
     {"link", "hero-link", "Link (⌘K)"}
   ]
 
-  attr :id, :string, required: true, doc: "unique on the page; also what `toggle_preview` gets"
-  attr :field, Phoenix.HTML.FormField, required: true
-  attr :label, :string, required: true
-  attr :icon, :string, default: "hero-document-text"
-  attr :testid, :string, required: true, doc: "the textarea's; the editor's parts derive from it"
-  attr :preview, :boolean, default: false
-  attr :variables, :list, default: [], doc: "the prompt variables the menu inserts"
-  attr :rows, :integer, default: 8
-  attr :placeholder, :string, default: nil
-  attr :help_text, :string, default: nil
+  @impl true
+  def mount(socket), do: {:ok, assign(socket, preview: false, text: nil, formats: @formats)}
 
-  @doc "A Markdown editor for `field`, with its toolbar and Write/Preview tabs."
-  @spec markdown_editor(map()) :: Phoenix.LiveView.Rendered.t()
-  def markdown_editor(assigns) do
-    assigns = assign(assigns, :formats, @formats)
+  # The hook sends the textarea's text with the click, so the preview shows what
+  # is typed also in a form that does not track its fields as they change.
+  @impl true
+  def handle_event("toggle_preview", %{"preview" => preview} = params, socket),
+    do: {:noreply, assign(socket, preview: preview == "true", text: params["text"])}
 
+  @impl true
+  def render(assigns) do
     ~H"""
     <div id={@id} phx-hook="MarkdownEditor" data-testid={"#{@testid}-editor"}>
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -61,8 +54,9 @@ defmodule ClaudeControlPlaneWeb.EditorComponents do
             }
             type="button"
             phx-click="toggle_preview"
-            phx-value-id={@id}
+            phx-target={@myself}
             phx-value-preview={to_string(preview)}
+            data-md-preview={preview && "true"}
             aria-pressed={to_string(preview == @preview)}
             class={[
               "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition",
@@ -119,6 +113,7 @@ defmodule ClaudeControlPlaneWeb.EditorComponents do
         </div>
         <.field
           field={@field}
+          id={@input_id}
           type="textarea"
           rows={@rows}
           label={@label}
@@ -137,39 +132,12 @@ defmodule ClaudeControlPlaneWeb.EditorComponents do
         class="prose prose-sm max-w-none rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 prose-h1:text-xl prose-h2:text-lg prose-h3:text-base dark:prose-invert dark:border-gray-700 dark:bg-gray-950"
         data-testid={"#{@testid}-preview"}
       >
-        <%= if blank?(@field.value) do %>
+        <%= if blank?(@text || @field.value) do %>
           <p class="text-gray-400 dark:text-gray-500">Nada para visualizar ainda.</p>
         <% else %>
-          {Markdown.to_html(@field.value)}
+          {Markdown.to_html(@text || @field.value)}
         <% end %>
       </div>
-    </div>
-    """
-  end
-
-  attr :field, Phoenix.HTML.FormField, required: true
-  attr :label, :string, required: true
-  attr :icon, :string, required: true
-  attr :type, :string, default: "text"
-
-  attr :rest, :global,
-    include:
-      ~w(options rows placeholder help_text min max step no_margin class data-testid prompt)
-
-  @doc """
-  A `<.field>` with an icon before its label. The visible label is decoration:
-  the field keeps its own label (read by screen readers), so it is labelled
-  once.
-  """
-  @spec icon_field(map()) :: Phoenix.LiveView.Rendered.t()
-  def icon_field(assigns) do
-    ~H"""
-    <div>
-      <span aria-hidden="true" class="pc-label flex items-center gap-1.5">
-        <.icon name={@icon} class="size-4 shrink-0 text-primary-500 dark:text-primary-400" />
-        {@label}
-      </span>
-      <.field field={@field} type={@type} label={@label} label_class="sr-only" {@rest} />
     </div>
     """
   end

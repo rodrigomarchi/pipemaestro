@@ -304,7 +304,12 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
         on_cancel={JS.push("close_rename")}
       >
         <.form for={@rename_form} id="rename-form" phx-submit="rename">
-          <.field field={@rename_form[:name]} label="Nome" data-testid="rename-name" />
+          <.icon_field
+            field={@rename_form[:name]}
+            icon="hero-tag"
+            label="Nome"
+            data-testid="rename-name"
+          />
           <div class="flex justify-end gap-2">
             <.button type="button" variant="ghost" color="gray" phx-click="close_rename">
               Cancelar

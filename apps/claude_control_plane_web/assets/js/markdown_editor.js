@@ -1,8 +1,9 @@
-// phx-hook="MarkdownEditor" (ClaudeControlPlaneWeb.EditorComponents): a
-// toolbar over the editor's textarea. Buttons with data-md-action format the
-// selection, buttons with data-md-insert put their text at the cursor; ⌘/Ctrl
-// B, I and K are bold, italic and link. The textarea grows with its text. Each
-// change fires an "input" event, so the form's phx-change sees it as typing.
+// phx-hook="MarkdownEditor" (ClaudeControlPlaneWeb.MarkdownEditor): a toolbar
+// over the editor's textarea. Buttons with data-md-action format the selection,
+// buttons with data-md-insert put their text at the cursor; ⌘/Ctrl B, I and K
+// are bold, italic and link. The textarea grows with its text. Each change
+// fires an "input" event, so the form's phx-change sees it as typing. The
+// Preview tab's click carries the textarea's text (phx-value-text).
 
 // Around the selection: before, after, and the text used when nothing is selected.
 const WRAPS = {
@@ -24,6 +25,12 @@ const SHORTCUTS = {b: "bold", i: "italic", k: "link"}
 
 export const MarkdownEditor = {
   mounted() {
+    // Before LiveView sends the Preview tab's click: the text goes with it.
+    this.el.addEventListener("click", event => {
+      const tab = event.target.closest("[data-md-preview]")
+      if (tab && this.textarea()) tab.setAttribute("phx-value-text", this.textarea().value)
+    }, true)
+
     this.el.addEventListener("click", event => {
       const button = event.target.closest("[data-md-action], [data-md-insert]")
       if (!button || !this.el.contains(button)) return

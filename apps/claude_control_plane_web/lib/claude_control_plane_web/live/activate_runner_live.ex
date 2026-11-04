@@ -93,8 +93,9 @@ defmodule ClaudeControlPlaneWeb.ActivateRunnerLive do
                 Digite o código que o comando <code>runner.login</code> mostrou no terminal.
               </p>
               <.form for={@code_form} id="activate-code-form" phx-submit="lookup">
-                <.field
+                <.icon_field
                   field={@code_form[:code]}
+                  icon="hero-hashtag"
                   label="Código"
                   placeholder="WDJB-MJHT"
                   autocomplete="off"
@@ -143,15 +144,17 @@ defmodule ClaudeControlPlaneWeb.ActivateRunnerLive do
                 id="activate-approval-form"
                 phx-submit="approve"
               >
-                <.field
+                <.icon_field
                   field={@approval_form[:workspace_id]}
+                  icon="hero-building-office"
                   type="select"
                   label="Workspace"
                   options={Enum.map(@workspaces, &{&1.name, &1.id})}
                   data-testid="activate-workspace"
                 />
-                <.field
+                <.icon_field
                   field={@approval_form[:name]}
+                  icon="hero-tag"
                   label="Nome do runner"
                   data-testid="activate-name"
                 />

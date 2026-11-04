@@ -578,13 +578,14 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
                     {@task.decision_reason}
                   </.alert>
                   <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
-                    <.field
+                    <.markdown_editor
+                      id="decision-instructions"
                       field={@decision[:instructions]}
-                      type="textarea"
-                      rows="3"
                       label="Instruções para continuar (opcional)"
+                      icon="hero-chat-bubble-left-right"
+                      rows={3}
                       placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
-                      data-testid="decision-instructions"
+                      testid="decision-instructions"
                     />
                     <div :if={@options != []} class="mb-3">
                       <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
@@ -679,14 +680,15 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Show do
               id="instruct-form"
               phx-submit="instruct"
             >
-              <.field
+              <.markdown_editor
+                id="task-instruct-text"
                 field={to_form(%{"text" => ""}, as: "instruct")[:text]}
-                type="textarea"
-                rows="2"
                 label="Mensagem para a tarefa"
+                icon="hero-chat-bubble-bottom-center-text"
+                rows={2}
                 placeholder="Ex.: não mexa no módulo de pagamentos."
                 help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
-                data-testid="task-instruct-text"
+                testid="task-instruct-text"
               />
               <div class="flex flex-wrap items-center justify-end gap-2">
                 <span

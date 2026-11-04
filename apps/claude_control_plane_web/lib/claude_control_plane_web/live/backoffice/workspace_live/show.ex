@@ -197,12 +197,13 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
                   phx-change="set_role"
                 >
                   <input type="hidden" name="user_id" value={user.id} />
-                  <.field
+                  <.icon_field
                     field={to_form(%{"role" => to_string(role)}, as: "role")[:role]}
+                    icon="hero-shield-check"
                     id={"member-role-#{user.id}"}
                     type="select"
                     label="Papel"
-                    label_class="sr-only"
+                    hide_label
                     options={[{"Admin", "admin"}, {"Membro", "member"}]}
                     data-testid={"member-role-#{user.email}"}
                   />
@@ -300,6 +301,7 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
             />
             <.card_content>
               <.form for={%{}} id="add-existing-form" phx-submit="add_existing">
+                <.icon_label icon="hero-user" label="Usuário" />
                 <.combo_box
                   id="existing-user"
                   name="user_id"
@@ -338,19 +340,22 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Show do
                 phx-change="validate_new_member"
                 phx-submit="create_new_member"
               >
-                <.field
+                <.icon_field
                   field={@new_member_form[:name]}
+                  icon="hero-user"
                   label="Nome"
                   data-testid="new-member-name"
                 />
-                <.field
+                <.icon_field
                   field={@new_member_form[:email]}
+                  icon="hero-envelope"
                   type="email"
                   label="E-mail"
                   data-testid="new-member-email"
                 />
-                <.field
+                <.icon_field
                   field={@new_member_form[:password]}
+                  icon="hero-key"
                   type="password"
                   label="Senha inicial"
                   help_text={password_hint()}

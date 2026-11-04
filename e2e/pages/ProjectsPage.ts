@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
+import { shot } from "../helpers/screenshots";
 
 /** Projects: what the platform knows about each code directory. */
 export class ProjectsPage {
@@ -22,6 +23,8 @@ export class ProjectsPage {
     setup?: string;
     test?: string;
     copyPaths?: string;
+    /** Captures the filled form under this name (E2E_SHOTS). */
+    shot?: string;
   }) {
     await this.page.getByTestId("new-project").click();
     await waitForLiveView(this.page);
@@ -30,6 +33,7 @@ export class ProjectsPage {
     if (project.setup) await this.page.getByTestId("project-setup").fill(project.setup);
     if (project.test) await this.page.getByTestId("project-test").fill(project.test);
     if (project.copyPaths) await this.page.getByTestId("project-copy-paths").fill(project.copyPaths);
+    if (project.shot) await shot(this.page, project.shot);
     await this.page.getByTestId("project-save").click();
     await expect(this.project(project.directory)).toContainText(project.name);
   }

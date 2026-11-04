@@ -163,8 +163,9 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
               phx-change="search"
               phx-submit="search"
             >
-              <.field
+              <.icon_field
                 field={to_form(%{"q" => @query}, as: "search")[:q]}
+                icon="hero-magnifying-glass"
                 type="search"
                 label="Buscar"
                 placeholder="Título ou pedido"
@@ -241,29 +242,33 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
         </.alert>
 
         <.form for={@form} id="new-task-form" phx-change="validate" phx-submit="create">
-          <.field
+          <.icon_field
             field={@form[:title]}
+            icon="hero-tag"
             label="Título"
             placeholder="Ex.: Botão de login não responde"
             data-testid="task-title"
           />
-          <.field
+          <.markdown_editor
+            id="task-prompt"
             field={@form[:prompt]}
-            type="textarea"
             label="O que deve ser feito"
-            rows="5"
+            icon="hero-pencil-square"
+            rows={6}
             placeholder="Descreva o problema ou a mudança com o contexto que tiver."
-            data-testid="task-prompt"
+            testid="task-prompt"
           />
-          <.field
+          <.icon_field
             field={@form[:issue_url]}
+            icon="hero-link"
             label="Issue do GitHub (opcional)"
             placeholder="https://github.com/dono/repo/issues/42"
             help_text="Com um pipeline que abre PR, o PR fecha a issue e as decisões viram comentários nela."
             data-testid="task-issue-url"
           />
-          <.field
+          <.icon_field
             field={@form[:pipeline_id]}
+            icon="hero-squares-2x2"
             type="select"
             label="Pipeline"
             prompt="Escolha um pipeline"
@@ -271,16 +276,18 @@ defmodule ClaudeControlPlaneWeb.TaskLive.Index do
             data-testid="task-pipeline"
           />
           <div class="grid gap-4 sm:grid-cols-2">
-            <.field
+            <.icon_field
               field={@form[:runner_id]}
+              icon="hero-server-stack"
               type="select"
               label="Runner"
               prompt="Escolha um runner online"
               options={runner_options(@online_runners, @load)}
               data-testid="task-runner"
             />
-            <.field
+            <.icon_field
               field={@form[:directory]}
+              icon="hero-folder-open"
               type="select"
               label="Diretório"
               prompt="Escolha um diretório"

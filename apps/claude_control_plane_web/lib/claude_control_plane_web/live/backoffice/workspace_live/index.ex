@@ -170,21 +170,24 @@ defmodule ClaudeControlPlaneWeb.Backoffice.WorkspaceLive.Index do
         on_cancel={JS.patch(~p"/backoffice/workspaces")}
       >
         <.form for={@form} id="workspace-form" phx-change="validate" phx-submit="save">
-          <.field
+          <.icon_field
             field={@form[:name]}
+            icon="hero-building-office"
             label="Nome da empresa"
             placeholder="Acme Engineering"
             data-testid="workspace-name"
           />
-          <.field
+          <.icon_field
             field={@form[:slug]}
+            icon="hero-link"
             label="Endereço"
             placeholder="acme"
             data-testid="workspace-slug"
             help_text="Aparece na URL: /w/endereco. Deixe em branco para gerar a partir do nome."
           />
-          <.field
+          <.icon_field
             field={@form[:max_running_tasks]}
+            icon="hero-queue-list"
             type="number"
             min="1"
             label="Tarefas em execução ao mesmo tempo (opcional)"

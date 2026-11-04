@@ -81,6 +81,8 @@ defmodule ClaudeControlPlaneWeb do
       import Phoenix.HTML
       # UI components (petal_components)
       use PetalComponents
+      # The form pattern: icon labels, Markdown editors, section headings
+      import ClaudeControlPlaneWeb.FormComponents
 
       # Common modules used in templates
       import ClaudeControlPlane.Authorization, only: [can?: 2, can?: 3]

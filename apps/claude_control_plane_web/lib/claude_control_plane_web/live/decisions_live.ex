@@ -195,8 +195,9 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
               data-testid={"decision-owner-form-#{task.id}"}
             >
               <input type="hidden" name="task_id" value={task.id} />
-              <.field
+              <.icon_field
                 field={to_form(%{"user_id" => task.decision_owner_id}, as: "owner")[:user_id]}
+                icon="hero-user-circle"
                 id={"decision-owner-#{task.id}"}
                 type="select"
                 label="Quem decide"
@@ -228,13 +229,14 @@ defmodule ClaudeControlPlaneWeb.DecisionsLive do
                   {option}
                 </.button>
               </div>
-              <.field
+              <.markdown_editor
+                id={"decision-editor-#{task.id}"}
                 field={to_form(%{}, as: "decision")[:instructions]}
-                id={"decision-instructions-#{task.id}"}
-                type="textarea"
-                rows="2"
+                input_id={"decision-instructions-#{task.id}"}
                 label="Instruções para continuar (opcional)"
-                data-testid={"decision-instructions-#{task.id}"}
+                icon="hero-chat-bubble-left-right"
+                rows={2}
+                testid={"decision-instructions-#{task.id}"}
               />
               <div class="flex flex-wrap justify-end gap-2">
                 <.button

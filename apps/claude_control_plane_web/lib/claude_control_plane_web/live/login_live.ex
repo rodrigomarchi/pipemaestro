@@ -47,8 +47,9 @@ defmodule ClaudeControlPlaneWeb.LoginLive do
               phx-submit="submit"
               phx-trigger-action={@trigger_submit}
             >
-              <.field
+              <.icon_field
                 field={@form[:email]}
+                icon="hero-envelope"
                 type="email"
                 label="E-mail"
                 placeholder="voce@empresa.com"
@@ -57,8 +58,9 @@ defmodule ClaudeControlPlaneWeb.LoginLive do
                 data-testid="login-email"
                 phx-mounted={JS.focus()}
               />
-              <.field
+              <.icon_field
                 field={@form[:password]}
+                icon="hero-lock-closed"
                 type="password"
                 label="Senha"
                 autocomplete="current-password"
@@ -66,8 +68,9 @@ defmodule ClaudeControlPlaneWeb.LoginLive do
                 viewable
                 data-testid="login-password"
               />
-              <.field
+              <.icon_field
                 field={@form[:remember_me]}
+                icon="hero-clock"
                 type="checkbox"
                 label="Manter conectado"
                 data-testid="login-remember"

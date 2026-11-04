@@ -52,12 +52,12 @@ defmodule ClaudeControlPlaneWeb.UsageLive do
           id="usage-period"
           phx-change="period"
         >
-          <.field
+          <.icon_field
             field={to_form(%{"days" => to_string(@days)}, as: "period")[:days]}
+            icon="hero-calendar-days"
             type="select"
             label="Período"
-            label_class="sr-only"
-            no_margin
+            hide_label
             options={[{"Últimos 7 dias", "7"}, {"Últimos 30 dias", "30"}]}
             data-testid="usage-period"
           />

@@ -98,6 +98,7 @@ test.describe("Task pipeline", () => {
       pipeline: "Correção de bug",
       runner: runnerName,
       directory: "app",
+      shot: "task-form",
     });
 
     await expect(tasks.status).toHaveText("Concluída", { timeout: 60_000 });
@@ -189,6 +190,7 @@ test.describe("Task pipeline", () => {
       directory: "app",
       setup: "echo pronto > setup.txt",
       test: "test -f fake-claude.txt",
+      shot: "project-form",
     });
     await shot(app.page, "projects");
 

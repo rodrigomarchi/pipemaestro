@@ -15,9 +15,21 @@ A escolha e as alternativas avaliadas estão no
   bloqueia a leitura de `deps/`; para ler o código, baixe o pacote:
   `mix hex.package fetch petal_components <versão> --unpack --output <dir>`.
   O pacote traz `rules.md`, as regras oficiais do Petal para agentes.
-- **Formulários:** `<.field field={@form[:x]} type="..." label="..." />` para o caso comum
-  (label, input, erro e ajuda juntos); os primitivos (`<.text_input>`, `<.select>`…) só
-  quando o layout do campo for próprio.
+- **Formulários seguem um padrão só** (`ClaudeControlPlaneWeb.FormComponents`, importado
+  em todas as telas):
+  - **todo campo tem ícone:** `<.icon_field field={@form[:x]} icon="hero-…" label="..." />`
+    em vez de `<.field>`. Ele recebe os mesmos attrs, e o rótulo do Petal continua no HTML
+    para leitores de tela. Um controle compacto (filtro, select na linha de uma tabela) usa
+    `hide_label`, e um controle que não é `<.field>` (combo box) leva `<.icon_label>`;
+  - **todo texto que o agente ou uma pessoa lê como Markdown** (prompts, instruções,
+    notas, mensagens) usa `<.markdown_editor id=... field=... label=... testid=... />`,
+    com barra de formatação, menu de variáveis (`variables`) e preview. O textarea
+    continua sendo o input real, com o `data-testid` de sempre;
+  - **formulários longos se dividem em seções**, cada uma num card com `<.section_heading>`,
+    e os blocos dentro delas com `<.block_heading>`, todos com ícone.
+
+  Os primitivos (`<.text_input>`, `<.select>`…) ficam para quando o layout do campo for
+  próprio.
 - **Flash** vira toast via `<.toast_group flash={@flash} />`, chamado apenas nos layouts.
 - **Ícones:** `<.icon name="hero-…" />` (Heroicons via o plugin em `assets/vendor/heroicons.js`).
 - **Layouts:** `<Layouts.app>` para telas autenticadas (sidebar + top bar) e

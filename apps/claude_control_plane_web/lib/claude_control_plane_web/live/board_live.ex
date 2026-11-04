@@ -197,29 +197,33 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
               phx-change="filter"
               class="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-4"
             >
-              <.field
+              <.icon_field
                 field={to_form(@filters, as: "filters")[:pipeline]}
+                icon="hero-squares-2x2"
                 type="select"
                 label="Pipeline"
                 options={options(Enum.map(@pipelines, & &1.name), "Todos")}
                 data-testid="board-filter-pipeline"
               />
-              <.field
+              <.icon_field
                 field={to_form(@filters, as: "filters")[:runner_id]}
+                icon="hero-server-stack"
                 type="select"
                 label="Runner"
                 options={options(Enum.map(@runners, &{&1.name, &1.id}), "Todos")}
                 data-testid="board-filter-runner"
               />
-              <.field
+              <.icon_field
                 field={to_form(@filters, as: "filters")[:directory]}
+                icon="hero-folder-open"
                 type="select"
                 label="Diretório"
                 options={options(@directories, "Todos")}
                 data-testid="board-filter-directory"
               />
-              <.field
+              <.icon_field
                 field={to_form(@filters, as: "filters")[:user_id]}
+                icon="hero-user"
                 type="select"
                 label="Pessoa"
                 options={options(Enum.map(@members, &{&1.name, &1.id}), "Todas")}

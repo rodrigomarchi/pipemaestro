@@ -2,14 +2,12 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
   @moduledoc """
   Creates or edits a pipeline: its name, delivery and context, and its stages,
   which can be added, removed, moved and collapsed. Prompts are written in a
-  Markdown editor (`ClaudeControlPlaneWeb.EditorComponents`) with a preview.
+  Markdown editor (`ClaudeControlPlaneWeb.FormComponents.markdown_editor/1`).
   The form's params are kept as they are typed, so moving a stage keeps
-  whatever was written in it; a collapsed stage or a previewed prompt keeps its
-  inputs in the page, hidden.
+  whatever was written in it; a collapsed stage keeps its inputs in the page,
+  hidden.
   """
   use ClaudeControlPlaneWeb, :live_view
-
-  import ClaudeControlPlaneWeb.EditorComponents
 
   alias ClaudeControlPlane.Audit
   alias ClaudeControlPlane.Pipelines
@@ -38,7 +36,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
     {:ok,
      socket
      |> assign(page_title: page_title(socket.assigns.live_action), pipeline: pipeline)
-     |> assign(previews: MapSet.new(), collapsed: MapSet.new())
+     |> assign(collapsed: MapSet.new())
      |> put_params(initial_params(pipeline), nil)}
   end
 
@@ -101,28 +99,19 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
   end
 
   # Stages are known by their position, which this changes: whatever was
-  # collapsed or previewed opens again.
+  # collapsed opens again.
   defp update_stages(socket, fun) do
     params = socket.assigns.params
     stages = params |> stages_list() |> fun.() |> to_indexed()
 
     socket
-    |> assign(previews: MapSet.new(), collapsed: MapSet.new())
+    |> assign(collapsed: MapSet.new())
     |> put_params(Map.put(params, "stages", stages), socket.assigns.form.source.action)
   end
 
   @impl true
   def handle_event("validate", %{"pipeline" => params}, socket),
     do: {:noreply, put_params(socket, params, :validate)}
-
-  def handle_event("toggle_preview", %{"id" => id, "preview" => preview}, socket) do
-    previews =
-      if preview == "true",
-        do: MapSet.put(socket.assigns.previews, id),
-        else: MapSet.delete(socket.assigns.previews, id)
-
-    {:noreply, assign(socket, previews: previews)}
-  end
 
   def handle_event("toggle_stage", %{"index" => index}, socket) do
     index = String.to_integer(index)
@@ -230,6 +219,9 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
 
   defp present(value), do: value not in [nil, ""] and String.trim(to_string(value)) != ""
 
+  # A multi-line placeholder: in the template, the formatter would make it literal.
+  defp gates_placeholder, do: "{{projeto.teste}}\n! mix test test/repro_test.exs"
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -258,7 +250,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
         <div class="grid gap-6 xl:grid-cols-3">
           <.card variant="outline" class="xl:col-span-2">
             <.card_content>
-              <.section_title
+              <.section_heading
                 icon="hero-identification"
                 title="Identificação"
                 description="Como o pipeline aparece na lista e ao criar uma tarefa."
@@ -283,7 +275,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
 
           <.card variant="outline">
             <.card_content>
-              <.section_title
+              <.section_heading
                 icon="hero-rocket-launch"
                 title="Execução"
                 description="Quanto uma tarefa pode gastar e o que vira do código."
@@ -323,7 +315,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
 
         <.card variant="outline">
           <.card_content>
-            <.section_title
+            <.section_heading
               icon="hero-cpu-chip"
               title="Contexto do pipeline"
               description="Vale para todas as etapas. Cada etapa roda com contexto novo, lê os artefatos das anteriores e responde com status (ok ou bloqueado) e resumo; ela segue sozinha para a próxima e só para quando precisa de ajuda."
@@ -334,7 +326,6 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
               label="Instruções de sistema"
               icon="hero-command-line"
               testid="pipeline-system-prompt"
-              preview={MapSet.member?(@previews, "pipeline-system-prompt")}
               rows={4}
               help_text="Somadas às do agente em todas as etapas."
             />
@@ -422,12 +413,11 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
                       field={stage[:prompt]}
                       label="Prompt"
                       testid={"stage-prompt-#{stage.index}"}
-                      preview={MapSet.member?(@previews, stage_id(stage.index))}
                       variables={Prompt.variables()}
                     />
 
                     <div>
-                      <.block_title icon="hero-cog-6-tooth" title="Execução" />
+                      <.block_heading icon="hero-cog-6-tooth" title="Execução" />
                       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <.icon_field
                           field={stage[:max_attempts]}
@@ -468,7 +458,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
                     </div>
 
                     <div>
-                      <.block_title icon="hero-shield-check" title="Verificação" />
+                      <.block_heading icon="hero-shield-check" title="Verificação" />
                       <div class="grid gap-4 sm:grid-cols-2">
                         <.icon_field
                           field={stage[:gates_text]}
@@ -476,7 +466,7 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
                           type="textarea"
                           rows="3"
                           label="Gates (comandos depois da etapa)"
-                          placeholder="{{projeto.teste}}\n! mix test test/repro_test.exs"
+                          placeholder={gates_placeholder()}
                           help_text="Um por linha; ! na frente quando o comando deve falhar. Um gate não atendido reprova a tentativa."
                           class="font-mono text-sm"
                           data-testid={"stage-gates-#{stage.index}"}
@@ -559,36 +549,6 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Form do
         </div>
       </.form>
     </Layouts.app>
-    """
-  end
-
-  attr :icon, :string, required: true
-  attr :title, :string, required: true
-  attr :description, :string, default: nil
-
-  defp section_title(assigns) do
-    ~H"""
-    <div class="mb-5 flex gap-3">
-      <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
-        <.icon name={@icon} class="size-5" />
-      </span>
-      <div>
-        <h2 class="font-semibold text-gray-900 dark:text-white">{@title}</h2>
-        <p :if={@description} class="text-sm text-gray-500 dark:text-gray-400">{@description}</p>
-      </div>
-    </div>
-    """
-  end
-
-  attr :icon, :string, required: true
-  attr :title, :string, required: true
-
-  defp block_title(assigns) do
-    ~H"""
-    <h4 class="mb-3 flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-      <.icon name={@icon} class="size-4 text-primary-500 dark:text-primary-400" />
-      {@title}
-    </h4>
     """
   end
 

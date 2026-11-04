@@ -165,15 +165,22 @@ defmodule ClaudeControlPlaneWeb.Backoffice.OperatorLive.Index do
         on_cancel={JS.patch(~p"/backoffice/operators")}
       >
         <.form for={@form} id="operator-form" phx-change="validate" phx-submit="save">
-          <.field field={@form[:name]} label="Nome" data-testid="operator-form-name" />
-          <.field
+          <.icon_field
+            field={@form[:name]}
+            icon="hero-user"
+            label="Nome"
+            data-testid="operator-form-name"
+          />
+          <.icon_field
             field={@form[:email]}
+            icon="hero-envelope"
             type="email"
             label="E-mail"
             data-testid="operator-form-email"
           />
-          <.field
+          <.icon_field
             field={@form[:password]}
+            icon="hero-key"
             type="password"
             label="Senha inicial"
             help_text={password_hint()}

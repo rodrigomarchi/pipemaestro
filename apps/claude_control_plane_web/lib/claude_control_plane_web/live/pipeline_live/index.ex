@@ -326,8 +326,9 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
         on_cancel={JS.push("close_import")}
       >
         <.form for={to_form(%{"yaml" => ""}, as: "import")} id="import-form" phx-submit="import">
-          <.field
+          <.icon_field
             field={to_form(%{"yaml" => ""}, as: "import")[:yaml]}
+            icon="hero-document-arrow-up"
             type="textarea"
             rows="14"
             label="YAML exportado de um pipeline"

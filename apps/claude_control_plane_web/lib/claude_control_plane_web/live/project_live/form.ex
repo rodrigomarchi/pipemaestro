@@ -85,6 +85,9 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
     end
   end
 
+  # A multi-line placeholder: in the template, the formatter would make it literal.
+  defp copy_paths_placeholder, do: Enum.join(~w(deps _build node_modules), "\n")
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -109,13 +112,24 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
         </.button>
       </:actions>
 
-      <.card variant="outline">
-        <.card_content>
-          <.form for={@form} id="project-form" phx-change="validate" phx-submit="save">
+      <.form for={@form} id="project-form" phx-change="validate" phx-submit="save" class="space-y-6">
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading
+              icon="hero-folder"
+              title="Projeto"
+              description="Um diretório de código que recebe tarefas, em qualquer runner que o ofereça."
+            />
             <div class="grid gap-4 sm:grid-cols-2">
-              <.field field={@form[:name]} label="Nome" data-testid="project-name" />
-              <.field
+              <.icon_field
+                field={@form[:name]}
+                icon="hero-tag"
+                label="Nome"
+                data-testid="project-name"
+              />
+              <.icon_field
                 field={@form[:directory]}
+                icon="hero-folder-open"
                 type="select"
                 label="Diretório"
                 prompt="Escolha um diretório"
@@ -124,65 +138,128 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
                 data-testid="project-directory"
               />
             </div>
-            <.field
-              field={@form[:setup_command]}
-              label="Comando de setup"
-              placeholder="mix deps.get && mix compile"
-              help_text="Roda uma vez, quando o worktree da tarefa é criado."
-              data-testid="project-setup"
-            />
-            <div class="grid gap-4 sm:grid-cols-2">
-              <.field
+          </.card_content>
+        </.card>
+
+        <div class="grid gap-6 lg:grid-cols-2">
+          <.card variant="outline">
+            <.card_content>
+              <.section_heading
+                icon="hero-wrench-screwdriver"
+                title="Worktree"
+                description="Como o worktree de cada tarefa fica pronto para trabalhar."
+              />
+              <.icon_field
+                field={@form[:setup_command]}
+                icon="hero-play"
+                label="Comando de setup"
+                placeholder="mix deps.get && mix compile"
+                help_text="Roda uma vez, quando o worktree da tarefa é criado."
+                class="font-mono text-sm"
+                data-testid="project-setup"
+              />
+              <.icon_field
+                field={@form[:copy_paths_text]}
+                icon="hero-document-duplicate"
+                type="textarea"
+                rows="3"
+                label="Copiar para o worktree (um por linha)"
+                placeholder={copy_paths_placeholder()}
+                help_text="Clonados do checkout por copy-on-write. Em branco, o runner detecta os usuais."
+                class="font-mono text-sm"
+                no_margin
+                data-testid="project-copy-paths"
+              />
+            </.card_content>
+          </.card>
+
+          <.card variant="outline">
+            <.card_content>
+              <.section_heading
+                icon="hero-command-line"
+                title="Comandos"
+                description="O que as etapas e os gates usam para verificar o trabalho."
+              />
+              <.icon_field
                 field={@form[:test_command]}
+                icon="hero-beaker"
                 label="Comando de testes"
                 placeholder="mix test"
                 help_text="Nos prompts: {{projeto.teste}}; nos gates das etapas."
+                class="font-mono text-sm"
                 data-testid="project-test"
               />
-              <.field
+              <.icon_field
                 field={@form[:lint_command]}
+                icon="hero-sparkles"
                 label="Comando de lint"
                 placeholder="mix credo --strict"
                 help_text="Nos prompts: {{projeto.lint}}."
+                class="font-mono text-sm"
+                no_margin
                 data-testid="project-lint"
               />
-            </div>
-            <.field
-              field={@form[:copy_paths_text]}
-              type="textarea"
-              rows="3"
-              label="Copiar para o worktree (um por linha)"
-              placeholder="deps\n_build\nnode_modules"
-              help_text="Clonados do checkout por copy-on-write. Em branco, o runner detecta os usuais."
-              data-testid="project-copy-paths"
+            </.card_content>
+          </.card>
+        </div>
+
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading
+              icon="hero-chat-bubble-left-ellipsis"
+              title="Contexto para os agentes"
+              description="O que todo agente precisa saber deste projeto."
             />
-            <.field
+            <.markdown_editor
+              id="project-notes"
               field={@form[:notes]}
-              type="textarea"
-              rows="4"
               label="Notas para os agentes"
+              icon="hero-light-bulb"
+              rows={6}
               help_text="Nos prompts: {{projeto.notas}}."
-              data-testid="project-notes"
+              testid="project-notes"
             />
-            <details class="mb-4">
-              <summary class="cursor-pointer text-sm font-medium text-gray-600 dark:text-gray-300">
-                Gatilho do GitHub: uma label numa issue começa uma tarefa
+          </.card_content>
+        </.card>
+
+        <.card variant="outline">
+          <.card_content>
+            <details class="group">
+              <summary class="flex cursor-pointer list-none items-start gap-3">
+                <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
+                  <.icon name="hero-bolt" class="size-5" />
+                </span>
+                <span class="flex-1">
+                  <span class="flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white">
+                    Gatilho do GitHub
+                    <.icon
+                      name="hero-chevron-down"
+                      class="size-4 text-gray-400 transition group-open:rotate-180"
+                    />
+                  </span>
+                  <span class="block text-sm text-gray-500 dark:text-gray-400">
+                    Uma label numa issue começa uma tarefa.
+                  </span>
+                </span>
               </summary>
-              <div class="mt-3 grid gap-4 sm:grid-cols-3">
-                <.field
+              <div class="mt-5 grid gap-4 sm:grid-cols-3">
+                <.icon_field
                   field={@form[:github_repo]}
+                  icon="hero-code-bracket-square"
                   label="Repositório"
                   placeholder="dono/repositorio"
                   data-testid="project-github-repo"
                 />
-                <.field
+                <.icon_field
                   field={@form[:trigger_label]}
+                  icon="hero-tag"
                   label="Label"
                   placeholder="claude"
                   data-testid="project-trigger-label"
                 />
-                <.field
+                <.icon_field
                   field={@form[:trigger_pipeline_id]}
+                  icon="hero-squares-2x2"
                   type="select"
                   label="Pipeline"
                   prompt="Escolha um pipeline"
@@ -190,22 +267,26 @@ defmodule ClaudeControlPlaneWeb.ProjectLive.Form do
                   data-testid="project-trigger-pipeline"
                 />
               </div>
-              <p class="text-sm text-gray-600 dark:text-gray-300">
-                No GitHub, crie um webhook de <em>Issues</em>
-                (content type JSON) para
-                <code class="break-all" data-testid="project-webhook-url">{url(
-                  ~p"/api/github/webhook/#{@current_scope.workspace.slug}"
-                )}</code>
-                com o segredo guardado em Segredos como <code>GITHUB_WEBHOOK_SECRET</code>. As tarefas
-                ficam em seu nome e rodam num runner online que ofereça este diretório.
+              <p class="flex gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <.icon name="hero-information-circle" class="mt-0.5 size-4 shrink-0 text-primary-500" />
+                <span>
+                  No GitHub, crie um webhook de <em>Issues</em>
+                  (content type JSON) para
+                  <code class="break-all" data-testid="project-webhook-url">{url(
+                    ~p"/api/github/webhook/#{@current_scope.workspace.slug}"
+                  )}</code>
+                  com o segredo guardado em Segredos como <code>GITHUB_WEBHOOK_SECRET</code>. As tarefas
+                  ficam em seu nome e rodam num runner online que ofereça este diretório.
+                </span>
               </p>
             </details>
-            <div class="flex justify-end">
-              <.button icon="hero-check" data-testid="project-save">Salvar</.button>
-            </div>
-          </.form>
-        </.card_content>
-      </.card>
+          </.card_content>
+        </.card>
+
+        <div class="sticky bottom-0 z-10 flex justify-end rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
+          <.button icon="hero-check" data-testid="project-save">Salvar</.button>
+        </div>
+      </.form>
     </Layouts.app>
     """
   end
