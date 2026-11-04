@@ -69,6 +69,8 @@ defmodule PipeMaestro.Proposals.ImproveKind do
       Melhore o pipeline **#{pipeline.name}** e as notas do projeto do diretório
       `#{input.directory}`, a partir de como o pipeline vem funcionando.
       #{if input[:focus], do: "\nFoco pedido pela pessoa:\n\n#{input.focus}\n"}
+      #{Instructions.revision(previous && previous.structured_output, input[:feedback])}
+
       ## O pipeline atual (v#{pipeline.version})
 
       ```yaml
@@ -84,8 +86,6 @@ defmodule PipeMaestro.Proposals.ImproveKind do
       #{usage_section(workspace, pipeline)}
 
       #{history_section(pipeline)}
-
-      #{Instructions.revision(previous && previous.structured_output, input[:feedback])}
       """,
       system_prompt: system_prompt(),
       output_schema: schema(),

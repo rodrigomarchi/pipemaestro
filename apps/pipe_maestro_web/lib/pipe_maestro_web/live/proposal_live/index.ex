@@ -1,8 +1,9 @@
 defmodule PipeMaestroWeb.ProposalLive.Index do
   @moduledoc """
-  The workspace's proposals (`PipeMaestro.Proposals`), newest first, by kind,
-  with their status live: pipelines, tasks written from an idea or triaged
-  from an issue, decisions and improvements.
+  The workspace's proposals (`PipeMaestro.Proposals`), newest first, with
+  their status live: pipelines, tasks written from an idea or triaged from an
+  issue, decisions and improvements. Filtered by kind, status, directory and
+  who asked.
   """
   use PipeMaestroWeb, :live_view
 
@@ -10,7 +11,7 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
   import PipeMaestroWeb.ProposalComponents
 
-  alias PipeMaestro.{Jobs, Proposals}
+  alias PipeMaestro.{Jobs, Proposals, Workspaces}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -19,7 +20,8 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
 
     {:ok,
      socket
-     |> assign(page_title: "Propostas", kind: "")
+     |> assign(page_title: "Propostas", filters: %{})
+     |> assign(members: Workspaces.list_members(workspace))
      |> load()}
   end
 
@@ -29,14 +31,21 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
   end
 
   @impl true
-  def handle_event("filter", %{"filter" => %{"kind" => kind}}, socket),
-    do: {:noreply, socket |> assign(kind: kind) |> load()}
+  def handle_event("filter", %{"filter" => filters}, socket),
+    do: {:noreply, socket |> assign(filters: filters) |> load()}
 
   defp load(socket) do
-    kinds = if socket.assigns.kind in Proposals.kinds(), do: [socket.assigns.kind], else: :all
+    workspace = socket.assigns.current_scope.workspace
 
     assign(socket,
-      proposals: Proposals.list_recent(socket.assigns.current_scope.workspace, kinds)
+      proposals: Proposals.list(workspace, socket.assigns.filters),
+      directories:
+        workspace
+        |> Proposals.list()
+        |> Enum.map(&Proposals.input(&1)["directory"])
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+        |> Enum.sort()
     )
   end
 
@@ -46,8 +55,21 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
       | Enum.map(Proposals.kinds(), &{Proposals.kind_module(&1).label(), &1})
     ]
 
+  defp status_options,
+    do: [
+      {"Qualquer status", ""},
+      {"Em andamento", "active"},
+      {"Concluídas", "succeeded"},
+      {"Falharam", "failed"},
+      {"Canceladas", "canceled"}
+    ]
+
+  defp filtered?(filters), do: Enum.any?(filters, fn {_key, value} -> value not in [nil, ""] end)
+
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, filter_form: to_form(assigns.filters, as: "filter"))
+
     ~H"""
     <Layouts.app
       flash={@flash}
@@ -59,33 +81,63 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
     >
       <.card variant="outline">
         <.card_content>
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <.section_heading
-              icon="hero-cpu-chip"
-              title="Propostas do agente"
-              description="O que o agente propôs depois de estudar um projeto: pipelines, tarefas, decisões e melhorias. Cada uma espera a sua revisão."
+          <.section_heading
+            icon="hero-cpu-chip"
+            title="Propostas do agente"
+            description="O que o agente propôs depois de estudar um projeto: pipelines, tarefas, decisões e melhorias. Cada uma espera a sua revisão."
+          />
+          <.form
+            for={@filter_form}
+            id="proposals-filter"
+            phx-change="filter"
+            class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            <.icon_field
+              field={@filter_form[:kind]}
+              icon="hero-funnel"
+              type="select"
+              label="Tipo"
+              hide_label
+              options={kind_options()}
+              data-testid="proposals-kind"
             />
-            <.form
-              for={to_form(%{"kind" => @kind}, as: "filter")}
-              id="proposals-filter"
-              phx-change="filter"
-            >
-              <.icon_field
-                field={to_form(%{"kind" => @kind}, as: "filter")[:kind]}
-                icon="hero-funnel"
-                type="select"
-                label="Tipo"
-                hide_label
-                options={kind_options()}
-                data-testid="proposals-kind"
-              />
-            </.form>
-          </div>
+            <.icon_field
+              field={@filter_form[:status]}
+              icon="hero-signal"
+              type="select"
+              label="Status"
+              hide_label
+              options={status_options()}
+              data-testid="proposals-status"
+            />
+            <.icon_field
+              field={@filter_form[:directory]}
+              icon="hero-folder-open"
+              type="select"
+              label="Diretório"
+              hide_label
+              options={[{"Qualquer diretório", ""} | Enum.map(@directories, &{&1, &1})]}
+              data-testid="proposals-directory"
+            />
+            <.icon_field
+              field={@filter_form[:user_id]}
+              icon="hero-user"
+              type="select"
+              label="Quem pediu"
+              hide_label
+              options={[{"Qualquer pessoa", ""} | Enum.map(@members, &{&1.name, &1.id})]}
+              data-testid="proposals-user"
+            />
+          </.form>
 
           <.empty
             :if={@proposals == []}
             data-testid="no-proposals"
-            title="Nenhuma proposta ainda"
+            title={
+              if filtered?(@filters),
+                do: "Nenhuma proposta com esses filtros",
+                else: "Nenhuma proposta ainda"
+            }
             description="Peça uma em Pipelines (Gerar com IA ou Melhorar com IA), em Tarefas (Escrever com IA) ou numa decisão (Sugerir com IA)."
           >
             <:icon><.icon name="hero-cpu-chip" /></:icon>

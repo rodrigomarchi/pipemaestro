@@ -22,6 +22,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   alias PipeMaestro.{Audit, Jobs, Projects, Proposals, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Projects.Project
+  alias PipeMaestro.Proposals.DecisionKind
   alias PipeMaestroWeb.Markdown
 
   @impl true
@@ -30,14 +31,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     job = Proposals.get_proposal!(workspace, id)
 
     if can_review?(socket.assigns.current_scope, Proposals.kind(job)) do
-      # Subscribe before reading, so nothing that happens in between is missed.
-      job =
-        if connected?(socket) do
-          Jobs.subscribe({:job, job.id})
-          Proposals.get_proposal!(workspace, id)
-        else
-          job
-        end
+      job = if connected?(socket), do: subscribe(workspace, job), else: job
 
       segments = job |> Jobs.list_events() |> timeline_items("all")
 
@@ -56,12 +50,26 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     end
   end
 
+  # Subscribe before reading again, so nothing that happens in between is
+  # missed. A suggested decision follows its task: once decided, it no longer
+  # applies.
+  defp subscribe(workspace, job) do
+    Jobs.subscribe({:job, job.id})
+    task_id = Proposals.input(job)["task_id"]
+    if task_id, do: Tasks.subscribe({:task, task_id})
+    Proposals.get_proposal!(workspace, job.id)
+  end
+
+  defp may_cancel_job?(scope, job),
+    do: scope.role == :admin or job.created_by_user_id == scope.user.id
+
   # Tasks and decisions are anyone's who runs tasks; pipelines are admins'.
   defp can_review?(scope, kind) when kind in ["task", "decision"], do: can?(scope, :run_tasks)
   defp can_review?(scope, _kind), do: can?(scope, :manage_pipelines)
 
   defp assign_result(%{assigns: %{job: job}} = socket) do
-    socket = assign(socket, result: nil, error: nil, form: nil, project: nil, task: nil)
+    socket =
+      assign(socket, result: nil, error: nil, form: nil, project: nil, task: nil, current: false)
 
     if Job.active?(job) do
       socket
@@ -88,6 +96,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
     assign(socket,
       task: task,
+      current: DecisionKind.current?(socket.assigns.input, task),
       form:
         to_form(
           %{"instructions" => result.instructions, "choice" => result.choice || ""},
@@ -118,6 +127,16 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
      |> assign_result()}
   end
 
+  def handle_info({:task_updated, _task}, %{assigns: %{task: %Tasks.Task{} = task}} = socket) do
+    task = Tasks.get_task!(socket.assigns.current_scope.workspace, task.id)
+
+    {:noreply,
+     assign(socket, task: task, current: DecisionKind.current?(socket.assigns.input, task))}
+  end
+
+  # The task changed before the agent answered: the review reads it then.
+  def handle_info({:task_updated, _task}, socket), do: {:noreply, socket}
+
   def handle_info({:job_telemetry, _id}, socket), do: {:noreply, socket}
 
   def handle_info({:job_delta, _id, text}, socket), do: {:noreply, assign(socket, typing: text)}
@@ -137,10 +156,10 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   @impl true
   def handle_event("cancel", _params, socket) do
-    case Jobs.request_cancel(socket.assigns.job) do
-      {:ok, job} -> {:noreply, assign(socket, job: job)}
-      {:error, :finished} -> {:noreply, put_flash(socket, :error, "O agente já terminou.")}
-    end
+    if may_cancel_job?(socket.assigns.current_scope, socket.assigns.job),
+      do: cancel_job(socket),
+      else:
+        {:noreply, put_flash(socket, :error, "Só quem pediu a proposta ou um admin a cancela.")}
   end
 
   # Pipeline: the project.
@@ -178,34 +197,29 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     end
   end
 
-  # Decision: apply it.
-  def handle_event("apply_decision", %{"action" => action} = params, socket) do
-    %{task: task} = socket.assigns
-    user = socket.assigns.current_scope.user
-    decision = params["decision"] || %{}
-    instructions = blank_to_nil(decision["instructions"])
-    opts = [by: user, choice: blank_to_nil(decision["choice"])]
+  # Decision: apply it, if the task still waits for this very decision.
+  def handle_event("apply_decision", %{"action" => action} = params, socket)
+      when action in ~w(retry advance cancel) do
+    %{current_scope: scope, input: input} = socket.assigns
+    task = Tasks.get_task!(scope.workspace, socket.assigns.task.id)
 
-    result =
-      case action do
-        "retry" -> Tasks.retry_stage(task, instructions, opts)
-        "advance" -> Tasks.advance(task, instructions, opts)
-        "cancel" -> Tasks.cancel_task(task, by: user)
-      end
-
-    case result do
-      {:ok, task} ->
+    cond do
+      not DecisionKind.current?(input, task) ->
         {:noreply,
          socket
-         |> put_flash(:info, "Decisão aplicada: #{action_label(action)}.")
-         |> push_navigate(
-           to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/tasks/#{task.id}"
-         )}
+         |> assign(task: task, current: false)
+         |> put_flash(:error, "A tarefa não espera mais esta decisão.")}
 
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "A tarefa não espera mais esta decisão.")}
+      action == "cancel" and not can?(scope, :cancel_task, task) ->
+        {:noreply, put_flash(socket, :error, "Só quem criou a tarefa ou um admin a cancela.")}
+
+      true ->
+        decide(socket, task, action, params["decision"] || %{})
     end
   end
+
+  def handle_event("apply_decision", _params, socket),
+    do: {:noreply, put_flash(socket, :error, "Escolha tentar de novo, avançar ou cancelar.")}
 
   # Improve: the notes, then the pipeline.
   def handle_event("save_notes", %{"notes" => %{"notes" => notes}}, socket) do
@@ -255,6 +269,37 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     end
   end
 
+  defp cancel_job(socket) do
+    case Jobs.request_cancel(socket.assigns.job) do
+      {:ok, job} -> {:noreply, assign(socket, job: job)}
+      {:error, :finished} -> {:noreply, put_flash(socket, :error, "O agente já terminou.")}
+    end
+  end
+
+  defp decide(socket, task, action, decision) do
+    %{user: user, workspace: workspace} = socket.assigns.current_scope
+    instructions = blank_to_nil(decision["instructions"])
+    opts = [by: user, choice: blank_to_nil(decision["choice"])]
+
+    result =
+      case action do
+        "retry" -> Tasks.retry_stage(task, instructions, opts)
+        "advance" -> Tasks.advance(task, instructions, opts)
+        "cancel" -> Tasks.cancel_task(task, by: user)
+      end
+
+    case result do
+      {:ok, task} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Decisão aplicada: #{action_label(action)}.")
+         |> push_navigate(to: ~p"/w/#{workspace.slug}/tasks/#{task.id}")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "A tarefa não espera mais esta decisão.")}
+    end
+  end
+
   # The directory is the one studied, not a field the person changes here.
   defp with_directory(params, socket),
     do: Map.put(params, "directory", socket.assigns.input["directory"])
@@ -296,6 +341,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           color="danger"
           icon="hero-stop"
           phx-click="cancel"
+          disabled={!may_cancel_job?(@current_scope, @job)}
           data-testid="proposal-cancel"
         >
           Cancelar
@@ -378,6 +424,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         result={@result}
         form={@form}
         task={@task}
+        current={@current}
+        may_cancel={@task && can?(@current_scope, :cancel_task, @task)}
       />
       <.improve_review
         :if={@result && @kind == "improve"}
@@ -641,6 +689,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   attr :result, :map, required: true
   attr :form, :any, required: true
   attr :task, :any, required: true
+  attr :current, :boolean, required: true
+  attr :may_cancel, :boolean, required: true
 
   defp decision_review(assigns) do
     ~H"""
@@ -661,7 +711,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               description={@task.decision_reason}
             />
             <.alert
-              :if={@task.status != :awaiting_decision}
+              :if={!@current}
               color="warning"
               class="mb-4"
               data-testid="proposal-decision-stale"
@@ -693,7 +743,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
                   icon={action_icon(action)}
                   variant={if action == @result.action, do: "solid", else: "outline"}
                   color={if action == "cancel", do: "danger", else: "primary"}
-                  disabled={@task.status != :awaiting_decision}
+                  disabled={!@current or (action == "cancel" and !@may_cancel)}
                   data-testid={"proposal-decision-#{action}"}
                 >
                   {action_label(action)}

@@ -42,8 +42,20 @@ tarefa e melhorar um pipeline a partir de como as suas tarefas correram.
 - **Triagem de issue.** O projeto ganha `trigger_mode`: com `"task"` (o padrão), a label
   começa a tarefa como antes; com `"triage"`, o webhook pede uma proposta `task` ao
   primeiro runner online capaz que ofereça o diretório, em nome de quem configurou o
-  gatilho, sugerindo o pipeline do gatilho. Uma triagem em andamento da mesma issue não
-  é repetida.
+  gatilho, sugerindo o pipeline do gatilho. O corpo da issue entra cortado. Uma triagem em
+  andamento da mesma issue não se repete, nem com duas entregas do GitHub ao mesmo tempo
+  (trava por issue).
+- **Proposta não recebe segredos.** O control plane não manda os segredos do workspace
+  (`env`) num job de proposta. Uma triagem lê o corpo de uma issue, texto de fora, com
+  todas as permissões, e estudar um projeto não precisa de segredo.
+- **Uma decisão sugerida vale para uma pausa só.** A proposta guarda a etapa e quantas
+  decisões a tarefa já tinha. Aplicar a sugestão confere que a tarefa ainda espera
+  aquela mesma decisão; se ela seguiu e parou de novo, a sugestão não decide a pausa
+  nova. Cancelar pela sugestão segue a regra de cancelar uma tarefa (quem a criou ou um
+  admin).
+- **A revisão vem antes dos dados.** Num pedido de nova rodada, a proposta anterior e o
+  comentário da pessoa vão logo depois do pedido. O prompt é cortado no fim, nos dados
+  mais longos, e nunca no comentário.
 - **Quem revisa.** Propostas de tarefa e de decisão são de quem roda tarefas; as de
   pipeline e de melhoria são de admins, como os pipelines.
 

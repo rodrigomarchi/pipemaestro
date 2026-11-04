@@ -63,7 +63,10 @@ defmodule PipeMaestroWeb.GithubWebhookController do
 
   # Triage needs a runner that can study the directory in a disposable worktree.
   defp start_task(conn, workspace, %{trigger_mode: "triage"} = project, issue) do
-    runner = online_runner(workspace, project, &Proposals.capable?/1)
+    runner =
+      online_runner(workspace, project, fn runner ->
+        Proposals.capable?(runner) and Proposals.git_directory?(runner, project.directory)
+      end)
 
     with %{} <- runner,
          {:ok, job} <- Proposals.triage_issue(workspace, project, issue, runner.id) do
@@ -75,6 +78,9 @@ defmodule PipeMaestroWeb.GithubWebhookController do
         |> json(%{
           error: "nenhum runner online e atualizado oferece o diretório #{project.directory}"
         })
+
+      {:error, :already_triaging} ->
+        json(conn, %{ignored: "a issue já está em triagem"})
 
       {:error, reason} ->
         conn

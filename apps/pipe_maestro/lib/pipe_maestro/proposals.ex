@@ -20,9 +20,11 @@ defmodule PipeMaestro.Proposals do
 
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
+  alias PipeMaestro.Audit
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines
+  alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals.{DecisionKind, ImproveKind, Instructions, PipelineKind, TaskKind}
   alias PipeMaestro.Repo
@@ -33,6 +35,8 @@ defmodule PipeMaestro.Proposals do
   @capability "scratch"
   # The job's prompt stays under the wire's limit (PipeMaestroProtocol.Job).
   @prompt_bytes 30_000
+  # What of an issue's body a triage reads; the request takes up to 16 000.
+  @issue_body_bytes 12_000
   @kinds %{
     "pipeline" => PipelineKind,
     "task" => TaskKind,
@@ -89,12 +93,7 @@ defmodule PipeMaestro.Proposals do
           "timeout_ms" => spec.timeout_ms,
           "proposal" => %{"kind" => kind, "input" => stored_input(data), "title" => spec.title}
         }
-        |> then(
-          &if(directory,
-            do: Map.merge(&1, %{"directory" => directory, "scratch" => true}),
-            else: &1
-          )
-        )
+        |> Map.merge(scratch_context(workspace, directory))
 
       job_attrs = %{
         prompt: Instructions.cut(spec.prompt, @prompt_bytes),
@@ -105,6 +104,19 @@ defmodule PipeMaestro.Proposals do
         {:ok, job} -> {:ok, job}
         {:error, job_changeset} -> {:error, %{changeset | errors: job_changeset.errors}}
       end
+    end
+  end
+
+  # A directory is studied in a disposable worktree, which gets the project's
+  # own dependency paths when it names them (else the runner finds the usual).
+  defp scratch_context(_workspace, nil), do: %{}
+
+  defp scratch_context(workspace, directory) do
+    base = %{"directory" => directory, "scratch" => true}
+
+    case Projects.for_directory(workspace, directory) do
+      %Project{copy_paths: [_ | _] = paths} -> Map.put(base, "setup", %{"copy" => paths})
+      _none -> base
     end
   end
 
@@ -180,30 +192,106 @@ defmodule PipeMaestro.Proposals do
   trigger's pipeline is suggested to the agent.
   """
   @spec triage_issue(Workspace.t(), Project.t(), map(), Ecto.UUID.t()) ::
-          {:ok, Job.t()} | {:error, Changeset.t() | :no_trigger_user}
+          {:ok, Job.t()} | {:error, Changeset.t() | :no_trigger_user | :already_triaging}
   def triage_issue(%Workspace{} = workspace, %Project{} = project, issue, runner_id) do
     case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
-      %User{} = user ->
-        pipeline =
-          Enum.find(Pipelines.list_pipelines(workspace), &(&1.id == project.trigger_pipeline_id))
-
-        request = """
-        # #{issue["title"]}
-
-        #{issue["body"]}
-        #{if pipeline, do: "\nO gatilho deste projeto usa o pipeline **#{pipeline.name}**; prefira-o se servir.\n"}
-        """
-
-        request("task", user, workspace, %{
-          "runner_id" => runner_id,
-          "directory" => project.directory,
-          "request" => request,
-          "issue_url" => issue["html_url"]
-        })
-
-      _nobody ->
-        {:error, :no_trigger_user}
+      %User{} = user -> triage(workspace, project, issue, runner_id, user)
+      _nobody -> {:error, :no_trigger_user}
     end
+  end
+
+  # One triage per issue at a time: GitHub may deliver the same label twice,
+  # so the check and the insert run under a lock on the issue.
+  defp triage(workspace, project, issue, runner_id, user) do
+    url = issue["html_url"]
+
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1))", ["triage:" <> url])
+      if triaging?(workspace, url), do: Repo.rollback(:already_triaging)
+
+      attrs = %{
+        "runner_id" => runner_id,
+        "directory" => project.directory,
+        "request" => triage_request(workspace, project, issue),
+        "issue_url" => url
+      }
+
+      case request("task", user, workspace, attrs) do
+        {:ok, job} ->
+          Audit.record(workspace, user, "proposal.requested", job, %{"issue_url" => url})
+          job
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  # The issue's body is cut: GitHub allows far more than a request takes.
+  defp triage_request(workspace, project, issue) do
+    pipeline =
+      Enum.find(Pipelines.list_pipelines(workspace), &(&1.id == project.trigger_pipeline_id))
+
+    """
+    # #{issue["title"]}
+
+    #{Instructions.cut(issue["body"] || "", @issue_body_bytes)}
+    #{if pipeline, do: "\nO gatilho deste projeto usa o pipeline **#{pipeline.name}**; prefira-o se servir.\n"}
+    """
+  end
+
+  @doc """
+  The workspace's proposals, newest first, narrowed by `filters` (blank
+  values ignored): `"kind"`, `"status"` (`"active"` for queued or running, or
+  a job status), `"directory"` and `"user_id"` (who asked).
+  """
+  @spec list(Workspace.t(), map(), pos_integer()) :: [Job.t()]
+  def list(%Workspace{id: workspace_id}, filters \\ %{}, limit \\ 100) do
+    from(j in Job,
+      where: j.workspace_id == ^workspace_id,
+      where: fragment("(?->'proposal') IS NOT NULL", j.context),
+      order_by: [desc: j.inserted_at],
+      limit: ^limit,
+      preload: [:runner, :created_by_user]
+    )
+    |> filter_by(filters)
+    |> Repo.all()
+  end
+
+  defp filter_by(query, filters) do
+    Enum.reduce(filters, query, fn
+      {_key, value}, query when value in [nil, ""] ->
+        query
+
+      {"kind", kind}, query ->
+        where(
+          query,
+          [j],
+          fragment("coalesce(?->'proposal'->>'kind', 'pipeline')", j.context) == ^kind
+        )
+
+      {"status", "active"}, query ->
+        where(query, [j], j.status in [:queued, :running])
+
+      {"status", status}, query when status in ~w(succeeded failed canceled) ->
+        where(query, [j], j.status == ^String.to_existing_atom(status))
+
+      {"directory", directory}, query ->
+        where(
+          query,
+          [j],
+          fragment("?->'proposal'->'input'->>'directory'", j.context) == ^directory
+        )
+
+      {"user_id", user_id}, query ->
+        case Ecto.UUID.cast(user_id) do
+          {:ok, id} -> where(query, [j], j.created_by_user_id == ^id)
+          :error -> query
+        end
+
+      {_unknown, _value}, query ->
+        query
+    end)
   end
 
   @doc "Whether a task proposal about GitHub issue `issue_url` is still running."

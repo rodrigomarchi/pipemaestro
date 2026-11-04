@@ -157,6 +157,24 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       refute Map.has_key?(Jobs.get_job!(ctx.workspace, job.id).context, "env")
     end
 
+    test "a proposal goes without the workspace's secrets", ctx do
+      {:ok, _} = PipeMaestro.Secrets.put(ctx.workspace, "GRAFANA_TOKEN", "glsa_1")
+      join_runner(ctx.socket, ctx.runner)
+
+      {:ok, job} =
+        Jobs.create_job(
+          ctx.user,
+          ctx.workspace,
+          %{prompt: "analise", runner_id: ctx.runner.id},
+          %{"proposal" => %{"kind" => "task", "input" => %{}}}
+        )
+
+      assert_push "job:assign", %{"id" => id} = pushed
+      assert id == job.id
+      refute Map.has_key?(pushed, "env")
+      refute Map.has_key?(pushed, "proposal")
+    end
+
     test "new and canceled jobs reach the runner; its reports are stored", ctx do
       channel = join_runner(ctx.socket, ctx.runner)
 

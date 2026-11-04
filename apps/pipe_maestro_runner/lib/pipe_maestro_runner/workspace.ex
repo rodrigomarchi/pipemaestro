@@ -71,6 +71,9 @@ defmodule PipeMaestroRunner.Workspace do
 
     if repository_root?(source) do
       _stale = remove_worktree(source, path)
+      # Worktrees deleted when the runner started (clear_scratch/1) leave
+      # entries in the repository; git drops them here.
+      _pruned = git(source, ["worktree", "prune"])
       File.mkdir_p!(Path.dirname(path))
 
       case git(source, ["worktree", "add", "--detach", path, "HEAD"]) do

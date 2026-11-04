@@ -64,7 +64,9 @@ defmodule PipeMaestro.Proposals.Instructions do
     ## Estude o projeto primeiro
 
     Você está num **worktree descartável** do projeto, apagado quando você terminar: leia,
-    instale, compile e rode o que precisar; nada do que fizer aqui chega ao projeto.
+    instale, compile e rode o que precisar dentro dele. O `.git` é compartilhado com o
+    projeto: não faça commit, não crie branches, não mude a configuração nem os hooks do
+    git, e não escreva fora do worktree.
 
     1. Leia o README, os manifestos (mix.exs, package.json, pyproject.toml, go.mod,
        Cargo.toml...), o Makefile, a configuração de CI e os guias para agentes

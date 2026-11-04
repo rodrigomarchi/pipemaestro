@@ -59,11 +59,11 @@ defmodule PipeMaestro.Proposals.TaskKind do
       #{issue}
       #{input.request}
 
+      #{Instructions.revision(previous && previous.structured_output, input[:feedback])}
+
       ## Os pipelines deste workspace
 
       #{pipelines(workspace)}
-
-      #{Instructions.revision(previous && previous.structured_output, input[:feedback])}
       """,
       system_prompt: system_prompt(),
       output_schema: schema(),

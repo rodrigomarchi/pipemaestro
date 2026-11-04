@@ -20,7 +20,14 @@ defmodule PipeMaestro.Proposals.DecisionKind do
   alias PipeMaestro.Tasks
   alias PipeMaestro.Tasks.{Engine, Task}
 
-  @types %{task_id: :binary_id, runner_id: :binary_id, directory: :string, feedback: :string}
+  @types %{
+    task_id: :binary_id,
+    runner_id: :binary_id,
+    directory: :string,
+    stage: :integer,
+    decisions: :integer,
+    feedback: :string
+  }
   @actions ~w(retry advance cancel)
   # The latest attempts of the step the agent reads, newest last.
   @attempts 2
@@ -47,10 +54,24 @@ defmodule PipeMaestro.Proposals.DecisionKind do
       changeset
       |> Changeset.put_change(:runner_id, task.runner_id)
       |> Changeset.put_change(:directory, if(task.git, do: task.directory))
+      # The pause this suggestion is for: applying it later checks it is still the same.
+      |> Changeset.put_change(:stage, task.current_stage)
+      |> Changeset.put_change(:decisions, length(Tasks.list_decisions(task)))
       |> validate_paused(task)
     else
       _missing -> Changeset.add_error(changeset, :task_id, "não é uma tarefa deste workspace")
     end
+  end
+
+  @doc """
+  Whether `task` still waits for the decision a proposal was asked about
+  (its `input`): paused at the same stage, with no decision taken since. A
+  suggestion for an earlier pause must not decide a later one.
+  """
+  @spec current?(map(), Task.t()) :: boolean()
+  def current?(input, %Task{} = task) do
+    task.status == :awaiting_decision and task.current_stage == input["stage"] and
+      length(Tasks.list_decisions(task)) == input["decisions"]
   end
 
   defp validate_paused(changeset, %Task{status: :awaiting_decision}), do: changeset
@@ -73,9 +94,9 @@ defmodule PipeMaestro.Proposals.DecisionKind do
       prompt: """
       A tarefa abaixo parou e espera uma decisão. Diagnostique por quê e recomende o que fazer.
 
-      #{context(task)}
-
       #{Instructions.revision(previous && previous.structured_output, input[:feedback])}
+
+      #{context(task)}
       """,
       system_prompt: system_prompt(),
       output_schema: schema(),
@@ -149,7 +170,7 @@ defmodule PipeMaestro.Proposals.DecisionKind do
     instructions =
       if decision.instructions, do: ": #{Instructions.cut(decision.instructions, 500)}", else: ""
 
-    "- #{decision.question} → #{decision.action}#{instructions}"
+    "- #{Instructions.cut(decision.question, 300)} → #{decision.action}#{instructions}"
   end
 
   defp system_prompt do

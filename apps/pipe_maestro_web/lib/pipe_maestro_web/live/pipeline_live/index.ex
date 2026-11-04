@@ -174,6 +174,17 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
     >
       <:actions>
         <.button
+          link_type="live_redirect"
+          to={~p"/w/#{@current_scope.workspace.slug}/proposals"}
+          size="sm"
+          variant="ghost"
+          color="gray"
+          icon="hero-cpu-chip"
+          data-testid="pipelines-proposals"
+        >
+          Propostas
+        </.button>
+        <.button
           :if={can?(@current_scope, :manage_pipelines)}
           size="sm"
           variant="outline"

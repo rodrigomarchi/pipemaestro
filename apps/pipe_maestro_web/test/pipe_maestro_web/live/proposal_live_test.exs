@@ -354,6 +354,118 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
     end
   end
 
+  describe "decision guards" do
+    setup ctx do
+      pipeline = pipeline_fixture(ctx.workspace)
+
+      {:ok, task} =
+        Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Corrigir o login",
+          "prompt" => "x",
+          "pipeline_id" => pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+
+      block!(ctx, task)
+      task = Tasks.get_task!(ctx.workspace, task.id)
+
+      {:ok, job} =
+        Proposals.request("decision", ctx.user, ctx.workspace, %{"task_id" => task.id})
+
+      job =
+        succeed(ctx, job, %{"diagnostico" => "x", "acao" => "retry", "instrucoes" => "Siga."})
+
+      %{task: task, proposal: job}
+    end
+
+    defp block!(ctx, task) do
+      run = Tasks.get_task!(ctx.workspace, task.id).stage_runs |> List.last()
+      {:ok, _} = Jobs.mark_started(ctx.runner, run.job.id)
+
+      {:ok, _} =
+        Jobs.finish_job(ctx.runner, run.job.id, %{
+          "status" => "succeeded",
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "?"}
+        })
+    end
+
+    test "a suggestion for an earlier pause does not decide a later one", ctx do
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, ctx.proposal))
+      refute has_element?(view, "[data-testid=proposal-decision-stale]")
+
+      # Someone decides elsewhere, and the task stops again at the same stage.
+      {:ok, _} = Tasks.retry_stage(ctx.task, "outra coisa", by: ctx.user)
+      block!(ctx, ctx.task)
+      assert Tasks.get_task!(ctx.workspace, ctx.task.id).status == :awaiting_decision
+      assert has_element?(view, "[data-testid=proposal-decision-stale]")
+
+      html = render_submit(view, "apply_decision", %{"action" => "retry", "decision" => %{}})
+      assert html =~ "A tarefa não espera mais esta decisão."
+      assert length(Tasks.list_decisions(ctx.task)) == 1
+    end
+
+    test "cancelling follows who may cancel the task; an unknown action is refused", ctx do
+      other = member_fixture(ctx.workspace)
+      conn = log_in_user(build_conn(), other)
+      {:ok, view, _html} = live(conn, proposal_path(ctx, ctx.proposal))
+      assert has_element?(view, "[data-testid=proposal-decision-cancel][disabled]")
+
+      html = render_submit(view, "apply_decision", %{"action" => "cancel", "decision" => %{}})
+      assert html =~ "Só quem criou a tarefa ou um admin a cancela."
+
+      html = render_submit(view, "apply_decision", %{"action" => "pular", "decision" => %{}})
+      assert html =~ "Escolha tentar de novo, avançar ou cancelar."
+      assert Tasks.get_task!(ctx.workspace, ctx.task.id).status == :awaiting_decision
+
+      # Nor does the other member stop someone else's proposal.
+      {:ok, running} =
+        Proposals.request("decision", ctx.user, ctx.workspace, %{"task_id" => ctx.task.id})
+
+      {:ok, view, _html} = live(conn, proposal_path(ctx, running))
+      html = render_click(view, "cancel", %{})
+      assert html =~ "Só quem pediu a proposta ou um admin a cancela."
+    end
+  end
+
+  describe "the proposals page filters" do
+    test "by status, directory and who asked", ctx do
+      other = member_fixture(ctx.workspace, %{name: "Bruno"})
+      mine = ask(ctx, "pipeline", %{"request" => "Meu"})
+
+      {:ok, theirs} =
+        Proposals.request("task", other, ctx.workspace, %{
+          "runner_id" => ctx.runner.id,
+          "directory" => "app",
+          "request" => "Deles"
+        })
+
+      succeed(ctx, theirs, %{})
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/proposals")
+
+      view |> form("#proposals-filter", filter: %{status: "active"}) |> render_change()
+      assert has_element?(view, "[data-testid=proposal-link-#{mine.id}]")
+      refute has_element?(view, "[data-testid=proposal-link-#{theirs.id}]")
+
+      view
+      |> form("#proposals-filter", filter: %{status: "", user_id: other.id})
+      |> render_change()
+
+      refute has_element?(view, "[data-testid=proposal-link-#{mine.id}]")
+      assert has_element?(view, "[data-testid=proposal-link-#{theirs.id}]")
+
+      view
+      |> form("#proposals-filter", filter: %{user_id: "", directory: "app", status: "canceled"})
+      |> render_change()
+
+      assert has_element?(
+               view,
+               "[data-testid=no-proposals]",
+               "Nenhuma proposta com esses filtros"
+             )
+    end
+  end
+
   describe "improve" do
     test "saves the notes and opens the pipeline's form with the revision", ctx do
       pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})

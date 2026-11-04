@@ -143,9 +143,11 @@ defmodule PipeMaestroWeb.RunnerChannel do
   defp reply_to({:error, reason}, socket),
     do: {:reply, {:error, %{"reason" => Atom.to_string(reason)}}, socket}
 
-  # The workspace's secrets join the job only on its way to the runner.
+  # The workspace's secrets join the job only on its way to the runner, and
+  # never a proposal's: it reads untrusted text (an issue's body) with every
+  # permission, and needs no secret to study a project.
   defp push_assign(socket, job) do
-    env = Secrets.env(job.workspace_id)
+    env = if proposal?(job), do: %{}, else: Secrets.env(job.workspace_id)
 
     {:ok, wire} =
       job.context
@@ -155,6 +157,8 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
     push(socket, Job.assign_event(), Job.to_map(wire))
   end
+
+  defp proposal?(job), do: is_map(job.context) and Map.has_key?(job.context, "proposal")
 
   # Phoenix calls terminate after a refused join too; only a runner that was
   # actually online has a "last seen" to record.
