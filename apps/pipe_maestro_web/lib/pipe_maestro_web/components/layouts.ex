@@ -5,6 +5,8 @@ defmodule PipeMaestroWeb.Layouts do
   """
   use PipeMaestroWeb, :html
 
+  import PipeMaestroWeb.BrandComponents, only: [logo_mark: 1]
+
   alias PipeMaestro.Version
 
   embed_templates "layouts/*"
@@ -496,20 +498,18 @@ defmodule PipeMaestroWeb.Layouts do
     """
   end
 
-  @doc "The product mark: logo glyph and name."
+  @doc "The product mark: the PipeMaestro symbol (`BrandComponents.logo_mark/1`) and name."
   attr :size, :string, default: "md", values: ["sm", "md"]
   attr :compact, :boolean, default: false, doc: "glyph and name sized for the sidebar"
 
   @spec brand(map()) :: Phoenix.LiveView.Rendered.t()
   def brand(assigns) do
     ~H"""
-    <.link navigate={~p"/"} class="flex items-center gap-2.5">
-      <span class={[
-        "inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-secondary-500 text-white shadow-sm",
-        if(@size == "sm", do: "size-7", else: "size-8")
-      ]}>
-        <.icon name="hero-musical-note" class="size-5" />
-      </span>
+    <.link navigate={~p"/"} class="flex items-center gap-2.5" data-testid="brand">
+      <.logo_mark
+        class={if(@size == "sm", do: "size-7", else: "size-8")}
+        data-testid="brand-mark"
+      />
       <span class={[
         "font-semibold tracking-tight text-gray-900 dark:text-white",
         @compact && "pc-sidebar__brand",
