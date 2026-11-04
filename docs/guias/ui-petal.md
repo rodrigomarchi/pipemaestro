@@ -55,6 +55,27 @@ Um `<details>` que a tela atualiza ao vivo perde o `open` a cada patch. Dê a el
 estável e `phx-mounted={JS.ignore_attributes(["open"])}` (é o caso de "Decidir sem
 responder" no painel da tarefa).
 
+## Marca
+
+O símbolo do PipeMaestro é desenho próprio e agnóstico de fornecedor
+([ADR 0019](../adr/0019-o-nome-pipemaestro.md)): três agentes (os pontos à esquerda)
+convergem num único pipeline, que passa por uma etapa (o anel) e termina no pull request
+(o ponto cheio). É o maestro do pipeline, não o de um agente.
+
+- **Componentes:** `<Layouts.brand />` é a marca com nome (attrs `size` `"sm"`/`"md"` e
+  `compact` para a sidebar, em que só o nome some ao recolher); `logo_mark/1`
+  (`PipeMaestroWeb.BrandComponents`) é só o símbolo, dimensionado por `class`. O fundo é
+  CSS no próprio `<svg>` e os traços seguem `currentColor`, então várias marcas na mesma
+  página não disputam ids.
+- **Arquivos** em `apps/pipe_maestro_web/priv/static/images/`: `logo-mark.svg` (em cor),
+  `logo-mark-mono.svg` (só traços em `currentColor`, sem fundo, para qualquer cor de
+  fundo) e `favicon.svg` (desenho simplificado para 16–32 px). O `priv/static/favicon.ico`
+  (16/32/48) é rasterizado do `favicon.svg`; o `root.html.heex` declara os dois.
+- **Regras:** o gradiente é só `primary-500` → `secondary-500`; não recolorir com cores
+  de terceiros nem acrescentar símbolo, nome ou faísca de fornecedor; tamanho mínimo de
+  16 px, e abaixo de 24 px usar o desenho do favicon; deixar ao redor um respiro de pelo
+  menos um quarto do lado do símbolo; sem texto dentro do símbolo.
+
 ## Tema
 
 - **Cores:** `primary` é violeta e `secondary` é sky, definidos em `@theme inline`
