@@ -759,6 +759,58 @@ defmodule PipeMaestro.TasksTest do
       assert Tasks.alerts(ctx.workspace, MapSet.new()) == []
     end
 
+    test "runner_offline?: a running task whose runner is not online", ctx do
+      task = create_task(ctx)
+
+      assert Tasks.runner_offline?(task, MapSet.new())
+      refute Tasks.runner_offline?(task, MapSet.new([ctx.runner.id]))
+
+      paused =
+        run_current(ctx, task, %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "?"}
+        })
+
+      assert paused.status == :awaiting_decision
+      refute Tasks.runner_offline?(paused, MapSet.new())
+    end
+
+    test "alerts_change_at: the earliest future reset of a runner near its limit", ctx do
+      now = ~U[2026-11-04 12:00:00Z]
+      task = create_task(ctx)
+
+      near = fn resets_at ->
+        %PipeMaestro.Runners.Runner{
+          rate_limit: %{
+            "status" => "allowed_warning",
+            "utilization" => %{"five_hour" => 0.9},
+            "resets_at" => resets_at
+          }
+        }
+      end
+
+      assert Tasks.alerts_change_at([], now) == nil
+      assert Tasks.alerts_change_at([{:runner_offline, task}], now) == nil
+
+      later = DateTime.to_unix(~U[2026-11-04 15:00:00Z])
+      sooner = DateTime.to_iso8601(~U[2026-11-04 13:00:00Z])
+      past = DateTime.to_unix(~U[2026-11-04 11:00:00Z])
+
+      alerts = [
+        {:runner_near_limit, task, near.(later)},
+        {:runner_offline, task},
+        {:runner_near_limit, task, near.(sooner)},
+        {:runner_near_limit, task, near.(past)},
+        {:runner_near_limit, task, near.(nil)}
+      ]
+
+      assert Tasks.alerts_change_at(alerts, now) == ~U[2026-11-04 13:00:00Z]
+
+      assert Tasks.alerts_change_at(
+               [{:runner_near_limit, task, near.(past)}, {:runner_near_limit, task, near.(nil)}],
+               now
+             ) == nil
+    end
+
     test "past the pipeline's cap per task, the task pauses instead of going on", ctx do
       pipeline = pipeline_fixture(ctx.workspace, %{"max_task_cost_usd" => "0.5"})
       task = create_task(ctx, %{"pipeline_id" => pipeline.id})
