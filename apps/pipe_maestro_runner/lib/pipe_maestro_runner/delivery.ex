@@ -10,19 +10,35 @@ defmodule PipeMaestroRunner.Delivery do
        and marks it ready when asked (the last stage);
     4. comments on the task's issue.
 
-  Steps 3 and 4 use the GitHub CLI (`gh`, or `$GH_BIN`) with the credentials
-  of whoever runs the runner. A step that fails is reported (`"error"`) and
-  the ones that depend on it are skipped; nothing raises.
+  Steps 3 and 4 go where the repository lives:
+
+  - **Forgejo or Gitea** (the `origin` host answers its API): through the API,
+    signed in as `git push` is (`PipeMaestroRunner.Delivery.Forgejo`). A
+    draft is a `"WIP: "` title.
+  - **GitHub, or anything else:** the GitHub CLI (`gh`, or `$GH_BIN`), with
+    the credentials of whoever runs the runner.
+
+  A step that fails is reported (`"error"`) and the ones that depend on it are
+  skipped; nothing raises.
   """
+
+  alias PipeMaestroRunner.Delivery.Forgejo
 
   @doc """
   Delivers in the worktree `dir`, leaving `exclude` out of the commit.
-  Options: `:gh` (the GitHub CLI's path) and `:env` (extra environment for
-  git and gh). Returns `%{"commit", "pushed", "pr_url", "commented", "error"}`.
+  Options: `:gh` (the GitHub CLI's path), `:env` (extra environment for git,
+  gh and the Forgejo credentials) and `:forgejo_api_base` (the Forgejo API's
+  base URL instead of `https://<host>`, for tests). Returns
+  `%{"commit", "pushed", "pr_url", "commented", "error"}`.
   """
   @spec deliver(Path.t(), map(), [String.t()], keyword()) :: map()
   def deliver(dir, delivery, exclude, opts \\ []) do
-    ctx = %{dir: dir, gh: Keyword.get_lazy(opts, :gh, &gh/0), env: Keyword.get(opts, :env, [])}
+    ctx = %{
+      dir: dir,
+      gh: Keyword.get_lazy(opts, :gh, &gh/0),
+      env: Keyword.get(opts, :env, []),
+      forgejo_api_base: opts[:forgejo_api_base]
+    }
 
     %{"commit" => nil, "pushed" => false, "pr_url" => nil, "commented" => false}
     |> step(fn report -> commit(ctx, delivery["commit_message"], exclude, report) end)
@@ -76,10 +92,33 @@ defmodule PipeMaestroRunner.Delivery do
 
   defp pull_request(_ctx, nil, report), do: {:ok, report}
 
-  defp pull_request(%{gh: nil}, _pr, _report),
+  defp pull_request(ctx, pr, report) do
+    case origin_forgejo(ctx) do
+      {:ok, repo} -> forgejo_pull_request(ctx, repo, pr, report)
+      :not_forgejo -> github_pull_request(ctx, pr, report)
+    end
+  end
+
+  defp forgejo_pull_request(ctx, repo, pr, report) do
+    with {:ok, branch} <- git(ctx, ["rev-parse", "--abbrev-ref", "HEAD"]),
+         {:ok, url} <-
+           Forgejo.pull_request(
+             repo,
+             String.trim(branch),
+             pr["title"],
+             pr["body"] || "",
+             pr["ready"] == true
+           ) do
+      {:ok, %{report | "pr_url" => url}}
+    else
+      {:error, output} -> {:error, "pr: #{output}"}
+    end
+  end
+
+  defp github_pull_request(%{gh: nil}, _pr, _report),
     do: {:error, "pr: o GitHub CLI (gh) não está instalado neste runner"}
 
-  defp pull_request(ctx, pr, report) do
+  defp github_pull_request(ctx, pr, report) do
     title = pr["title"]
     body = pr["body"] || ""
 
@@ -106,11 +145,44 @@ defmodule PipeMaestroRunner.Delivery do
   defp comment(_ctx, nil, report), do: {:ok, report}
 
   defp comment(ctx, %{"url" => url, "body" => body}, report) do
-    case ctx.gh && run(ctx, ctx.gh, ["issue", "comment", url, "--body", body]) do
+    result =
+      case issue_forgejo(ctx, url) do
+        {:ok, repo} -> with :ok <- Forgejo.comment(repo, url, body), do: {:ok, nil}
+        :not_forgejo -> github_comment(ctx, url, body)
+      end
+
+    case result do
       {:ok, _} -> {:ok, %{report | "commented" => true}}
       {:error, output} -> {:error, "comentário na issue: #{output}"}
-      nil -> {:error, "comentário na issue: o GitHub CLI (gh) não está instalado neste runner"}
     end
+  end
+
+  defp github_comment(%{gh: nil}, _url, _body),
+    do: {:error, "o GitHub CLI (gh) não está instalado neste runner"}
+
+  defp github_comment(ctx, url, body),
+    do: run(ctx, ctx.gh, ["issue", "comment", url, "--body", body])
+
+  # The remote as configured, before any insteadOf rewriting.
+  defp origin_forgejo(ctx) do
+    case git(ctx, ["config", "--get", "remote.origin.url"]) do
+      {:ok, url} -> forgejo(ctx, String.trim(url))
+      {:error, _none} -> :not_forgejo
+    end
+  end
+
+  defp issue_forgejo(ctx, url) do
+    case Regex.run(~r{^(https?://[^/]+/[^/]+/[^/]+)/issues/\d+/?$}, url) do
+      [_, repository] -> forgejo(ctx, repository)
+      nil -> :not_forgejo
+    end
+  end
+
+  defp forgejo(ctx, url) do
+    Forgejo.repo(url,
+      api_base: ctx.forgejo_api_base,
+      auth: &Forgejo.credentials(&1, ctx.dir, ctx.env)
+    )
   end
 
   defp gh, do: System.get_env("GH_BIN") || System.find_executable("gh")

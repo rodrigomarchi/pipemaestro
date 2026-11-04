@@ -51,7 +51,8 @@ por último: até aqui, commit, push e PR eram a critério do prompt de cada eta
    O runner entrega depois do agente e dos gates, e só quando a etapa terminou bem
    (saída `ok`) com todos os gates atendidos.
    - O commit deixa de fora o que o setup clonou e não acontece se nada mudou.
-   - Commit e push usam `git`; PR e comentário usam o `gh` de quem roda o runner.
+   - Commit e push usam `git`; PR e comentário usam o `gh` de quem roda o runner, ou a API
+     do Forgejo quando o `origin` é um Forgejo ([ADR 0027](0027-entrega-em-pr-no-forgejo.md)).
    - Uma falha vira `error` na entrega, sem derrubar a etapa.
    - A mensagem de commit e o corpo do PR (o pedido, `Closes <issue>` e a lista de
      etapas) são montados pelo control plane, não pelo agente.

@@ -507,12 +507,16 @@ defmodule PipeMaestro.Tasks do
 
   defp delivery(_task, _stage, _index), do: nil
 
+  # The stages before this one are done; the last one's delivery marks the PR
+  # ready, so then every stage is.
   defp pr_body(task, index) do
+    last? = index == length(task.stages) - 1
+
     stages =
       task.stages
       |> Enum.with_index()
       |> Enum.map_join("\n", fn {stage, i} ->
-        "- [#{if i < index, do: "x", else: " "}] #{stage.name}"
+        "- [#{if i < index or last?, do: "x", else: " "}] #{stage.name}"
       end)
 
     closes = if task.issue_url, do: "Closes #{task.issue_url}\n\n", else: ""
