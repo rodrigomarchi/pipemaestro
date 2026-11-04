@@ -2,7 +2,7 @@
  * @section Public
  * @flow A [done] A visitor reads the landing page (the simple explanation and the
  *   diagrams) and reaches the sign-in from it
- * @flow D [todo] A visitor sees the real product on the landing page: the board in the
+ * @flow D [done] A visitor sees the real product on the landing page: the board in the
  *   hero and a tour of the screens, in the theme of the page and without horizontal
  *   scroll on a phone
  * @flow B [done] The sign-in page shows the e-mail and password form
