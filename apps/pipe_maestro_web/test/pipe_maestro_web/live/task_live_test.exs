@@ -571,6 +571,36 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert render_click(view, "decide", %{"action" => "retry"}) =~ "não está aguardando"
     end
 
+    test "a running task warns while its runner is offline, live", ctx do
+      tracker = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, _ref} = RunnerStatus.track(tracker, ctx.runner)
+      task = create_task(ctx)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      refute has_element?(view, "[data-testid=task-runner-offline]")
+
+      Process.exit(tracker, :kill)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=task-runner-offline]", "mac")
+             end)
+
+      back = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, _ref} = RunnerStatus.track(back, ctx.runner)
+
+      assert eventually(fn -> not has_element?(view, "[data-testid=task-runner-offline]") end)
+      Process.exit(back, :kill)
+    end
+
+    test "a task awaiting a decision does not warn about its runner", ctx do
+      task = create_task(ctx)
+      finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=task-status]", "Aguardando decisão")
+      refute has_element?(view, "[data-testid=task-runner-offline]")
+    end
+
     test "cancels a task", ctx do
       task = create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
@@ -578,6 +608,14 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=task-cancel]") |> render_click()
       assert has_element?(view, "[data-testid=task-status]", "Cancelada")
       assert render_click(view, "cancel") =~ "A tarefa já terminou"
+    end
+  end
+
+  defp eventually(fun, attempts \\ 50) do
+    cond do
+      fun.() -> true
+      attempts == 0 -> false
+      true -> Process.sleep(20) && eventually(fun, attempts - 1)
     end
   end
 end

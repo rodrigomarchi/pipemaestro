@@ -67,6 +67,18 @@ export class TasksPage {
     await select.selectOption(value!);
   }
 
+  /** Opens one task's page. */
+  async show(workspaceSlug: string, taskId: string) {
+    await this.page.goto(`/w/${workspaceSlug}/tasks/${taskId}`);
+    await expect(this.status).toBeVisible();
+    await waitForLiveView(this.page);
+  }
+
+  /** The warning a running task shows while its runner is offline. */
+  get runnerOffline(): Locator {
+    return this.page.getByTestId("task-runner-offline");
+  }
+
   stageRunStatus(key: string, attempt: number): Locator {
     return this.page.getByTestId(`stage-run-status-${key}-${attempt}`);
   }

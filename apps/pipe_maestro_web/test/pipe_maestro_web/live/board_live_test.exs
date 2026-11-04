@@ -3,7 +3,8 @@ defmodule PipeMaestroWeb.BoardLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Jobs, Tasks}
+  alias PipeMaestro.{Jobs, Runners, Tasks}
+  alias PipeMaestroWeb.RunnerStatus
 
   setup :register_and_log_in_member
 
@@ -115,6 +116,69 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       assert has_element?(view, "[data-testid=board-alert-limit-#{task.id}]", "mac")
     end
 
+    test "the offline alert comes and goes with the runner's presence, live", ctx do
+      tracker = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, _ref} = RunnerStatus.track(tracker, ctx.runner)
+      task = create_task(ctx, "Acompanha o runner")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      refute has_element?(view, "[data-testid=board-alert-offline-#{task.id}]")
+
+      Process.exit(tracker, :kill)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-alert-offline-#{task.id}]", "mac")
+             end)
+
+      back = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, _ref} = RunnerStatus.track(back, ctx.runner)
+
+      assert eventually(fn ->
+               not has_element?(view, "[data-testid=board-alert-offline-#{task.id}]")
+             end)
+
+      Process.exit(back, :kill)
+    end
+
+    test "the limit alert shows as soon as a rate_limit is recorded, live", ctx do
+      task = create_task(ctx, "Perto do limite ao vivo")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      refute has_element?(view, "[data-testid=board-alert-limit-#{task.id}]")
+
+      {:ok, _} =
+        Runners.record_rate_limit(ctx.runner, %{
+          "status" => "allowed_warning",
+          "utilization" => %{"five_hour" => 0.9}
+        })
+
+      RunnerStatus.notify_changed(ctx.workspace.id)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-alert-limit-#{task.id}]", "mac")
+             end)
+    end
+
+    test "the limit alert goes away by itself when the limit resets", ctx do
+      task = create_task(ctx, "Limite renova")
+      resets_at = DateTime.utc_now(:second) |> DateTime.add(2) |> DateTime.to_unix()
+
+      {:ok, _} =
+        Runners.record_rate_limit(ctx.runner, %{
+          "status" => "allowed_warning",
+          "utilization" => %{"five_hour" => 0.9},
+          "resets_at" => resets_at
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      assert has_element?(view, "[data-testid=board-alert-limit-#{task.id}]")
+
+      # No event arrives: the board itself knows when the limit resets.
+      assert eventually(
+               fn -> not has_element?(view, "[data-testid=board-alert-limit-#{task.id}]") end,
+               250
+             )
+    end
+
     test "filters by pipeline, runner, directory and person", ctx do
       other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
       a = create_task(ctx, "Na app")
@@ -209,5 +273,13 @@ defmodule PipeMaestroWeb.BoardLiveTest do
 
     assert render(view) =~ "build-01"
     assert has_element?(view, "[data-testid=board-runner-status-build-01]", "Offline")
+  end
+
+  defp eventually(fun, attempts \\ 50) do
+    cond do
+      fun.() -> true
+      attempts == 0 -> false
+      true -> Process.sleep(20) && eventually(fun, attempts - 1)
+    end
   end
 end

@@ -57,6 +57,17 @@ export class AppPage {
     await this.expectBoard(name);
   }
 
+  async openBoard(workspaceSlug: string) {
+    await this.page.goto(`/w/${workspaceSlug}`);
+    await expect(this.title).toHaveText("Board");
+    await waitForLiveView(this.page);
+  }
+
+  /** One of the board's "needs attention" alerts: "offline", "limit", "budget" or "overdue". */
+  boardAlert(kind: "offline" | "limit" | "budget" | "overdue", taskId: string): Locator {
+    return this.page.getByTestId(`board-alert-${kind}-${taskId}`);
+  }
+
   async openAccountMenu() {
     await this.page.getByTestId("account-menu-trigger").click();
     await expect(this.page.getByTestId("account-email")).toBeVisible();
