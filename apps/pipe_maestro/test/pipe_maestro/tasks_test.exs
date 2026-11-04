@@ -743,6 +743,15 @@ defmodule PipeMaestro.TasksTest do
       assert Decimal.equal?(spent, Decimal.new("0.85"))
       assert [{:near_budget, _, _, _}] = Tasks.alerts(ctx.workspace, MapSet.new([ctx.runner.id]))
 
+      {:ok, _} =
+        PipeMaestro.Runners.record_rate_limit(ctx.runner, %{
+          "status" => "allowed_warning",
+          "utilization" => %{"five_hour" => 0.9}
+        })
+
+      assert [{:near_budget, _, _, _}, {:runner_near_limit, %Task{id: ^id}, _runner}] =
+               Tasks.alerts(ctx.workspace, MapSet.new([ctx.runner.id]))
+
       {:ok, _} = Tasks.cancel_task(task)
       assert Tasks.alerts(ctx.workspace, MapSet.new()) == []
     end
@@ -754,6 +763,9 @@ defmodule PipeMaestro.TasksTest do
       task = run_current(ctx, task, %{"cost_usd" => 0.3})
       assert %Task{status: :running, current_stage: 1} = task
       assert Decimal.equal?(Tasks.cost(task), Decimal.new("0.3"))
+      assert %{} = costs = Tasks.costs([task.id, Ecto.UUID.generate()])
+      assert Decimal.equal?(costs[task.id], Decimal.new("0.3"))
+      assert map_size(costs) == 1
 
       task = run_current(ctx, task, %{"cost_usd" => 0.3, "status" => "failed", "exit_code" => 1})
       assert %Task{status: :awaiting_decision, decision_reason: reason} = task

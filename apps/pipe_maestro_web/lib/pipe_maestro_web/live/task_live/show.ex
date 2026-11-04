@@ -4,8 +4,10 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   right under it, what its attempts produced (summary, the agent's final
   answer, the artifact). The stage running now shows the agent's steps live,
   a stream of timeline segments whose last strip grows in place; a finished
-  attempt's steps open on demand, filtered here. When the task waits for a
-  decision, the decision form sits under the stage that waits.
+  attempt's steps open on demand, filtered here, and what it spent so far
+  (`PipeMaestro.Insights.live/1`) follows the CLI's telemetry, at most every
+  `@live_every` ms. When the task waits for a decision, the decision form sits
+  under the stage that waits.
   """
   use PipeMaestroWeb, :live_view
 
@@ -25,10 +27,12 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   import PipeMaestroWeb.TaskComponents
 
-  alias PipeMaestro.{Jobs, Tasks}
+  alias PipeMaestro.{Insights, Jobs, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
   alias PipeMaestroWeb.{Markdown, ProposalRequest}
+
+  @live_every 2_000
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -47,6 +51,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     {:ok,
      socket
      |> assign(page_title: task.title, task: task, live_job_id: nil, timelines: %{})
+     |> assign(live_spent: nil, live_pending: false)
      |> assign(raw_artifacts: MapSet.new(), typing: nil, step_filters: %{})
      |> load_decisions()
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
@@ -57,8 +62,25 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   def handle_info({:task_updated, %Task{} = task}, socket),
     do: {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
 
-  # The CLI's telemetry shows on the job's own page, not here.
+  # The running job's telemetry comes in bursts: what it spent so far is read
+  # again once per `@live_every`. The rest of it shows on the job's own page.
+  def handle_info({:job_telemetry, job_id}, %{assigns: %{live_job_id: job_id}} = socket)
+      when not is_nil(job_id) do
+    if not socket.assigns.live_pending,
+      do: Process.send_after(self(), {:refresh_spent, job_id}, @live_every)
+
+    {:noreply, assign(socket, live_pending: true)}
+  end
+
   def handle_info({:job_telemetry, _job_id}, socket), do: {:noreply, socket}
+
+  def handle_info({:refresh_spent, job_id}, %{assigns: %{live_job_id: job_id}} = socket) do
+    job = Jobs.get_job!(socket.assigns.current_scope.workspace, job_id)
+    {:noreply, assign(socket, live_spent: Insights.live(job), live_pending: false)}
+  end
+
+  def handle_info({:refresh_spent, _job_id}, socket),
+    do: {:noreply, assign(socket, live_pending: false)}
 
   def handle_info({:job_event, event}, socket) do
     with true <- event.job_id == socket.assigns.live_job_id,
@@ -269,7 +291,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
     cond do
       is_nil(job) ->
-        socket |> assign(live_job_id: nil, typing: nil) |> live_timeline([])
+        socket |> assign(live_job_id: nil, typing: nil, live_spent: nil) |> live_timeline([])
 
       job.id == socket.assigns.live_job_id ->
         socket
@@ -278,7 +300,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         if connected?(socket), do: Jobs.subscribe({:job, job.id})
 
         socket
-        |> assign(live_job_id: job.id, typing: nil)
+        |> assign(live_job_id: job.id, typing: nil, live_spent: Insights.live(job))
         |> live_timeline(Jobs.list_events(job))
     end
   end
@@ -561,6 +583,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                   run={run}
                   many={length(row.runs) > 1}
                   live={run.job && run.job.id == @live_job_id}
+                  spent={run.job && run.job.id == @live_job_id && @live_spent}
                   typing={@typing}
                   streams={@streams}
                   steps={run.job && Map.get(@timelines, run.job.id)}
@@ -785,6 +808,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   attr :run, StageRun, required: true
   attr :many, :boolean, required: true
   attr :live, :boolean, required: true
+  attr :spent, :any, default: nil, doc: "what the running attempt spent so far"
   attr :streams, :any, required: true
   attr :steps, :list, default: nil
   attr :steps_filter, :string, default: "all"
@@ -804,6 +828,13 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           <.stage_run_status run={@run} data-testid={"stage-run-status-#{@run.key}-#{@run.attempt}"} />
         </span>
         <span :if={@run.job} class="flex items-center gap-3">
+          <span
+            :if={@spent}
+            class="text-primary-700 dark:text-primary-300"
+            data-testid={"stage-run-spent-#{@run.key}-#{@run.attempt}"}
+          >
+            até agora {format_cost(@spent.cost_usd)} · {short_number(@spent.tokens)} tokens
+          </span>
           <span>{format_duration(@run.job.duration_ms)}</span>
           <span>{format_cost(@run.job.cost_usd)}</span>
           <span

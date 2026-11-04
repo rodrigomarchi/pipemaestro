@@ -227,7 +227,84 @@ defmodule PipeMaestroWeb.JobLiveTest do
     assert render(view) =~ "1 s"
     assert has_element?(view, "[data-testid=job-audit-api]", "1 requisição")
     assert has_element?(view, "[data-testid=job-audit-tool-time-Bash]", "2 s")
+
+    # Where the time went.
+    assert has_element?(view, "[data-testid=job-audit-timing-api]", "4 s")
+    assert has_element?(view, "[data-testid=job-audit-timing-tools]", "2 s")
+    assert has_element?(view, "[data-testid=job-audit-timing-wall]", "6 s")
+    refute has_element?(view, "[data-testid=job-audit-timing-gates]")
   end
+
+  test "what else the run reported: MCP, permission decisions, subagents, API origins", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+
+    {:ok, _} =
+      Jobs.record_telemetry(runner, job.id, [
+        tel("mcp_server_connection", %{
+          "status" => "failed",
+          "transport_type" => "stdio",
+          "server_scope" => "project"
+        }),
+        tel("tool_decision", %{"decision" => "reject", "source" => "hook"}),
+        tel("subagent_completed", %{"agent_type" => "Explore"}),
+        tel("api_request", %{"query_source" => "compact", "cost_usd" => 0.1}),
+        tel("api_refusal", %{"error" => "refused"}),
+        tel("metric:active_time", %{"value" => 90})
+      ])
+
+    {:ok, _} =
+      Jobs.finish_job(runner, job.id, %{
+        "status" => "succeeded",
+        "gates" => [%{"duration_ms" => 3_000}]
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+
+    assert has_element?(view, "[data-testid=job-audit-mcp-connections]", "1 falha")
+    assert has_element?(view, "[data-testid=job-audit-decision-hook-reject]", "Recusadas")
+    assert has_element?(view, "[data-testid=job-audit-subagents]", "Explore")
+    assert has_element?(view, "[data-testid=job-audit-api-source-compact]")
+    assert has_element?(view, "[data-testid=job-audit-api-refusals]", "1 recusa")
+    assert has_element?(view, "[data-testid=job-audit-active-time]", "1 min 30 s")
+    assert has_element?(view, "[data-testid=job-audit-timing-gates]", "3 s")
+  end
+
+  test "while it runs, shows what it spent so far", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+
+    assert has_element?(view, "[data-testid=job-live-cost]", "US$ 0")
+    refute has_element?(view, "[data-testid=job-audit]")
+
+    {:ok, _} =
+      Jobs.record_telemetry(runner, job.id, [
+        tel("api_request", %{"cost_usd" => 0.5, "input_tokens" => 1_000, "output_tokens" => 500})
+      ])
+
+    # Read again once per interval, not on every batch.
+    _ = render(view)
+    send(view.pid, :refresh_live)
+
+    assert has_element?(view, "[data-testid=job-live-cost]", "US$ 0.5000")
+    assert has_element?(view, "[data-testid=job-live-tokens]", "1.5k")
+    assert has_element?(view, "[data-testid=job-live-requests]", "1")
+
+    {:ok, _} = Jobs.finish_job(runner, job.id, %{"status" => "succeeded"})
+    refute has_element?(view, "[data-testid=job-live]")
+    assert has_element?(view, "[data-testid=job-audit]")
+  end
+
+  defp tel(name, attrs), do: %{"name" => name, "at" => "2026-11-03T12:00:00Z", "attrs" => attrs}
 
   test "cancels a queued job", %{conn: conn, workspace: workspace, runner: runner, job: job} do
     Jobs.subscribe({:runner, runner.id})

@@ -17,9 +17,10 @@ defmodule PipeMaestro.Jobs do
   import Ecto.Query
 
   alias PipeMaestro.Accounts.User
+  alias PipeMaestro.Insights
   alias PipeMaestro.Jobs.{Event, Job}
   alias PipeMaestro.Jobs.Telemetry, as: JobTelemetry
-  alias PipeMaestro.Repo
+  alias PipeMaestro.{Repo, Runners}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.Telemetry
@@ -243,6 +244,7 @@ defmodule PipeMaestro.Jobs do
         error: "O runner reiniciou durante a execução.",
         finished_at: now()
       )
+      |> summarize()
       |> finished()
     end
 
@@ -263,7 +265,9 @@ defmodule PipeMaestro.Jobs do
 
   @doc """
   Stores an event the runner reported for one of its jobs. An event already
-  stored (same `seq`) is ignored.
+  stored (same `seq`) is ignored. A `"rate_limit"` event is also kept on the
+  runner (`PipeMaestro.Runners.record_rate_limit/2`): the limits are its
+  account's.
   """
   @spec append_event(Runner.t(), String.t(), map()) ::
           {:ok, Event.t() | :duplicate} | {:error, :not_found | Ecto.Changeset.t()}
@@ -272,6 +276,7 @@ defmodule PipeMaestro.Jobs do
          {:ok, event} <- %Event{job_id: job.id} |> Event.changeset(attrs) |> apply_insert() do
       case insert_event(event) do
         {1, [stored]} ->
+          :ok = keep_rate_limit(runner, stored)
           broadcast({:job, job.id}, {:job_event, stored})
           {:ok, stored}
 
@@ -280,6 +285,13 @@ defmodule PipeMaestro.Jobs do
       end
     end
   end
+
+  defp keep_rate_limit(runner, %Event{type: "rate_limit", data: data}) do
+    {:ok, _runner} = Runners.record_rate_limit(runner, data)
+    :ok
+  end
+
+  defp keep_rate_limit(_runner, _event), do: :ok
 
   defp apply_insert(changeset), do: Ecto.Changeset.apply_action(changeset, :insert)
 
@@ -321,7 +333,8 @@ defmodule PipeMaestro.Jobs do
   after the job's end. Records the protocol does not know are skipped, and
   metric increments add up in the job's `telemetry_totals`. Whoever watches
   the job (`{:job, id}`) gets `{:job_telemetry, id}`. Returns how many were
-  stored.
+  stored. Records of a job that already ended update its summary
+  (`PipeMaestro.Insights.store_summary/1`).
   """
   @spec record_telemetry(Runner.t(), String.t(), [map()]) ::
           {:ok, non_neg_integer()} | {:error, :not_found}
@@ -336,6 +349,7 @@ defmodule PipeMaestro.Jobs do
 
       {count, _rows} = Repo.insert_all(JobTelemetry, rows)
       add_totals(job, rows)
+      if count > 0 and not Job.active?(job), do: job.id |> get_job() |> summarize()
       if count > 0, do: broadcast({:job, job.id}, {:job_telemetry, job.id})
       {:ok, count}
     end
@@ -394,19 +408,30 @@ defmodule PipeMaestro.Jobs do
     Repo.all(from t in JobTelemetry, where: t.job_id == ^job_id, order_by: [asc: t.at, asc: t.id])
   end
 
-  @doc "Records how one of the runner's jobs ended."
+  @doc """
+  Records how one of the runner's jobs ended, and keeps the run's summary
+  (`PipeMaestro.Insights.store_summary/1`).
+  """
   @spec finish_job(Runner.t(), String.t(), map()) ::
           {:ok, Job.t()} | {:error, :not_found | :finished | Ecto.Changeset.t()}
   def finish_job(%Runner{} = runner, job_id, attrs) do
     with {:ok, job} <- fetch_for_runner(runner, job_id),
          true <- Job.active?(job) || {:error, :finished},
          {:ok, job} <- job |> Job.finish_changeset(attrs, now()) |> Repo.update() do
-      job = preload(job)
+      job = summarize(job)
       notify(job)
       finished(job)
       {:ok, job}
     end
   end
+
+  # Keeps the ended run's summary, read back on the job.
+  defp summarize(%Job{} = job) do
+    :ok = Insights.store_summary(job)
+    job.id |> get_job() |> preload()
+  end
+
+  defp get_job(id), do: Repo.get!(Job, id)
 
   # A job that runs a task's stage moves its task along once it ends.
   defp finished(%Job{stage_run_id: nil}), do: :ok

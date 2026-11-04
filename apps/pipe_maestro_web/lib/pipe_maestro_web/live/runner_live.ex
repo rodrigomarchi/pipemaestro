@@ -1,8 +1,9 @@
 defmodule PipeMaestroWeb.RunnerLive do
   @moduledoc """
   One runner: its agent and how it signs in, the directories it offers, its
-  task worktrees and disk, the jobs it is running or has waiting, and the
-  latest jobs it finished, each leading to its audit. Updated live.
+  task worktrees and disk, how near its account is to its usage limits, the
+  jobs it is running or has waiting, and the latest jobs it finished, each
+  leading to its audit. Updated live.
   """
   use PipeMaestroWeb, :live_view
 
@@ -155,6 +156,10 @@ defmodule PipeMaestroWeb.RunnerLive do
                 </dd>
               </div>
             </dl>
+            <div :if={@runner.rate_limit} class="mt-4 max-w-md">
+              <p class="mb-2 text-sm text-gray-500 dark:text-gray-400">Limites da conta</p>
+              <.rate_limit runner={@runner} testid="runner-rate-limit" />
+            </div>
           </.card_content>
         </.card>
 

@@ -22,6 +22,10 @@ defmodule PipeMaestro.Jobs.Job do
   `telemetry_totals` (the OpenTelemetry metrics summed: `lines_added`,
   `lines_removed`, `commits`, `pull_requests`, `active_seconds`). The
   OpenTelemetry records themselves are `PipeMaestro.Jobs.Telemetry`.
+
+  `insights` is the run's summary (`PipeMaestro.Insights.summarize/1`), kept
+  once the run ends: it outlives the events and records it comes from, which
+  `PipeMaestro.Maintenance` removes after a while.
   """
   use PipeMaestro.Schema
 
@@ -75,6 +79,7 @@ defmodule PipeMaestro.Jobs.Job do
           environment: map() | nil,
           stderr: String.t() | nil,
           telemetry_totals: map(),
+          insights: map() | nil,
           stage_run_id: Ecto.UUID.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
@@ -127,6 +132,7 @@ defmodule PipeMaestro.Jobs.Job do
     field :environment, :map
     field :stderr, :string
     field :telemetry_totals, :map, default: %{}
+    field :insights, :map
 
     belongs_to :workspace, Workspace
     belongs_to :runner, Runner

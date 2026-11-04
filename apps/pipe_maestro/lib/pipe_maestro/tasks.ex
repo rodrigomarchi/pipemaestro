@@ -32,7 +32,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Pipelines.{Pipeline, Prompt}
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
-  alias PipeMaestro.Repo
+  alias PipeMaestro.{Repo, Runners}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{Decision, Engine, StageRun, Task}
   alias PipeMaestro.Workspaces
@@ -814,7 +814,9 @@ defmodule PipeMaestro.Tasks do
   `{:runner_offline, task}` when its runner is not in `online_runner_ids`
   (the task cannot move), `{:decision_overdue, task}` when its decision is
   past its deadline, and `{:near_budget, task, spent, cap}` when it has
-  spent 80% or more of its pipeline's cap per task.
+  spent 80% or more of its pipeline's cap per task, and
+  `{:runner_near_limit, task, runner}` when it runs on a runner whose account
+  is near its usage limits (`PipeMaestro.Runners.near_limit?/2`).
   """
   @spec alerts(Workspace.t(), MapSet.t()) :: [tuple()]
   def alerts(%Workspace{id: workspace_id}, online_runner_ids) do
@@ -832,9 +834,15 @@ defmodule PipeMaestro.Tasks do
           do: [{:runner_offline, task}],
           else: []
 
-      offline ++ overdue(task) ++ near_budget(task)
+      offline ++ overdue(task) ++ near_budget(task) ++ near_limit(task)
     end)
   end
+
+  defp near_limit(%Task{status: :running, runner: %Runner{} = runner} = task) do
+    if Runners.near_limit?(runner), do: [{:runner_near_limit, task, runner}], else: []
+  end
+
+  defp near_limit(_task), do: []
 
   defp overdue(%Task{status: :awaiting_decision, decision_due_at: %DateTime{} = due} = task) do
     if DateTime.compare(due, DateTime.utc_now()) == :lt, do: [{:decision_overdue, task}], else: []
@@ -871,6 +879,20 @@ defmodule PipeMaestro.Tasks do
         where: r.task_id == ^task_id,
         select: sum(j.cost_usd)
     ) || Decimal.new(0)
+  end
+
+  @doc "What each of the tasks' jobs have cost so far, by task id (a task without jobs is left out)."
+  @spec costs([Ecto.UUID.t()]) :: %{Ecto.UUID.t() => Decimal.t()}
+  def costs(task_ids) when is_list(task_ids) do
+    Repo.all(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: r.task_id in ^task_ids,
+        group_by: r.task_id,
+        select: {r.task_id, coalesce(sum(j.cost_usd), 0)}
+    )
+    |> Map.new()
   end
 
   @doc "The options the agent proposed for the decision a task waits for."

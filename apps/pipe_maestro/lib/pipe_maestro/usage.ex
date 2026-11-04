@@ -3,14 +3,17 @@ defmodule PipeMaestro.Usage do
   What a workspace's agents did in a period, from the jobs that ran and
   ended in it (a job canceled before it started did not run): cost,
   runs and time in total, by day, by pipeline, runner and person, and by
-  pipeline stage (with the failed runs, a stage's retries). `tokens` counts
+  pipeline stage (with the failed runs, a stage's retries, and the average
+  time a run waited for its runner and spent in the stage's gates), and by
+  origin: a pipeline's stages, each kind of proposal
+  (`PipeMaestro.Proposals`) and the jobs sent on their own. `tokens` counts
   everything the model read (fresh, from the cache, written to it) and wrote.
   """
 
   import Ecto.Query
 
   alias PipeMaestro.Accounts.User
-  alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Insights
   alias PipeMaestro.Repo
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{StageRun, Task}
@@ -45,6 +48,19 @@ defmodule PipeMaestro.Usage do
     end
   end
 
+  # Where a job came from: a pipeline's stage, a proposal of a kind, or sent
+  # on its own.
+  defmacrop origin(job) do
+    quote do
+      fragment(
+        "CASE WHEN ? IS NOT NULL THEN 'stage' WHEN ?->'proposal'->>'kind' IS NOT NULL THEN 'proposal:' || (?->'proposal'->>'kind') ELSE 'standalone' END",
+        unquote(job).stage_run_id,
+        unquote(job).context,
+        unquote(job).context
+      )
+    end
+  end
+
   @typedoc "The usage report: totals, then the same broken down."
   @type report :: %{
           total: totals(),
@@ -52,17 +68,20 @@ defmodule PipeMaestro.Usage do
           by_pipeline: [map()],
           by_runner: [map()],
           by_person: [map()],
-          by_stage: [map()]
+          by_stage: [map()],
+          by_origin: [map()]
         }
 
-  @doc "The workspace's usage since `since`."
-  @spec report(Workspace.t(), DateTime.t()) :: report()
-  def report(%Workspace{id: workspace_id}, since) do
+  @doc """
+  The workspace's usage since `since`, optionally only a `"pipeline"`'s (its
+  name, in `filters`). `by_origin` names each origin `"stage"`,
+  `"standalone"` or `"proposal:<kind>"`.
+  """
+  @spec report(Workspace.t(), DateTime.t(), map()) :: report()
+  def report(%Workspace{} = workspace, since, filters \\ %{}) do
     jobs =
-      from j in Job,
-        where:
-          j.workspace_id == ^workspace_id and j.finished_at >= ^since and
-            not is_nil(j.started_at)
+      from j in Insights.jobs_query(workspace, since, filters),
+        where: not is_nil(j.started_at)
 
     %{
       total:
@@ -79,8 +98,21 @@ defmodule PipeMaestro.Usage do
       by_pipeline: by_pipeline(jobs),
       by_runner: by_runner(jobs),
       by_person: by_person(jobs),
-      by_stage: by_stage(jobs)
+      by_stage: by_stage(jobs),
+      by_origin: by_origin(jobs)
     }
+  end
+
+  @doc "The names of the pipelines the workspace's tasks ran, sorted."
+  @spec pipeline_names(Workspace.t()) :: [String.t()]
+  def pipeline_names(%Workspace{id: workspace_id}) do
+    Repo.all(
+      from t in Task,
+        where: t.workspace_id == ^workspace_id and not is_nil(t.pipeline_name),
+        distinct: true,
+        order_by: t.pipeline_name,
+        select: t.pipeline_name
+    )
   end
 
   defp normalize(row) do
@@ -175,6 +207,29 @@ defmodule PipeMaestro.Usage do
         stage: r.key,
         name: r.name,
         failed: filter(count(j.id), j.status == :failed),
+        avg_queue_ms: avg(fragment("(?->'timing'->>'queue')::numeric", j.insights)),
+        avg_gates_ms: avg(fragment("(?->'timing'->>'gates')::numeric", j.insights)),
+        cost_usd: sum(j.cost_usd),
+        runs: count(j.id),
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
+      }
+    )
+    |> Repo.all()
+    |> Enum.map(fn row ->
+      row
+      |> normalize()
+      |> Map.update!(:avg_queue_ms, &round_decimal/1)
+      |> Map.update!(:avg_gates_ms, &round_decimal/1)
+    end)
+  end
+
+  defp by_origin(jobs) do
+    from(j in jobs,
+      group_by: origin(j),
+      order_by: [desc: sum(j.cost_usd)],
+      select: %{
+        origin: origin(j),
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
         duration_ms: sum(j.duration_ms),
@@ -184,4 +239,7 @@ defmodule PipeMaestro.Usage do
     |> Repo.all()
     |> Enum.map(&normalize/1)
   end
+
+  defp round_decimal(nil), do: nil
+  defp round_decimal(%Decimal{} = value), do: value |> Decimal.round(0) |> Decimal.to_integer()
 end

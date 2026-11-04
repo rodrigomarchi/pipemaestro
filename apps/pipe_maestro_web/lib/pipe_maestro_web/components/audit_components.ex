@@ -1,9 +1,10 @@
 defmodule PipeMaestroWeb.AuditComponents do
   @moduledoc """
-  How the agent worked in a run, for auditing: the session it ran in, its
-  tokens and cost per model, its tools, its calls to the model API, what it
-  was refused, what it had at hand and what it wrote on stderr. Built from
-  the job and `PipeMaestro.Insights.job/1`.
+  How the agent worked in a run, for auditing: the session it ran in, where
+  its time went, its tokens and cost per model, its tools, its calls to the
+  model API, what it was refused, the MCP servers, permission decisions and
+  subagents its run reported, what it had at hand and what it wrote on
+  stderr. Built from the job and `PipeMaestro.Insights.job/1`.
   """
   use PipeMaestroWeb, :html
 
@@ -44,6 +45,24 @@ defmodule PipeMaestroWeb.AuditComponents do
             <.fact label="Tempo na API">{format_duration(@job.duration_api_ms)}</.fact>
             <.fact label="Primeiro token">{format_duration(@job.ttft_ms)}</.fact>
           </dl>
+        </section>
+
+        <section :if={timing_rows(@insights.timing) != []} data-testid="job-audit-timing">
+          <.heading>Para onde foi o tempo</.heading>
+          <ul class="space-y-2 text-sm">
+            <li
+              :for={{key, label, ms, max} <- timing_rows(@insights.timing)}
+              class="grid grid-cols-[8rem_1fr_5rem] items-center gap-3"
+              data-testid={"job-audit-timing-#{key}"}
+            >
+              <span class="text-gray-500 dark:text-gray-400">{label}</span>
+              <.progress size="sm" value={ms} max={max} color={timing_color(key)} />
+              <span class="text-right text-gray-900 dark:text-white">{format_duration(ms)}</span>
+            </li>
+          </ul>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Ferramentas podem rodar ao mesmo tempo: o tempo delas é a soma das chamadas.
+          </p>
         </section>
 
         <section>
@@ -124,7 +143,26 @@ defmodule PipeMaestroWeb.AuditComponents do
               · primeiro token em {format_duration(@insights.api.avg_ttft_ms)} em média
             </span>
             · {count_label(@insights.api.retries, "nova tentativa", "novas tentativas")}
+            <span :if={@insights.api.refusals > 0} data-testid="job-audit-api-refusals">
+              · {count_label(@insights.api.refusals, "recusa", "recusas")}
+            </span>
           </p>
+          <div :if={@insights.extras.by_query_source != []} class="mt-3 w-full overflow-x-auto">
+            <.table
+              id="job-audit-api-sources"
+              rows={@insights.extras.by_query_source}
+              row_id={&"job-audit-api-source-#{&1.source}"}
+              density="compact"
+            >
+              <:col :let={source} label="Origem da chamada">
+                <span class="font-mono" data-testid={"job-audit-api-source-#{source.source}"}>
+                  {source.source || "—"}
+                </span>
+              </:col>
+              <:col :let={source} label="Requisições">{source.requests}</:col>
+              <:col :let={source} label="Custo">{format_cost(source.cost_usd)}</:col>
+            </.table>
+          </div>
           <ul :if={@insights.api.errors != []} class="mt-2 space-y-1 text-sm">
             <li :for={error <- @insights.api.errors} class="text-danger-700 dark:text-danger-400">
               {error.error}
@@ -166,7 +204,78 @@ defmodule PipeMaestroWeb.AuditComponents do
                 0}
             </.fact>
             <.fact label="Limites da conta">{limits(@insights.rate_limit)}</.fact>
+            <.fact label="Tempo ativo">
+              <span data-testid="job-audit-active-time">
+                {format_seconds(@insights.extras.active_seconds)}
+              </span>
+            </.fact>
           </dl>
+        </section>
+
+        <section
+          :if={
+            @insights.extras.mcp != [] or @insights.extras.decisions != [] or
+              @insights.extras.subagents != []
+          }
+          data-testid="job-audit-extras"
+        >
+          <.heading>Conexões, permissões e subagentes</.heading>
+          <div class="grid gap-4 text-sm sm:grid-cols-3">
+            <div :if={@insights.extras.mcp != []} data-testid="job-audit-mcp-connections">
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                Servidores MCP
+                <span
+                  :if={@insights.extras.mcp_failures > 0}
+                  class="text-danger-700 dark:text-danger-400"
+                >
+                  · {count_label(@insights.extras.mcp_failures, "falha", "falhas")}
+                </span>
+              </p>
+              <ul class="mt-1 space-y-1">
+                <li :for={connection <- @insights.extras.mcp} class="flex flex-wrap gap-2">
+                  <.badge
+                    size="sm"
+                    variant="soft"
+                    color={mcp_color(connection.status)}
+                    label={connection.status || "—"}
+                  />
+                  <span class="font-mono text-xs text-gray-700 dark:text-gray-300">
+                    {connection.transport} · {connection.scope}
+                  </span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    {format_duration(connection.duration_ms)}
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <div :if={@insights.extras.decisions != []} data-testid="job-audit-decisions">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Decisões de permissão</p>
+              <ul class="mt-1 space-y-1">
+                <li
+                  :for={decision <- @insights.extras.decisions}
+                  data-testid={"job-audit-decision-#{decision.source}-#{decision.decision}"}
+                >
+                  <span class={
+                    decision.decision == "reject" && "text-danger-700 dark:text-danger-400"
+                  }>
+                    {decision_label(decision.decision)}
+                  </span>
+                  <span class="text-gray-500 dark:text-gray-400">
+                    por {decision.source || "—"} · {decision.count}
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <div :if={@insights.extras.subagents != []} data-testid="job-audit-subagents">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Subagentes concluídos</p>
+              <ul class="mt-1 space-y-1">
+                <li :for={subagent <- @insights.extras.subagents}>
+                  <span class="font-mono">{subagent.agent_type || "—"}</span>
+                  <span class="text-gray-500 dark:text-gray-400">· {subagent.count}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </section>
 
         <details :if={@environment != %{}} data-testid="job-audit-environment">
@@ -281,11 +390,46 @@ defmodule PipeMaestroWeb.AuditComponents do
 
   defp limits(limit), do: limit["status"] || "—"
 
+  @timing [
+    {:queue, :queue_ms, "Na fila"},
+    {:setup, :setup_ms, "Preparação"},
+    {:api, :api_ms, "API do modelo"},
+    {:tools, :tools_ms, "Ferramentas"},
+    {:gates, :gates_ms, "Gates"},
+    {:wall, :wall_ms, "Processo inteiro"}
+  ]
+
+  # The known parts of a run's time, each against the longest.
+  defp timing_rows(timing) do
+    rows =
+      for {key, field, label} <- @timing,
+          ms = Map.get(timing, field),
+          is_integer(ms),
+          do: {key, label, ms}
+
+    max = rows |> Enum.map(&elem(&1, 2)) |> Enum.max(fn -> 0 end) |> max(1)
+    for {key, label, ms} <- rows, do: {key, label, ms, max}
+  end
+
+  defp timing_color(:queue), do: "gray"
+  defp timing_color(:setup), do: "info"
+  defp timing_color(:api), do: "primary"
+  defp timing_color(:tools), do: "secondary"
+  defp timing_color(:gates), do: "warning"
+  defp timing_color(:wall), do: "success"
+
+  defp format_seconds(seconds) when is_number(seconds), do: format_duration(round(seconds * 1000))
+  defp format_seconds(_unknown), do: "—"
+
+  defp decision_label("accept"), do: "Aceitas"
+  defp decision_label("reject"), do: "Recusadas"
+  defp decision_label(other), do: other || "—"
+
   defp mcp_color("connected"), do: "success"
   defp mcp_color(status) when status in ~w(failed error), do: "danger"
   defp mcp_color(_pending), do: "warning"
 
-  @doc "How the agent worked across a workspace's runs (`PipeMaestro.Insights.workspace/2`)."
+  @doc "How the agent worked across a workspace's runs (`PipeMaestro.Insights.workspace/3`)."
   attr :insights, :map, required: true
 
   @spec workspace_audit(map()) :: Phoenix.LiveView.Rendered.t()
@@ -326,6 +470,15 @@ defmodule PipeMaestroWeb.AuditComponents do
           </.fact>
           <.fact label="Compactações">{@insights.compactions}</.fact>
           <.fact label="Execuções no período">{@insights.tokens.jobs}</.fact>
+          <.fact label="Tempo ativo">
+            <span data-testid="usage-agent-active-time">
+              {format_seconds(@insights.active_seconds)}
+            </span>
+          </.fact>
+          <.fact label="Recusas da API">{@insights.api.refusals}</.fact>
+          <.fact label="Falhas de MCP">
+            <span data-testid="usage-agent-mcp-failures">{@insights.mcp_failures}</span>
+          </.fact>
         </dl>
 
         <div :if={@insights.models != []}>

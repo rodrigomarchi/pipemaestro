@@ -261,6 +261,64 @@ defmodule PipeMaestro.Runners do
   end
 
   @doc """
+  Records the account's usage limits as a run on `runner` reported them (the
+  `data` of a `"rate_limit"` event, `PipeMaestroProtocol.JobEvent`):
+  `status`, `window`, `utilization` per window (0 to 1), `resets_at` and when
+  it was seen (`at`).
+  """
+  @spec record_rate_limit(Runner.t(), map()) :: {:ok, Runner.t()} | {:error, Ecto.Changeset.t()}
+  def record_rate_limit(%Runner{} = runner, %{} = data) do
+    rate_limit =
+      data
+      |> Map.take(~w(status window utilization resets_at))
+      |> Map.put("at", DateTime.utc_now(:second) |> DateTime.to_iso8601())
+
+    runner |> Ecto.Changeset.change(rate_limit: rate_limit) |> Repo.update()
+  end
+
+  @near_limit 0.8
+
+  @doc """
+  Whether the account behind `runner` is near its usage limits: a window at
+  80% or more, or a status other than `"allowed"`, until the limit resets.
+  """
+  @spec near_limit?(Runner.t(), DateTime.t()) :: boolean()
+  def near_limit?(runner, now \\ DateTime.utc_now())
+
+  def near_limit?(%Runner{rate_limit: %{} = limit}, now) do
+    current? =
+      case resets_at(limit["resets_at"]) do
+        %DateTime{} = reset -> DateTime.compare(reset, now) == :gt
+        nil -> true
+      end
+
+    utilization = Map.values(limit["utilization"] || %{})
+
+    current? and
+      (limit["status"] not in [nil, "allowed"] or
+         Enum.any?(utilization, &(is_number(&1) and &1 >= @near_limit)))
+  end
+
+  def near_limit?(_runner, _now), do: false
+
+  @doc """
+  When a limit resets: the CLI reports it in Unix seconds; an ISO 8601 text
+  is read too. `nil` when unknown.
+  """
+  @spec resets_at(term()) :: DateTime.t() | nil
+  def resets_at(seconds) when is_integer(seconds), do: DateTime.from_unix!(seconds)
+  def resets_at(seconds) when is_float(seconds), do: DateTime.from_unix!(round(seconds))
+
+  def resets_at(text) when is_binary(text) do
+    case DateTime.from_iso8601(text) do
+      {:ok, at, _offset} -> at
+      _not_a_time -> nil
+    end
+  end
+
+  def resets_at(_unknown), do: nil
+
+  @doc """
   Whether `runner` announced `capability` when it last connected
   (`PipeMaestroProtocol.Hello`): `"scratch"` runs a job in a disposable
   worktree.

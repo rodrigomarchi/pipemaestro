@@ -101,6 +101,20 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       assert has_element?(view, "[data-testid=board-alert-offline-#{task.id}]", "mac")
     end
 
+    test "alerts on a task whose runner's account is near its usage limits", ctx do
+      task = create_task(ctx, "Perto do limite")
+
+      {:ok, _} =
+        PipeMaestro.Runners.record_rate_limit(ctx.runner, %{
+          "status" => "allowed_warning",
+          "utilization" => %{"five_hour" => 0.95}
+        })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      assert has_element?(view, "[data-testid=board-alert-limit-#{task.id}]", "Perto do limite")
+      assert has_element?(view, "[data-testid=board-alert-limit-#{task.id}]", "mac")
+    end
+
     test "filters by pipeline, runner, directory and person", ctx do
       other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
       a = create_task(ctx, "Na app")

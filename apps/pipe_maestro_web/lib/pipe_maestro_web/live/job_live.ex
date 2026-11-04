@@ -4,8 +4,9 @@ defmodule PipeMaestroWeb.JobLive do
   that grows live while the runner reports events. The timeline is a stream of
   segments (strips of icons and blocks of text, `PipeMaestroWeb.JobComponents`);
   only the strip still open at its end is kept here, to grow it in place. A queued or
-  running job can be canceled from here. Once it ends, its audit
-  (`PipeMaestroWeb.AuditComponents`)
+  running job can be canceled from here. While it runs, what it spent so far
+  (`PipeMaestro.Insights.live/1`) follows the CLI's telemetry, at most every
+  `@live_every` ms. Once it ends, its audit (`PipeMaestroWeb.AuditComponents`)
   shows how the agent worked, kept up to date as the CLI's telemetry arrives.
   """
   use PipeMaestroWeb, :live_view
@@ -16,6 +17,8 @@ defmodule PipeMaestroWeb.JobLive do
   alias PipeMaestro.{Insights, Jobs}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestroWeb.Markdown
+
+  @live_every 2_000
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -38,14 +41,18 @@ defmodule PipeMaestroWeb.JobLive do
     {:ok,
      socket
      |> assign(page_title: "Execução", job: job, event_count: last_seq(events), typing: nil)
+     |> assign(live_pending: false)
      |> assign(timeline_tail: timeline_tail(segments))
      |> assign_insights()
      |> stream(:timeline, segments)}
   end
 
-  # The audit, once the run has ended.
-  defp assign_insights(%{assigns: %{job: job}} = socket),
-    do: assign(socket, insights: if(Job.active?(job), do: nil, else: Insights.job(job)))
+  # What the run spent so far while it runs; the audit, once it has ended.
+  defp assign_insights(%{assigns: %{job: job}} = socket) do
+    if Job.active?(job),
+      do: assign(socket, insights: nil, live: Insights.live(job)),
+      else: assign(socket, insights: Insights.job(job), live: nil)
+  end
 
   defp last_seq([]), do: 0
   defp last_seq(events), do: events |> List.last() |> Map.fetch!(:seq)
@@ -58,11 +65,21 @@ defmodule PipeMaestroWeb.JobLive do
        |> assign(job: job, typing: if(Job.active?(job), do: socket.assigns.typing))
        |> assign_insights()}
 
-  # Telemetry may arrive after the end: the job's totals and the audit follow.
-  def handle_info({:job_telemetry, _id}, socket) do
-    job = Jobs.get_job!(socket.assigns.current_scope.workspace, socket.assigns.job.id)
-    {:noreply, socket |> assign(job: job) |> assign_insights()}
+  # While the run goes on, records come in bursts: what it spent so far is
+  # read again once per `@live_every`.
+  def handle_info({:job_telemetry, _id}, %{assigns: %{live_pending: true}} = socket),
+    do: {:noreply, socket}
+
+  def handle_info({:job_telemetry, _id}, %{assigns: %{live: %{}}} = socket) do
+    Process.send_after(self(), :refresh_live, @live_every)
+    {:noreply, assign(socket, live_pending: true)}
   end
+
+  # Telemetry may arrive after the end: the job's totals and the audit follow.
+  def handle_info({:job_telemetry, _id}, socket), do: {:noreply, reload(socket)}
+
+  def handle_info(:refresh_live, socket),
+    do: {:noreply, socket |> assign(live_pending: false) |> reload()}
 
   def handle_info({:job_delta, _id, text}, socket), do: {:noreply, assign(socket, typing: text)}
 
@@ -223,11 +240,29 @@ defmodule PipeMaestroWeb.JobLive do
               <.detail label="Custo" testid="job-cost">{format_cost(@job.cost_usd)}</.detail>
               <.detail label="Código de saída">{@job.exit_code || "—"}</.detail>
             </dl>
+            <dl
+              :if={@live}
+              class="mt-4 space-y-3 border-t border-gray-100 pt-4 text-sm dark:border-gray-800"
+              data-testid="job-live"
+            >
+              <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Até agora
+              </p>
+              <.detail label="Custo" testid="job-live-cost">{format_cost(@live.cost_usd)}</.detail>
+              <.detail label="Tokens" testid="job-live-tokens">{short_number(@live.tokens)}</.detail>
+              <.detail label="Requisições" testid="job-live-requests">{@live.requests}</.detail>
+              <.detail label="Ferramentas" testid="job-live-tools">{@live.tool_calls}</.detail>
+            </dl>
           </.card_content>
         </.card>
       </div>
     </Layouts.app>
     """
+  end
+
+  defp reload(socket) do
+    job = Jobs.get_job!(socket.assigns.current_scope.workspace, socket.assigns.job.id)
+    socket |> assign(job: job) |> assign_insights()
   end
 
   attr :label, :string, required: true

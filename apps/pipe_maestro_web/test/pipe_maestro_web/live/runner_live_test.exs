@@ -28,6 +28,33 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
     refute has_element?(view, "[data-testid=runner-detail-outdated]")
   end
 
+  test "shows how near the runner's account is to its usage limits", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}")
+    refute has_element?(view, "[data-testid=runner-rate-limit]")
+
+    {:ok, _} =
+      Runners.record_rate_limit(runner, %{
+        "status" => "allowed",
+        "utilization" => %{"five_hour" => 0.3, "seven_day" => 0.85},
+        "resets_at" => 4_102_444_800
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}")
+    assert has_element?(view, "[data-testid=runner-rate-limit-five_hour]", "30%")
+    assert has_element?(view, "[data-testid=runner-rate-limit-seven_day]", "85%")
+    assert has_element?(view, "[data-testid=runner-rate-limit-status]", "perto do limite")
+    assert has_element?(view, "[data-testid=runner-rate-limit]", "renova 01/01")
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+    assert has_element?(view, "[data-testid=runner-near-limit-mac]")
+  end
+
   test "shows a runner: agent, directories, worktrees and its jobs, live", %{
     conn: conn,
     workspace: workspace,

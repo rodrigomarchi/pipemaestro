@@ -2,7 +2,8 @@ defmodule PipeMaestro.Runners.Runner do
   @moduledoc """
   A runner registered to a workspace. It authenticates with a token whose
   SHA-256 is all that is stored; the rest is what it announced on its last
-  connection.
+  connection, and the account's usage limits (`rate_limit`) as the last run
+  on it saw them.
   """
   use PipeMaestro.Schema
 
@@ -26,6 +27,7 @@ defmodule PipeMaestro.Runners.Runner do
           capabilities: [String.t()],
           worktree_usage: map() | nil,
           agent: map() | nil,
+          rate_limit: map() | nil,
           last_connected_at: DateTime.t() | nil,
           last_seen_at: DateTime.t() | nil,
           revoked_at: DateTime.t() | nil,
@@ -48,6 +50,7 @@ defmodule PipeMaestro.Runners.Runner do
     field :capabilities, {:array, :string}, default: []
     field :worktree_usage, :map
     field :agent, :map
+    field :rate_limit, :map
     field :last_connected_at, :utc_datetime
     field :last_seen_at, :utc_datetime
     field :revoked_at, :utc_datetime

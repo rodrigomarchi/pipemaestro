@@ -4,6 +4,8 @@
  * @flow B [done] A member cancels a running job: the runner stops the agent and the job ends canceled
  * @flow C [done] A job whose agent fails ends failed with the CLI's error; the list shows every job's status
  * @flow D [done] The timeline shows the events without text as icons in a strip, each opening its panel below it; an open panel stays open while the strip grows live
+ * @flow E [done] The audit shows where the run's time went and what else the CLI's telemetry reported (MCP connections, permission decisions, subagents, API origins, active time); a running job shows what it spent so far
+ * @flow F [done] A run that reports its account near the usage limits marks its runner: bars per window on the runner, a badge in the list, and a card in Usage
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -111,6 +113,17 @@ test.describe("Job execution", () => {
     await expect(app.page.getByTestId("job-audit-mcp-grafana")).toBeAttached();
     await shot(audit, "job-audit");
 
+    // Flow E: where the time went and what else the telemetry reported.
+    await expect(app.page.getByTestId("job-audit-timing-api")).toContainText("900 ms");
+    await expect(app.page.getByTestId("job-audit-timing-tools")).toContainText("12 ms");
+    await expect(app.page.getByTestId("job-audit-decision-config-accept")).toContainText("Aceitas");
+    await expect(app.page.getByTestId("job-audit-subagents")).toContainText("Explore");
+    await expect(app.page.getByTestId("job-audit-mcp-connections")).toContainText("http");
+    await expect(app.page.getByTestId("job-audit-api-source-sdk")).toBeVisible();
+    await expect(app.page.getByTestId("job-audit-active-time")).not.toHaveText("—");
+    await shot(app.page.getByTestId("job-audit-timing"), "job-audit-timing");
+    await shot(app.page.getByTestId("job-audit-extras"), "job-audit-extras");
+
     // Flow D: an open panel stays open while its strip grows live.
     await jobs.backToList();
     await jobs.create(runnerName, "Use mais uma ferramenta [gotejando]");
@@ -129,6 +142,9 @@ test.describe("Job execution", () => {
     const slowId = await jobs.create(runnerName, "Demore bastante [lento]");
     await expect(jobs.status).toHaveText("Executando");
     await expect(jobs.timeline.icons()).toHaveCount(4);
+    // Flow E: what the running job spent so far follows its telemetry.
+    await expect(app.page.getByTestId("job-live-cost")).toHaveText("US$ 0.0042");
+    await expect(app.page.getByTestId("job-live-requests")).toHaveText("1");
     await shot(app.page, "job-running");
     await jobs.cancel();
     await expect(jobs.status).toHaveText("Cancelado");
@@ -147,6 +163,23 @@ test.describe("Job execution", () => {
     await expect(jobs.listStatus(slowId)).toHaveText("Cancelado");
     await expect(jobs.listStatus(failedId)).toHaveText("Falhou");
     await shot(app.page, "jobs-list");
+
+    // Flow F: a run near the account's limits marks its runner.
+    await jobs.create(runnerName, "Gaste a conta [limite]");
+    await expect(jobs.status).toHaveText("Concluído");
+    await new RunnersPage(app.page).open(workspace.slug);
+    await expect(app.page.getByTestId(`runner-near-limit-${runnerName}`)).toBeVisible();
+    await shot(app.page, "runners-near-limit");
+    await app.page.getByTestId(`runner-link-${runnerName}`).click();
+    await expect(app.page.getByTestId("runner-rate-limit-five_hour")).toContainText("86%");
+    await expect(app.page.getByTestId("runner-rate-limit-seven_day")).toContainText("31%");
+    await expect(app.page.getByTestId("runner-rate-limit-status")).toHaveText("perto do limite");
+    await shot(app.page, "runner-rate-limit");
+
+    await app.page.getByTestId("sidebar-usage").click();
+    await expect(app.page.getByTestId(`usage-rate-limit-${runnerName}-five_hour`)).toContainText("86%");
+    await expect(app.page.getByTestId("usage-by-origin-standalone")).toContainText("Execuções avulsas");
+    await shot(app.page, "usage-jobs");
 
     await context.close();
   });

@@ -401,6 +401,7 @@ defmodule PipeMaestroWeb.BoardLive do
   defp alert_testid({:runner_offline, task}), do: "board-alert-offline-#{task.id}"
   defp alert_testid({:decision_overdue, task}), do: "board-alert-overdue-#{task.id}"
   defp alert_testid({:near_budget, task, _spent, _cap}), do: "board-alert-budget-#{task.id}"
+  defp alert_testid({:runner_near_limit, task, _runner}), do: "board-alert-limit-#{task.id}"
 
   attr :alert, :any, required: true
   attr :slug, :string, required: true
@@ -438,6 +439,18 @@ defmodule PipeMaestroWeb.BoardLive do
       {@task.title}
     </.link>
     já gastou {format_cost(@spent)} de US$ {@cap}.
+    """
+  end
+
+  defp alert_line(%{alert: {:runner_near_limit, task, runner}} = assigns) do
+    assigns = assign(assigns, task: task, runner: runner)
+
+    ~H"""
+    <.icon name="hero-exclamation-triangle" class="size-4 text-warning-500" />
+    <.link navigate={~p"/w/#{@slug}/tasks/#{@task.id}"} class="font-medium hover:underline">
+      {@task.title}
+    </.link>
+    roda no runner {@runner.name}, cuja conta está perto do limite de uso.
     """
   end
 

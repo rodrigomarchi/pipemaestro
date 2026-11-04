@@ -8,6 +8,7 @@
  * @flow G [done] A project of a directory sets up the worktree with its command, and a stage's gate runs the project's test command after the agent
  * @flow D [done] The runner prepares a new worktree with the directory's dependencies, and removes it when the member asks, keeping the branch
  * @flow H [done] A finished stage's steps are strips of icons that open their panels, filtered by kind (thinking shows only the model's thoughts)
+ * @flow I [done] Usage breaks the cost down by origin and by stage (with the average wait and gate time), narrows to one pipeline, and goes back 90 days
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -225,6 +226,16 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("usage-agent-cache-hit")).toHaveText("91%");
     await expect(app.page.getByTestId("usage-agent-tool-errors-Write")).toHaveText("0");
     await shot(app.page, "usage");
+
+    // Flow I: by origin, one pipeline, 90 days.
+    await expect(app.page.getByTestId("usage-by-origin-stage")).toContainText("Etapas de pipeline");
+    await expect(app.page.getByTestId("usage-stage-queue-executar")).not.toHaveText("—");
+    await app.page.getByTestId("usage-pipeline").selectOption("Correção de bug");
+    await expect(app.page.getByTestId("usage-period-label")).toContainText("Correção de bug");
+    await app.page.getByTestId("usage-period").selectOption("90");
+    await expect(app.page.getByTestId("usage-period-label")).toContainText("90 dias");
+    await expect(app.page.getByTestId("usage-period-label")).toContainText("Correção de bug");
+    await shot(app.page, "usage-filtered");
 
     await context.close();
   });

@@ -520,6 +520,31 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       refute has_element?(view, "#{steps} [data-testid=job-event-icon-2]")
     end
 
+    test "the running stage shows what it spent so far", ctx do
+      task = create_task(ctx)
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-testid=stage-run-spent-a-1]", "até agora US$ 0")
+
+      {:ok, _} =
+        Jobs.record_telemetry(ctx.runner, job.id, [
+          %{
+            "name" => "api_request",
+            "at" => "2026-11-03T12:00:00Z",
+            "attrs" => %{"cost_usd" => 0.25, "output_tokens" => 2_000}
+          }
+        ])
+
+      _ = render(view)
+      send(view.pid, {:refresh_spent, job.id})
+      assert has_element?(view, "[data-testid=stage-run-spent-a-1]", "US$ 0.2500 · 2.0k tokens")
+
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      refute has_element?(view, "[data-testid=stage-run-spent-a-1]")
+    end
+
     test "a blocked stage takes a decision: retry with instructions, then advance", ctx do
       task = create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")

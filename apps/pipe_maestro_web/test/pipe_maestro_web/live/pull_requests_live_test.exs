@@ -32,6 +32,7 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
       Jobs.finish_job(runner, job.id, %{
         "status" => "succeeded",
         "exit_code" => 0,
+        "cost_usd" => 0.75,
         "structured_output" => %{"status" => "ok", "resumo" => "a"},
         "artifact" => "# a",
         "delivery" => %{
@@ -54,5 +55,6 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
     {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pull-requests")
     assert has_element?(view, "[data-testid=pull-request-#{task.id}]", "Corrigir login")
     assert has_element?(view, "[data-testid=pull-request-#{task.id}]", "pull/7")
+    assert has_element?(view, "[data-testid=pull-request-cost-#{task.id}]", "US$ 0.75")
   end
 end

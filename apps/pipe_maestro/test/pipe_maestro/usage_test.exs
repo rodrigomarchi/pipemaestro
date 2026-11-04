@@ -79,4 +79,52 @@ defmodule PipeMaestro.UsageTest do
     assert Usage.report(workspace_fixture(), DateTime.add(DateTime.utc_now(), -7, :day)).total.runs ==
              0
   end
+
+  test "by origin: stages, proposals and jobs sent on their own, and by pipeline", ctx do
+    {:ok, task} =
+      Tasks.create_task(ctx.user, ctx.workspace, %{
+        "title" => "T",
+        "prompt" => "p",
+        "pipeline_id" => ctx.pipeline.id,
+        "runner_id" => ctx.runner.id,
+        "directory" => "app"
+      })
+
+    run(ctx, task, %{})
+    finish(ctx, job_fixture(ctx.runner, ctx.user), 0.1)
+
+    proposal = job_fixture(ctx.runner, ctx.user)
+
+    proposal
+    |> Ecto.Changeset.change(context: %{"proposal" => %{"kind" => "pipeline"}})
+    |> PipeMaestro.Repo.update!()
+
+    finish(ctx, proposal, 2)
+
+    since = DateTime.add(DateTime.utc_now(), -7, :day)
+    report = Usage.report(ctx.workspace, since)
+
+    assert [
+             %{origin: "proposal:pipeline", runs: 1},
+             %{origin: "stage", runs: 1},
+             %{origin: "standalone", runs: 1}
+           ] = report.by_origin
+
+    assert [%{stage: "a", avg_queue_ms: queue, avg_gates_ms: nil}] = report.by_stage
+    assert is_integer(queue)
+
+    only = Usage.report(ctx.workspace, since, %{"pipeline" => "Duas etapas"})
+    assert only.total.runs == 1
+    assert [%{origin: "stage"}] = only.by_origin
+    assert Usage.report(ctx.workspace, since, %{"pipeline" => "outro"}).total.runs == 0
+
+    assert Usage.pipeline_names(ctx.workspace) == ["Duas etapas"]
+  end
+
+  defp finish(ctx, job, cost) do
+    {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+    {:ok, _} =
+      Jobs.finish_job(ctx.runner, job.id, %{"status" => "succeeded", "cost_usd" => cost})
+  end
 end

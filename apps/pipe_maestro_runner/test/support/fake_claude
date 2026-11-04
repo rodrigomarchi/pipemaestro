@@ -13,6 +13,8 @@
 #     first, as `--include-partial-messages` does
 #   a prompt with "[gotejando]" waits 3 s after the first tool result, then
 #     runs one more tool (a Bash call and its result) before answering
+#   a prompt with "[limite]" reports the account near its usage limits (a
+#     five-hour window at 86%)
 #
 # A JSON Schema with "x-pipemaestro-kind" (a proposal, PipeMaestro.Proposals)
 # gets that kind's fixed answer: a project and a two-stage pipeline
@@ -20,11 +22,13 @@
 # revised pipeline with notes ("improve").
 #
 # Its lines have what a real run reports for auditing (session, tools, MCP
-# servers, each message's id, model and tokens, the permission behind each
-# tool call, the run's totals), and a warning on stderr. Given
-# OTEL_EXPORTER_OTLP_ENDPOINT, it posts an OTLP export there (one API request,
-# one tool result, a lines-of-code metric) for the job in
-# OTEL_RESOURCE_ATTRIBUTES, as the CLI's telemetry does.
+# servers, each message's id, model and tokens,
+# the permission behind each tool call, the run's totals), and a warning on
+# stderr. Given OTEL_EXPORTER_OTLP_ENDPOINT, it posts an OTLP export there
+# (an API request with its origin, a tool result, an MCP server connection, a
+# permission decision, a finished subagent, and the lines-of-code and
+# active-time metrics) for the job in OTEL_RESOURCE_ATTRIBUTES, as the CLI's
+# telemetry does.
 #
 # It writes the prompt to fake-claude.txt in the working directory, so a test
 # can tell where it ran, and, like a pipeline stage, writes its artifact to
@@ -50,6 +54,11 @@ kind=$(printf '%s' "$schema" | sed -n 's/.*"x-pipemaestro-kind":"\([a-z]*\)".*/\
 echo "fake_claude: aviso de exemplo" >&2
 
 echo '{"type":"system","subtype":"init","cwd":"'"$PWD"'","session_id":"fake-session","model":"fake-model","claude_code_version":"0.0.0-fake","apiKeySource":"none","permissionMode":"bypassPermissions","output_style":"default","tools":["Bash","Read","Write"],"mcp_servers":[{"name":"grafana","status":"connected"}],"agents":["Explore"],"skills":[],"slash_commands":["compact"],"plugins":[]}'
+case "$prompt" in
+  *"[limite]"*)
+    echo '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"five_hour","resetsAt":4102444800,"unifiedWindows":{"five_hour":{"utilization":0.86},"seven_day":{"utilization":0.31}}}}'
+    ;;
+esac
 echo '{"type":"system","subtype":"thinking_tokens","estimated_tokens":10}'
 echo '{"type":"assistant","thinking_duration_ms":420,"message":{"id":"msg_1","model":"fake-model","usage":{"input_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":3},"content":[{"type":"thinking","thinking":""}]}}'
 echo '{"type":"assistant","message":{"id":"msg_1","model":"fake-model","usage":{"input_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":3},"content":[{"type":"tool_use","id":"toolu_1","name":"Write","input":{"file_path":"fake-claude.txt","content":"..."}}]}}'
@@ -58,8 +67,8 @@ echo '{"type":"user","tool_result_meta":[{"id":"toolu_1","permission_decision":{
 if [ -n "$OTEL_EXPORTER_OTLP_ENDPOINT" ]; then
   job_id="${OTEL_RESOURCE_ATTRIBUTES#cp.job_id=}"
   resource='{"attributes":[{"key":"cp.job_id","value":{"stringValue":"'"$job_id"'"}}]}'
-  curl -s -o /dev/null -X POST -H 'content-type: application/json' "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs" --data '{"resourceLogs":[{"resource":'"$resource"',"scopeLogs":[{"logRecords":[{"body":{"stringValue":"claude_code.api_request"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:00.000Z"}},{"key":"model","value":{"stringValue":"fake-model"}},{"key":"duration_ms","value":{"intValue":"900"}},{"key":"ttft_ms","value":{"intValue":"300"}},{"key":"input_tokens","value":{"intValue":"5"}},{"key":"output_tokens","value":{"intValue":"40"}},{"key":"cost_usd","value":{"doubleValue":0.0042}}]},{"body":{"stringValue":"claude_code.tool_result"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:01.000Z"}},{"key":"tool_name","value":{"stringValue":"Write"}},{"key":"tool_use_id","value":{"stringValue":"toolu_1"}},{"key":"success","value":{"stringValue":"true"}},{"key":"duration_ms","value":{"stringValue":"12"}}]}]}]}]}'
-  curl -s -o /dev/null -X POST -H 'content-type: application/json' "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/metrics" --data '{"resourceMetrics":[{"resource":'"$resource"',"scopeMetrics":[{"metrics":[{"name":"claude_code.lines_of_code.count","sum":{"dataPoints":[{"timeUnixNano":"1793750400000000000","asInt":"7","attributes":[{"key":"type","value":{"stringValue":"added"}}]}]}}]}]}]}'
+  curl -s -o /dev/null -X POST -H 'content-type: application/json' "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs" --data '{"resourceLogs":[{"resource":'"$resource"',"scopeLogs":[{"logRecords":[{"body":{"stringValue":"claude_code.api_request"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:00.000Z"}},{"key":"model","value":{"stringValue":"fake-model"}},{"key":"duration_ms","value":{"intValue":"900"}},{"key":"ttft_ms","value":{"intValue":"300"}},{"key":"input_tokens","value":{"intValue":"5"}},{"key":"output_tokens","value":{"intValue":"40"}},{"key":"cost_usd","value":{"doubleValue":0.0042}},{"key":"query_source","value":{"stringValue":"sdk"}}]},{"body":{"stringValue":"claude_code.mcp_server_connection"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:00.000Z"}},{"key":"status","value":{"stringValue":"connected"}},{"key":"transport_type","value":{"stringValue":"http"}},{"key":"server_scope","value":{"stringValue":"user"}},{"key":"duration_ms","value":{"stringValue":"120"}}]},{"body":{"stringValue":"claude_code.tool_decision"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:00.500Z"}},{"key":"decision","value":{"stringValue":"accept"}},{"key":"source","value":{"stringValue":"config"}},{"key":"tool_name","value":{"stringValue":"Write"}}]},{"body":{"stringValue":"claude_code.subagent_completed"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:00.800Z"}},{"key":"agent_type","value":{"stringValue":"Explore"}}]},{"body":{"stringValue":"claude_code.tool_result"},"attributes":[{"key":"event.timestamp","value":{"stringValue":"2026-11-03T12:00:01.000Z"}},{"key":"tool_name","value":{"stringValue":"Write"}},{"key":"tool_use_id","value":{"stringValue":"toolu_1"}},{"key":"success","value":{"stringValue":"true"}},{"key":"duration_ms","value":{"stringValue":"12"}}]}]}]}]}'
+  curl -s -o /dev/null -X POST -H 'content-type: application/json' "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/metrics" --data '{"resourceMetrics":[{"resource":'"$resource"',"scopeMetrics":[{"metrics":[{"name":"claude_code.lines_of_code.count","sum":{"dataPoints":[{"timeUnixNano":"1793750400000000000","asInt":"7","attributes":[{"key":"type","value":{"stringValue":"added"}}]}]}},{"name":"claude_code.active_time.total","sum":{"dataPoints":[{"timeUnixNano":"1793750400000000000","asDouble":12.5,"attributes":[{"key":"type","value":{"stringValue":"cli"}}]}]}}]}]}]}'
 fi
 
 case "$prompt" in

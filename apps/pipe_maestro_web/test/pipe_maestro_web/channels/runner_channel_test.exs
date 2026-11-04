@@ -198,6 +198,23 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       ref = push(channel, "job:event", %{"job_id" => job.id, "seq" => 2, "type" => "bogus"})
       assert_reply ref, :error, %{"reason" => "invalid"}
 
+      # The account's limits are the runner's: the screens of runners reload.
+      :ok = PipeMaestroWeb.RunnerStatus.subscribe(ctx.workspace.id)
+
+      ref =
+        push(channel, "job:event", %{
+          "job_id" => job.id,
+          "seq" => 3,
+          "type" => "rate_limit",
+          "data" => %{"status" => "allowed", "utilization" => %{"five_hour" => 0.5}}
+        })
+
+      assert_reply ref, :ok
+      assert_receive :runners_changed
+
+      assert %{"utilization" => %{"five_hour" => 0.5}} =
+               PipeMaestro.Repo.reload!(ctx.runner).rate_limit
+
       # What the agent is writing goes to whoever watches the job, unstored.
       :ok = Jobs.subscribe({:job, job.id})
       push(channel, "job:delta", %{"job_id" => job.id, "text" => "Escrev"})
@@ -240,7 +257,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       assert_reply ref, :error, %{"reason" => "unknown_message"}
 
       assert Jobs.get_job!(ctx.workspace, job.id).status == :canceled
-      assert [%{seq: 1}] = Jobs.list_events(job)
+      assert [%{seq: 1}, %{seq: 3, type: "rate_limit"}] = Jobs.list_events(job)
     end
   end
 

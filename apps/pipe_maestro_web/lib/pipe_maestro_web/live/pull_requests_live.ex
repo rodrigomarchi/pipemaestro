@@ -1,13 +1,14 @@
 defmodule PipeMaestroWeb.PullRequestsLive do
   @moduledoc """
   The workspace's tasks that have a pull request (pipelines that deliver one,
-  `PipeMaestro.Pipelines.Pipeline` `delivery`), with the task's state
-  and its issue. Updated live.
+  `PipeMaestro.Pipelines.Pipeline` `delivery`), with the task's state,
+  its issue and what its stages cost. Updated live.
   """
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.TaskComponents, only: [task_status: 1]
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
+  import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
 
   alias PipeMaestro.Tasks
 
@@ -22,8 +23,11 @@ defmodule PipeMaestroWeb.PullRequestsLive do
   def handle_info({:task_updated, _task}, socket), do: {:noreply, load(socket)}
 
   defp load(socket) do
+    tasks = Tasks.list_with_pull_request(socket.assigns.current_scope.workspace)
+
     assign(socket,
-      tasks: Tasks.list_with_pull_request(socket.assigns.current_scope.workspace),
+      tasks: tasks,
+      costs: tasks |> Enum.map(& &1.id) |> Tasks.costs(),
       now: DateTime.utc_now()
     )
   end
@@ -76,6 +80,12 @@ defmodule PipeMaestroWeb.PullRequestsLive do
               </span>
               <span class="flex items-center gap-2">
                 <.task_status task={task} />
+                <span
+                  class="text-xs text-gray-700 dark:text-gray-300"
+                  data-testid={"pull-request-cost-#{task.id}"}
+                >
+                  {format_cost(@costs[task.id] || Decimal.new(0))}
+                </span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{time_ago(
                   task.updated_at,
                   @now

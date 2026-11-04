@@ -68,5 +68,78 @@ defmodule PipeMaestroWeb.UsageLiveTest do
     view |> form("#usage-period", period: %{days: "30"}) |> render_change()
     assert has_element?(view, "[data-testid=usage-period-label]", "30 dias")
     assert has_element?(view, "[data-testid=sidebar-usage]")
+
+    view |> form("#usage-period", period: %{days: "90"}) |> render_change()
+    assert has_element?(view, "[data-testid=usage-period-label]", "90 dias")
+
+    # A job sent on its own has its own origin.
+    assert has_element?(view, "[data-testid=usage-by-origin-standalone]", "US$ 1.2500")
+  end
+
+  test "by origin, by pipeline, the accounts' limits and what else the agent did", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+    runner = with_directories(runner, [%{"name" => "app", "git" => true}])
+    pipeline = pipeline_fixture(workspace, %{"name" => "Entrega"})
+
+    {:ok, task} =
+      PipeMaestro.Tasks.create_task(user, workspace, %{
+        "title" => "T",
+        "prompt" => "p",
+        "pipeline_id" => pipeline.id,
+        "runner_id" => runner.id,
+        "directory" => "app"
+      })
+
+    stage_job = hd(PipeMaestro.Tasks.get_task!(workspace, task.id).stage_runs).job
+    {:ok, _} = Jobs.mark_started(runner, stage_job.id)
+
+    {:ok, _} =
+      Jobs.append_event(runner, stage_job.id, %{
+        "seq" => 1,
+        "type" => "rate_limit",
+        "data" => %{"status" => "allowed", "utilization" => %{"five_hour" => 0.92}}
+      })
+
+    {:ok, _} =
+      Jobs.record_telemetry(runner, stage_job.id, [
+        %{
+          "name" => "metric:active_time",
+          "at" => "2026-11-03T12:00:00Z",
+          "attrs" => %{"value" => 30}
+        }
+      ])
+
+    {:ok, _} = Jobs.finish_job(runner, stage_job.id, %{"status" => "failed", "cost_usd" => 0.5})
+
+    proposal = job_fixture(runner, user)
+
+    proposal
+    |> Ecto.Changeset.change(context: %{"proposal" => %{"kind" => "pipeline"}})
+    |> PipeMaestro.Repo.update!()
+
+    {:ok, _} = Jobs.mark_started(runner, proposal.id)
+    {:ok, _} = Jobs.finish_job(runner, proposal.id, %{"status" => "succeeded", "cost_usd" => 2})
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage")
+
+    assert has_element?(view, "[data-testid=usage-by-origin-stage]", "US$ 0.5")
+    assert has_element?(view, "[data-testid=usage-by-origin-proposal-pipeline]", "Proposta: ")
+    assert has_element?(view, "[data-testid=usage-rate-limit-mac-five_hour]", "92%")
+    assert has_element?(view, "[data-testid=usage-rate-limit-mac-status]", "perto do limite")
+    assert has_element?(view, "[data-testid=usage-agent-active-time]", "30 s")
+    assert has_element?(view, "[data-testid=usage-stage-queue-a]")
+
+    view |> form("#usage-period", period: %{pipeline: "Entrega"}) |> render_change()
+    assert has_element?(view, "[data-testid=usage-period-label]", "só do pipeline Entrega")
+    assert has_element?(view, "[data-testid=usage-total-runs]", "1")
+    refute has_element?(view, "[data-testid=usage-by-origin-proposal-pipeline]")
+
+    # Anything not offered is ignored.
+    view |> form("#usage-period", period: %{pipeline: "", days: "7"}) |> render_change()
+    assert has_element?(view, "[data-testid=usage-total-runs]", "2")
   end
 end

@@ -3,7 +3,7 @@ defmodule PipeMaestro.InsightsTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Insights, Jobs}
+  alias PipeMaestro.{Insights, Jobs, Maintenance, Repo}
 
   setup do
     workspace = workspace_fixture()
@@ -144,10 +144,195 @@ defmodule PipeMaestro.InsightsTest do
       assert [%{model: "claude-sonnet-5-5"}, %{model: "claude-haiku-5-5", cost_usd: 0.004}] =
                insights.models
 
-      assert [%{name: "Bash", calls: 1, errors: 1, avg_ms: 700}, %{name: "Read"}] = insights.tools
+      assert [%{name: "Bash", calls: 2, errors: 2, denied: 1, avg_ms: 700}, %{name: "Read"}] =
+               insights.tools
+
       assert %{requests: 3, errors: 1, retries: 1, avg_ms: 2000, avg_ttft_ms: 600} = insights.api
       assert insights.denials == 1
       assert insights.compactions == 1
     end
+
+    test "a run past the retention of its events still counts", ctx do
+      job = audited_job(ctx)
+      age(job, 60)
+
+      Maintenance.run(DateTime.utc_now())
+      assert Jobs.list_events(job) == []
+
+      assert Insights.workspace(ctx.workspace, 30).tokens.jobs == 0
+      insights = Insights.workspace(ctx.workspace, 90)
+      assert insights.tokens.jobs == 1
+      assert [%{name: "Bash", calls: 2}, %{name: "Read", calls: 1}] = insights.tools
+      assert %{requests: 3, errors: 1, retries: 1} = insights.api
+    end
+
+    test "only a pipeline's runs", ctx do
+      audited_job(ctx)
+      assert Insights.workspace(ctx.workspace, 7, %{"pipeline" => ""}).tokens.jobs == 1
+      assert Insights.workspace(ctx.workspace, 7, %{"pipeline" => "nenhum"}).tokens.jobs == 0
+    end
+  end
+
+  describe "the kept summary" do
+    test "is written when the run ends and outlives its events", ctx do
+      job = audited_job(ctx)
+      assert %{"api" => %{"requests" => 3}, "compactions" => 1} = job.insights
+      before = Insights.job(job)
+
+      age(job, 40)
+      Maintenance.run(DateTime.utc_now())
+
+      assert Jobs.list_events(job) == []
+      assert Jobs.list_telemetry(job) == []
+      assert Insights.job(Repo.reload!(job)) == before
+    end
+
+    test "takes in records that arrive after the run ended", ctx do
+      job = audited_job(ctx)
+
+      {:ok, 1} =
+        Jobs.record_telemetry(ctx.runner, job.id, [
+          tel("api_request", 9, %{"duration_ms" => 4000})
+        ])
+
+      assert Repo.reload!(job).insights["api"]["requests"] == 4
+    end
+
+    test "a run without a summary gets one from the housekeeping", ctx do
+      job = audited_job(ctx)
+      job |> Ecto.Changeset.change(insights: nil) |> Repo.update!()
+
+      assert %{summarized: 1} = Maintenance.run(DateTime.utc_now())
+      assert Repo.reload!(job).insights["api"]["requests"] == 3
+    end
+  end
+
+  describe "timing and extras" do
+    test "where the time went and what else the run reported", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      {:ok, _} =
+        Jobs.append_event(ctx.runner, job.id, %{
+          "seq" => 1,
+          "type" => "tool_use",
+          "data" => %{"id" => "t1", "name" => "Read"}
+        })
+
+      {:ok, _} =
+        Jobs.record_telemetry(ctx.runner, job.id, [
+          tel("tool_result", 0, %{
+            "tool_name" => "Read",
+            "tool_use_id" => "t1",
+            "duration_ms" => 30
+          }),
+          tel("api_request", 1, %{"query_source" => "sdk", "cost_usd" => 0.25}),
+          tel("api_request", 2, %{"query_source" => "sdk", "cost_usd" => 0.5}),
+          tel("api_request", 3, %{"query_source" => "compact", "cost_usd" => 0.25}),
+          tel("api_refusal", 4, %{"error" => "refused"}),
+          tel("mcp_server_connection", 5, %{
+            "status" => "connected",
+            "transport_type" => "http",
+            "server_scope" => "user",
+            "duration_ms" => 200
+          }),
+          tel("mcp_server_connection", 6, %{
+            "status" => "failed",
+            "transport_type" => "stdio",
+            "server_scope" => "project"
+          }),
+          tel("tool_decision", 7, %{"decision" => "accept", "source" => "config"}),
+          tel("tool_decision", 8, %{"decision" => "accept", "source" => "config"}),
+          tel("tool_decision", 9, %{"decision" => "reject", "source" => "hook"}),
+          tel("subagent_completed", 10, %{"agent_type" => "Explore"}),
+          tel("metric:active_time", 11, %{"value" => 42})
+        ])
+
+      {:ok, job} =
+        Jobs.finish_job(ctx.runner, job.id, %{
+          "status" => "succeeded",
+          "duration_api_ms" => 5000,
+          "wall_ms" => 9000,
+          "setup" => %{"duration_ms" => 1500},
+          "gates" => [%{"duration_ms" => 700}, %{"duration_ms" => 300}, %{}]
+        })
+
+      insights = Insights.job(job)
+
+      assert %{setup_ms: 1500, gates_ms: 1000, api_ms: 5000, tools_ms: 30, wall_ms: 9000} =
+               insights.timing
+
+      assert is_integer(insights.timing.queue_ms)
+      assert insights.api.refusals == 1
+
+      extras = insights.extras
+      assert extras.active_seconds == 42
+      assert extras.mcp_failures == 1
+
+      assert [%{status: "connected", transport: "http", scope: "user", duration_ms: 200}, _] =
+               extras.mcp
+
+      assert [
+               %{source: "config", decision: "accept", count: 2},
+               %{source: "hook", decision: "reject", count: 1}
+             ] = extras.decisions
+
+      assert extras.subagents == [%{agent_type: "Explore", count: 1}]
+
+      assert [%{source: "sdk", requests: 2, cost_usd: 0.75}, %{source: "compact", requests: 1}] =
+               extras.by_query_source
+
+      workspace = Insights.workspace(ctx.workspace, 7)
+      assert workspace.active_seconds == 42
+      assert workspace.mcp_failures == 1
+      assert workspace.api.refusals == 1
+    end
+
+    test "a run without setup, gates or tools leaves those out", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, job} = Jobs.finish_job(ctx.runner, job.id, %{"status" => "failed"})
+
+      assert %{setup_ms: nil, gates_ms: nil, tools_ms: nil, api_ms: nil} =
+               Insights.job(job).timing
+    end
+  end
+
+  describe "live/1" do
+    test "what a running job spent so far", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      {:ok, _} =
+        Jobs.append_event(ctx.runner, job.id, %{
+          "seq" => 1,
+          "type" => "tool_use",
+          "data" => %{"id" => "t1", "name" => "Read"}
+        })
+
+      {:ok, _} =
+        Jobs.record_telemetry(ctx.runner, job.id, [
+          tel("api_request", 0, %{
+            "cost_usd" => 0.5,
+            "input_tokens" => 10,
+            "output_tokens" => 20,
+            "cache_read_tokens" => 30
+          }),
+          tel("api_request", 1, %{"cost_usd" => 0.25, "output_tokens" => 5})
+        ])
+
+      assert Insights.live(job) == %{requests: 2, cost_usd: 0.75, tokens: 65, tool_calls: 1}
+    end
+
+    test "nothing yet", ctx do
+      assert Insights.live(job_fixture(ctx.runner, ctx.user)) ==
+               %{requests: 0, cost_usd: 0, tokens: 0, tool_calls: 0}
+    end
+  end
+
+  defp age(job, days) do
+    job
+    |> Ecto.Changeset.change(finished_at: DateTime.add(DateTime.utc_now(:second), -days, :day))
+    |> Repo.update!()
   end
 end

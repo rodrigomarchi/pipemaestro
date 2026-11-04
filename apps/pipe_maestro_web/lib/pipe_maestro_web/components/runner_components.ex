@@ -1,5 +1,8 @@
 defmodule PipeMaestroWeb.RunnerComponents do
-  @moduledoc "Pieces every runner screen shares: status, last seen, how to connect."
+  @moduledoc """
+  Pieces every runner screen shares: status, last seen, how to connect, and
+  how near its account is to its usage limits.
+  """
   use PipeMaestroWeb, :html
 
   alias PipeMaestro.Runners
@@ -230,4 +233,64 @@ defmodule PipeMaestroWeb.RunnerComponents do
     </ol>
     """
   end
+
+  @doc """
+  The account's usage limits as the last run on `runner` saw them: each
+  window's use as a bar, the status and when the limit resets. Nothing when
+  no run reported them.
+  """
+  attr :runner, Runner, required: true
+  attr :testid, :string, required: true, doc: "test id prefix; each window adds `-<window>`"
+
+  @spec rate_limit(map()) :: Phoenix.LiveView.Rendered.t()
+  def rate_limit(%{runner: %Runner{rate_limit: %{} = limit}} = assigns) do
+    assigns =
+      assign(assigns,
+        windows: Enum.sort(limit["utilization"] || %{}),
+        status: limit["status"],
+        resets_at: Runners.resets_at(limit["resets_at"]),
+        near: Runners.near_limit?(assigns.runner)
+      )
+
+    ~H"""
+    <div class="space-y-2" data-testid={@testid}>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <.badge
+          size="xs"
+          variant="soft"
+          color={if @near, do: "warning", else: "success"}
+          label={if @near, do: "perto do limite", else: @status || "—"}
+          data-testid={"#{@testid}-status"}
+        />
+        <span :if={@resets_at}>renova {format_reset(@resets_at)}</span>
+      </div>
+      <div
+        :for={{window, used} <- @windows}
+        class="grid grid-cols-[6rem_1fr_3rem] items-center gap-2 text-xs"
+        data-testid={"#{@testid}-#{window}"}
+      >
+        <span class="truncate text-gray-500 dark:text-gray-400">{window_label(window)}</span>
+        <.progress
+          size="sm"
+          value={percent(used)}
+          color={if percent(used) >= 80, do: "warning", else: "primary"}
+        />
+        <span class="text-right text-gray-900 dark:text-white">{percent(used)}%</span>
+      </div>
+    </div>
+    """
+  end
+
+  def rate_limit(assigns), do: ~H""
+
+  defp percent(used) when is_number(used), do: used |> Kernel.*(100) |> round() |> min(100)
+  defp percent(_unknown), do: 0
+
+  defp window_label("five_hour"), do: "5 horas"
+  defp window_label("seven_day"), do: "7 dias"
+  defp window_label("seven_day_opus"), do: "7 dias (Opus)"
+  defp window_label("seven_day_sonnet"), do: "7 dias (Sonnet)"
+  defp window_label(window), do: window
+
+  defp format_reset(%DateTime{} = at), do: Calendar.strftime(at, "%d/%m %H:%M UTC")
 end

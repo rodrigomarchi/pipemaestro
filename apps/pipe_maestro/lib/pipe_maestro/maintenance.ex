@@ -3,9 +3,14 @@ defmodule PipeMaestro.Maintenance do
   Housekeeping that runs on its own, every `:every` ms (default one hour):
 
     * sign-in requests of runners (device flow) a day past their expiry go;
+    * jobs that ended without a kept summary get one
+      (`PipeMaestro.Insights.store_summary/1`), at most `:batch` (default
+      500) per run;
     * the events and the OpenTelemetry records of jobs that ended more than
-      `:job_events_days` ago (default 30) go: the job keeps its outcome, cost,
-      tokens, artifact and the totals of its run;
+      `:job_events_days` ago (default 30) go, once the job's summary is
+      written from them: the job keeps its outcome, cost, tokens, artifact,
+      the totals and the summary of its run. At most `:batch` jobs per run;
+      the rest go on the next.
     * audit entries older than `:audit_days` (default 365) go.
 
   A process on each node of the control plane; with more than one node, a
@@ -15,7 +20,7 @@ defmodule PipeMaestro.Maintenance do
 
   import Ecto.Query
 
-  alias PipeMaestro.{Audit, Repo}
+  alias PipeMaestro.{Audit, Insights, Repo}
   alias PipeMaestro.Jobs.{Event, Job, Telemetry}
   alias PipeMaestro.Runners.DeviceAuthorization
 
@@ -28,24 +33,42 @@ defmodule PipeMaestro.Maintenance do
   def run(now, opts \\ []) do
     job_events_days = Keyword.get(opts, :job_events_days, 30)
     audit_days = Keyword.get(opts, :audit_days, 365)
+    batch = Keyword.get(opts, :batch, 500)
 
     {device_authorizations, _} =
       Repo.delete_all(
         from a in DeviceAuthorization, where: a.expires_at < ^DateTime.add(now, -1, :day)
       )
 
+    summarized =
+      Repo.all(
+        from j in Job, where: not is_nil(j.finished_at) and is_nil(j.insights), limit: ^batch
+      )
+
+    Enum.each(summarized, &Insights.store_summary/1)
+
+    # The jobs past retention that still have events or records: their
+    # summary is written once more, final, before those go.
     old_jobs =
-      from j in Job,
-        where: j.finished_at < ^DateTime.add(now, -job_events_days, :day),
-        select: j.id
+      Repo.all(
+        from j in Job,
+          as: :job,
+          where:
+            j.finished_at < ^DateTime.add(now, -job_events_days, :day) and
+              (exists(from e in Event, where: e.job_id == parent_as(:job).id, select: 1) or
+                 exists(from t in Telemetry, where: t.job_id == parent_as(:job).id, select: 1)),
+          limit: ^batch
+      )
 
-    {job_events, _} = Repo.delete_all(from e in Event, where: e.job_id in subquery(old_jobs))
+    Enum.each(old_jobs, &Insights.store_summary/1)
+    old_ids = Enum.map(old_jobs, & &1.id)
 
-    {job_telemetry, _} =
-      Repo.delete_all(from t in Telemetry, where: t.job_id in subquery(old_jobs))
+    {job_events, _} = Repo.delete_all(from e in Event, where: e.job_id in ^old_ids)
+    {job_telemetry, _} = Repo.delete_all(from t in Telemetry, where: t.job_id in ^old_ids)
 
     %{
       device_authorizations: device_authorizations,
+      summarized: length(summarized),
       job_events: job_events,
       job_telemetry: job_telemetry,
       audit_events: Audit.prune(DateTime.add(now, -audit_days, :day))

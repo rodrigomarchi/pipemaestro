@@ -26,6 +26,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
   use Phoenix.Channel
 
   alias PipeMaestro.{Jobs, Runners, Secrets, Tasks}
+  alias PipeMaestro.Jobs.Event
   alias PipeMaestroProtocol.{Hello, Job, Worktree}
   alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
 
@@ -85,8 +86,15 @@ defmodule PipeMaestroWeb.RunnerChannel do
     socket.assigns.runner |> Jobs.mark_started(job_id) |> reply_to(socket)
   end
 
+  # A rate limit is the runner's account's: the screens showing runners reload.
   def handle_in("job:event", %{"job_id" => job_id} = payload, socket) do
-    socket.assigns.runner |> Jobs.append_event(job_id, payload) |> reply_to(socket)
+    runner = socket.assigns.runner
+    result = Jobs.append_event(runner, job_id, payload)
+
+    with {:ok, %Event{type: "rate_limit"}} <- result,
+         do: RunnerStatus.notify_changed(runner.workspace_id)
+
+    reply_to(result, socket)
   end
 
   # What the agent is writing: passed on, never answered (the runner does not

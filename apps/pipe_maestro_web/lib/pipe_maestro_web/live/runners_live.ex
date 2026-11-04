@@ -229,6 +229,14 @@ defmodule PipeMaestroWeb.RunnersLive do
                   variant="soft"
                   label="chave de API"
                 />
+                <.badge
+                  :if={Runners.near_limit?(runner)}
+                  size="xs"
+                  color="danger"
+                  variant="soft"
+                  label="perto do limite"
+                  data-testid={"runner-near-limit-#{runner.name}"}
+                />
               </span>
             </:col>
             <:col :let={runner} label="Worktrees">
