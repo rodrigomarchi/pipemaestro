@@ -14,7 +14,7 @@ async function expectBrand(page: Page, testid = "brand") {
   const brand = page.getByTestId(testid);
   await expect(brand).toBeVisible();
   await expect(brand).toContainText("PipeMaestro");
-  await expect(brand.getByTestId("brand-mark")).toBeVisible();
+  await expect(page.getByTestId(`${testid}-mark`)).toBeVisible();
 }
 
 test.describe("Public pages", () => {
