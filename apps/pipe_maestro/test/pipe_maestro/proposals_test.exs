@@ -4,6 +4,7 @@ defmodule PipeMaestro.ProposalsTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Runners, Tasks}
+  alias PipeMaestro.Pipelines.{Prompt, Stage}
   alias PipeMaestro.Proposals.ImproveKind
   alias PipeMaestroProtocol.Job, as: WireJob
 
@@ -124,7 +125,7 @@ defmodule PipeMaestro.ProposalsTest do
     test "asks for a pipeline and reads it into the forms' attributes", ctx do
       assert {:ok, job} = ask(ctx, "pipeline", %{"request" => "Um pipeline de entrega com PR"})
       assert job.prompt =~ "diretório `app`"
-      assert job.context["output_schema"]["x-pipemaestro-kind"] == "pipeline"
+      assert job.context["output_schema"]["$comment"] == "pipemaestro-kind:pipeline"
       assert job.context["system_prompt"] =~ "worktree descartável"
       assert job.context["system_prompt"] =~ "{{projeto.teste}}"
 
@@ -177,7 +178,7 @@ defmodule PipeMaestro.ProposalsTest do
       assert Proposals.title(job) == "O login trava às vezes"
       assert job.prompt =~ "**Correção de bug**"
       assert job.prompt =~ "issues/7"
-      assert job.context["output_schema"]["x-pipemaestro-kind"] == "task"
+      assert job.context["output_schema"]["$comment"] == "pipemaestro-kind:task"
 
       output = %{
         "analise" => "O lock em `Auth` não tem timeout.",
@@ -412,7 +413,7 @@ defmodule PipeMaestro.ProposalsTest do
       assert job.prompt =~ "Foco pedido pela pessoa"
       assert job.prompt =~ "Notas velhas"
       assert job.prompt =~ "```yaml"
-      assert job.context["output_schema"]["x-pipemaestro-kind"] == "improve"
+      assert job.context["output_schema"]["$comment"] == "pipemaestro-kind:improve"
 
       output = %{
         "analise" => "O gate falha muito.",
@@ -446,4 +447,37 @@ defmodule PipeMaestro.ProposalsTest do
       assert "não é um pipeline deste workspace" in errors_on(changeset).pipeline_id
     end
   end
+
+  describe "the schemas" do
+    # The CLI checks `--json-schema` in strict mode: a keyword it does not know
+    # (such as an `x-` extension) fails the run before it starts.
+    test "use only JSON Schema keywords; the kind goes in $comment" do
+      for kind <- Proposals.kinds() do
+        schema = Proposals.kind_module(kind).schema()
+        assert schema["$comment"] == "pipemaestro-kind:#{kind}"
+        assert extensions(schema) == [], "#{kind}: #{inspect(extensions(schema))}"
+      end
+
+      stage = Prompt.output_schema(%Stage{})
+      assert extensions(stage) == []
+    end
+  end
+
+  # Every key that starts with "x-", at any depth, outside of "properties"
+  # (whose keys are the answer's field names).
+  defp extensions(%{} = schema) do
+    Enum.flat_map(schema, fn
+      {"properties", %{} = properties} ->
+        properties |> Map.values() |> Enum.flat_map(&extensions/1)
+
+      {"x-" <> _ = key, _value} ->
+        [key]
+
+      {_key, value} ->
+        extensions(value)
+    end)
+  end
+
+  defp extensions(list) when is_list(list), do: Enum.flat_map(list, &extensions/1)
+  defp extensions(_value), do: []
 end

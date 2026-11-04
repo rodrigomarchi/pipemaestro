@@ -212,7 +212,7 @@ defmodule PipeMaestro.Proposals.DecisionKind do
 
     %{
       "type" => "object",
-      "x-pipemaestro-kind" => "decision",
+      "$comment" => "pipemaestro-kind:decision",
       "required" => ["diagnostico", "acao", "instrucoes"],
       "properties" => %{
         "diagnostico" => %{

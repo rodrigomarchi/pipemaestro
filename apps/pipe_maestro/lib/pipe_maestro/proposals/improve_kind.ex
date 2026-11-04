@@ -213,7 +213,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
   def schema do
     %{
       "type" => "object",
-      "x-pipemaestro-kind" => "improve",
+      "$comment" => "pipemaestro-kind:improve",
       "required" => ["analise", "mudancas", "pipeline", "notas"],
       "properties" => %{
         "analise" => %{"type" => "string"},

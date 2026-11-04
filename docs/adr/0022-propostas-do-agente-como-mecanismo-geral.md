@@ -28,8 +28,10 @@ tarefa e melhorar um pipeline a partir de como as suas tarefas correram.
   | `decision` | painel de decisão da tarefa e página Decisões → Sugerir com IA | aplicar a ação sugerida (tentar de novo, avançar, cancelar) com as instruções editáveis |
   | `improve` | card do pipeline → Melhorar com IA | salvar as notas do projeto e abrir o pipeline preenchido, que vira a versão seguinte |
 
-- **Cada schema declara o tipo** (`"x-pipemaestro-kind"`). Isso documenta a resposta e
-  permite que o CLI falso do e2e responda a cada tipo.
+- **Cada schema declara o tipo** no `$comment` (`"pipemaestro-kind:<tipo>"`): o CLI valida
+  o `--json-schema` em modo estrito e recusa palavras-chave fora do JSON Schema, como uma
+  extensão `x-`. Isso documenta a resposta e permite que o CLI falso do e2e responda a
+  cada tipo.
 - **Os dados de uma tarefa vão no prompt, não no worktree dela.** Uma análise de tarefa
   em andamento (`decision`) não lê o worktree da tarefa, porque as mudanças das etapas
   costumam não estar commitadas. O control plane já guarda os dados de cada tentativa:

@@ -16,7 +16,8 @@
 #   a prompt with "[limite]" reports the account near its usage limits (a
 #     five-hour window at 86%)
 #
-# A JSON Schema with "x-pipemaestro-kind" (a proposal, PipeMaestro.Proposals)
+# A JSON Schema whose "$comment" is "pipemaestro-kind:<kind>" (a proposal,
+# PipeMaestro.Proposals)
 # gets that kind's fixed answer: a project and a two-stage pipeline
 # ("pipeline"), a task ("task"), a decision to retry ("decision"), or a
 # revised pipeline with notes ("improve").
@@ -49,7 +50,7 @@ for arg in "$@"; do
   if [ -n "$next_is_schema" ]; then schema="$arg"; next_is_schema=""; fi
   if [ "$arg" = "--json-schema" ]; then structured=1; next_is_schema=1; fi
 done
-kind=$(printf '%s' "$schema" | sed -n 's/.*"x-pipemaestro-kind":"\([a-z]*\)".*/\1/p')
+kind=$(printf '%s' "$schema" | sed -n 's/.*"\$comment":"pipemaestro-kind:\([a-z]*\)".*/\1/p')
 
 echo "fake_claude: aviso de exemplo" >&2
 

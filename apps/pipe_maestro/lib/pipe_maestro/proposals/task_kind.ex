@@ -119,7 +119,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
   def schema do
     %{
       "type" => "object",
-      "x-pipemaestro-kind" => "task",
+      "$comment" => "pipemaestro-kind:task",
       "required" => ["analise", "titulo", "descricao", "pipeline", "pronta"],
       "properties" => %{
         "analise" => %{"type" => "string"},

@@ -76,7 +76,7 @@ defmodule PipeMaestro.Proposals.PipelineKind do
   def schema do
     %{
       "type" => "object",
-      "x-pipemaestro-kind" => "pipeline",
+      "$comment" => "pipemaestro-kind:pipeline",
       "required" => ["analise", "verificacoes", "projeto", "pipeline"],
       "properties" => %{
         "analise" => %{
