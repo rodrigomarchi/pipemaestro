@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 import { versions } from "./helpers/env";
 
+// The landing director (director/, `make landing.shots`) only exists in a run
+// that asks for it: the suite never sees it, so it never rewrites the landing's
+// images. It drives one long scripted scenario on a retina-sized desktop.
+const director = process.env.E2E_DIRECTOR === "1";
+
 const e2ePort = process.env.E2E_PORT || "4003";
 const baseURL = process.env.E2E_BASE_URL || `http://localhost:${e2ePort}`;
 
@@ -28,6 +33,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testDir: "./tests",
       testIgnore: /.*mobile.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
@@ -38,12 +44,27 @@ export default defineConfig({
     },
     {
       name: "mobile-chrome",
+      testDir: "./tests",
       testMatch: /.*mobile.*\.spec\.ts/,
       use: {
         ...devices["Pixel 7"],
         launchOptions: { slowMo: Number(process.env.SLOW_MO) || 0 },
       },
     },
+    ...(director
+      ? [
+          {
+            name: "director",
+            testDir: "./director",
+            timeout: 600_000,
+            use: {
+              ...devices["Desktop Chrome"],
+              viewport: { width: 1440, height: 900 },
+              deviceScaleFactor: 2,
+            },
+          },
+        ]
+      : []),
   ],
   // Boots the e2e server from the repo root unless one is already up, built
   // as a fixed version so the runners' "outdated" badge is predictable.
