@@ -4,8 +4,9 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
   prompt, as one stage), "Correção de bug" (the reference stages of the
   product plan: triage, investigation, reproduction, fix, audit, PR),
   "Nova funcionalidade", "Refatoração", "Revisão de código", "Investigação de
-  produção" (reads only) and "Atualização de dependência". Stages that only
-  look get the `leitura` permission profile.
+  produção" (reads only) and "Atualização de dependência". Every stage runs
+  with every permission and passes on by itself; the prompts say which ones
+  must not change code.
   """
 
   @doc "The templates, as attributes for `ClaudeControlPlane.Pipelines.create_pipeline/2`."
@@ -24,13 +25,11 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
   defp stage(key, name, prompt, extra \\ %{}),
     do: Map.merge(%{"key" => key, "name" => name, "prompt" => prompt}, extra)
 
-  @read_only %{"permission_profile" => "leitura"}
-
   defp feature do
     %{
       "name" => "Nova funcionalidade",
       "description" =>
-        "Especificação, plano aprovado por uma pessoa, implementação com testes e revisões de código e de segurança em paralelo.",
+        "Especificação, plano, implementação com testes e revisões de código e de segurança em paralelo.",
       "stages" => [
         stage(
           "especificacao",
@@ -45,8 +44,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
 
           Se o pedido for ambíguo a ponto de mudar a solução, termine como "bloqueado" com as
           perguntas e proponha as alternativas em "opcoes".
-          """,
-          @read_only
+          """
         ),
         stage(
           "plano",
@@ -54,8 +52,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           """
           Com a especificação, escreva o plano de implementação: arquivos a criar ou mudar, a ordem,
           os testes que provam cada critério de aceite e os riscos. Não altere código.
-          """,
-          Map.put(@read_only, "pause_after", true)
+          """
         ),
         stage("implementacao", "Implementação", """
         Implemente o plano, com os testes que ele pede. Rode {{projeto.teste}} e {{projeto.lint}}
@@ -69,7 +66,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           especificação, testes faltando, nomes, casos de borda. Liste os problemas por
           severidade. Se houver algum grave, termine como "bloqueado".
           """,
-          Map.put(@read_only, "group", "revisoes")
+          %{"group" => "revisoes"}
         ),
         stage(
           "seguranca",
@@ -79,7 +76,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           validadas, permissões, segredos, injeções, dados sensíveis em logs. Se houver algum risco
           grave, termine como "bloqueado".
           """,
-          Map.put(@read_only, "group", "revisoes")
+          %{"group" => "revisoes"}
         )
       ]
     }
@@ -99,8 +96,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           não é. Proponha os passos, cada um pequeno e com a suíte verde ao fim.
 
           {{tarefa.descricao}}
-          """,
-          @read_only
+          """
         ),
         stage("refatoracao", "Refatoração", """
         Faça a refatoração nos passos do mapa, sem mudar comportamento. Se faltar teste para algo
@@ -112,8 +108,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           """
           Confirme que o comportamento não mudou: compare o diff com o mapa, procure mudanças de
           semântica escondidas e rode {{projeto.teste}}. Registre o que verificou.
-          """,
-          @read_only
+          """
         )
       ]
     }
@@ -136,8 +131,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
 
           Liste os problemas por severidade (bloqueia, deveria mudar, sugestão), cada um com arquivo,
           linha e o porquê. Não altere código.
-          """,
-          @read_only
+          """
         )
       ]
     }
@@ -160,8 +154,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           Leia o código envolvido e, se houver ferramentas de observabilidade disponíveis (servidores
           MCP), consulte logs e métricas do período. Liste as hipóteses com as evidências a favor e
           contra cada uma.
-          """,
-          @read_only
+          """
         ),
         stage(
           "conclusao",
@@ -170,8 +163,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           Feche a investigação: a causa mais provável, o impacto, a correção proposta (sem aplicar) e
           como confirmar em produção. Se as evidências não bastarem, termine como "bloqueado" dizendo
           o que falta medir.
-          """,
-          @read_only
+          """
         )
       ]
     }
@@ -192,8 +184,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
 
           Leia o changelog entre a versão atual e a alvo e liste as mudanças que afetam este projeto,
           com os pontos do código que usam o que mudou.
-          """,
-          @read_only
+          """
         ),
         stage("atualizacao", "Atualização", """
         Atualize a dependência, ajuste o código ao que mudou e rode {{projeto.setup}},
@@ -205,8 +196,7 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
           """
           Resuma o risco da atualização para quem vai revisar: o que mudou de comportamento, o que os
           testes cobrem e o que vale testar à mão.
-          """,
-          @read_only
+          """
         )
       ]
     }
@@ -239,7 +229,6 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
       "stages" => [
         %{
           "key" => "triagem",
-          "permission_profile" => "leitura",
           "name" => "Triagem",
           "prompt" => """
           Avalie se esta tarefa está bem definida o bastante para ser corrigida sem perguntas:
@@ -254,7 +243,6 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
         },
         %{
           "key" => "investigacao",
-          "permission_profile" => "leitura",
           "name" => "Investigação",
           "prompt" => """
           Encontre a causa raiz do problema descrito na triagem. Leia o código envolvido, siga o fluxo
@@ -285,7 +273,6 @@ defmodule ClaudeControlPlane.Pipelines.Templates do
         },
         %{
           "key" => "auditoria",
-          "permission_profile" => "leitura",
           "name" => "Validação e auditoria",
           "prompt" => """
           Revise a correção como um revisor independente: você não fez a implementação. Leia o diff,

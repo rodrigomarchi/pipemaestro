@@ -43,7 +43,7 @@ defmodule ClaudeControlPlaneRunner.Commands.Start do
     Capacidade: #{hello.capacity} jobs ao mesmo tempo
     Agente: #{agent_description()}
     Credencial: #{auth_description(agent)}
-    Atenção: os jobs rodam nesta máquina, sem container, com o perfil de permissão de cada etapa (por padrão, total).
+    Atenção: os jobs rodam nesta máquina, sem container, com todas as permissões do agente: os pipelines seguem sozinhos.
     """)
 
     Output.info("Conectando #{config.runner_name} a #{config.url}...")

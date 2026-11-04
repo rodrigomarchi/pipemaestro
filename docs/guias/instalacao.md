@@ -134,8 +134,9 @@ O login mostra um código. Um **admin** do workspace o aprova em
 ## 3. O primeiro pipeline
 
 1. **Pipelines → Criar pipelines padrão.** Os templates (correção de bug,
-   funcionalidade, refatoração, revisão, investigação de produção...) já vêm com as
-   etapas de leitura restritas.
+   funcionalidade, refatoração, revisão, investigação de produção...) já vêm prontos.
+   As etapas rodam com todas as permissões e seguem sozinhas; a tarefa só para quando
+   precisa de ajuda ([ADR 0018](../adr/0018-etapas-autonomas.md)).
 2. **Projetos → Novo projeto**, para cada diretório que vai receber tarefas:
    - o comando de setup, que roda uma vez por worktree (`mix deps.get && mix
      compile`);

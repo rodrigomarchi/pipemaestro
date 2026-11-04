@@ -66,6 +66,23 @@ test.describe("Task pipeline", () => {
     await shot(app.page, "pipelines");
 
     await pipelines.edit("Prompt único");
+
+    // The prompt editor: the toolbar formats, the menu inserts a variable and
+    // the preview renders the Markdown.
+    await pipelines.stagePrompt(0).fill("## Objetivo\n\n");
+    await pipelines.stagePromptAction(0, "bold").click();
+    await pipelines.insertVariable(0, "tarefa.titulo");
+    // Bold leaves its placeholder selected, and the variable takes its place.
+    await expect(pipelines.stagePrompt(0)).toHaveValue("## Objetivo\n\n**{{tarefa.titulo}}**");
+    await pipelines.previewPrompt(0);
+    // Rendered: the text shows without its Markdown marks.
+    await expect(pipelines.stagePromptPreview(0)).toContainText("Objetivo");
+    await expect(pipelines.stagePromptPreview(0)).toContainText("{{tarefa.titulo}}");
+    await expect(pipelines.stagePromptPreview(0)).not.toContainText("##");
+    await expect(pipelines.stagePromptPreview(0)).not.toContainText("**");
+    await shot(app.page, "pipeline-prompt-preview");
+    await pipelines.writePrompt(0);
+
     await pipelines.stagePrompt(0).fill("{{tarefa.descricao}}\n\nRegistre no artefato o que foi feito.");
     await pipelines.stageGates(0).fill("{{projeto.teste}}");
     await shot(app.page, "pipeline-form");

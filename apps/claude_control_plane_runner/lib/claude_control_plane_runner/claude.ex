@@ -2,16 +2,8 @@ defmodule ClaudeControlPlaneRunner.Claude do
   @moduledoc """
   How the runner invokes the agent CLI for a job: `claude -p <prompt>` in
   headless mode, printing one JSON event per line (`stream-json`), with nothing
-  saved as a resumable session, and the permissions of the job's profile
-  (`ClaudeControlPlaneProtocol.Job.permission_profiles/0`):
-
-    * `"total"` (or none given): every permission granted;
-    * `"edicao"`: file edits accepted; other tools only as allowed;
-    * `"leitura"`: reading and searching, and writing under `.control-plane/`
-      (where the stage's artifact goes); other tools only as allowed.
-
-  Nobody answers a permission prompt in a headless run, so anything not
-  allowed is denied.
+  saved as a resumable session, and every permission granted: pipelines run
+  on their own, and nobody would answer a permission prompt in a headless run.
 
   `$CLAUDE_BIN` points to another executable (tests use a fake that prints the
   same kind of lines).
@@ -39,34 +31,9 @@ defmodule ClaudeControlPlaneRunner.Claude do
       "stream-json",
       "--verbose"
     ] ++
-      permissions(job.permissions) ++
-      ["--no-session-persistence", "--include-partial-messages"] ++ optional(job)
+      ["--dangerously-skip-permissions", "--no-session-persistence", "--include-partial-messages"] ++
+      optional(job)
   end
-
-  @read_tools ~w(Read Grep Glob LS TodoWrite WebSearch WebFetch)
-  # An Edit rule covers every file-editing tool, Write included.
-  @artifact_rules ["Edit(./.control-plane/**)"]
-
-  defp permissions(nil), do: ["--dangerously-skip-permissions"]
-  defp permissions(%{"profile" => "total"}), do: ["--dangerously-skip-permissions"]
-
-  defp permissions(%{"profile" => "edicao"} = permissions),
-    do: restricted("acceptEdits", permissions["allow"] || [], permissions["deny"] || [])
-
-  defp permissions(%{"profile" => "leitura"} = permissions) do
-    allow = @read_tools ++ @artifact_rules ++ (permissions["allow"] || [])
-    restricted("dontAsk", allow, permissions["deny"] || [])
-  end
-
-  defp restricted(mode, allow, deny) do
-    ["--permission-mode", mode, "--permission-prompts", "none"] ++
-      tool_flag("--allowedTools", allow) ++ tool_flag("--disallowedTools", deny)
-  end
-
-  # One argument per rule: a rule may hold spaces ("Bash(mix test:*)"). The
-  # option takes values until the next flag.
-  defp tool_flag(_flag, []), do: []
-  defp tool_flag(flag, rules), do: [flag | rules]
 
   defp optional(job) do
     Enum.flat_map(

@@ -38,11 +38,6 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
                      "body" => "Decisão: x"
                    }
                  },
-                 "permissions" => %{
-                   "profile" => "leitura",
-                   "allow" => ["Bash(mix test:*)"],
-                   "deny" => ["WebFetch"]
-                 },
                  "gates" => [
                    %{"command" => "mix test", "expect" => "pass"},
                    %{"command" => "mix test test/repro_test.exs", "expect" => "fail"}
@@ -62,6 +57,12 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
 
       assert {:ok, %Job{setup: %{"command" => "make"}}} =
                Job.new(%{id: "j", prompt: "p", setup: %{"command" => "make"}})
+    end
+
+    test "ignores the permissions an older control plane sends: the agent runs with all of them" do
+      old = %{"profile" => "leitura", "allow" => ["Bash(git log:*)"], "deny" => ["WebFetch"]}
+      assert {:ok, job} = Job.from_map(%{"id" => "j", "prompt" => "p", "permissions" => old})
+      refute job |> Job.to_map() |> Map.has_key?("permissions")
     end
 
     test "rejects a bad context" do
@@ -99,17 +100,6 @@ defmodule ClaudeControlPlaneProtocol.JobTest do
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"lower" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"PATH" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"OK" => 1}))
-      assert {:error, "permissions" <> _} = Job.new(Map.put(base, :permissions, %{}))
-
-      assert {:error, "permissions" <> _} =
-               Job.new(Map.put(base, :permissions, %{"profile" => "root"}))
-
-      assert {:error, "permissions" <> _} =
-               Job.new(Map.put(base, :permissions, %{"profile" => "edicao", "allow" => [""]}))
-
-      assert {:error, "permissions" <> _} =
-               Job.new(Map.put(base, :permissions, %{"profile" => "edicao", "deny" => "Bash"}))
-
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, "mix test"))
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, [%{"command" => "x"}]))
 

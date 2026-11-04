@@ -271,20 +271,33 @@ defmodule ClaudeControlPlane.TasksTest do
       assert [%StageRun{status: :blocked}] = task.stage_runs
     end
 
-    test "a stage that asks for approval pauses after passing", ctx do
+    test "a stage passes on to the next by itself, also one saved with the old approval setting",
+         ctx do
       {:ok, pipeline} =
         Pipelines.update_pipeline(ctx.pipeline, %{
           "stages" => [
-            %{"key" => "a", "name" => "Etapa A", "prompt" => "A", "pause_after" => true},
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "A"},
             %{"key" => "b", "name" => "Etapa B", "prompt" => "B"}
           ]
         })
 
       task = create_task(%{ctx | pipeline: pipeline})
+
+      # A task started before stages lost their approval and permission
+      # settings still has them in its copy of the stages.
+      ClaudeControlPlane.Repo.query!(
+        """
+        UPDATE tasks SET stages = (
+          SELECT jsonb_agg(s || '{"pause_after": true, "permission_profile": "leitura"}')
+          FROM jsonb_array_elements(stages) s)
+        WHERE id = $1
+        """,
+        [Ecto.UUID.dump!(task.id)]
+      )
+
       task = run_current(ctx, task, %{})
 
-      assert %Task{status: :awaiting_decision, current_stage: 0} = task
-      assert task.decision_reason =~ "pede aprovação"
+      assert %Task{status: :running, current_stage: 1} = task
     end
 
     test "a canceled job cancels the task", ctx do
@@ -340,35 +353,11 @@ defmodule ClaudeControlPlane.TasksTest do
       assert job.context["gates"] == [%{"command" => "mix test", "expect" => "pass"}]
     end
 
-    test "a stage's permission profile reaches the runner with the project's commands", ctx do
-      pipeline =
-        pipeline_fixture(ctx.workspace, %{
-          "stages" => [
-            %{
-              "key" => "ler",
-              "name" => "Ler",
-              "prompt" => "p",
-              "permission_profile" => "leitura",
-              "allowed_tools_text" => "Bash(git log:*)",
-              "denied_tools_text" => "WebFetch"
-            },
-            %{"key" => "tudo", "name" => "Tudo", "prompt" => "p"}
-          ]
-        })
-
+    test "a job carries no permission settings: the agent runs with every permission", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
-      task = create_task(ctx, %{"pipeline_id" => pipeline.id})
+      create_task(ctx)
       assert_receive {:job_assign, job}
-
-      assert job.context["permissions"] == %{
-               "profile" => "leitura",
-               "allow" => ["Bash(git log:*)", "Bash(mix test:*)"],
-               "deny" => ["WebFetch"]
-             }
-
-      run_current(ctx, task, %{})
-      assert_receive {:job_assign, second}
-      refute Map.has_key?(second.context, "permissions")
+      refute Map.has_key?(job.context, "permissions")
     end
 
     test "a gate that renders to nothing (no project setting) is dropped", ctx do

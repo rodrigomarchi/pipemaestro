@@ -129,9 +129,6 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
             "timeout_minutes" => 15,
             "gates_text" => "{{projeto.teste}}\n! mix test test/repro_test.exs",
             "rules_text" => "risco == alto",
-            "permission_profile" => "edicao",
-            "allowed_tools_text" => "Bash(git log:*)",
-            "denied_tools_text" => "WebFetch",
             "agent" => "analista"
           }
         ]
@@ -143,7 +140,10 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
              "! mix test test/repro_test.exs"
 
     assert view |> element("[data-testid=stage-rules-0]") |> render() =~ "risco == alto"
-    assert has_element?(view, "[data-testid=stage-permission-0] option[selected][value=edicao]")
+    # Every stage runs with every permission and passes on by itself.
+    for gone <- ~w(stage-permission-0 stage-allowed-0 stage-denied-0 stage-pause-0),
+        do: refute(has_element?(view, "[data-testid=#{gone}]"))
+
     assert view |> element("[data-testid=pipeline-mcp-config]") |> render() =~ "grafana"
     assert has_element?(view, "[data-testid=stage-agent-0][value=analista]")
     assert has_element?(view, "[data-testid=stage-group-0]")
@@ -157,9 +157,6 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     assert stage.timeout_minutes == 15
     assert [%{"expect" => "pass"}, %{"expect" => "fail"}] = stage.gates
     assert stage.rules == [%{"field" => "risco", "op" => "!=", "value" => "baixo"}]
-    assert stage.permission_profile == "edicao"
-    assert stage.allowed_tools == ["Bash(git log:*)"]
-    assert stage.denied_tools == ["WebFetch"]
     assert stage.agent == "analista"
     pipeline = Pipelines.get_pipeline!(workspace, pipeline.id)
     assert pipeline.system_prompt == "Nunca altere código."
@@ -191,5 +188,108 @@ defmodule ClaudeControlPlaneWeb.PipelineLiveTest do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
     view |> element("[data-testid=pipeline-delete-Meu]") |> render_click()
     refute has_element?(view, "[data-testid=pipeline-Meu]")
+  end
+
+  describe "the prompt editor" do
+    setup %{workspace: workspace} do
+      pipeline =
+        pipeline_fixture(workspace, %{
+          "name" => "Editor",
+          "delivery" => "pr",
+          "stages" => [
+            %{
+              "name" => "Plano",
+              "prompt" => "## Objetivo\n\nFaça **isto** com {{tarefa.descricao}}",
+              "gates_text" => "mix test"
+            },
+            %{"name" => "Revisão", "prompt" => "Revise", "group" => "revisoes"}
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    test "has a toolbar and a menu of the prompt variables", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+      for action <- ~w(bold italic heading bullet numbered quote code link),
+          do:
+            assert(
+              has_element?(
+                view,
+                "[data-testid=stage-prompt-0-#{action}][data-md-action=#{action}]"
+              )
+            )
+
+      assert has_element?(
+               view,
+               "[data-testid='stage-prompt-0-variable-tarefa.descricao'][data-md-insert='{{tarefa.descricao}}']"
+             )
+
+      assert has_element?(view, "#stage-0-prompt[phx-hook=MarkdownEditor]")
+      assert has_element?(view, "[data-testid=pipeline-system-prompt-editor]")
+    end
+
+    test "previews the prompt as Markdown, keeping the textarea in the form", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+      refute has_element?(view, "[data-testid=stage-prompt-0-preview]")
+
+      view |> element("[data-testid=stage-prompt-0-preview-tab]") |> render_click()
+
+      preview = view |> element("[data-testid=stage-prompt-0-preview]") |> render()
+      assert preview =~ "<h2>Objetivo</h2>"
+      assert preview =~ "<strong>isto</strong>"
+      assert has_element?(view, "[data-testid=stage-prompt-0]")
+
+      # What is typed shows in the preview.
+      view
+      |> form("#pipeline-form", pipeline: %{stages: %{"0" => %{prompt: "_novo_"}}})
+      |> render_change()
+
+      assert view |> element("[data-testid=stage-prompt-0-preview]") |> render() =~
+               "<em>novo</em>"
+
+      view |> element("[data-testid=stage-prompt-0-write-tab]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-prompt-0-preview]")
+    end
+
+    test "a stage collapses to its summary and the delivery explains itself", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+      assert view |> element("[data-testid=stage-chips-0]") |> render() =~ "1 gate"
+      assert view |> element("[data-testid=stage-chips-1]") |> render() =~ "grupo revisoes"
+      assert view |> element("[data-testid=pipeline-delivery-help]") |> render() =~ "PR"
+
+      view |> element("[data-testid=stage-toggle-0]") |> render_click()
+      assert has_element?(view, "[data-testid=stage-body-0].hidden")
+      # The collapsed stage's inputs stay in the form.
+      assert has_element?(view, "[data-testid=stage-prompt-0]")
+
+      view |> element("[data-testid=stage-toggle-0]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-body-0].hidden")
+    end
+
+    test "the list shows each pipeline's delivery, budget and stages", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
+      meta = view |> element("[data-testid=pipeline-meta-Editor]") |> render()
+      assert meta =~ "Pull request"
+      assert meta =~ "Sem teto"
+      assert meta =~ "2 etapas"
+    end
   end
 end

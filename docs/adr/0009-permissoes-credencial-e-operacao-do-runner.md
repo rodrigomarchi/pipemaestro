@@ -1,6 +1,6 @@
 # 0009 — Perfis de permissão, credencial do agente e operação do runner
 
-- **Status:** aceita
+- **Status:** aceita; os perfis de permissão foram substituídos pelo [ADR 0018](0018-etapas-autonomas.md)
 - **Data:** 03/11/2026
 - **Roadmap:** Marco 1, itens 6 a 9, de [`03-roadmap-orquestrador.md`](../plano/03-roadmap-orquestrador.md)
 

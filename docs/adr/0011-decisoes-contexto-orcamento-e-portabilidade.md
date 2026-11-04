@@ -45,7 +45,8 @@ cinco coisas:
      fica para o Marco 4.
 4. **Mais templates:** nova funcionalidade (com aprovação do plano), refatoração,
    revisão de código, investigação de produção (só leitura) e atualização de
-   dependência. Em todos, as etapas que só olham usam o perfil `leitura`.
+   dependência. As etapas que só olham dizem no prompt que não alteram código (os
+   perfis de permissão saíram no [ADR 0018](0018-etapas-autonomas.md)).
 5. **Pipelines em YAML.**
    - Exportar gera YAML legível, com os prompts em blocos `|` e o resto em JSON (que
      também é YAML).

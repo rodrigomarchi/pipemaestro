@@ -25,9 +25,8 @@ defmodule ClaudeControlPlaneProtocol.Job do
   the same worktree: the runner does not make it wait for them.
   `env` holds the workspace's secrets as environment variables for the
   agent's process (`NAME => value`); the runner never stores them.
-  `permissions` says what the agent may do: `"profile"` (one of
-  `permission_profiles/0`; without it, `"total"`) and the tool rules to
-  `"allow"` and `"deny"` on top, in the CLI's syntax (`"Bash(mix test:*)"`).
+  The agent always runs with every permission: a job carries no permission
+  settings, and a `"permissions"` key from an older control plane is ignored.
 
   `setup` prepares a task's worktree once, when the runner creates it:
   `"copy"` names paths of the directory (dependencies, build output) the runner
@@ -91,7 +90,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
                 setup: nil,
                 timeout_ms: nil,
                 gates: nil,
-                permissions: nil,
                 system_prompt: nil,
                 mcp_config: nil,
                 agents: nil,
@@ -116,7 +114,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
           setup: setup() | nil,
           timeout_ms: pos_integer() | nil,
           gates: [%{String.t() => String.t()}] | nil,
-          permissions: %{String.t() => String.t() | [String.t()]} | nil,
           system_prompt: String.t() | nil,
           mcp_config: map() | nil,
           agents: map() | nil,
@@ -136,7 +133,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
     :setup,
     :timeout_ms,
     :gates,
-    :permissions,
     :system_prompt,
     :mcp_config,
     :agents,
@@ -149,8 +145,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
   @env_name ~r/^[A-Z][A-Z0-9_]{0,63}$/
   # What a secret may not override: the process would break or escape.
   @reserved_env ~w(PATH HOME SHELL USER CLAUDECODE CLAUDE_CODE_ENTRYPOINT CP_ARTIFACT_PATH)
-
-  @permission_profiles ~w(total edicao leitura)
 
   @max_gates 10
 
@@ -185,14 +179,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
   @doc "How a job can end, as sent on the wire."
   @spec finished_statuses() :: [String.t()]
   def finished_statuses, do: ~w(succeeded failed canceled)
-
-  @doc """
-  What an agent may do: `"total"` (everything, no prompts), `"edicao"` (edit
-  files; run only the commands allowed) and `"leitura"` (read and search; write
-  only the stage's artifact).
-  """
-  @spec permission_profiles() :: [String.t()]
-  def permission_profiles, do: @permission_profiles
 
   @doc "The longest prompt a job may carry, in bytes."
   @spec max_prompt_bytes() :: pos_integer()
@@ -321,18 +307,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
   defp check(:timeout_ms, value) when is_integer(value) and value in 1..@max_timeout_ms, do: :ok
   defp check(:timeout_ms, _value), do: {:error, "must be a number of milliseconds up to a day"}
 
-  defp check(:permissions, %{"profile" => profile} = permissions)
-       when profile in @permission_profiles do
-    rules = [Map.get(permissions, "allow", []), Map.get(permissions, "deny", [])]
-
-    if Enum.all?(rules, &tool_rules?/1),
-      do: :ok,
-      else: {:error, "allow and deny must be lists of tool rules"}
-  end
-
-  defp check(:permissions, _value),
-    do: {:error, "must name a profile: #{Enum.join(@permission_profiles, ", ")}"}
-
   defp check(:gates, gates) when is_list(gates) and length(gates) <= @max_gates do
     if Enum.all?(gates, &gate?/1),
       do: :ok,
@@ -366,11 +340,6 @@ defmodule ClaudeControlPlaneProtocol.Job do
   defp issue_comment?(_comment), do: false
 
   defp text?(value, max), do: is_binary(value) and byte_size(value) in 1..max
-
-  defp tool_rules?(rules) when is_list(rules) and length(rules) <= 50,
-    do: Enum.all?(rules, &(is_binary(&1) and byte_size(&1) in 1..500))
-
-  defp tool_rules?(_rules), do: false
 
   defp gate?(%{"command" => command, "expect" => expect}),
     do: is_binary(command) and byte_size(command) in 1..4_000 and expect in ["pass", "fail"]

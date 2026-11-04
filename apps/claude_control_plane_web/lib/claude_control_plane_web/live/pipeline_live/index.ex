@@ -108,6 +108,20 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
     do:
       assign(socket, pipelines: Pipelines.list_pipelines(socket.assigns.current_scope.workspace))
 
+  defp delivery_icon("pr"), do: "hero-rocket-launch"
+  defp delivery_icon("commit"), do: "hero-check-badge"
+  defp delivery_icon(_none), do: "hero-no-symbol"
+
+  defp delivery_label("pr"), do: "Pull request"
+  defp delivery_label("commit"), do: "Commit por etapa"
+  defp delivery_label(_none), do: "Sem entrega"
+
+  defp budget_label(nil), do: "Sem teto"
+  defp budget_label(cost), do: "Até US$ #{cost}"
+
+  defp stages_label(1), do: "1 etapa"
+  defp stages_label(count), do: "#{count} etapas"
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -176,31 +190,70 @@ defmodule ClaudeControlPlaneWeb.PipelineLive.Index do
           variant="outline"
           data-testid={"pipeline-#{pipeline.name}"}
         >
-          <.card_content>
-            <div class="flex items-start justify-between gap-4">
-              <div class="min-w-0">
-                <h3 class="font-semibold text-gray-900 dark:text-white">{pipeline.name}</h3>
+          <.card_content class="flex h-full flex-col">
+            <div class="flex items-start gap-3">
+              <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
+                <.icon name="hero-squares-2x2" class="size-5" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="truncate font-semibold text-gray-900 dark:text-white">
+                    {pipeline.name}
+                  </h3>
+                  <.badge
+                    size="sm"
+                    variant="outline"
+                    color="gray"
+                    label={"v#{pipeline.version}"}
+                    data-testid={"pipeline-version-#{pipeline.name}"}
+                  />
+                </div>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{pipeline.description}</p>
               </div>
-              <.badge
-                size="sm"
-                variant="outline"
-                color="gray"
-                label={"v#{pipeline.version}"}
-                data-testid={"pipeline-version-#{pipeline.name}"}
-              />
             </div>
-            <ol class="mt-4 flex flex-wrap gap-2">
-              <li :for={{stage, index} <- Enum.with_index(pipeline.stages)}>
-                <.badge
-                  size="sm"
-                  variant="soft"
-                  color="primary"
-                  label={"#{index + 1}. #{stage.name}"}
-                />
+            <dl
+              class="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400"
+              data-testid={"pipeline-meta-#{pipeline.name}"}
+            >
+              <div class="flex items-center gap-1">
+                <dt><.icon name={delivery_icon(pipeline.delivery)} class="size-4" /></dt>
+                <dd>{delivery_label(pipeline.delivery)}</dd>
+              </div>
+              <div class="flex items-center gap-1">
+                <dt><.icon name="hero-banknotes" class="size-4" /></dt>
+                <dd>{budget_label(pipeline.max_task_cost_usd)}</dd>
+              </div>
+              <div class="flex items-center gap-1">
+                <dt><.icon name="hero-queue-list" class="size-4" /></dt>
+                <dd>{stages_label(length(pipeline.stages))}</dd>
+              </div>
+            </dl>
+            <ol class="mt-4 flex-1 space-y-1.5">
+              <li
+                :for={{stage, index} <- Enum.with_index(pipeline.stages)}
+                class="flex items-center gap-2.5 text-sm"
+              >
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700 dark:bg-primary-950 dark:text-primary-300">
+                  {index + 1}
+                </span>
+                <span class="min-w-0 truncate text-gray-700 dark:text-gray-200">{stage.name}</span>
+                <span class="ml-auto flex shrink-0 items-center gap-1.5 text-gray-400 dark:text-gray-500">
+                  <span :if={stage.group} title={"Em paralelo: #{stage.group}"}>
+                    <.icon name="hero-squares-2x2" class="size-4" />
+                  </span>
+                  <span :if={stage.gates != []} title={"#{length(stage.gates)} gates"}>
+                    <.icon name="hero-shield-check" class="size-4" />
+                  </span>
+                  <span :if={stage.rules != []} title="Pede ajuda quando uma regra casa">
+                    <.icon name="hero-hand-raised" class="size-4" />
+                  </span>
+                  <span :if={stage.model} title={"Modelo #{stage.model}"}>
+                    <.icon name="hero-sparkles" class="size-4" />
+                  </span>
+                </span>
               </li>
             </ol>
-            <div class="mt-4 flex justify-end gap-1">
+            <div class="mt-4 flex justify-end gap-1 border-t border-gray-100 pt-3 dark:border-gray-800">
               <.button
                 size="xs"
                 variant="ghost"

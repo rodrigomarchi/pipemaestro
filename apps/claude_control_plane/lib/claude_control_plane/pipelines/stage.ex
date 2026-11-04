@@ -2,8 +2,7 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   @moduledoc """
   One stage of a pipeline: what the agent is asked to do (`prompt`, a template
   over `ClaudeControlPlane.Pipelines.Prompt.variables/0`), how many attempts it
-  gets, whether a person must approve it before the next stage, and the
-  model, budget, time limit (`timeout_minutes`, past which the runner stops
+  gets, and the model, budget, time limit (`timeout_minutes`, past which the runner stops
   the agent and the attempt fails) and extra output fields its run uses.
 
   `gates` are commands the runner runs after the agent, each expected to pass
@@ -12,10 +11,9 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   `!=`). A form edits both as text, one per line (`gates_text`, a `!` before
   a command that must fail; `rules_text`).
 
-  `permission_profile` is what the agent may do in the stage
-  (`ClaudeControlPlaneProtocol.Job.permission_profiles/0`), with tool rules
-  allowed and denied on top (`allowed_tools`, `denied_tools`, one per line in
-  a form). `agent` names the agent the stage runs as: one of the repository's
+  A stage passes on to the next one by itself: the agent runs with every
+  permission, and only a rule, a failure or the budget stops the task for a
+  person. `agent` names the agent the stage runs as: one of the repository's
   (`.claude/agents/`) or of the pipeline's `agents`. Consecutive stages with
   the same `group` run at once, in the same worktree (an empty group: alone).
   """
@@ -24,14 +22,12 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
   import Ecto.Changeset
 
   alias ClaudeControlPlane.Pipelines.Prompt
-  alias ClaudeControlPlaneProtocol.Job
 
   @type t :: %__MODULE__{
           key: String.t() | nil,
           name: String.t() | nil,
           prompt: String.t() | nil,
           max_attempts: pos_integer(),
-          pause_after: boolean(),
           model: String.t() | nil,
           max_budget_usd: Decimal.t() | nil,
           timeout_minutes: pos_integer(),
@@ -41,13 +37,8 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
           gates_text: String.t() | nil,
           rules: [map()],
           rules_text: String.t() | nil,
-          permission_profile: String.t(),
           agent: String.t() | nil,
-          group: String.t() | nil,
-          allowed_tools: [String.t()],
-          allowed_tools_text: String.t() | nil,
-          denied_tools: [String.t()],
-          denied_tools_text: String.t() | nil
+          group: String.t() | nil
         }
 
   @models ~w(haiku sonnet opus)
@@ -59,7 +50,6 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     field :name, :string
     field :prompt, :string
     field :max_attempts, :integer, default: 2
-    field :pause_after, :boolean, default: false
     field :model, :string
     field :max_budget_usd, :decimal
     field :timeout_minutes, :integer, default: 60
@@ -69,13 +59,8 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     field :gates_text, :string, virtual: true
     field :rules, {:array, :map}, default: []
     field :rules_text, :string, virtual: true
-    field :permission_profile, :string, default: "total"
     field :agent, :string
     field :group, :string
-    field :allowed_tools, {:array, :string}, default: []
-    field :allowed_tools_text, :string, virtual: true
-    field :denied_tools, {:array, :string}, default: []
-    field :denied_tools_text, :string, virtual: true
   end
 
   @rule ~r/^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=)\s*(.+)$/
@@ -96,7 +81,6 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
       :name,
       :prompt,
       :max_attempts,
-      :pause_after,
       :model,
       :max_budget_usd,
       :timeout_minutes,
@@ -104,11 +88,8 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
       :output_schema_json,
       :gates_text,
       :rules_text,
-      :permission_profile,
       :agent,
-      :group,
-      :allowed_tools_text,
-      :denied_tools_text
+      :group
     ])
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome à etapa")
@@ -129,30 +110,9 @@ defmodule ClaudeControlPlane.Pipelines.Stage do
     |> parse_output_schema()
     |> parse_gates()
     |> parse_rules()
-    |> validate_inclusion(:permission_profile, Job.permission_profiles(),
-      message: "escolha um perfil de permissão"
-    )
     |> validate_length(:agent, max: 100)
     |> update_change(:group, &(&1 |> String.trim() |> String.downcase()))
     |> validate_format(:group, @key_format, message: "use letras minúsculas, números, - ou _")
-    |> parse_tools(:allowed_tools)
-    |> parse_tools(:denied_tools)
-  end
-
-  @doc "The tools a stage allows beyond its profile, one per line."
-  @spec allowed_tools_text(t()) :: String.t()
-  def allowed_tools_text(%__MODULE__{allowed_tools: tools}), do: Enum.join(tools, "\n")
-
-  @doc "The tools a stage denies, one per line."
-  @spec denied_tools_text(t()) :: String.t()
-  def denied_tools_text(%__MODULE__{denied_tools: tools}), do: Enum.join(tools, "\n")
-
-  defp parse_tools(changeset, field) do
-    case lines(changeset, "#{field}_text") do
-      {:ok, tools} when length(tools) <= 20 -> put_change(changeset, field, tools)
-      {:ok, _tools} -> add_error(changeset, :"#{field}_text", "use no máximo 20 regras")
-      :absent -> changeset
-    end
   end
 
   @doc "A stage's gates as the form shows them: one per line, `!` when it must fail."

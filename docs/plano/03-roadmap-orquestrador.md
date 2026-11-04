@@ -80,7 +80,8 @@ descartável".
 5. **✓ Limites na execução** (ADR 0006): tempo máximo por etapa (o runner mata o grupo de processos
    ao estourar) e orçamento por etapa, já suportado via `--max-budget-usd`, exposto
    na UI.
-6. **✓ Perfis de permissão em vez de permissão total** ([ADR 0009](../adr/0009-permissoes-credencial-e-operacao-do-runner.md)).
+6. **✓ Perfis de permissão em vez de permissão total** ([ADR 0009](../adr/0009-permissoes-credencial-e-operacao-do-runner.md)),
+   depois substituídos por permissões totais em todas as etapas ([ADR 0018](../adr/0018-etapas-autonomas.md)).
    - Por etapa: "somente leitura" (`plan`), "edita arquivos" (`acceptEdits` + Bash
      restrito), "total" (o atual).
    - Listas de ferramentas permitidas e negadas.

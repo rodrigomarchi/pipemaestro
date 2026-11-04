@@ -28,7 +28,8 @@ e da parte de jobs do protocolo (§5.4).
    jobs rodam nele. É a premissa de "ambiente quente": clone, dependências e build
    ficam ali para a próxima execução. Para que dois jobs não pisem um no outro, o
    runner executa **um job por vez** e os demais esperam numa fila local.
-4. **Permissões totais, sem container. Este é um risco aceito e provisório.** Qualquer
+4. **Permissões totais, sem container. Este é um risco aceito**, permanente para as
+   etapas ([ADR 0018](0018-etapas-autonomas.md)) até a fase de containers. Qualquer
    membro do workspace consegue rodar comandos arbitrários na máquina do runner. O
    `runner.start` avisa isso ao subir. A fase de containers (§4.3 da visão) substitui
    esta decisão, com permissões negativas no repositório e rede restrita.

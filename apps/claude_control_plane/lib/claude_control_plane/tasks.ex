@@ -468,7 +468,6 @@ defmodule ClaudeControlPlane.Tasks do
       "timeout_ms" => stage.timeout_minutes * 60_000,
       "setup" => Project.setup(task.project),
       "gates" => gates(stage, task),
-      "permissions" => permissions(stage, task.project),
       "system_prompt" => context(task, "system_prompt"),
       "mcp_config" => context(task, "mcp_config"),
       "agents" => context(task, "agents"),
@@ -531,24 +530,6 @@ defmodule ClaudeControlPlane.Tasks do
 
   defp context(%Task{pipeline_context: nil}, _key), do: nil
   defp context(%Task{pipeline_context: context}, key), do: context[key]
-
-  # Everything goes in a "total" stage; a narrower one also lets the agent run
-  # the project's test and lint commands.
-  defp permissions(%{permission_profile: "total"}, _project), do: nil
-
-  defp permissions(stage, project) do
-    commands =
-      for key <- ["test_command", "lint_command"],
-          command = project && project[key],
-          is_binary(command) and String.trim(command) != "",
-          do: "Bash(#{String.trim(command)}:*)"
-
-    %{
-      "profile" => stage.permission_profile,
-      "allow" => Enum.uniq(stage.allowed_tools ++ commands),
-      "deny" => stage.denied_tools
-    }
-  end
 
   # A gate whose command is only a project setting the task does not have
   # renders to nothing and is dropped.
@@ -654,9 +635,6 @@ defmodule ClaudeControlPlane.Tasks do
     case outcome do
       :passed when task.pause_requested ->
         await(task, "Alguém pediu uma pausa depois da etapa \"#{stage.name}\".")
-
-      :passed when stage.pause_after ->
-        await(task, "A etapa \"#{stage.name}\" terminou e pede aprovação para seguir.")
 
       :passed ->
         next_or_finish(task, stage_run.index + 1, nil)
@@ -792,10 +770,7 @@ defmodule ClaudeControlPlane.Tasks do
     end
   end
 
-  defp pause_reason(stage, run) do
-    Engine.rule_pause(run.structured_output, stage.rules) ||
-      if(stage.pause_after, do: "pede aprovação para seguir")
-  end
+  defp pause_reason(stage, run), do: Engine.rule_pause(run.structured_output, stage.rules)
 
   defp await(task, reason) do
     task

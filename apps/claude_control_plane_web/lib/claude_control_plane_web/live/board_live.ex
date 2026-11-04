@@ -287,7 +287,7 @@ defmodule ClaudeControlPlaneWeb.BoardLive do
               <.empty
                 :if={@awaiting == []}
                 title="Nenhuma decisão pendente"
-                description="Quando uma etapa pedir ajuda, esgotar as tentativas ou pedir aprovação, a tarefa aparece aqui."
+                description="Quando uma etapa pedir ajuda, esgotar as tentativas ou estourar o orçamento, a tarefa aparece aqui."
                 data-testid="board-no-decisions"
               >
                 <:icon><.icon name="hero-check-circle" /></:icon>

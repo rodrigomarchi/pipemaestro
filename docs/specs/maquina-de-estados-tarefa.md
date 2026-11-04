@@ -8,7 +8,7 @@
 ```
                       ┌──────────── retry_stage / advance ───────────┐
                       ▼                                              │
-create_task ──► running ──(gate: bloqueada, esgotada, aprovação)──► awaiting_decision
+create_task ──► running ──(gate: bloqueada, esgotada, regra)──► awaiting_decision
                   │  ▲                                               │
                   │  └──(gate: nova tentativa / próxima etapa)       │
                   │                                                  │
@@ -31,7 +31,7 @@ Cada tentativa é um `StageRun` com um job. Quando o job termina, o gate decide:
 
 | Resultado do job | Gate | Tentativa | Tarefa |
 |---|---|---|---|
-| `succeeded`, saída `status: ok`, artefato e gates atendidos | `:passed` | `passed` | próxima etapa; `awaiting_decision` se a etapa tem `pause_after`; `succeeded` se era a última |
+| `succeeded`, saída `status: ok`, artefato e gates atendidos | `:passed` | `passed` | próxima etapa, sem aprovação ([ADR 0018](../adr/0018-etapas-autonomas.md)); `succeeded` se era a última |
 | o mesmo, mas uma regra da etapa casa com a saída estruturada | `{:paused, regra}` | `passed` | `awaiting_decision` |
 | `succeeded`, saída `status: bloqueado` | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) |
 | `failed`, sem saída estruturada, sem artefato ou com um gate não atendido, com tentativas sobrando | `{:retry, erro}` | `failed` | nova tentativa da mesma etapa, com feedback |
@@ -58,8 +58,7 @@ gates não atendidos. O feedback fica no `StageRun` (`feedback`).
 - **Passos em paralelo:** etapas seguidas com o mesmo `group` formam um passo. Elas
   começam juntas, e cada uma passa pelo gate e retenta sozinha. O passo fecha quando
   nenhuma roda mais:
-  - todas passaram: o próximo passo, ou uma pausa se alguma pede aprovação ou casa
-    com uma regra;
+  - todas passaram: o próximo passo, ou uma pausa se alguma casa com uma regra;
   - alguma bloqueou ou esgotou as tentativas: `awaiting_decision` com o motivo de
     cada uma.
 

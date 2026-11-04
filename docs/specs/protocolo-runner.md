@@ -198,6 +198,10 @@ resposta é `ok` ou `error` (`invalid`). O runner verifica a raiz a cada minuto.
 O `job:assign` de uma etapa de tarefa traz, além de `id` e `prompt`, estes campos
 opcionais:
 
+Nenhum campo restringe o agente: o runner sempre o roda com todas as permissões
+(`--dangerously-skip-permissions`, ADR 0018) e ignora um `permissions` que um control
+plane antigo ainda mande.
+
 | Campo | Uso no runner |
 |---|---|
 | `directory` | um dos `directories` anunciados; o job roda nele (ou no worktree, abaixo) |
@@ -210,7 +214,6 @@ opcionais:
 | `delivery` | `{"commit_message", "push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou (ADR 0013): commit, push do branch, PR em rascunho (`{"title", "body", "ready"}`) e comentário na issue (`{"url", "body"}`). O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}` |
 | `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |
-| `permissions` | `{"profile", "allow"?, "deny"?}`: o que o agente pode fazer. `profile` é `total` (o padrão, sem o campo), `edicao` ou `leitura`; `allow` e `deny` são regras de ferramenta na sintaxe do CLI (`Bash(mix test:*)`). Detalhes no ADR 0009 |
 | `gates` | `[{"command", "expect"}]` (até 10, `expect` igual a `pass` ou `fail`): comandos que o runner roda no diretório de trabalho, em ordem, **depois que o agente termina bem**. O `job:finished` traz `gates` com cada um mais `exit_code`, `output` (o fim), `passed` e `duration_ms`. O runner só informa; quem decide é o control plane |
 | `setup` | `{"copy"?, "command"?}`: prepara o worktree **quando ele é criado**. O runner clona os caminhos de `copy` do diretório para o worktree (*copy-on-write*: `cp -c` no APFS, `--reflink` no Linux) e depois roda `command` no worktree. Sem `copy`, clona os que encontrar entre `deps`, `_build`, `node_modules`, `.venv`, `venv`, `vendor/bundle` e `target`. Um caminho que o worktree já tem (versionado) fica como está |
 

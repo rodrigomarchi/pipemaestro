@@ -31,7 +31,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0006 | [Runner paralelo, ambiente quente e entrega confiável](adr/0006-runner-paralelo-e-ambiente-quente.md) | Aceita |
 | 0007 | [Visualização da tarefa: Markdown, diff local, linha do tempo, board e decisões](adr/0007-visualizacao-da-tarefa.md) | Aceita |
 | 0008 | [Projetos, gates por comando, regras e retentativa com feedback](adr/0008-projetos-gates-e-feedback.md) | Aceita |
-| 0009 | [Perfis de permissão, credencial do agente e operação do runner](adr/0009-permissoes-credencial-e-operacao-do-runner.md) | Aceita |
+| 0009 | [Perfis de permissão, credencial do agente e operação do runner](adr/0009-permissoes-credencial-e-operacao-do-runner.md) | Perfis substituídos pelo 0018 |
 | 0010 | [Conversa com a tarefa: texto ao vivo, intervenções, notificações e reexecução](adr/0010-conversa-com-a-tarefa.md) | Aceita |
 | 0011 | [Decisões registradas, contexto por pipeline, orçamento por tarefa e pipelines em YAML](adr/0011-decisoes-contexto-orcamento-e-portabilidade.md) | Aceita |
 | 0012 | [Uso, papéis, auditoria, manutenção, alertas e segredos](adr/0012-uso-papeis-auditoria-e-segredos.md) | Aceita |
@@ -40,6 +40,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0015 | [Auditoria da execução do claude](adr/0015-auditoria-da-execucao.md) | Aceita |
 | 0016 | [Esquema de versão do runner e do control plane](adr/0016-esquema-de-versao.md) | Aceita |
 | 0017 | [Linha do tempo compacta: faixas de ícones e painéis](adr/0017-linha-do-tempo-compacta.md) | Aceita |
+| 0018 | [Etapas autônomas: permissões totais e sem aprovação entre etapas](adr/0018-etapas-autonomas.md) | Aceita |
 
 ## Specs
 

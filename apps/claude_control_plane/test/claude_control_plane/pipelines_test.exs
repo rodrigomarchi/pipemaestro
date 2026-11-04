@@ -134,45 +134,23 @@ defmodule ClaudeControlPlane.PipelinesTest do
       end
     end
 
-    test "a stage's permissions: a known profile and tool rules as text", %{workspace: workspace} do
+    test "a stage has no permission or approval settings: it runs with every permission and passes on",
+         %{workspace: workspace} do
       stage = %{
         "name" => "Ler",
         "prompt" => "p",
+        "pause_after" => "true",
         "permission_profile" => "leitura",
-        "allowed_tools_text" => "Bash(git log:*)\n\nBash(rg:*)",
-        "denied_tools_text" => "WebFetch"
+        "allowed_tools_text" => "Bash(git log:*)"
       }
 
       {:ok, pipeline} =
         Pipelines.create_pipeline(workspace, %{"name" => "P", "stages" => [stage]})
 
-      assert [
-               %Stage{
-                 permission_profile: "leitura",
-                 allowed_tools: allowed,
-                 denied_tools: ["WebFetch"]
-               } = saved
-             ] =
-               pipeline.stages
+      assert [%Stage{} = saved] = pipeline.stages
 
-      assert allowed == ["Bash(git log:*)", "Bash(rg:*)"]
-      assert Stage.allowed_tools_text(saved) == "Bash(git log:*)\nBash(rg:*)"
-
-      {:ok, pipeline} =
-        Pipelines.create_pipeline(workspace, %{
-          "name" => "Q",
-          "stages" => [%{"name" => "E", "prompt" => "p"}]
-        })
-
-      assert [%Stage{permission_profile: "total"}] = pipeline.stages
-
-      assert {:error, changeset} =
-               Pipelines.create_pipeline(workspace, %{
-                 "name" => "R",
-                 "stages" => [Map.put(stage, "permission_profile", "root")]
-               })
-
-      assert [%{permission_profile: [_]}] = errors_on(changeset).stages
+      for gone <- [:pause_after, :permission_profile, :allowed_tools, :denied_tools],
+          do: refute(Map.has_key?(saved, gone))
     end
 
     test "a pipeline's context: system prompt, MCP servers and agents, from JSON", %{
@@ -252,10 +230,6 @@ defmodule ClaudeControlPlane.PipelinesTest do
         Enum.find(Pipelines.list_pipelines(workspace), &(&1.name == "Nova funcionalidade"))
 
       assert Enum.map(feature.stages, & &1.group) == [nil, nil, nil, "revisoes", "revisoes"]
-
-      # Stages that only look do not get to change the code.
-      assert Enum.map(bug_fix.stages, & &1.permission_profile) ==
-               ~w(leitura leitura total total leitura total)
     end
 
     test "exports to YAML and imports it back as the same pipeline", %{workspace: workspace} do
@@ -274,13 +248,9 @@ defmodule ClaudeControlPlane.PipelinesTest do
               "name" => "Etapa: A",
               "prompt" => "Faça {{tarefa.descricao}}\n\n- item\n  recuado",
               "max_attempts" => 3,
-              "pause_after" => true,
               "model" => "sonnet",
               "max_budget_usd" => "1.5",
               "timeout_minutes" => 30,
-              "permission_profile" => "edicao",
-              "allowed_tools_text" => "Bash(git log:*)",
-              "denied_tools_text" => "WebFetch",
               "agent" => "revisor",
               "group" => nil,
               "gates_text" => "{{projeto.teste}}\n! mix test test/x.exs",
@@ -306,13 +276,7 @@ defmodule ClaudeControlPlane.PipelinesTest do
       stage_fields = fn %Stage{} = stage ->
         stage
         |> Map.from_struct()
-        |> Map.drop([
-          :output_schema_json,
-          :gates_text,
-          :rules_text,
-          :allowed_tools_text,
-          :denied_tools_text
-        ])
+        |> Map.drop([:output_schema_json, :gates_text, :rules_text])
         |> Map.update!(:max_budget_usd, &(&1 && Decimal.to_string(&1)))
       end
 
@@ -324,6 +288,20 @@ defmodule ClaudeControlPlane.PipelinesTest do
         {:ok, back} = Pipelines.import_yaml(other, Pipelines.export_yaml(template))
         assert Enum.map(back.stages, stage_fields) == Enum.map(template.stages, stage_fields)
       end
+
+      # A YAML exported before stages lost their permission and approval
+      # settings still imports.
+      old =
+        String.replace(
+          yaml,
+          "  - key: \"a\"\n",
+          "  - key: \"a\"\n    pause_after: true\n    permission_profile: \"leitura\"\n    allowed_tools:\n      - \"Bash(git log:*)\"\n"
+        )
+
+      assert old =~ "permission_profile"
+
+      assert {:ok, %{stages: [%Stage{key: "a"}]}} =
+               Pipelines.import_yaml(workspace_fixture(), old)
 
       assert {:error, "YAML inválido" <> _} = Pipelines.import_yaml(other, "name: [")
       assert {:error, %Ecto.Changeset{}} = Pipelines.import_yaml(other, "name: Sem etapas")

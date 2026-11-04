@@ -38,6 +38,29 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-prompt-${index}`);
   }
 
+  /** A button of a prompt editor's toolbar: bold, italic, heading, bullet, numbered, quote, code, link. */
+  stagePromptAction(index: number, action: string): Locator {
+    return this.page.getByTestId(`stage-prompt-${index}-${action}`);
+  }
+
+  /** Inserts a prompt variable at the cursor, from the editor's menu. */
+  async insertVariable(index: number, variable: string) {
+    await this.page.getByTestId(`stage-prompt-${index}-variables`).click();
+    await this.page.getByTestId(`stage-prompt-${index}-variable-${variable}`).click();
+  }
+
+  async previewPrompt(index: number) {
+    await this.page.getByTestId(`stage-prompt-${index}-preview-tab`).click();
+  }
+
+  async writePrompt(index: number) {
+    await this.page.getByTestId(`stage-prompt-${index}-write-tab`).click();
+  }
+
+  stagePromptPreview(index: number): Locator {
+    return this.page.getByTestId(`stage-prompt-${index}-preview`);
+  }
+
   stageGates(index: number): Locator {
     return this.page.getByTestId(`stage-gates-${index}`);
   }

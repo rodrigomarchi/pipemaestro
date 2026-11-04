@@ -38,15 +38,11 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
           {"name", stage.name},
           {"prompt", stage.prompt},
           {"max_attempts", stage.max_attempts},
-          {"pause_after", stage.pause_after},
           {"model", stage.model},
           {"max_budget_usd", decimal(stage.max_budget_usd)},
           {"timeout_minutes", stage.timeout_minutes},
-          {"permission_profile", stage.permission_profile},
           {"agent", stage.agent},
           {"group", stage.group},
-          {"allowed_tools", stage.allowed_tools},
-          {"denied_tools", stage.denied_tools},
           {"gates", lines_of(Stage.gates_text(stage))},
           {"rules", lines_of(Stage.rules_text(stage))},
           {"output_schema", stage.output_schema}
@@ -127,11 +123,7 @@ defmodule ClaudeControlPlane.Pipelines.Yaml do
 
   defp stage_attrs(%{} = stage) do
     stage
-    |> Map.take(
-      ~w(key name prompt max_attempts pause_after model max_budget_usd timeout_minutes permission_profile agent group)
-    )
-    |> put_lines(stage, "allowed_tools")
-    |> put_lines(stage, "denied_tools")
+    |> Map.take(~w(key name prompt max_attempts model max_budget_usd timeout_minutes agent group))
     |> put_lines(stage, "gates")
     |> put_lines(stage, "rules")
     |> put_json(stage, "output_schema")
