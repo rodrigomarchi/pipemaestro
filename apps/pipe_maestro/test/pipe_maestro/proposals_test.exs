@@ -432,8 +432,8 @@ defmodule PipeMaestro.ProposalsTest do
 
       job = analysis!(ctx)
 
-      assert [job] = Proposals.list(ctx.workspace, %{"kind" => "analysis"})
-      assert job.id == job.id
+      assert [listed] = Proposals.list(ctx.workspace, %{"kind" => "analysis"})
+      assert listed.id == job.id
     end
 
     test "studies the paused task in a disposable worktree when the runner can", ctx do

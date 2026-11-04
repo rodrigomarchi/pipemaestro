@@ -10,6 +10,14 @@ defmodule PipeMaestro.Tasks do
   then retries the stage or moves to the next one, optionally with
   instructions, or cancels the task.
 
+  A pause because a stage blocked or failed comes with questions for the
+  person when there are any (`decision_questionnaire`,
+  `PipeMaestro.Tasks.Questionnaire`): those the agent asked, or, on a
+  failure, those of an analysis the platform asks the agent for by itself
+  (`request_analysis/1`, `PipeMaestro.Proposals.AnalysisKind`). The person
+  answers them (`answer/4`) and the next attempt gets the answers in its
+  prompt; the manual decision stays available all along.
+
   A task's worktree stays on the runner after the task ends, until someone
   asks for it to go (`remove_worktree/1`): the runner's channel gets
   `{:worktree_remove, removal}` and the runner confirms
@@ -25,6 +33,8 @@ defmodule PipeMaestro.Tasks do
 
   import Ecto.Query
 
+  require Logger
+
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
   alias PipeMaestro.Jobs
@@ -32,9 +42,11 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Pipelines.{Pipeline, Prompt}
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
+  alias PipeMaestro.Proposals
+  alias PipeMaestro.Proposals.AnalysisKind
   alias PipeMaestro.{Repo, Runners}
   alias PipeMaestro.Runners.Runner
-  alias PipeMaestro.Tasks.{Decision, Engine, StageRun, Task}
+  alias PipeMaestro.Tasks.{Decision, Engine, Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces
   alias PipeMaestro.Workspaces.Workspace
 
@@ -377,8 +389,9 @@ defmodule PipeMaestro.Tasks do
   end
 
   # Starts attempt `attempt` (or 1) of the stage at `index`: a stage run and
-  # its job, with the prompt and context the runner needs.
-  defp start_stage(%Task{} = task, index, instructions, attempt \\ 1) do
+  # its job, with the prompt and context the runner needs, and the answers a
+  # person gave to the questions of the pause it comes from, if any.
+  defp start_stage(%Task{} = task, index, instructions, attempt \\ 1, answers \\ nil) do
     stage = Enum.at(task.stages, index)
     instructions = join_instructions([instructions, task.pending_instructions])
 
@@ -390,7 +403,8 @@ defmodule PipeMaestro.Tasks do
         name: stage.name,
         attempt: attempt,
         instructions: blank_to_nil(instructions),
-        feedback: if(attempt > 1, do: previous_feedback(task, index))
+        feedback: if(attempt > 1, do: previous_feedback(task, index)),
+        answers: answers
       })
 
     prompt =
@@ -403,7 +417,8 @@ defmodule PipeMaestro.Tasks do
         stage_index: index,
         previous: Enum.take(task.stages, step_first(task, index)),
         instructions: stage_run.instructions,
-        feedback: stage_run.feedback
+        feedback: stage_run.feedback,
+        answers: stage_run.answers
       })
 
     Jobs.create_stage_job(%{
@@ -420,6 +435,8 @@ defmodule PipeMaestro.Tasks do
       status: :running,
       current_stage: index,
       decision_reason: nil,
+      decision_questionnaire: nil,
+      decision_analysis_job_id: nil,
       decision_owner_id: nil,
       decision_due_at: nil,
       pending_issue_comment: nil,
@@ -562,7 +579,7 @@ defmodule PipeMaestro.Tasks do
       stage = Enum.at(task.stages, stage_run.index)
       outcome = Engine.gate(job, stage, stage_run.attempt)
 
-      record_stage_run(stage_run, job, outcome)
+      stage_run = record_stage_run(stage_run, job, outcome)
 
       task = task |> maybe_record_worktree(job) |> maybe_record_pr(job)
 
@@ -650,7 +667,11 @@ defmodule PipeMaestro.Tasks do
         finish(task, :canceled)
 
       {:blocked, reason} ->
-        await(task, "A etapa \"#{stage.name}\" está bloqueada: #{reason}")
+        await(
+          task,
+          "A etapa \"#{stage.name}\" está bloqueada: #{reason}",
+          asking(Questionnaire.for_run(stage_run.structured_output))
+        )
 
       {:retry, _error} ->
         start_stage(task, stage_run.index, stage_run.instructions, stage_run.attempt + 1)
@@ -658,15 +679,21 @@ defmodule PipeMaestro.Tasks do
       {:exhausted, error} ->
         await(
           task,
-          "A etapa \"#{stage.name}\" falhou em #{stage_run.attempt} tentativa(s): #{error}"
+          "A etapa \"#{stage.name}\" falhou em #{stage_run.attempt} tentativa(s): #{error}",
+          :analysis
         )
     end
   end
 
+  # A block with questions asks them; one with nothing to ask is analysed
+  # like a failure.
+  defp asking(nil), do: :analysis
+  defp asking(questionnaire), do: {:questionnaire, questionnaire}
+
   # A stage run again (after a redo) keeps counting its attempts.
-  defp next_or_finish(task, index, instructions) do
+  defp next_or_finish(task, index, instructions, answers \\ nil) do
     if index < length(task.stages),
-      do: start_step(task, index, instructions),
+      do: start_step(task, index, instructions, nil, answers),
       else: finish(task, :succeeded)
   end
 
@@ -713,14 +740,15 @@ defmodule PipeMaestro.Tasks do
   defp step_last(task, index), do: task |> step(index) |> List.last()
 
   # Starts the stages of the step at `index` (or `only` some of them), every
-  # one with the instructions; the task's current stage is the step's first.
-  defp start_step(task, index, instructions, only \\ nil) do
+  # one with the instructions and answers; the task's current stage is the
+  # step's first.
+  defp start_step(task, index, instructions, only \\ nil, answers \\ nil) do
     instructions = join_instructions([instructions, task.pending_instructions])
     task = %{task | pending_instructions: nil}
 
     task =
       Enum.reduce(only || step(task, index), task, fn i, task ->
-        start_stage(task, i, instructions, last_attempt(task, i) + 1)
+        start_stage(task, i, instructions, last_attempt(task, i) + 1, answers)
       end)
 
     keep_current(task, step_first(task, index))
@@ -774,44 +802,200 @@ defmodule PipeMaestro.Tasks do
           do: "A etapa \"#{stage.name}\" terminou, mas #{reason}."
 
     cond do
-      problems != [] -> await(task, Enum.join(problems, " "))
+      problems != [] -> await(task, Enum.join(problems, " "), group_asking(runs))
       pauses != [] -> await(task, Enum.join(pauses, " "))
       task.pause_requested -> await(task, "Alguém pediu uma pausa depois deste passo.")
       true -> next_or_finish(task, step_last(task, first) + 1, nil)
     end
   end
 
+  # The questions of the group's blocked stages, put together, each marked
+  # with its stage (`"etapa"`) for the screen; none, and a stage that failed
+  # or blocked with nothing to ask is analysed.
+  defp group_asking(runs) do
+    questionnaires =
+      for run <- runs,
+          run.status == :blocked,
+          questionnaire = Questionnaire.for_run(run.structured_output),
+          do: {run, questionnaire}
+
+    questions =
+      for {run, questionnaire} <- questionnaires,
+          question <- questionnaire["perguntas"],
+          do: Map.put(question, "etapa", run.name)
+
+    origin =
+      if Enum.any?(questionnaires, fn {_run, q} -> q["origem"] == "agente" end),
+        do: "agente",
+        else: "opcoes"
+
+    if questions == [],
+      do: :analysis,
+      else: {:questionnaire, %{"origem" => origin, "perguntas" => questions}}
+  end
+
   defp pause_reason(stage, run), do: Engine.rule_pause(run.structured_output, stage.rules)
 
-  defp await(task, reason) do
-    task
-    |> Ecto.Changeset.change(
-      status: :awaiting_decision,
-      decision_reason: reason,
-      pause_requested: false,
-      decision_owner_id: task.created_by_user_id,
-      decision_due_at: DateTime.add(now(), @decision_hours, :hour)
-    )
-    |> Repo.update!()
-    |> announce(:awaiting)
-    |> tap(&start_next_queued(&1.workspace_id))
+  # `asking` says what the person is asked besides the reason: the
+  # questionnaire of a block, an analysis the agent is asked for (a failure),
+  # or nothing (a rule, the budget, a pause someone asked for).
+  defp await(task, reason, asking \\ :none) do
+    questionnaire =
+      case asking do
+        {:questionnaire, questionnaire} -> questionnaire
+        _no_questions -> nil
+      end
+
+    task =
+      task
+      |> Ecto.Changeset.change(
+        status: :awaiting_decision,
+        decision_reason: reason,
+        decision_questionnaire: questionnaire,
+        decision_analysis_job_id: nil,
+        pause_requested: false,
+        decision_owner_id: task.created_by_user_id,
+        decision_due_at: DateTime.add(now(), @decision_hours, :hour)
+      )
+      |> Repo.update!()
+      |> announce(:awaiting)
+      |> tap(&start_next_queued(&1.workspace_id))
+
+    if asking == :analysis, do: request_analysis(task), else: task
   end
 
   defp finish(task, status) do
     task
-    |> Ecto.Changeset.change(status: status, decision_reason: nil, finished_at: now())
+    |> Ecto.Changeset.change(
+      status: status,
+      decision_reason: nil,
+      decision_questionnaire: nil,
+      decision_analysis_job_id: nil,
+      finished_at: now()
+    )
     |> Repo.update!()
     |> announce(status)
     |> tap(&start_next_queued(&1.workspace_id))
   end
 
+  # ── The analysis of a failure ─────────────────────────────────────────────
+
+  @doc """
+  Asks the agent, on behalf of the task's creator, to analyse why the task
+  paused (`PipeMaestro.Proposals.AnalysisKind`): its diagnosis and questions
+  become the task's questionnaire once it ends (`analysis_finished/1`). With
+  no creator, or when the request is refused, there is no analysis: the
+  person decides by hand. Returns the task, with its analysis job when asked.
+  """
+  @spec request_analysis(Task.t()) :: Task.t()
+  def request_analysis(%Task{} = task) do
+    with %User{} = user <- task.created_by_user_id && Repo.get(User, task.created_by_user_id),
+         workspace = Repo.get!(Workspace, task.workspace_id),
+         {:ok, job} <- Proposals.request("analysis", user, workspace, %{"task_id" => task.id}) do
+      task |> Ecto.Changeset.change(decision_analysis_job_id: job.id) |> Repo.update!()
+    else
+      nil ->
+        task
+
+      {:error, changeset} ->
+        Logger.warning(
+          "Análise automática da tarefa #{task.id} recusada: #{inspect(changeset.errors)}"
+        )
+
+        task
+    end
+  end
+
+  @doc """
+  The analysis of a paused task's failure ended. When it is still the one
+  the task waits on (same pause, no decision since) and it answered with
+  valid questions, they become the task's questionnaire, with the
+  diagnosis. Anything else leaves the task as it is, and the screens show
+  the analysis did not get ready.
+  """
+  @spec analysis_finished(Job.t()) :: :ok
+  def analysis_finished(%Job{} = job) do
+    input = Proposals.input(job)
+
+    with id when is_binary(id) <- input["task_id"],
+         %Task{decision_analysis_job_id: job_id} = task when job_id == job.id <-
+           Repo.get(Task, id),
+         true <- AnalysisKind.current?(input, task) do
+      task =
+        case Proposals.result(job) do
+          {:ok, result} ->
+            questionnaire = %{
+              "origem" => "analise",
+              "diagnostico" => result.diagnosis,
+              "perguntas" => result.questions
+            }
+
+            task
+            |> Ecto.Changeset.change(decision_questionnaire: questionnaire)
+            |> Repo.update!()
+
+          {:error, reason} ->
+            Logger.info("A análise da tarefa #{task.id} não ficou pronta: #{reason}")
+            task
+        end
+
+      task |> preload() |> notify()
+    end
+
+    :ok
+  end
+
+  @typedoc """
+  The questionnaire of a task's pause (`nil` when there is none) and how its
+  analysis goes: `:running`, `:failed` (it ended with no questionnaire) or
+  `:none` (no analysis, or one that gave the questionnaire).
+  """
+  @type questionnaire_state :: %{
+          questionnaire: Questionnaire.t() | nil,
+          analysis: :none | :running | :failed
+        }
+
+  @doc "What a task waiting for a decision asks the person, for the screens."
+  @spec questionnaire(Task.t()) :: questionnaire_state()
+  def questionnaire(%Task{status: :awaiting_decision} = task) do
+    analysis =
+      case task.decision_analysis_job_id && Repo.get(Job, task.decision_analysis_job_id) do
+        %Job{} = job when task.decision_questionnaire == nil ->
+          if Job.active?(job), do: :running, else: :failed
+
+        _none_or_done ->
+          :none
+      end
+
+    %{questionnaire: task.decision_questionnaire, analysis: analysis}
+  end
+
+  def questionnaire(%Task{}), do: %{questionnaire: nil, analysis: :none}
+
+  # An analysis is good only for its pause: deciding stops it.
+  defp cancel_analysis(nil), do: :ok
+
+  defp cancel_analysis(job_id) do
+    case Repo.get(Job, job_id) do
+      %Job{} = job -> if Job.active?(job), do: Jobs.request_cancel(job)
+      nil -> nil
+    end
+
+    :ok
+  end
+
   # ── Decisions ─────────────────────────────────────────────────────────────
 
   @typedoc """
-  Who decided and what they chose: `:by` (the user) and `:choice` (one of the
-  options the agent proposed, `options/1`), both optional.
+  Who decided and what they chose: `:by` (the user), `:choice` (one of the
+  options the agent proposed, `options/1`) and `:answers` (to the pause's
+  questionnaire, `Questionnaire.answer()`), all optional.
   """
-  @type decision_opts :: [by: User.t() | nil, choice: String.t() | nil]
+  @type decision_opts :: [
+          by: User.t() | nil,
+          choice: String.t() | nil,
+          answers: [Questionnaire.answer()] | nil
+        ]
 
   @doc """
   What needs attention among the workspace's tasks that have not ended:
@@ -978,36 +1162,83 @@ defmodule PipeMaestro.Tasks do
   @spec retry_stage(Task.t(), String.t() | nil, decision_opts()) ::
           {:ok, Task.t()} | {:error, :not_awaiting}
   def retry_stage(%Task{} = task, instructions, opts \\ []) do
-    decide(task, :retry, instructions, opts, fn task, instructions ->
-      # In a group, the stages that did not pass (all, if they all did).
-      pending =
-        for i <- step(task, task.current_stage),
-            latest_run(task, i) |> then(&(&1 == nil or &1.status != :passed)),
-            do: i
+    decide(task, :retry, instructions, Keyword.delete(opts, :answers), &retry/3)
+  end
 
-      start_step(
-        task,
-        task.current_stage,
-        instructions,
-        if(pending == [], do: nil, else: pending)
-      )
-    end)
+  # In a group, the stages that did not pass run again (all, if they all did).
+  defp retry(task, instructions, answers) do
+    pending =
+      for i <- step(task, task.current_stage),
+          latest_run(task, i) |> then(&(&1 == nil or &1.status != :passed)),
+          do: i
+
+    start_step(
+      task,
+      task.current_stage,
+      instructions,
+      if(pending == [], do: nil, else: pending),
+      answers
+    )
+  end
+
+  @doc """
+  Answers the questionnaire of the pause ("Responder e continuar"): every
+  question must be answered (`Questionnaire.validate_answers/2`). The
+  decision keeps the questions and answers, and the stage runs again (the
+  stages of the group that did not pass), its agent given them in its
+  prompt.
+  """
+  @spec answer(Task.t(), [Questionnaire.answer()], String.t() | nil, decision_opts()) ::
+          {:ok, Task.t()} | {:error, :not_awaiting} | {:error, :invalid_answers, String.t()}
+  def answer(%Task{} = task, answers, instructions, opts \\ []) do
+    case Repo.get!(Task, task.id) do
+      %Task{status: :awaiting_decision, decision_questionnaire: %{"perguntas" => questions}} ->
+        case Questionnaire.validate_answers(questions, answers) do
+          {:ok, answers} ->
+            decide(task, :retry, instructions, Keyword.put(opts, :answers, answers), &retry/3)
+
+          {:error, reason} ->
+            {:error, :invalid_answers, reason}
+        end
+
+      %Task{status: :awaiting_decision} ->
+        {:error, :invalid_answers, "Esta pausa não tem perguntas."}
+
+      _not_awaiting ->
+        {:error, :not_awaiting}
+    end
   end
 
   @doc """
   Moves on to the next stage (the task succeeds if there is none), giving it
-  the person's instructions (and the option chosen, if any).
+  the person's instructions (and the option chosen, if any). `:answers`, to
+  the pause's questionnaire, may leave questions unanswered
+  (`Questionnaire.validate_partial/2`); the next stage gets them.
   """
   @spec advance(Task.t(), String.t() | nil, decision_opts()) ::
-          {:ok, Task.t()} | {:error, :not_awaiting}
+          {:ok, Task.t()} | {:error, :not_awaiting} | {:error, :invalid_answers, String.t()}
   def advance(%Task{} = task, instructions, opts \\ []) do
-    decide(
-      task,
-      :advance,
-      instructions,
-      opts,
-      &next_or_finish(&1, step_last(&1, &1.current_stage) + 1, &2)
-    )
+    with {:ok, opts} <- partial_answers(task, opts) do
+      decide(
+        task,
+        :advance,
+        instructions,
+        opts,
+        &next_or_finish(&1, step_last(&1, &1.current_stage) + 1, &2, &3)
+      )
+    end
+  end
+
+  defp partial_answers(task, opts) do
+    with answers when is_list(answers) <- opts[:answers],
+         %Task{decision_questionnaire: %{"perguntas" => questions}} <- Repo.get!(Task, task.id) do
+      case Questionnaire.validate_partial(questions, answers) do
+        {:ok, answers} -> {:ok, Keyword.put(opts, :answers, answers)}
+        {:error, reason} -> {:error, :invalid_answers, reason}
+      end
+    else
+      _no_answers -> {:ok, Keyword.delete(opts, :answers)}
+    end
   end
 
   # ── Talking to a task ─────────────────────────────────────────────────────
@@ -1064,9 +1295,12 @@ defmodule PipeMaestro.Tasks do
         {:error, :no_stage}
 
       true ->
+        analysis = task.decision_analysis_job_id
+
         task =
           task |> start_step(step_first(task, index), instructions) |> preload()
 
+        cancel_analysis(analysis)
         notify(task)
         {:ok, task}
     end
@@ -1078,16 +1312,25 @@ defmodule PipeMaestro.Tasks do
     {:ok, task}
   end
 
+  # The pause is claimed first, in one conditional update: of two people
+  # deciding at once, only one gets it, so there is one decision and one job.
   defp decide(task, action, instructions, opts, fun) do
     task = Repo.get!(Task, task.id)
 
-    if task.status == :awaiting_decision do
+    if task.status == :awaiting_decision and claim(task) do
       choice = blank_to_nil(opts[:choice])
-      record_decision(task, action, choice, instructions, opts[:by])
+      answers = answered(task, opts[:answers])
+      record_decision(task, action, choice, instructions, opts[:by], answers)
       given = join_instructions([choice && "Decisão: #{choice}", instructions])
-      task = %{task | pending_issue_comment: issue_comment(task, action, choice, instructions)}
 
-      task = task |> fun.(given) |> preload()
+      task = %{
+        task
+        | pending_issue_comment: issue_comment(task, action, choice, instructions, answers)
+      }
+
+      analysis = task.decision_analysis_job_id
+      task = task |> fun.(given, answers) |> preload()
+      cancel_analysis(analysis)
       notify(task)
       {:ok, task}
     else
@@ -1095,16 +1338,35 @@ defmodule PipeMaestro.Tasks do
     end
   end
 
-  # Told on the task's issue with the next stage, if it came from one.
-  defp issue_comment(%Task{issue_url: nil}, _action, _choice, _instructions), do: nil
+  defp claim(task) do
+    {count, _} =
+      Repo.update_all(
+        from(t in Task, where: t.id == ^task.id and t.status == :awaiting_decision),
+        set: [status: :running, updated_at: DateTime.utc_now(:second)]
+      )
 
-  defp issue_comment(task, action, choice, instructions) do
+    count == 1
+  end
+
+  # The questions and answers of a decision, as the next attempt gets them.
+  defp answered(%Task{decision_questionnaire: %{"perguntas" => questions}}, answers)
+       when is_list(answers),
+       do: %{"perguntas" => questions, "respostas" => answers}
+
+  defp answered(_task, _answers), do: nil
+
+  # Told on the task's issue with the next stage, if it came from one.
+  defp issue_comment(%Task{issue_url: nil}, _action, _choice, _instructions, _answers), do: nil
+
+  defp issue_comment(task, action, choice, instructions, answers) do
     stage = Enum.at(task.stages, task.current_stage)
     what = if action == :retry, do: "refazer a etapa", else: "seguir para a próxima etapa"
 
     [
       "**Decisão na etapa \"#{stage.name}\"**: #{what}.",
       task.decision_reason && "> #{task.decision_reason}",
+      answers &&
+        "Respostas:\n" <> Questionnaire.to_markdown(answers["perguntas"], answers["respostas"]),
       choice && "Escolha: #{choice}",
       blank_to_nil(instructions) && "Instruções: #{instructions}"
     ]
@@ -1112,15 +1374,19 @@ defmodule PipeMaestro.Tasks do
     |> Enum.join("\n\n")
   end
 
-  defp record_decision(task, action, choice, instructions, user) do
+  defp record_decision(task, action, choice, instructions, user, answers \\ nil) do
     run = latest_run(task, task.current_stage)
 
     if action != :cancel,
       do:
-        Audit.record(task.workspace_id, user, "task.decided", task, %{
-          "action" => to_string(action),
-          "choice" => choice
-        })
+        Audit.record(
+          task.workspace_id,
+          user,
+          "task.decided",
+          task,
+          %{"action" => to_string(action), "choice" => choice}
+          |> Map.merge(if(answers, do: %{"answered" => true}, else: %{}))
+        )
 
     options =
       case run do
@@ -1136,6 +1402,8 @@ defmodule PipeMaestro.Tasks do
       action: action,
       choice: choice,
       instructions: blank_to_nil(instructions),
+      questions: answers && %{"perguntas" => answers["perguntas"]},
+      answers: answers && %{"respostas" => answers["respostas"]},
       decided_by_user_id: user && user.id
     })
   end
@@ -1175,7 +1443,9 @@ defmodule PipeMaestro.Tasks do
       :awaiting_decision ->
         record_decision(task, :cancel, nil, nil, opts[:by])
         Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
+        analysis = task.decision_analysis_job_id
         task = task |> finish(:canceled) |> preload()
+        cancel_analysis(analysis)
         notify(task)
         {:ok, task}
 

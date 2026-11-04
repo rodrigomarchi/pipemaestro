@@ -370,6 +370,7 @@ defmodule PipeMaestro.PipelinesTest do
       assert Map.keys(schema["properties"]) |> Enum.sort() == [
                "nota",
                "opcoes",
+               "perguntas",
                "resumo",
                "status"
              ]
