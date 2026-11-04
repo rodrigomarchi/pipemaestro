@@ -9,7 +9,11 @@
 # every recipe drops it: nothing here runs inside the binary.
 unexport __BURRITO
 
-E2E_PORT ?= 4003
+# A git worktree (each task of the control plane runs in one) gets its own e2e
+# port, derived from its name, so tasks running at once never stop each other's
+# server; its databases are apart too (config/worktree.exs).
+WORKTREE := $(shell sed -n 's|^gitdir: .*/||p' .git 2>/dev/null | tr -dc 'a-z0-9' | cut -c1-8)
+E2E_PORT ?= $(if $(WORKTREE),$(shell echo $$(( 4100 + $$(printf %s '$(WORKTREE)' | cksum | cut -d' ' -f1) % 800 ))),4003)
 E2E_MIX   = MIX_ENV=e2e E2E_PORT=$(E2E_PORT) mix
 E2E_ENV   = E2E_PORT=$(E2E_PORT)
 

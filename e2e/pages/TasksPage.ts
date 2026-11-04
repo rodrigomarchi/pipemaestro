@@ -71,6 +71,19 @@ export class TasksPage {
     return this.page.getByTestId(`stage-run-${key}-${attempt}`);
   }
 
+  /** A finished attempt's steps, opened with their toggle. */
+  async openSteps(key: string, attempt: number): Promise<Locator> {
+    await this.page.getByTestId(`stage-run-steps-toggle-${key}-${attempt}`).click();
+    const steps = this.page.getByTestId(`stage-run-steps-${key}-${attempt}`);
+    await expect(steps).toBeVisible();
+    return steps;
+  }
+
+  /** Picks a filter of a finished attempt's steps ("all", "agent", "tools", "thinking", "errors"). */
+  async filterSteps(key: string, attempt: number, filter: string) {
+    await this.page.getByTestId(`stage-run-steps-filter-${key}-${attempt}-${filter}`).click();
+  }
+
   async retryWith(instructions: string) {
     await this.page.getByTestId("decision-instructions").fill(instructions);
     await this.page.getByTestId("decision-retry").click();
