@@ -44,6 +44,20 @@ defmodule PipeMaestroRunner.ChangesTest do
     assert staged == ""
   end
 
+  test "a copied path that git already ignores does not break the snapshot", %{repo: repo} do
+    File.write!(Path.join(repo, ".gitignore"), "_build/\n/deps\n")
+    File.mkdir_p!(Path.join(repo, "deps/decimal"))
+    File.write!(Path.join(repo, "deps/decimal/mix.exs"), "decimal\n")
+
+    {:ok, before} = Changes.snapshot(repo, ["deps"])
+    File.write!(Path.join(repo, "lib/b.ex"), "novo\n")
+    {:ok, later} = Changes.snapshot(repo, ["deps"])
+
+    assert Changes.diff(repo, before, later)["files"] == [
+             %{"path" => "lib/b.ex", "added" => 1, "removed" => 0}
+           ]
+  end
+
   test "commits made by the agent do not hide its changes", %{repo: repo} do
     {:ok, before} = Changes.snapshot(repo, [])
     File.write!(Path.join(repo, "lib/a.ex"), "trocado\n")

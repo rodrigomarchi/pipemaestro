@@ -85,7 +85,12 @@ defmodule PipeMaestroRunner.Changes do
         # Starting from the real index lets git skip hashing unchanged files.
         _copied = File.cp(Path.expand(String.trim(real_index), dir), index)
         env = [{"GIT_INDEX_FILE", index}]
-        pathspec = ["--", "." | Enum.map(exclude, &":(exclude)#{&1}")]
+        # A path git already ignores stays out by itself; naming it in an
+        # exclude pathspec makes `git add` refuse it and fail.
+        pathspec = [
+          "--",
+          "." | for(path <- exclude, not ignored?(dir, path), do: ":(exclude)#{path}")
+        ]
 
         with {:ok, _added} <- git(dir, ["add", "--all" | pathspec], env),
              {:ok, tree} <- git(dir, ["write-tree"], env) do
@@ -222,6 +227,8 @@ defmodule PipeMaestroRunner.Changes do
       matches -> binary_part(head, 0, elem(List.last(matches), 0) + 1)
     end
   end
+
+  defp ignored?(dir, path), do: match?({:ok, _}, git(dir, ["check-ignore", "-q", "--", path]))
 
   defp git(dir, args, env \\ []) do
     case System.cmd("git", ["-C", dir | args], stderr_to_stdout: true, env: env) do
