@@ -165,16 +165,16 @@ defmodule PipeMaestroWeb.QuestionnaireLive do
             <.question_heading question={question} />
             <input type="hidden" name={"answers[#{n}][escolhas][]"} value="" />
             <div class="mt-3 grid gap-2 sm:grid-cols-2">
-              <div
-                :for={{option, m} <- Enum.with_index(question["opcoes"])}
-                data-testid={testid("question-#{n}-option-#{m}", @key)}
-              >
-                <label class={[
-                  "block cursor-pointer rounded-lg border border-gray-200 p-3 dark:border-gray-700",
-                  "hover:border-primary-300 dark:hover:border-primary-700",
-                  "has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50",
-                  "dark:has-[:checked]:border-primary-400 dark:has-[:checked]:bg-primary-950/40"
-                ]}>
+              <div :for={{option, m} <- Enum.with_index(question["opcoes"])}>
+                <label
+                  data-testid={testid("question-#{n}-option-#{m}", @key)}
+                  class={[
+                    "block cursor-pointer rounded-lg border border-gray-200 p-3 dark:border-gray-700",
+                    "hover:border-primary-300 dark:hover:border-primary-700",
+                    "has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50",
+                    "dark:has-[:checked]:border-primary-400 dark:has-[:checked]:bg-primary-950/40"
+                  ]}
+                >
                   <input
                     type={if question["multipla"], do: "checkbox", else: "radio"}
                     name={"answers[#{n}][escolhas][]"}

@@ -1,8 +1,8 @@
 /**
  * @section Tarefas e pipelines
- * @flow A [todo] A stage the agent blocks asks structured questions; the member picks the recommended option, two in the multiple-choice one, writes in "Outro", reviews, confirms, and the task succeeds
- * @flow B [todo] A stage that fails its attempts pauses; the agent analyses the failure on its own ("analisando…"), then the diagnosis and its question show; the member picks "Tentar sem falha", confirms, and the task succeeds
- * @flow C [todo] The same questionnaire is answered from the Decisions page
+ * @flow A A stage the agent blocks asks structured questions; the member picks the recommended option, two in the multiple-choice one, writes in "Outro", reviews, confirms, and the task succeeds
+ * @flow B A stage that fails its attempts pauses; the agent analyses the failure on its own ("analisando…"), then the diagnosis and its question show; the member picks "Tentar sem falha", confirms, and the task succeeds
+ * @flow C The same questionnaire is answered from the Decisions page
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
