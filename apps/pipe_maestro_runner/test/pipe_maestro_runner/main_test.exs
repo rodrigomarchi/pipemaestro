@@ -23,10 +23,11 @@ defmodule PipeMaestroRunner.MainTest do
     end
   end
 
-  test "the usage lists --version" do
+  test "the usage lists --version and --auto-update" do
     usage = capture_io(:stderr, fn -> assert Main.run([]) == 2 end)
 
     assert usage =~ "pipemaestro --version"
     assert usage =~ "pipemaestro login"
+    assert usage =~ "--auto-update"
   end
 end

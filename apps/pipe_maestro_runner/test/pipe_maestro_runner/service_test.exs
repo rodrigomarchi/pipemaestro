@@ -42,17 +42,30 @@ defmodule PipeMaestroRunner.ServiceTest do
     assert unit =~ "WantedBy=default.target"
   end
 
-  test "what the service runs: the single binary, the release's pipemaestro, or mix" do
+  test "what the service runs: the single binary (updating itself), the release's pipemaestro, or mix" do
     assert Service.program(%{
              "__BURRITO_BIN_PATH" => "/opt/cp/pipemaestro",
              "RELEASE_ROOT" => "/x"
            }) ==
-             {["/opt/cp/pipemaestro", "start"], "/opt/cp"}
+             {["/opt/cp/pipemaestro", "start", "--auto-update"], "/opt/cp"}
 
     assert Service.program(%{"RELEASE_ROOT" => "/rel"}) ==
              {["/rel/bin/pipemaestro", "start"], "/rel"}
 
     assert Service.program(%{}) == :development
+  end
+
+  test "the single binary's service starts with --auto-update, on launchd and systemd" do
+    {program, dir} = Service.program(%{"__BURRITO_BIN_PATH" => "/opt/cp/pipemaestro"})
+    opts = Keyword.merge(@opts, program: program, runner_dir: dir)
+
+    %{content: plist} = Service.definition({:unix, :darwin}, opts)
+
+    assert plist =~
+             "    <string>/opt/cp/pipemaestro</string>\n    <string>start</string>\n    <string>--auto-update</string>"
+
+    %{content: unit} = Service.definition({:unix, :linux}, opts)
+    assert unit =~ "ExecStart=/opt/cp/pipemaestro start --auto-update"
   end
 
   test "the commands that load and unload it" do

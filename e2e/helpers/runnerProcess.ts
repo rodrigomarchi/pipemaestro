@@ -57,6 +57,11 @@ export class RunnerProcess {
     this.exit = new Promise((done) => child.on("exit", (code) => done(code)));
   }
 
+  /** Writes `text` to the process's standard input, as if typed in the terminal. */
+  write(text: string): void {
+    this.child?.stdin?.write(text);
+  }
+
   /** The runner's working directory, where its jobs run. */
   get workdir(): string {
     return join(this.configDir, "workdir");

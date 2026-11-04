@@ -2,7 +2,7 @@
  * @section Runners
  * @flow A [done] A runner signs in with the device flow: the CLI prints a code, a workspace member approves it in the browser, the CLI saves its credentials
  * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice, with its version; the page links the deploy's runner binaries per platform and the connect steps use them
- * @flow E [done] A runner not on the platform's version is refused, on login and on start, and told the platform's version and where to download it
+ * @flow E [done] A runner not on the platform's version is refused, on login and on start, asked whether to download and install the platform's version, and, answering no, told the platform's version and where to download it
  * @flow D [done] A runner's page lists the latest jobs it finished, each leading to its audit
  * @flow C [done] A member renames the runner, then revokes it: the CLI is refused and stops, and the runner leaves the list
  */
@@ -14,6 +14,8 @@ import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { JobsPage } from "../pages/JobsPage";
 import { RunnersPage } from "../pages/RunnersPage";
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test.describe("Runner connection", () => {
   // Real CLI processes: the first one may compile the runner app.
@@ -42,10 +44,15 @@ test.describe("Runner connection", () => {
     const runners = new RunnersPage(app.page);
 
     const platform = app.page.url().replace(/\/w\/.*$/, "");
+    const updateQuestion = new RegExp(
+      `Baixar e instalar a versão ${escapeRegExp(versions.controlPlane)} agora\\? \\[S/n\\]`,
+    );
 
     // Flow E: an outdated runner cannot even sign in.
     runner = new RunnerProcess({ version: versions.outdatedRunner });
     runner.start("runner.login", ["--url", platform]);
+    await runner.waitFor(updateQuestion);
+    runner.write("n\n");
     expect(await runner.waitForExit()).not.toBe(0);
     expect(runner.text).toContain(`versão ${versions.outdatedRunner}, e a plataforma está na ${versions.controlPlane}`);
     expect(runner.text).toContain(`${platform}/downloads/runner/`);
@@ -66,6 +73,8 @@ test.describe("Runner connection", () => {
     // Flow E: signed in, but started on an older build, it is refused and stops.
     runner.useVersion(versions.outdatedRunner);
     runner.start("runner.start");
+    await runner.waitFor(updateQuestion);
+    runner.write("n\n");
     expect(await runner.waitForExit()).not.toBe(0);
     expect(runner.text).toContain(`a plataforma está na ${versions.controlPlane}`);
     await expect(runners.status(runnerName)).toHaveText("Offline");
