@@ -20,7 +20,7 @@ create_task ──► running ──(gate: bloqueada, esgotada, regra)──► 
 | Estado | Significado |
 |---|---|
 | `running` | Uma tentativa da etapa `current_stage` está na fila ou rodando no runner. |
-| `awaiting_decision` | Uma pessoa precisa decidir; o motivo está em `decision_reason`. |
+| `awaiting_decision` | Uma pessoa precisa decidir; o motivo está em `decision_reason`, e as perguntas, quando há, em `decision_questionnaire` ([ADR 0029](../adr/0029-questionario-de-decisao.md)). |
 | `succeeded` | Todas as etapas passaram (ou a pessoa seguiu adiante após a última). |
 | `canceled` | Cancelada por uma pessoa. |
 | `failed` | Reservado; hoje as falhas levam a `awaiting_decision`. |
@@ -29,14 +29,17 @@ create_task ──► running ──(gate: bloqueada, esgotada, regra)──► 
 
 Cada tentativa é um `StageRun` com um job. Quando o job termina, o gate decide:
 
-| Resultado do job | Gate | Tentativa | Tarefa |
-|---|---|---|---|
-| `succeeded`, saída `status: ok`, artefato e gates atendidos | `:passed` | `passed` | próxima etapa, sem aprovação ([ADR 0018](../adr/0018-etapas-autonomas.md)); `succeeded` se era a última |
-| o mesmo, mas uma regra da etapa casa com a saída estruturada | `{:paused, regra}` | `passed` | `awaiting_decision` |
-| `succeeded`, saída `status: bloqueado` | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) |
-| `failed`, sem saída estruturada, sem artefato ou com um gate não atendido, com tentativas sobrando | `{:retry, erro}` | `failed` | nova tentativa da mesma etapa, com feedback |
-| o mesmo, sem tentativas sobrando | `{:exhausted, erro}` | `failed` | `awaiting_decision` |
-| `canceled` | `:canceled` | `canceled` | `canceled` |
+| Resultado do job | Gate | Tentativa | Tarefa | Questionário |
+|---|---|---|---|---|
+| `succeeded`, saída `status: ok`, artefato e gates atendidos | `:passed` | `passed` | próxima etapa, sem aprovação ([ADR 0018](../adr/0018-etapas-autonomas.md)); `succeeded` se era a última | — |
+| o mesmo, mas uma regra da etapa casa com a saída estruturada | `{:paused, regra}` | `passed` | `awaiting_decision` | nenhum |
+| `succeeded`, saída `status: bloqueado` com `perguntas` válidas ou `opcoes` | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) | do agente |
+| `succeeded`, saída `status: bloqueado` sem nada a perguntar | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) | da análise |
+| `failed`, sem saída estruturada, sem artefato ou com um gate não atendido, com tentativas sobrando | `{:retry, erro}` | `failed` | nova tentativa da mesma etapa, com feedback | — |
+| o mesmo, sem tentativas sobrando | `{:exhausted, erro}` | `failed` | `awaiting_decision` | da análise |
+| `canceled` | `:canceled` | `canceled` | `canceled` | — |
+
+Uma pausa por orçamento ou a pedido (`pause_requested`) também não tem questionário.
 
 Um job perdido porque o runner reiniciou (reconciliação no join, protocolo §4.6) conta
 como `failed`.
@@ -60,7 +63,9 @@ gates não atendidos. O feedback fica no `StageRun` (`feedback`).
   nenhuma roda mais:
   - todas passaram: o próximo passo, ou uma pausa se alguma casa com uma regra;
   - alguma bloqueou ou esgotou as tentativas: `awaiting_decision` com o motivo de
-    cada uma.
+    cada uma. As perguntas das etapas bloqueadas se juntam num questionário (cada uma
+    marcada com a sua etapa, `"etapa"`); sem nenhuma pergunta, a plataforma pede a
+    análise.
 
   A `current_stage` aponta para a primeira etapa do passo. `retry_stage` repete as
   que não passaram, e `advance` vai para o passo seguinte.
@@ -73,4 +78,19 @@ Valem só em `awaiting_decision`:
   `última + 1` e as instruções acrescentadas ao prompt.
 - `advance(task, instruções)`: primeira tentativa da próxima etapa, com as instruções.
   Depois da última etapa, a tarefa vira `succeeded`.
+- `answer(task, respostas, instruções)` ("Responder e continuar"): exige uma resposta por
+  pergunta do `decision_questionnaire` e repete a etapa como `retry_stage`. O `Decision`
+  guarda `questions` e `answers`; a nova tentativa os grava em `StageRun.answers` e os
+  recebe no prompt ("Respostas da pessoa às suas perguntas").
+- `advance` aceita respostas parciais (`answers:`), entregues à etapa seguinte.
 - `cancel_task(task)`: `canceled`.
+
+Uma decisão reivindica a pausa num `UPDATE` condicional: de duas ao mesmo tempo, a
+segunda recebe `:not_awaiting`.
+
+**Análise automática.** Na pausa por falha, ou num bloqueio sem perguntas, a plataforma
+pede uma proposta `analysis` (`Tasks.request_analysis/1`) e guarda o job em
+`decision_analysis_job_id`. Quando ela termina com perguntas válidas, e a pausa ainda é a
+mesma, o diagnóstico e as perguntas viram o `decision_questionnaire` (origem `analise`).
+Qualquer decisão, ou `redo_from`, cancela a análise ativa; o início de uma etapa e o fim
+da tarefa limpam `decision_questionnaire` e `decision_analysis_job_id`.

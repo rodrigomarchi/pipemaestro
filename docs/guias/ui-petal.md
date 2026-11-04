@@ -35,6 +35,26 @@ A escolha e as alternativas avaliadas estão no
 - **Layouts:** `<Layouts.app>` para telas autenticadas (sidebar + top bar) e
   `<Layouts.public>` para landing e login.
 
+## Cartões selecionáveis (radio e checkbox)
+
+O questionário de decisão (`PipeMaestroWeb.QuestionnaireLive`, com as partes em modo
+leitura em `PipeMaestroWeb.QuestionnaireComponents`) usa opções como cartões:
+
+- um `<label>` com borda, que leva o `data-testid` da opção, e dentro dele um
+  `<input type="radio|checkbox" class="sr-only">` e o texto;
+- o estado vem do CSS, sem JS: `has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50`
+  e os equivalentes `dark:`;
+- um `<input type="hidden" value="">` com o mesmo nome garante que o campo chegue mesmo
+  sem nenhuma opção marcada;
+- a grade é `grid sm:grid-cols-2`: uma coluna no celular.
+
+O `radio_card` do Petal (`<.field type="radio-card">`) exige um campo de formulário e não
+cobre checkbox, por isso o padrão acima.
+
+Um `<details>` que a tela atualiza ao vivo perde o `open` a cada patch. Dê a ele um `id`
+estável e `phx-mounted={JS.ignore_attributes(["open"])}` (é o caso de "Decidir sem
+responder" no painel da tarefa).
+
 ## Tema
 
 - **Cores:** `primary` é violeta e `secondary` é sky, definidos em `@theme inline`

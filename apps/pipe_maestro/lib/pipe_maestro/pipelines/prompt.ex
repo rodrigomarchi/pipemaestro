@@ -10,6 +10,7 @@ defmodule PipeMaestro.Pipelines.Prompt do
   """
 
   alias PipeMaestro.Pipelines.Stage
+  alias PipeMaestro.Tasks.Questionnaire
 
   @variables ~w(tarefa.titulo tarefa.descricao tarefa.diretorio artefatos
                 projeto.nome projeto.setup projeto.teste projeto.lint projeto.notas)
@@ -24,6 +25,57 @@ defmodule PipeMaestro.Pipelines.Prompt do
   }
   @variable ~r/\{\{\s*([^}\s]+)\s*\}\}/
 
+  @questions_schema %{
+    "type" => "array",
+    "minItems" => 1,
+    "maxItems" => 4,
+    "description" =>
+      "quando bloqueado, obrigatório: de 1 a 4 perguntas para a pessoa, cada uma uma decisão que muda a solução",
+    "items" => %{
+      "type" => "object",
+      "properties" => %{
+        "titulo" => %{
+          "type" => "string",
+          "maxLength" => 12,
+          "description" => "um rótulo curto do assunto, até 12 caracteres"
+        },
+        "pergunta" => %{
+          "type" => "string",
+          "description" => "a pergunta completa, terminando com \"?\""
+        },
+        "multipla" => %{
+          "type" => "boolean",
+          "description" => "true quando mais de uma opção pode ser escolhida"
+        },
+        "opcoes" => %{
+          "type" => "array",
+          "minItems" => 2,
+          "maxItems" => 4,
+          "items" => %{
+            "type" => "object",
+            "properties" => %{
+              "rotulo" => %{"type" => "string", "description" => "até 5 palavras"},
+              "descricao" => %{
+                "type" => "string",
+                "description" => "o que essa escolha implica"
+              },
+              "recomendada" => %{
+                "type" => "boolean",
+                "description" => "true na opção que você recomenda (uma, a primeira)"
+              },
+              "preview" => %{
+                "type" => "string",
+                "description" => "opcional: um exemplo em Markdown (código, diff, texto)"
+              }
+            },
+            "required" => ["rotulo", "descricao", "recomendada"]
+          }
+        }
+      },
+      "required" => ["titulo", "pergunta", "multipla", "opcoes"]
+    }
+  }
+
   @base_schema %{
     "type" => "object",
     "properties" => %{
@@ -37,11 +89,11 @@ defmodule PipeMaestro.Pipelines.Prompt do
         "type" => "string",
         "description" => "o que foi feito, ou por que está bloqueado, em poucas frases"
       },
+      "perguntas" => @questions_schema,
       "opcoes" => %{
         "type" => "array",
         "items" => %{"type" => "string"},
-        "description" =>
-          "quando bloqueado, os caminhos possíveis para a pessoa escolher, em frases curtas"
+        "description" => "obsoleto: use perguntas"
       }
     },
     "required" => ["status", "resumo"]
@@ -57,7 +109,8 @@ defmodule PipeMaestro.Pipelines.Prompt do
           optional(:project) => map() | nil,
           optional(:feedback) => String.t() | nil,
           required(:previous) => [Stage.t()],
-          optional(:instructions) => String.t() | nil
+          optional(:instructions) => String.t() | nil,
+          optional(:answers) => map() | nil
         }
 
   @doc "The variables a stage's template may use, as `{{name}}`."
@@ -80,6 +133,13 @@ defmodule PipeMaestro.Pipelines.Prompt do
     number = (index + 1) |> Integer.to_string() |> String.pad_leading(2, "0")
     Path.join([".control-plane", task_id, "#{number}-#{key}.md"])
   end
+
+  @doc """
+  The schema of `perguntas`: the structured questions an agent asks a person,
+  within the limits the platform enforces (`PipeMaestro.Tasks.Questionnaire`).
+  """
+  @spec questions_schema() :: map()
+  def questions_schema, do: @questions_schema
 
   @doc "The output schema of a stage: its own fields plus `status` and `resumo`."
   @spec output_schema(Stage.t()) :: map()
@@ -112,6 +172,7 @@ defmodule PipeMaestro.Pipelines.Prompt do
       header(stage, context, artifact, artifacts),
       render(stage.prompt, context, artifacts),
       feedback(context[:feedback]),
+      answers(context[:answers]),
       instructions(context[:instructions])
     ]
     |> Enum.reject(&(&1 == ""))
@@ -123,7 +184,8 @@ defmodule PipeMaestro.Pipelines.Prompt do
     Você está executando a etapa "#{stage.name}" (#{context.stage_index + 1}) de um pipeline automatizado para a tarefa "#{context.title}".
     Regras desta execução:
     - Você começa sem contexto de etapas anteriores: o que elas produziram está nos artefatos abaixo; leia-os antes de agir.
-    - Ninguém vai responder perguntas durante a execução. Se precisar de uma decisão humana, termine com status "bloqueado" e explique no resumo.
+    - Ninguém vai responder perguntas durante a execução, e não existe ferramenta de perguntar (AskUserQuestion não está disponível). Se precisar de uma decisão humana, termine com status "bloqueado", explique no resumo e faça as perguntas no campo `perguntas` da saída estruturada.
+    - Ao perguntar: só o que muda a solução e você não descobre sozinho no código; uma decisão por pergunta; de 2 a 4 opções descritas, a recomendada primeiro.
     - Escreva o resultado desta etapa em Markdown no arquivo #{artifact} (crie os diretórios se preciso).
     - Responda no formato estruturado pedido: status "ok" ao concluir, com um resumo curto.
 
@@ -168,6 +230,14 @@ defmodule PipeMaestro.Pipelines.Prompt do
 
   defp feedback(text),
     do: "A tentativa anterior desta etapa não passou. Corrija o que levou a isso:\n#{text}"
+
+  defp answers(%{"perguntas" => questions, "respostas" => answers})
+       when is_list(questions) and is_list(answers) do
+    "Respostas da pessoa às suas perguntas (têm prioridade sobre suposições):\n" <>
+      Questionnaire.to_markdown(questions, answers)
+  end
+
+  defp answers(_none), do: ""
 
   defp instructions(nil), do: ""
   defp instructions(""), do: ""

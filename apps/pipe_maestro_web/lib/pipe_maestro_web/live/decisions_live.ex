@@ -1,17 +1,19 @@
 defmodule PipeMaestroWeb.DecisionsLive do
   @moduledoc """
   Everything in the workspace that waits for a person: each task paused for a
-  decision, with the stage, the reason, and the decision itself (retry the
-  stage or move on, optionally with instructions, or cancel the task).
-  Updated live.
+  decision, with the stage, the reason, the questionnaire of its pause
+  (`PipeMaestroWeb.QuestionnaireLive`) or the analysis of its failure while
+  it runs, and the manual decision (retry the stage or move on, optionally
+  with instructions, or cancel the task). Updated live.
   """
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
+  import PipeMaestroWeb.QuestionnaireComponents, only: [analysis_state: 1, decode_answers: 1]
 
   alias PipeMaestro.{Tasks, Workspaces}
   alias PipeMaestro.Tasks.Task
-  alias PipeMaestroWeb.ProposalRequest
+  alias PipeMaestroWeb.{ProposalRequest, QuestionnaireLive}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -32,6 +34,21 @@ defmodule PipeMaestroWeb.DecisionsLive do
   def handle_event("suggest_decision", %{"task_id" => task_id}, socket),
     do: {:noreply, ProposalRequest.suggest_decision(socket, task_id)}
 
+  def handle_event("questionnaire", %{"task_id" => id, "action" => action} = params, socket) do
+    task = Tasks.get_task!(socket.assigns.current_scope.workspace, id)
+    user = socket.assigns.current_scope.user
+    answers = decode_answers(params["answers"])
+
+    result =
+      case action do
+        "answer" -> Tasks.answer(task, answers, nil, by: user)
+        "advance" -> Tasks.advance(task, nil, by: user, answers: answers)
+        "cancel" -> Tasks.cancel_task(task, by: user)
+      end
+
+    {:noreply, socket |> decided(task, result) |> load()}
+  end
+
   def handle_event("decide", %{"choice" => _choice} = params, socket)
       when not is_map_key(params, "action"),
       do: handle_event("decide", Map.put(params, "action", "retry"), socket)
@@ -48,13 +65,7 @@ defmodule PipeMaestroWeb.DecisionsLive do
         "cancel" -> Tasks.cancel_task(task, by: opts[:by])
       end
 
-    socket =
-      case result do
-        {:ok, _task} -> put_flash(socket, :info, "Decisão registrada: #{task.title}.")
-        {:error, _reason} -> put_flash(socket, :error, "Essa tarefa não espera mais decisão.")
-      end
-
-    {:noreply, load(socket)}
+    {:noreply, socket |> decided(task, result) |> load()}
   end
 
   def handle_event("assign", %{"task_id" => id, "owner" => %{"user_id" => user_id}}, socket) do
@@ -73,6 +84,14 @@ defmodule PipeMaestroWeb.DecisionsLive do
   def handle_event("filter", %{"mine" => mine}, socket),
     do: {:noreply, socket |> assign(mine: mine == "true") |> load()}
 
+  defp decided(socket, task, result) do
+    case result do
+      {:ok, _task} -> put_flash(socket, :info, "Decisão registrada: #{task.title}.")
+      {:error, :invalid_answers, reason} -> put_flash(socket, :error, reason)
+      {:error, _reason} -> put_flash(socket, :error, "Essa tarefa não espera mais decisão.")
+    end
+  end
+
   defp load(socket) do
     user = socket.assigns.current_scope.user
     tasks = Tasks.list_awaiting(socket.assigns.current_scope.workspace)
@@ -85,6 +104,7 @@ defmodule PipeMaestroWeb.DecisionsLive do
     assign(socket,
       tasks: tasks,
       options: Map.new(tasks, &{&1.id, Tasks.options(&1)}),
+      questionnaires: Map.new(tasks, &{&1.id, Tasks.questionnaire(&1)}),
       now: DateTime.utc_now()
     )
   end
@@ -211,6 +231,16 @@ defmodule PipeMaestroWeb.DecisionsLive do
             </.form>
 
             <.alert color="warning" with_icon class="mt-3">{task.decision_reason}</.alert>
+            <.analysis_state analysis={@questionnaires[task.id].analysis} key={task.id} />
+            <.live_component
+              :if={@questionnaires[task.id].questionnaire}
+              module={QuestionnaireLive}
+              id={"questionnaire-#{task.id}"}
+              task_id={task.id}
+              key={task.id}
+              questionnaire={@questionnaires[task.id].questionnaire}
+              can_cancel={can?(@current_scope, :cancel_task, task)}
+            />
             <div class="mt-2 flex justify-end">
               <.button
                 type="button"

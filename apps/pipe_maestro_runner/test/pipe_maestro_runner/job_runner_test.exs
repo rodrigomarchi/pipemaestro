@@ -404,6 +404,26 @@ defmodule PipeMaestroRunner.JobRunnerTest do
       refute Map.has_key?(finished, "delivery")
     end
 
+    test "a stage the agent blocks with questions reports them", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+
+      asking = %{
+        stage("j1", "t1", nil)
+        | prompt: "x [perguntas]",
+          output_schema: %{"type" => "object"}
+      }
+
+      JobRunner.enqueue(runner, asking)
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert %{"status" => "bloqueado", "perguntas" => [single, multiple]} =
+               finished["structured_output"]
+
+      assert single["multipla"] == false
+      assert Enum.any?(single["opcoes"], &(&1["recomendada"] and &1["preview"] =~ "```"))
+      assert multiple["multipla"] == true
+    end
+
     test "a failed agent run skips the gates", ctx do
       runner = start_runner(ctx.workdir, root: ctx.root)
       gates = [%{"command" => "touch gate-rodou", "expect" => "pass"}]

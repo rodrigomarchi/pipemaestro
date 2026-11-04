@@ -6,9 +6,14 @@
 # the outcome:
 #
 #   a prompt with "[lento]" waits 30 s before finishing (to test canceling)
-#   a prompt with "[falha]" writes to stderr and exits 1
+#   a prompt with "[falha]" writes to stderr and exits 1, unless it also has
+#     "Tentar sem falha" (the answer to the analysis below) or it is an
+#     analysis (whose prompt repeats the task's)
 #   a prompt with "[bloqueio]" (and no "[desbloqueio]") answers status
 #     "bloqueado" when asked for structured output
+#   a prompt with "[perguntas]" (and no "[desbloqueio]") answers status
+#     "bloqueado" with two structured questions: a single-choice one whose
+#     recommended option has a preview, and a multiple-choice one
 #   a prompt with "[digitando]" writes its answer in partial message lines
 #     first, as `--include-partial-messages` does
 #   a prompt with "[gotejando]" waits 3 s after the first tool result, then
@@ -19,8 +24,9 @@
 # A JSON Schema whose "$comment" is "pipemaestro-kind:<kind>" (a proposal,
 # PipeMaestro.Proposals)
 # gets that kind's fixed answer: a project and a two-stage pipeline
-# ("pipeline"), a task ("task"), a decision to retry ("decision"), or a
-# revised pipeline with notes ("improve").
+# ("pipeline"), a task ("task"), a decision to retry ("decision"), a
+# diagnosis and one question whose recommended option is "Tentar sem falha"
+# ("analysis"), or a revised pipeline with notes ("improve").
 #
 # Its lines have what a real run reports for auditing (session, tools, MCP
 # servers, each message's id, model and tokens,
@@ -82,19 +88,28 @@ case "$prompt" in
 esac
 
 case "$prompt" in
+  *"Tentar sem falha"*) ;;
   *"[falha]"*)
-    echo "fake_claude: falha simulada" >&2
-    exit 1
+    if [ "$kind" != "analysis" ]; then
+      echo "fake_claude: falha simulada" >&2
+      exit 1
+    fi
     ;;
 esac
 
 status="ok"
+questions=""
 summary="Etapa concluída pelo fake_claude."
 case "$prompt" in
   *"[desbloqueio]"*) ;;
   *"[bloqueio]"*)
     status="bloqueado"
     summary="Preciso saber qual navegador reproduz o problema."
+    ;;
+  *"[perguntas]"*)
+    status="bloqueado"
+    summary="Preciso de duas respostas para seguir."
+    questions='[{"titulo":"Navegador","pergunta":"Em qual navegador reproduz?","multipla":false,"opcoes":[{"rotulo":"Chrome","descricao":"O mais usado.","recomendada":false},{"rotulo":"Safari 17","descricao":"Onde o bug apareceu.","recomendada":true,"preview":"```js\nwindow.safari.open()\n```"}]},{"titulo":"Telas","pergunta":"Quais telas mudam?","multipla":true,"opcoes":[{"rotulo":"Board","descricao":"O quadro de tarefas.","recomendada":true},{"rotulo":"Decisões","descricao":"A página de decisões.","recomendada":false}]}]'
     ;;
 esac
 
@@ -118,6 +133,9 @@ totals='"session_id":"fake-session","stop_reason":"end_turn","duration_api_ms":9
 
 if [ -n "$structured" ]; then
   output='{"status":"'"$status"'","resumo":"'"$summary"'"}'
+  if [ -n "$questions" ]; then
+    output='{"status":"'"$status"'","resumo":"'"$summary"'","perguntas":'"$questions"'}'
+  fi
   case "$kind" in
     pipeline)
       output='{"analise":"Um app de exemplo do fake_claude. Os testes rodam com `make test`.","verificacoes":[{"comando":"make test","passou":true},{"comando":"make lint","passou":false,"observacao":"Sem alvo de lint no Makefile."}],"projeto":{"nome":"App do fake","setup":"make deps","teste":"make test","lint":"make lint","copy_paths":["deps"],"notas":"Rode `make test` antes de entregar."},"pipeline":{"name":"Entrega proposta","description":"Plano e implementação com testes.","delivery":"pr","max_task_cost_usd":40,"stages":[{"key":"plano","name":"Plano","prompt":"Planeje a mudança: {{tarefa.descricao}}","max_budget_usd":2},{"key":"implementacao","name":"Implementação","prompt":"Implemente o plano e rode {{projeto.teste}}.","gates":["{{projeto.teste}}"],"max_attempts":3}]}}'
@@ -127,6 +145,9 @@ if [ -n "$structured" ]; then
       ;;
     decision)
       output='{"diagnostico":"A etapa parou porque **falta saber o navegador**.","acao":"retry","instrucoes":"Considere o Chrome e siga. [desbloqueio]","alternativas":[{"acao":"cancel","motivo":"Se o problema não reproduzir em nenhum navegador."}]}'
+      ;;
+    analysis)
+      output='{"diagnostico":"A etapa falhou porque o **fake_claude** simulou uma falha.","perguntas":[{"titulo":"Correção","pergunta":"Como a etapa deve seguir?","multipla":false,"opcoes":[{"rotulo":"Desistir","descricao":"Deixa a tarefa como está.","recomendada":false},{"rotulo":"Tentar sem falha","descricao":"Roda a etapa de novo sem a falha simulada.","recomendada":true}]}]}'
       ;;
     improve)
       output='{"analise":"A etapa única terminou bem; falta um gate de testes.","mudancas":[{"onde":"Etapa Executar","o_que":"Gate {{projeto.teste}}","por_que":"Nenhuma tarefa verificou os testes."}],"pipeline":{"name":"Prompt único","description":"Um prompt, com testes.","stages":[{"key":"executar","name":"Executar","prompt":"{{tarefa.descricao}}","gates":["{{projeto.teste}}"]}]},"notas":"Rode `make test` antes de entregar."}'

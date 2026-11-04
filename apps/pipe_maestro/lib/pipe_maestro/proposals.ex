@@ -2,7 +2,8 @@ defmodule PipeMaestro.Proposals do
   @moduledoc """
   Something the agent proposes for a person to review: a pipeline and its
   project, a task written from an idea, the decision a paused task waits for,
-  or improvements to a pipeline from its history. Each kind
+  the analysis of a task's failure (asked by the platform itself), or
+  improvements to a pipeline from its history. Each kind
   (`PipeMaestro.Proposals.Kind`) says what is asked, how the agent is asked
   and how its answer is read; this module is what they share.
 
@@ -26,7 +27,16 @@ defmodule PipeMaestro.Proposals do
   alias PipeMaestro.Pipelines
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
-  alias PipeMaestro.Proposals.{DecisionKind, ImproveKind, Instructions, PipelineKind, TaskKind}
+
+  alias PipeMaestro.Proposals.{
+    AnalysisKind,
+    DecisionKind,
+    ImproveKind,
+    Instructions,
+    PipelineKind,
+    TaskKind
+  }
+
   alias PipeMaestro.Repo
   alias PipeMaestro.Runners
   alias PipeMaestro.Runners.Runner
@@ -41,12 +51,13 @@ defmodule PipeMaestro.Proposals do
     "pipeline" => PipelineKind,
     "task" => TaskKind,
     "decision" => DecisionKind,
+    "analysis" => AnalysisKind,
     "improve" => ImproveKind
   }
 
   @doc "The kinds of proposal, by name."
   @spec kinds() :: [String.t()]
-  def kinds, do: ~w(pipeline task decision improve)
+  def kinds, do: ~w(pipeline task decision analysis improve)
 
   @doc "The module of kind `name` (`PipeMaestro.Proposals.Kind`)."
   @spec kind_module(String.t()) :: module()

@@ -1,9 +1,14 @@
 defmodule PipeMaestro.Tasks.Decision do
   @moduledoc """
   A decision a person took on a task waiting for one: the question (why it
-  paused), the options the agent proposed (`opcoes` in its structured
-  output), what was done (`action`: retry the stage, move on, cancel), the
-  option chosen, the instructions given, who decided and when.
+  paused), what was done (`action`: retry the stage, move on, cancel), the
+  instructions given, who decided and when.
+
+  When the pause had a questionnaire (`PipeMaestro.Tasks.Questionnaire`),
+  `questions` keeps its questions (`%{"perguntas" => [...]}`) and `answers`
+  what the person answered (`%{"respostas" => [...]}`). `options` (the
+  agent's `opcoes`) and `choice` (the one picked) are the older format,
+  still read for decisions taken before questionnaires.
   """
   use PipeMaestro.Schema
 
@@ -20,6 +25,8 @@ defmodule PipeMaestro.Tasks.Decision do
           action: action(),
           choice: String.t() | nil,
           instructions: String.t() | nil,
+          questions: map() | nil,
+          answers: map() | nil,
           task_id: Ecto.UUID.t() | nil,
           task: Task.t() | Ecto.Association.NotLoaded.t(),
           decided_by_user_id: Ecto.UUID.t() | nil,
@@ -34,6 +41,8 @@ defmodule PipeMaestro.Tasks.Decision do
     field :action, Ecto.Enum, values: [:retry, :advance, :cancel]
     field :choice, :string
     field :instructions, :string
+    field :questions, :map
+    field :answers, :map
 
     belongs_to :task, Task
     belongs_to :decided_by_user, User

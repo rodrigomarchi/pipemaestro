@@ -433,7 +433,11 @@ defmodule PipeMaestro.Jobs do
 
   defp get_job(id), do: Repo.get!(Job, id)
 
-  # A job that runs a task's stage moves its task along once it ends.
+  # A job that runs a task's stage moves its task along once it ends; the
+  # analysis of a paused task's failure gives it its questionnaire.
+  defp finished(%Job{stage_run_id: nil, context: %{"proposal" => %{"kind" => "analysis"}}} = job),
+    do: PipeMaestro.Tasks.analysis_finished(job)
+
   defp finished(%Job{stage_run_id: nil}), do: :ok
   defp finished(%Job{} = job), do: PipeMaestro.Tasks.job_finished(job)
 

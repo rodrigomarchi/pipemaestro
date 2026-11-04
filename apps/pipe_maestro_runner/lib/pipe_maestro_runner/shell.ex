@@ -4,7 +4,9 @@ defmodule PipeMaestroRunner.Shell do
   in a directory, with stdin closed, keeping the end of its output (stdout
   and stderr together). The command leads its own process group: the caller
   gets its OS pid and can stop it, with everything it started, by signaling
-  the group.
+  the group. Burrito's `__BURRITO` is removed from its environment: with it,
+  an Elixir VM the command starts that loads the runner app (the runner's own
+  test suite, as a gate) would boot as the runner's CLI.
   """
 
   alias PipeMaestroProtocol.Text
@@ -25,6 +27,7 @@ defmodule PipeMaestroRunner.Shell do
         :exit_status,
         :stderr_to_stdout,
         {:cd, dir},
+        {:env, [{~c"__BURRITO", false}]},
         {:args, ["-c", command <> " < /dev/null"]}
       ])
 

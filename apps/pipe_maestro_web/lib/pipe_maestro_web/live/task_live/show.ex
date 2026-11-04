@@ -6,8 +6,11 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   a stream of timeline segments whose last strip grows in place; a finished
   attempt's steps open on demand, filtered here, and what it spent so far
   (`PipeMaestro.Insights.live/1`) follows the CLI's telemetry, at most every
-  `@live_every` ms. When the task waits for a decision, the decision form sits
-  under the stage that waits.
+  `@live_every` ms. When the task waits for a decision, the decision panel sits
+  under the stage that waits: the questionnaire of the pause, if any
+  (`PipeMaestroWeb.QuestionnaireLive`), or the analysis of a failure while it
+  runs, and the manual decision, folded away while there is something to
+  answer.
   """
   use PipeMaestroWeb, :live_view
 
@@ -27,11 +30,14 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   import PipeMaestroWeb.TaskComponents
 
+  import PipeMaestroWeb.QuestionnaireComponents,
+    only: [analysis_state: 1, answer_list: 1, decode_answers: 1]
+
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.{Insights, Jobs, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
-  alias PipeMaestroWeb.{Markdown, ProposalRequest, RunnerStatus}
+  alias PipeMaestroWeb.{Markdown, ProposalRequest, QuestionnaireLive, RunnerStatus}
 
   @live_every 2_000
 
@@ -65,8 +71,14 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   def handle_info(%Broadcast{event: "presence_diff"}, socket), do: {:noreply, load_online(socket)}
   def handle_info(:runners_changed, socket), do: {:noreply, load_online(socket)}
 
-  def handle_info({:task_updated, %Task{} = task}, socket),
-    do: {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
+  def handle_info({:task_updated, %Task{} = task}, socket) do
+    socket =
+      if socket.assigns.task.status == :awaiting_decision and task.status != :awaiting_decision,
+        do: put_flash(socket, :info, "Outra pessoa respondeu esta decisão."),
+        else: socket
+
+    {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
+  end
 
   # The running job's telemetry comes in bursts: what it spent so far is read
   # again once per `@live_every`. The rest of it shows on the job's own page.
@@ -113,6 +125,30 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   # The form has one submit button per decision; the pressed one comes as
   # "action", with the instructions typed.
   # An option button sends the choice without an action: it retries the stage.
+  def handle_event("questionnaire", %{"action" => "answer"} = params, socket),
+    do:
+      decide(
+        socket,
+        &Tasks.answer(&1, decode_answers(params["answers"]), nil,
+          by: socket.assigns.current_scope.user
+        ),
+        "Respostas enviadas; a etapa roda de novo."
+      )
+
+  def handle_event("questionnaire", %{"action" => "advance"} = params, socket),
+    do:
+      decide(
+        socket,
+        &Tasks.advance(&1, nil,
+          by: socket.assigns.current_scope.user,
+          answers: decode_answers(params["answers"])
+        ),
+        "Seguindo para a próxima etapa."
+      )
+
+  def handle_event("questionnaire", %{"action" => "cancel"}, socket),
+    do: handle_event("cancel", %{}, socket)
+
   def handle_event("suggest_decision", _params, socket),
     do: {:noreply, ProposalRequest.suggest_decision(socket, socket.assigns.task.id)}
 
@@ -275,6 +311,9 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
       {:error, :not_awaiting} ->
         {:noreply, put_flash(socket, :error, "A tarefa não está aguardando uma decisão.")}
+
+      {:error, :invalid_answers, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
     end
   end
 
@@ -284,6 +323,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     assign(socket,
       decisions: Tasks.list_decisions(task),
       options: Tasks.options(task),
+      questionnaire: Tasks.questionnaire(task),
       cost: Tasks.cost(task)
     )
   end
@@ -622,69 +662,94 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                   <.alert color="warning" with_icon data-testid="decision-reason">
                     {@task.decision_reason}
                   </.alert>
-                  <div class="mt-3 flex justify-end">
-                    <.button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      icon="hero-cpu-chip"
-                      phx-click="suggest_decision"
-                      data-testid="decision-suggest"
+                  <.analysis_state analysis={@questionnaire.analysis} />
+                  <.live_component
+                    :if={@questionnaire.questionnaire}
+                    module={QuestionnaireLive}
+                    id={"questionnaire-#{@task.id}"}
+                    task_id={@task.id}
+                    questionnaire={@questionnaire.questionnaire}
+                    can_cancel={can?(@current_scope, :cancel_task, @task)}
+                  />
+                  <details
+                    class="group mt-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                    open={
+                      is_nil(@questionnaire.questionnaire) and @questionnaire.analysis != :running
+                    }
+                    id="decision-manual"
+                    phx-mounted={JS.ignore_attributes(["open"])}
+                    data-testid="decision-manual"
+                  >
+                    <summary
+                      class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200"
+                      data-testid="decision-manual-toggle"
                     >
-                      Sugerir com IA
-                    </.button>
-                  </div>
-                  <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
-                    <.markdown_editor
-                      id="decision-instructions"
-                      field={@decision[:instructions]}
-                      label="Instruções para continuar (opcional)"
-                      icon="hero-chat-bubble-left-right"
-                      rows={3}
-                      placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
-                      testid="decision-instructions"
-                    />
-                    <div :if={@options != []} class="mb-3">
-                      <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
-                        O agente propôs (refaz a etapa com a escolha e as instruções):
-                      </p>
-                      <div class="flex flex-wrap gap-2">
+                      Decidir sem responder
+                    </summary>
+                    <div class="mt-3 flex justify-end">
+                      <.button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        icon="hero-cpu-chip"
+                        phx-click="suggest_decision"
+                        data-testid="decision-suggest"
+                      >
+                        Sugerir com IA
+                      </.button>
+                    </div>
+                    <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
+                      <.markdown_editor
+                        id="decision-instructions"
+                        field={@decision[:instructions]}
+                        label="Instruções para continuar (opcional)"
+                        icon="hero-chat-bubble-left-right"
+                        rows={3}
+                        placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
+                        testid="decision-instructions"
+                      />
+                      <div :if={@options != []} class="mb-3">
+                        <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                          O agente propôs (refaz a etapa com a escolha e as instruções):
+                        </p>
+                        <div class="flex flex-wrap gap-2">
+                          <.button
+                            :for={{option, index} <- Enum.with_index(@options)}
+                            type="submit"
+                            name="choice"
+                            value={option}
+                            size="sm"
+                            variant="outline"
+                            color="primary"
+                            data-testid={"decision-option-#{index}"}
+                          >
+                            {option}
+                          </.button>
+                        </div>
+                      </div>
+                      <div class="flex flex-wrap justify-end gap-2">
                         <.button
-                          :for={{option, index} <- Enum.with_index(@options)}
                           type="submit"
-                          name="choice"
-                          value={option}
-                          size="sm"
+                          name="action"
+                          value="retry"
                           variant="outline"
-                          color="primary"
-                          data-testid={"decision-option-#{index}"}
+                          icon="hero-arrow-path"
+                          data-testid="decision-retry"
                         >
-                          {option}
+                          Refazer etapa
+                        </.button>
+                        <.button
+                          type="submit"
+                          name="action"
+                          value="advance"
+                          icon="hero-forward"
+                          data-testid="decision-advance"
+                        >
+                          Seguir para a próxima
                         </.button>
                       </div>
-                    </div>
-                    <div class="flex flex-wrap justify-end gap-2">
-                      <.button
-                        type="submit"
-                        name="action"
-                        value="retry"
-                        variant="outline"
-                        icon="hero-arrow-path"
-                        data-testid="decision-retry"
-                      >
-                        Refazer etapa
-                      </.button>
-                      <.button
-                        type="submit"
-                        name="action"
-                        value="advance"
-                        icon="hero-forward"
-                        data-testid="decision-advance"
-                      >
-                        Seguir para a próxima
-                      </.button>
-                    </div>
-                  </.form>
+                    </.form>
+                  </details>
                 </.card_content>
               </.card>
             </div>
@@ -695,7 +760,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           <.card_header title="Decisões tomadas" />
           <.card_content>
             <ol class="space-y-3 text-sm" data-testid="task-decisions">
-              <li :for={decision <- @decisions} class="flex gap-3">
+              <li :for={{decision, n} <- Enum.with_index(@decisions)} class="flex gap-3">
                 <.icon name="hero-hand-raised" class="mt-0.5 size-4 shrink-0 text-warning-500" />
                 <div class="min-w-0">
                   <p class="text-gray-900 dark:text-white">
@@ -703,6 +768,12 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     em "{stage_name(@task, decision.stage_index)}"
                     <span :if={decision.choice}>· escolha: {decision.choice}</span>
                   </p>
+                  <.answer_list
+                    :if={decision.answers}
+                    answers={Map.merge(decision.questions || %{}, decision.answers)}
+                    class="my-1 space-y-1 text-sm"
+                    data-testid={"task-decision-answers-#{n}"}
+                  />
                   <p :if={decision.instructions} class="text-gray-600 dark:text-gray-300">
                     {decision.instructions}
                   </p>
@@ -895,6 +966,15 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           </summary>
           <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-800 dark:text-gray-200">{@run.feedback}</pre>
         </details>
+
+        <div
+          :if={@run.answers}
+          class="text-sm"
+          data-testid={"stage-run-answers-#{@run.key}-#{@run.attempt}"}
+        >
+          <span class="font-medium text-gray-900 dark:text-white">Respostas da pessoa:</span>
+          <.answer_list answers={@run.answers} class="mt-1 space-y-1 text-sm" />
+        </div>
 
         <p :if={@run.instructions} class="text-sm text-gray-600 dark:text-gray-300">
           <span class="font-medium">Instruções:</span> {@run.instructions}

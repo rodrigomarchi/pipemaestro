@@ -27,6 +27,7 @@ tarefa e melhorar um pipeline a partir de como as suas tarefas correram.
   | `task` | Tarefas → Escrever com IA; triagem de issue | abrir a nova tarefa preenchida (título, prompt, pipeline, runner, diretório, issue) |
   | `decision` | painel de decisão da tarefa e página Decisões → Sugerir com IA | aplicar a ação sugerida (tentar de novo, avançar, cancelar) com as instruções editáveis |
   | `improve` | card do pipeline → Melhorar com IA | salvar as notas do projeto e abrir o pipeline preenchido, que vira a versão seguinte |
+  | `analysis` | pedida pela própria plataforma quando a tarefa pausa por falha ([ADR 0029](0029-questionario-de-decisao.md)) | só ler o diagnóstico e as perguntas; a resposta acontece na tarefa |
 
 - **Cada schema declara o tipo** no `$comment` (`"pipemaestro-kind:<tipo>"`): o CLI valida
   o `--json-schema` em modo estrito e recusa palavras-chave fora do JSON Schema, como uma

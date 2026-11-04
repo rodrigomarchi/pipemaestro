@@ -42,8 +42,8 @@ defmodule PipeMaestro.Pipelines.Templates do
 
           {{projeto.notas}}
 
-          Se o pedido for ambíguo a ponto de mudar a solução, termine como "bloqueado" com as
-          perguntas e proponha as alternativas em "opcoes".
+          Se o pedido for ambíguo a ponto de mudar a solução, termine como "bloqueado" e faça
+          as perguntas em "perguntas", cada uma com as alternativas, a recomendada primeiro.
           """
         ),
         stage(

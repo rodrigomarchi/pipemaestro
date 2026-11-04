@@ -218,6 +218,262 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     end
   end
 
+  describe "the decision questionnaire" do
+    @questions [
+      %{
+        "titulo" => "Navegador",
+        "pergunta" => "Em qual navegador reproduz?",
+        "multipla" => false,
+        "opcoes" => [
+          %{"rotulo" => "Chrome", "descricao" => "O mais usado", "recomendada" => false},
+          %{
+            "rotulo" => "Safari 17",
+            "descricao" => "Onde o bug apareceu",
+            "recomendada" => true,
+            "preview" => "```elixir\nSafari.open()\n```"
+          }
+        ]
+      },
+      %{
+        "titulo" => "Telas",
+        "pergunta" => "Quais telas mudam?",
+        "multipla" => true,
+        "opcoes" => [
+          %{"rotulo" => "Board", "descricao" => "", "recomendada" => true},
+          %{"rotulo" => "Decisões", "descricao" => "", "recomendada" => false}
+        ]
+      }
+    ]
+
+    @analysis %{
+      "diagnostico" => "O teste de login falha porque o **timeout** é curto.",
+      "perguntas" => [
+        %{
+          "titulo" => "Correção",
+          "pergunta" => "Como a etapa deve seguir?",
+          "multipla" => false,
+          "opcoes" => [
+            %{"rotulo" => "Tentar sem falha", "descricao" => "Timeout", "recomendada" => true},
+            %{"rotulo" => "Desistir", "descricao" => "Cancela", "recomendada" => false}
+          ]
+        }
+      ]
+    }
+
+    defp block_with_questions(ctx, task) do
+      finish_current(ctx, task, %{
+        "status" => "bloqueado",
+        "resumo" => "Preciso de duas respostas",
+        "perguntas" => @questions
+      })
+    end
+
+    defp failing_pipeline(ctx) do
+      pipeline_fixture(ctx.workspace, %{
+        "stages" => [
+          %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça A", "max_attempts" => 1},
+          %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+        ]
+      })
+    end
+
+    defp fail_current(ctx, task) do
+      finish_current(ctx, task, nil, %{"status" => "failed", "exit_code" => 1, "error" => "boom"})
+    end
+
+    defp analysis_job(ctx, task) do
+      id = Map.get(Tasks.get_task!(ctx.workspace, task.id), :decision_analysis_job_id)
+      assert is_binary(id), "expected the failure to ask for an analysis"
+      Jobs.get_job!(ctx.workspace, id)
+    end
+
+    defp finish_analysis(ctx, job, payload) do
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, _} = Jobs.finish_job(ctx.runner, job.id, payload)
+    end
+
+    defp answer(view, answers) do
+      view
+      |> element("[data-testid=questionnaire-form]")
+      |> render_change(%{"answers" => answers})
+    end
+
+    @full_answers %{
+      "0" => %{"escolhas" => ["Safari 17"], "outro" => ""},
+      "1" => %{"escolhas" => ["Board", "Decisões"], "outro" => "e o menu"}
+    }
+
+    test "renders the questions, and sending waits until every one is answered", ctx do
+      task = create_task(ctx)
+      block_with_questions(ctx, task)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-testid=questionnaire]")
+      assert has_element?(view, "[data-testid=question-0]", "Em qual navegador reproduz?")
+      assert has_element?(view, "[data-testid=question-0]", "Navegador")
+      # The recommended option comes first, marked.
+      assert has_element?(view, "[data-testid=question-0-option-0]", "Safari 17")
+      assert has_element?(view, "[data-testid=question-0-option-0]", "recomendada")
+      assert has_element?(view, "[data-testid=question-0-option-0]", "Onde o bug apareceu")
+      assert has_element?(view, "[data-testid=question-0-preview-0]", "Safari.open()")
+      assert has_element?(view, "[data-testid=question-0-other]")
+      assert has_element?(view, "[data-testid=question-1-other]")
+      assert has_element?(view, "[data-testid=questionnaire-progress]", "0 de 2")
+      assert has_element?(view, "[data-testid=questionnaire-submit][disabled]")
+      assert has_element?(view, "[data-testid=questionnaire-advance]")
+      # The manual decision is still there, folded away.
+      assert has_element?(view, "[data-testid=decision-manual]")
+      assert has_element?(view, "[data-testid=decision-retry]")
+
+      answer(view, %{"0" => %{"escolhas" => ["Safari 17"], "outro" => ""}})
+      assert has_element?(view, "[data-testid=questionnaire-progress]", "1 de 2")
+      assert has_element?(view, "[data-testid=questionnaire-submit][disabled]")
+
+      answer(view, @full_answers)
+      assert has_element?(view, "[data-testid=questionnaire-progress]", "2 de 2")
+      refute has_element?(view, "[data-testid=questionnaire-submit][disabled]")
+    end
+
+    test "several choices and Other answer a question; confirming runs the stage again", ctx do
+      task = create_task(ctx)
+      block_with_questions(ctx, task)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      # Other by itself answers the first question.
+      answer(view, %{
+        "0" => %{"escolhas" => [], "outro" => "No Firefox"},
+        "1" => %{"escolhas" => ["Board", "Decisões"], "outro" => ""}
+      })
+
+      refute has_element?(view, "[data-testid=questionnaire-submit][disabled]")
+
+      answer(view, @full_answers)
+      view |> element("[data-testid=questionnaire-form]") |> render_submit()
+
+      assert has_element?(
+               view,
+               "[data-testid=questionnaire-review]",
+               "Em qual navegador reproduz?"
+             )
+
+      assert has_element?(view, "[data-testid=questionnaire-review]", "Safari 17")
+      assert has_element?(view, "[data-testid=questionnaire-review]", "Decisões")
+      assert has_element?(view, "[data-testid=questionnaire-review]", "e o menu")
+
+      # Back keeps what was answered.
+      view |> element("[data-testid=questionnaire-back]") |> render_click()
+      refute has_element?(view, "[data-testid=questionnaire-review]")
+      assert has_element?(view, "[data-testid=questionnaire-progress]", "2 de 2")
+
+      view |> element("[data-testid=questionnaire-form]") |> render_submit()
+      view |> element("[data-testid=questionnaire-confirm]") |> render_click()
+
+      refute has_element?(view, "[data-testid=decision-panel]")
+      assert has_element?(view, "[data-testid=stage-run-a-2]", "Safari 17")
+
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert %{status: :running} = task
+      assert %{"respostas" => [first, second]} = List.last(task.stage_runs).answers
+      assert first["escolhas"] == ["Safari 17"]
+      assert second["escolhas"] == ["Board", "Decisões"]
+      assert second["outro"] == "e o menu"
+
+      assert has_element?(
+               view,
+               "[data-testid=task-decision-answers-0]",
+               "Em qual navegador reproduz?"
+             )
+
+      assert has_element?(view, "[data-testid=task-decision-answers-0]", "Safari 17")
+    end
+
+    test "advance anyway goes on without every answer", ctx do
+      task = create_task(ctx)
+      block_with_questions(ctx, task)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      answer(view, %{"0" => %{"escolhas" => ["Safari 17"], "outro" => ""}})
+      view |> element("[data-testid=questionnaire-advance]") |> render_click()
+
+      assert has_element?(view, "[data-testid=stage-run-status-b-1]", "Executando")
+      assert [%{action: :advance}] = Tasks.list_decisions(task)
+    end
+
+    test "an answer in one session takes the panel away from another", ctx do
+      task = create_task(ctx)
+      block_with_questions(ctx, task)
+      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+
+      {:ok, mine, _html} = live(ctx.conn, path)
+      {:ok, other, _html} = live(ctx.conn, path)
+
+      # Answers in progress survive an update of the same pause.
+      answer(other, %{"0" => %{"escolhas" => ["Chrome"], "outro" => ""}})
+
+      answer(mine, @full_answers)
+      mine |> element("[data-testid=questionnaire-form]") |> render_submit()
+      mine |> element("[data-testid=questionnaire-confirm]") |> render_click()
+
+      refute has_element?(other, "[data-testid=questionnaire]")
+      refute has_element?(other, "[data-testid=decision-panel]")
+      assert render(other) =~ "Outra pessoa respondeu"
+    end
+
+    test "a failure shows the analysis running, then its diagnosis and questions, live", ctx do
+      task = create_task(%{ctx | pipeline: failing_pipeline(ctx)})
+      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+      {:ok, view, _html} = live(ctx.conn, path)
+      {:ok, other, _html} = live(ctx.conn, path)
+
+      fail_current(ctx, task)
+
+      assert has_element?(view, "[data-testid=questionnaire-analyzing]")
+      assert has_element?(view, "[data-testid=decision-manual]")
+      refute has_element?(view, "[data-testid=question-0]")
+
+      finish_analysis(ctx, analysis_job(ctx, task), %{
+        "status" => "succeeded",
+        "structured_output" => @analysis
+      })
+
+      for v <- [view, other] do
+        refute has_element?(v, "[data-testid=questionnaire-analyzing]")
+        assert has_element?(v, "[data-testid=questionnaire-diagnosis]", "timeout")
+        assert has_element?(v, "[data-testid=question-0-option-0]", "Tentar sem falha")
+      end
+
+      answer(view, %{"0" => %{"escolhas" => ["Tentar sem falha"], "outro" => ""}})
+      view |> element("[data-testid=questionnaire-form]") |> render_submit()
+      view |> element("[data-testid=questionnaire-confirm]") |> render_click()
+
+      assert has_element?(view, "[data-testid=stage-run-a-2]", "Tentar sem falha")
+    end
+
+    test "an analysis that does not get ready says so, beside the manual decision", ctx do
+      task = create_task(%{ctx | pipeline: failing_pipeline(ctx)})
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      fail_current(ctx, task)
+
+      finish_analysis(ctx, analysis_job(ctx, task), %{
+        "status" => "failed",
+        "exit_code" => 1,
+        "error" => "sem cota"
+      })
+
+      assert has_element?(view, "[data-testid=questionnaire-analysis-failed]")
+      refute has_element?(view, "[data-testid=questionnaire-analyzing]")
+      assert has_element?(view, "[data-testid=decision-manual]")
+
+      view
+      |> form("#decision-form", decision: %{instructions: "Tente com mais tempo"})
+      |> render_submit(%{"action" => "retry"})
+
+      assert has_element?(view, "[data-testid=stage-run-a-2]", "Tente com mais tempo")
+    end
+  end
+
   describe "talking to the task" do
     test "sends an instruction and asks for a pause while it runs", ctx do
       task = create_task(ctx)

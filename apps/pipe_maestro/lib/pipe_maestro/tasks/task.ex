@@ -17,7 +17,11 @@ defmodule PipeMaestro.Tasks.Task do
   on the issue with the next stage.
 
   A task waiting for a decision has someone to decide (`decision_owner`, its
-  creator unless passed on) and a deadline (`decision_due_at`).
+  creator unless passed on) and a deadline (`decision_due_at`). When it
+  paused because a stage blocked or failed, it may also have questions for
+  the person (`decision_questionnaire`, `PipeMaestro.Tasks.Questionnaire`):
+  the agent's own, or those of the analysis the platform asked for on a
+  failure (`decision_analysis_job`, `PipeMaestro.Proposals.AnalysisKind`).
 
   While it runs, a person may send instructions (`pending_instructions`, given
   to the next attempt or stage) or ask it to pause once the current stage ends
@@ -32,6 +36,7 @@ defmodule PipeMaestro.Tasks.Task do
   import Ecto.Changeset
 
   alias PipeMaestro.Accounts.User
+  alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines.{Pipeline, Stage}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{Decision, StageRun}
@@ -61,6 +66,9 @@ defmodule PipeMaestro.Tasks.Task do
           status: status(),
           current_stage: non_neg_integer(),
           decision_reason: String.t() | nil,
+          decision_questionnaire: map() | nil,
+          decision_analysis_job_id: Ecto.UUID.t() | nil,
+          decision_analysis_job: Job.t() | Ecto.Association.NotLoaded.t() | nil,
           finished_at: DateTime.t() | nil,
           pipeline_name: String.t() | nil,
           pipeline_version: pos_integer() | nil,
@@ -103,6 +111,7 @@ defmodule PipeMaestro.Tasks.Task do
 
     field :current_stage, :integer, default: 0
     field :decision_reason, :string
+    field :decision_questionnaire, :map
     field :finished_at, :utc_datetime
     field :pipeline_name, :string
     field :pipeline_version, :integer
@@ -118,6 +127,7 @@ defmodule PipeMaestro.Tasks.Task do
     belongs_to :runner, Runner
     belongs_to :created_by_user, User
     belongs_to :decision_owner, User
+    belongs_to :decision_analysis_job, Job
     has_many :stage_runs, StageRun
     has_many :decisions, Decision
 

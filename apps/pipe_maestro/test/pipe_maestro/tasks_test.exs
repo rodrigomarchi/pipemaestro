@@ -502,6 +502,367 @@ defmodule PipeMaestro.TasksTest do
     end
   end
 
+  describe "the decision questionnaire" do
+    setup ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça A", "max_attempts" => 1},
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    defp agent_questions do
+      [
+        %{
+          "titulo" => "Navegador",
+          "pergunta" => "Em qual navegador reproduz?",
+          "multipla" => false,
+          "opcoes" => [
+            %{"rotulo" => "Chrome", "descricao" => "O mais usado", "recomendada" => false},
+            %{
+              "rotulo" => "Safari 17",
+              "descricao" => "Onde o bug apareceu",
+              "recomendada" => true
+            }
+          ]
+        },
+        %{
+          "titulo" => "Telas",
+          "pergunta" => "Quais telas mudam?",
+          "multipla" => true,
+          "opcoes" => [
+            %{"rotulo" => "Board", "descricao" => "", "recomendada" => true},
+            %{"rotulo" => "Decisões", "descricao" => "", "recomendada" => false}
+          ]
+        }
+      ]
+    end
+
+    defp block_with_questions(ctx, task) do
+      run_current(ctx, task, %{
+        "structured_output" => %{
+          "status" => "bloqueado",
+          "resumo" => "Preciso de duas respostas",
+          "perguntas" => agent_questions()
+        }
+      })
+    end
+
+    defp fail_stage(ctx, task),
+      do: run_current(ctx, task, %{"status" => "failed", "exit_code" => 1, "error" => "boom"})
+
+    defp analysis_job(ctx, task) do
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert is_binary(task.decision_analysis_job_id), "expected an analysis job"
+      Jobs.get_job!(ctx.workspace, task.decision_analysis_job_id)
+    end
+
+    defp finish_analysis(ctx, job, payload) do
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, _} = Jobs.finish_job(ctx.runner, job.id, payload)
+      :ok
+    end
+
+    @analysis_output %{
+      "diagnostico" => "O teste de login falha porque o **timeout** é curto.",
+      "perguntas" => [
+        %{
+          "titulo" => "Correção",
+          "pergunta" => "Como a etapa deve seguir?",
+          "multipla" => false,
+          "opcoes" => [
+            %{
+              "rotulo" => "Tentar sem falha",
+              "descricao" => "Aumenta o timeout",
+              "recomendada" => true
+            },
+            %{"rotulo" => "Desistir", "descricao" => "Cancela", "recomendada" => false}
+          ]
+        }
+      ]
+    }
+
+    test "a block with questions keeps them, from the agent, and asks for no analysis", ctx do
+      task = block_with_questions(ctx, create_task(ctx))
+
+      assert %Task{status: :awaiting_decision} = task
+      assert %{"origem" => "agente", "perguntas" => [first, second]} = task.decision_questionnaire
+      # The recommended option comes first.
+      assert hd(first["opcoes"])["rotulo"] == "Safari 17"
+      assert second["multipla"] == true
+      assert task.decision_analysis_job_id == nil
+
+      assert %{questionnaire: %{"origem" => "agente"}, analysis: :none} =
+               Tasks.questionnaire(task)
+    end
+
+    test "a block with the old options becomes a single question", ctx do
+      task =
+        run_current(ctx, create_task(ctx), %{
+          "structured_output" => %{
+            "status" => "bloqueado",
+            "resumo" => "Onde corrigir?",
+            "opcoes" => ["No cliente", "No servidor"]
+          }
+        })
+
+      assert %{"origem" => "opcoes", "perguntas" => [question]} = task.decision_questionnaire
+      assert Enum.map(question["opcoes"], & &1["rotulo"]) == ["No cliente", "No servidor"]
+      assert Tasks.options(task) == ["No cliente", "No servidor"]
+    end
+
+    test "exhausted attempts ask the agent for an analysis, with no click", ctx do
+      task = fail_stage(ctx, create_task(ctx))
+
+      assert %Task{status: :awaiting_decision} = task
+      assert task.decision_questionnaire == nil
+      job = analysis_job(ctx, task)
+
+      assert PipeMaestro.Proposals.kind(job) == "analysis"
+      assert job.runner_id == ctx.runner.id
+      assert job.created_by_user_id == ctx.user.id
+      assert job.prompt =~ "boom"
+      # The runner does not announce "scratch": the agent reads only the context.
+      refute Map.has_key?(job.context, "directory")
+      refute Map.has_key?(job.context, "scratch")
+      assert job.context["output_schema"]["$comment"] == "pipemaestro-kind:analysis"
+      refute Map.has_key?(job.context, "max_budget_usd")
+
+      assert %{questionnaire: nil, analysis: :running} = Tasks.questionnaire(task)
+    end
+
+    test "a block with nothing to ask is analysed like a failure", ctx do
+      task =
+        run_current(ctx, create_task(ctx), %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "Algo deu errado"}
+        })
+
+      assert %Task{status: :awaiting_decision} = task
+      assert task.decision_questionnaire == nil
+      assert PipeMaestro.Proposals.kind(analysis_job(ctx, task)) == "analysis"
+    end
+
+    test "a pause by a rule asks for no analysis", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "stages" => [
+            %{"key" => "a", "name" => "A", "prompt" => "p", "rules_text" => "risco == alto"},
+            %{"key" => "b", "name" => "B", "prompt" => "p"}
+          ]
+        })
+
+      task = create_task(%{ctx | pipeline: pipeline})
+
+      task =
+        run_current(ctx, task, %{
+          "structured_output" => %{"status" => "ok", "resumo" => "r", "risco" => "alto"}
+        })
+
+      assert %Task{status: :awaiting_decision} = task
+      assert task.decision_analysis_job_id == nil
+      assert task.decision_questionnaire == nil
+    end
+
+    test "the analysis' diagnosis and questions become the task's questionnaire, live", ctx do
+      task = fail_stage(ctx, create_task(ctx))
+      :ok = Tasks.subscribe({:task, task.id})
+      :ok = Tasks.subscribe({:decisions, ctx.workspace.id})
+
+      job = analysis_job(ctx, task)
+
+      finish_analysis(ctx, job, %{
+        "status" => "succeeded",
+        "structured_output" => @analysis_output
+      })
+
+      assert_receive {:task_updated, %Task{}}
+      task = Tasks.get_task!(ctx.workspace, task.id)
+
+      assert %{"origem" => "analise", "diagnostico" => diagnosis, "perguntas" => [question]} =
+               task.decision_questionnaire
+
+      assert diagnosis =~ "timeout"
+      assert hd(question["opcoes"])["rotulo"] == "Tentar sem falha"
+      assert %{questionnaire: %{"origem" => "analise"}} = Tasks.questionnaire(task)
+    end
+
+    test "an analysis that fails or is canceled leaves the manual decision working", ctx do
+      task = fail_stage(ctx, create_task(ctx))
+      job = analysis_job(ctx, task)
+      finish_analysis(ctx, job, %{"status" => "failed", "exit_code" => 1, "error" => "sem cota"})
+
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert task.decision_questionnaire == nil
+      assert %{questionnaire: nil, analysis: :failed} = Tasks.questionnaire(task)
+      assert {:ok, %Task{status: :running}} = Tasks.retry_stage(task, "Tente de novo")
+
+      task = fail_stage(ctx, task)
+      {:ok, _} = Jobs.request_cancel(analysis_job(ctx, task))
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert %{questionnaire: nil, analysis: :failed} = Tasks.questionnaire(task)
+      assert {:ok, %Task{status: :running, current_stage: 1}} = Tasks.advance(task, nil)
+    end
+
+    test "an invalid analysis answer gives no questionnaire", ctx do
+      task = fail_stage(ctx, create_task(ctx))
+      job = analysis_job(ctx, task)
+
+      finish_analysis(ctx, job, %{
+        "status" => "succeeded",
+        "structured_output" => %{"diagnostico" => "x", "perguntas" => []}
+      })
+
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert task.decision_questionnaire == nil
+      assert %{analysis: :failed} = Tasks.questionnaire(task)
+    end
+
+    test "deciding cancels the analysis, and one that ends later is ignored", ctx do
+      task = fail_stage(ctx, create_task(ctx))
+      job = analysis_job(ctx, task)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      {:ok, task} = Tasks.retry_stage(task, "Tente de novo", by: ctx.user)
+      assert %DateTime{} = Jobs.get_job!(ctx.workspace, job.id).cancel_requested_at
+
+      {:ok, _} =
+        Jobs.finish_job(ctx.runner, job.id, %{
+          "status" => "succeeded",
+          "structured_output" => @analysis_output
+        })
+
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert %Task{status: :running} = task
+      assert task.decision_questionnaire == nil
+      assert task.decision_analysis_job_id == nil
+    end
+
+    test "answer/4 keeps the questions and answers and hands them to the next attempt", ctx do
+      task = block_with_questions(ctx, create_task(ctx))
+
+      answers = [
+        %{"escolhas" => ["Safari 17"], "outro" => nil},
+        %{"escolhas" => ["Board", "Decisões"], "outro" => "e o menu"}
+      ]
+
+      assert {:ok, %Task{status: :running, current_stage: 0} = task} =
+               Tasks.answer(task, answers, "capriche", by: ctx.user)
+
+      assert task.decision_questionnaire == nil
+
+      assert [decision] = Tasks.list_decisions(task)
+      assert decision.action == :retry
+      assert decision.decided_by_user_id == ctx.user.id
+      assert decision.instructions == "capriche"
+      assert %{"perguntas" => [_, _]} = decision.questions
+      assert %{"respostas" => ^answers} = decision.answers
+
+      assert [_blocked, %StageRun{attempt: 2, answers: run_answers}] = task.stage_runs
+      assert %{"perguntas" => [_, _], "respostas" => ^answers} = run_answers
+
+      prompt = current_job(task).prompt
+      assert prompt =~ "Respostas da pessoa às suas perguntas"
+      assert prompt =~ "Em qual navegador reproduz?"
+      assert prompt =~ "Safari 17"
+      assert prompt =~ "e o menu"
+      assert prompt =~ "capriche"
+    end
+
+    test "answers that do not answer every question are refused", ctx do
+      task = block_with_questions(ctx, create_task(ctx))
+
+      assert {:error, :invalid_answers, _reason} =
+               Tasks.answer(task, [%{"escolhas" => ["Safari 17"], "outro" => nil}], nil, [])
+
+      assert {:error, :invalid_answers, _reason} =
+               Tasks.answer(
+                 task,
+                 [
+                   %{"escolhas" => ["Edge"], "outro" => nil},
+                   %{"escolhas" => ["Board"], "outro" => nil}
+                 ],
+                 nil,
+                 []
+               )
+
+      assert Tasks.list_decisions(task) == []
+      assert %Task{status: :awaiting_decision} = Tasks.get_task!(ctx.workspace, task.id)
+    end
+
+    test "advance takes partial answers to the next stage", ctx do
+      task = block_with_questions(ctx, create_task(ctx))
+
+      answers = [
+        %{"escolhas" => ["Safari 17"], "outro" => nil},
+        %{"escolhas" => [], "outro" => nil}
+      ]
+
+      assert {:ok, %Task{current_stage: 1} = task} =
+               Tasks.advance(task, nil, by: ctx.user, answers: answers)
+
+      assert [decision] = Tasks.list_decisions(task)
+      assert decision.action == :advance
+      assert %{"respostas" => ^answers} = decision.answers
+      assert current_job(task).prompt =~ "Safari 17"
+    end
+
+    test "a decision twice on the same pause: the second is refused", ctx do
+      task = block_with_questions(ctx, create_task(ctx))
+
+      assert {:ok, _} = Tasks.retry_stage(task, nil)
+      assert {:error, :not_awaiting} = Tasks.retry_stage(task, nil)
+
+      assert {:error, :not_awaiting} =
+               Tasks.answer(
+                 task,
+                 [
+                   %{"escolhas" => ["Safari 17"], "outro" => nil},
+                   %{"escolhas" => ["Board"], "outro" => nil}
+                 ],
+                 nil,
+                 []
+               )
+
+      assert [_one] = Tasks.list_decisions(task)
+    end
+
+    test "the issue comment carries the questions and the answers", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "delivery" => "pr",
+          "stages" => [%{"key" => "a", "name" => "Etapa A", "prompt" => "p"}]
+        })
+
+      task =
+        create_task(%{ctx | pipeline: pipeline}, %{
+          "issue_url" => "https://github.com/acme/app/issues/42"
+        })
+
+      task = block_with_questions(ctx, task)
+
+      {:ok, task} =
+        Tasks.answer(
+          task,
+          [
+            %{"escolhas" => ["Safari 17"], "outro" => nil},
+            %{"escolhas" => ["Board"], "outro" => "e o menu"}
+          ],
+          nil,
+          by: ctx.user
+        )
+
+      comment = current_job(task).context["delivery"]["issue_comment"]["body"]
+      assert comment =~ "Em qual navegador reproduz?"
+      assert comment =~ "Safari 17"
+      assert comment =~ "Quais telas mudam?"
+      assert comment =~ "e o menu"
+    end
+  end
+
   describe "delivery (git and GitHub)" do
     setup ctx do
       %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Com PR", "delivery" => "pr"})}
@@ -556,8 +917,8 @@ defmodule PipeMaestro.TasksTest do
           "structured_output" => %{"status" => "bloqueado", "resumo" => "Qual navegador?"}
         })
 
-      {:ok, _} = Tasks.retry_stage(task, "No Safari", by: ctx.user)
-      assert_receive {:job_assign, again}
+      {:ok, task} = Tasks.retry_stage(task, "No Safari", by: ctx.user)
+      again = current_job(task)
 
       assert %{"url" => "https://github.com/acme/app/issues/42", "body" => comment} =
                again.context["delivery"]["issue_comment"]
@@ -717,6 +1078,41 @@ defmodule PipeMaestro.TasksTest do
 
       task = run_stage(ctx, task, "seg", %{})
       assert %Task{current_stage: 3} = task
+    end
+
+    test "the questions of the group's blocked stages are put together", ctx do
+      question = fn title ->
+        %{
+          "titulo" => title,
+          "pergunta" => "Qual caminho em #{title}?",
+          "multipla" => false,
+          "opcoes" => [
+            %{"rotulo" => "Sim", "descricao" => "", "recomendada" => true},
+            %{"rotulo" => "Não", "descricao" => "", "recomendada" => false}
+          ]
+        }
+      end
+
+      blocked = fn title ->
+        %{
+          "structured_output" => %{
+            "status" => "bloqueado",
+            "resumo" => "dúvida",
+            "perguntas" => [question.(title)]
+          }
+        }
+      end
+
+      task = create_task(ctx)
+      task = run_stage(ctx, task, "impl", %{})
+      task = run_stage(ctx, task, "seg", blocked.("Segurança"))
+      task = run_stage(ctx, task, "perf", blocked.("Desempenho"))
+
+      assert %Task{status: :awaiting_decision} = task
+      assert %{"origem" => "agente", "perguntas" => questions} = task.decision_questionnaire
+      # The stage's name goes on screen only, never into the data.
+      assert Enum.map(questions, & &1["titulo"]) == ["Segurança", "Desempenho"]
+      assert task.decision_analysis_job_id == nil
     end
 
     test "the first stage cannot be in a group", ctx do

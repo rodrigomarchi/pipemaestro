@@ -87,6 +87,8 @@ test.describe("Agent proposals", () => {
       directory: "app",
     });
     await expect(tasks.status).toHaveText("Aguardando decisão", { timeout: 60_000 });
+    // A block with nothing to ask is analysed; "Sugerir com IA" sits in the manual decision.
+    await tasks.openManualDecision();
     await app.page.getByTestId("decision-suggest").click();
     await proposal.waitForProposal();
     await proposal.waitForAnswer();
@@ -111,7 +113,8 @@ test.describe("Agent proposals", () => {
 
     await projects.open(workspace.slug);
     await app.page.goto(`/w/${workspace.slug}/proposals`);
-    await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(3);
+    // The task, the decision, the improvement, and the analysis the block asked for by itself.
+    await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(4);
     await shot(app.page, "proposals");
   });
 });

@@ -1,7 +1,8 @@
 defmodule PipeMaestro.Tasks.StageRun do
   @moduledoc """
   One attempt at one stage of a task, run as a job. It records the
-  instructions a person added (when the attempt came from a decision) and what
+  instructions a person added (when the attempt came from a decision), the
+  questions it was answered (`answers`, `%{"perguntas", "respostas"}`) and what
   the gate found: `passed`, `failed` (an error) or `blocked` (the agent asked
   for a person), with the stage's summary, structured output and artifact.
   """
@@ -20,6 +21,7 @@ defmodule PipeMaestro.Tasks.StageRun do
           attempt: pos_integer() | nil,
           instructions: String.t() | nil,
           feedback: String.t() | nil,
+          answers: map() | nil,
           status: status(),
           summary: String.t() | nil,
           structured_output: map() | nil,
@@ -39,6 +41,7 @@ defmodule PipeMaestro.Tasks.StageRun do
     field :attempt, :integer
     field :instructions, :string
     field :feedback, :string
+    field :answers, :map
 
     field :status, Ecto.Enum,
       values: [:running, :passed, :failed, :blocked, :canceled],
