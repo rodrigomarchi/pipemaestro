@@ -39,6 +39,8 @@ antigo.
   - elemento de um registro: `<coisa>-<chave natural>`, como
     `member-remove-ana@acme.dev` e `workspace-edit-acme`. A chave é o e-mail ou o
     slug, que a spec conhece, nunca o UUID;
+  - a marca (`<Layouts.brand />`) leva `brand` e o símbolo `brand-mark`; quando há
+    uma segunda na página (rodapé), `footer-brand` e `footer-brand-mark`;
   - os toasts ficam em `toasts`; confira o texto com `toContainText`.
 - **Page Objects** em `pages/`: as specs leem como cenários, e as ações esperam
   a confirmação do servidor (toast ou página nova) em vez de usar sleeps.

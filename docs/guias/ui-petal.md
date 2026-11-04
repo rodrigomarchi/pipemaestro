@@ -67,6 +67,10 @@ convergem num único pipeline, que passa por uma etapa (o anel) e termina no pul
   (`PipeMaestroWeb.BrandComponents`) é só o símbolo, dimensionado por `class`. O fundo é
   CSS no próprio `<svg>` e os traços seguem `currentColor`, então várias marcas na mesma
   página não disputam ids.
+- **Test ids:** o link da marca leva `brand` e o símbolo `brand-mark`. Onde a marca
+  aparece duas vezes na mesma página (nav e rodapé da landing), a segunda passa o attr
+  `testid` (`footer-brand`, símbolo `footer-brand-mark`), para as specs não precisarem
+  de `.first()`.
 - **Arquivos** em `apps/pipe_maestro_web/priv/static/images/`: `logo-mark.svg` (em cor),
   `logo-mark-mono.svg` (só traços em `currentColor`, sem fundo, para qualquer cor de
   fundo) e `favicon.svg` (desenho simplificado para 16–32 px). O `priv/static/favicon.ico`
