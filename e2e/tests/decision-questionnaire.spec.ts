@@ -85,6 +85,10 @@ test.describe("Decision questionnaire", () => {
     await expect(tasks.questionnairePart("submit")).toBeDisabled();
     await expect(tasks.questionnairePart("progress")).toContainText("0 de 2");
     await shot(app.page, "questionnaire-blocked");
+    // A narrow screen: options in one column, buttons full width.
+    await app.page.setViewportSize({ width: 390, height: 844 });
+    await shot(app.page, "questionnaire-blocked-narrow");
+    await app.page.setViewportSize({ width: 1440, height: 900 });
 
     // The recommended option comes first.
     await tasks.answerQuestion(0, 0);

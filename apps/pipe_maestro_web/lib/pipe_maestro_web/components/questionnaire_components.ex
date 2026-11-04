@@ -84,7 +84,7 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
       heading="Diagnóstico do agente"
       data-testid={testid("questionnaire-diagnosis", @key)}
     >
-      <div class="prose prose-sm max-w-none dark:prose-invert">
+      <div class="space-y-1 text-sm [&_code]:font-mono [&_strong]:font-semibold">
         {Markdown.to_html(@questionnaire["diagnostico"])}
       </div>
     </.alert>
