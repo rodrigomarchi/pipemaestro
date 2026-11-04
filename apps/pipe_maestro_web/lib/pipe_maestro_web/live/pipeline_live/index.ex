@@ -2,22 +2,42 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   @moduledoc """
   The workspace's pipelines, with their stages and version. An empty
   workspace starts from the ready-made ones. A pipeline exports as YAML, and
-  YAML imports as a new pipeline (`PipeMaestro.Pipelines.Yaml`).
+  YAML imports as a new pipeline (`PipeMaestro.Pipelines.Yaml`). An admin
+  also asks the agent, through a runner, to study a directory and propose a
+  pipeline and its project (`PipeMaestro.Proposals`); the latest proposals
+  are listed here.
   """
   use PipeMaestroWeb, :live_view
 
   alias PipeMaestro.Audit
+  alias PipeMaestro.Jobs
   alias PipeMaestro.Pipelines
+  alias PipeMaestro.Proposals
+  alias PipeMaestro.Runners
+  alias PipeMaestroWeb.RunnerStatus
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket),
+      do: Jobs.subscribe({:workspace, socket.assigns.current_scope.workspace.id})
+
     {:ok,
      socket
      |> assign(page_title: "Pipelines", exported: nil, importing: false, import_error: nil)
-     |> load_pipelines()}
+     |> assign(generating: false, generate_form: nil, generate_params: %{}, online_runners: [])
+     |> load_pipelines()
+     |> load_proposals()}
   end
 
-  @admin_events ~w(create_defaults open_import import delete)
+  # A proposal's status changes as its job runs.
+  @impl true
+  def handle_info({:job_updated, job}, socket) do
+    if Proposals.proposal?(job),
+      do: {:noreply, load_proposals(socket)},
+      else: {:noreply, socket}
+  end
+
+  @admin_events ~w(create_defaults open_import import delete open_generate validate_generate generate)
 
   @impl true
   def handle_event(event, params, socket) when event in @admin_events do
@@ -37,6 +57,9 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
 
   def handle_event("close_import", _params, socket),
     do: {:noreply, assign(socket, importing: false)}
+
+  def handle_event("close_generate", _params, socket),
+    do: {:noreply, assign(socket, generating: false)}
 
   defp admin_event("create_defaults", _params, socket) do
     created = Pipelines.create_defaults(socket.assigns.current_scope.workspace)
@@ -66,6 +89,43 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
 
       {:error, message} ->
         {:noreply, assign(socket, import_error: message)}
+    end
+  end
+
+  defp admin_event("open_generate", _params, socket) do
+    {:noreply,
+     socket
+     |> load_online_runners()
+     |> assign(generating: true, generate_params: %{})
+     |> assign(generate_form: to_form(Proposals.change_request(), as: "proposal"))}
+  end
+
+  defp admin_event("validate_generate", %{"proposal" => params}, socket) do
+    form =
+      params
+      |> Proposals.change_request()
+      |> Map.put(:action, :validate)
+      |> to_form(as: "proposal")
+
+    {:noreply, assign(socket, generate_params: params, generate_form: form)}
+  end
+
+  defp admin_event("generate", %{"proposal" => params}, socket) do
+    %{user: user, workspace: workspace} = socket.assigns.current_scope
+
+    case Proposals.request(user, workspace, params) do
+      {:ok, job} ->
+        audit(socket, "proposal.requested", job)
+
+        {:noreply,
+         push_navigate(socket, to: ~p"/w/#{workspace.slug}/pipelines/proposals/#{job.id}")}
+
+      {:error, changeset} ->
+        {:noreply,
+         assign(socket,
+           generate_params: params,
+           generate_form: to_form(Map.put(changeset, :action, :insert), as: "proposal")
+         )}
     end
   end
 
@@ -102,6 +162,46 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
       |> String.trim("-")
 
     slug <> ".yaml"
+  end
+
+  defp load_proposals(socket),
+    do: assign(socket, proposals: Proposals.list_recent(socket.assigns.current_scope.workspace))
+
+  defp load_online_runners(socket) do
+    workspace = socket.assigns.current_scope.workspace
+    online = RunnerStatus.online_ids(workspace.id)
+
+    runners =
+      for runner <- Runners.list_runners(workspace), MapSet.member?(online, runner.id), do: runner
+
+    assign(socket, online_runners: runners)
+  end
+
+  # Runners that cannot run an analysis are listed, but cannot be picked.
+  defp runner_options(runners) do
+    for runner <- runners do
+      if Proposals.capable?(runner),
+        do: [key: runner.name, value: runner.id],
+        else: [key: "#{runner.name} (atualize o runner)", value: runner.id, disabled: true]
+    end
+  end
+
+  # Only git directories can be analysed: the agent works in a worktree.
+  defp directory_options(runners, runner_id) do
+    case Enum.find(runners, &(&1.id == runner_id)) do
+      nil -> []
+      runner -> for %{"name" => name, "git" => true} <- runner.directories, do: {name, name}
+    end
+  end
+
+  defp proposal_status(job) do
+    case job.status do
+      :queued -> {"Na fila", "gray"}
+      :running -> {"Analisando", "info"}
+      :succeeded -> {"Pronta", "success"}
+      :failed -> {"Falhou", "danger"}
+      :canceled -> {"Cancelada", "gray"}
+    end
   end
 
   defp load_pipelines(socket),
@@ -148,6 +248,15 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
         <.button
           :if={can?(@current_scope, :manage_pipelines)}
           size="sm"
+          icon="hero-cpu-chip"
+          phx-click="open_generate"
+          data-testid="generate-pipeline"
+        >
+          Gerar com IA
+        </.button>
+        <.button
+          :if={can?(@current_scope, :manage_pipelines)}
+          size="sm"
           variant="outline"
           icon="hero-sparkles"
           phx-click="create_defaults"
@@ -181,6 +290,43 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
               </.button>
             </:actions>
           </.empty>
+        </.card_content>
+      </.card>
+
+      <.card :if={@proposals != []} variant="outline" class="mb-6" data-testid="proposals">
+        <.card_content>
+          <.section_heading
+            icon="hero-cpu-chip"
+            title="Propostas do agente"
+            description="Pipelines e projetos que o agente propôs depois de estudar um diretório."
+          />
+          <ul class="divide-y divide-gray-100 dark:divide-gray-800">
+            <li :for={job <- @proposals} class="flex items-center gap-3 py-2.5">
+              <.icon name="hero-folder-open" class="size-5 shrink-0 text-gray-400" />
+              <div class="min-w-0 flex-1">
+                <.link
+                  navigate={~p"/w/#{@current_scope.workspace.slug}/pipelines/proposals/#{job.id}"}
+                  class="font-medium text-gray-900 hover:underline dark:text-white"
+                  data-testid={"proposal-link-#{job.id}"}
+                >
+                  {Proposals.asked(job).directory}
+                </.link>
+                <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {Proposals.asked(job).request}
+                </p>
+              </div>
+              <span class="hidden shrink-0 text-xs text-gray-500 sm:inline dark:text-gray-400">
+                {job.runner && job.runner.name}
+              </span>
+              <.badge
+                size="sm"
+                variant="soft"
+                color={elem(proposal_status(job), 1)}
+                label={elem(proposal_status(job), 0)}
+                data-testid={"proposal-status-#{job.id}"}
+              />
+            </li>
+          </ul>
         </.card_content>
       </.card>
 
@@ -316,6 +462,72 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
             <.icon name="hero-arrow-down-tray" class="size-4" /> Baixar
           </a>
         </div>
+      </.modal>
+
+      <.modal
+        :if={@generating}
+        id="generate-modal"
+        title="Gerar pipeline com IA"
+        max_width="xl"
+        on_cancel={JS.push("close_generate")}
+      >
+        <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
+          O agente estuda o diretório pelo runner, num worktree descartável (nada muda no seu
+          código), roda os comandos que encontrar e propõe a configuração do projeto e um
+          pipeline. Você revisa antes de salvar.
+        </p>
+        <.alert
+          :if={@online_runners == []}
+          color="warning"
+          class="mb-4"
+          data-testid="generate-no-runners"
+        >
+          Nenhum runner online. Conecte um em Executores.
+        </.alert>
+        <.form
+          for={@generate_form}
+          id="generate-form"
+          phx-change="validate_generate"
+          phx-submit="generate"
+        >
+          <div class="grid gap-4 sm:grid-cols-2">
+            <.icon_field
+              field={@generate_form[:runner_id]}
+              icon="hero-server-stack"
+              type="select"
+              label="Runner"
+              prompt="Escolha um runner online"
+              options={runner_options(@online_runners)}
+              data-testid="generate-runner"
+            />
+            <.icon_field
+              field={@generate_form[:directory]}
+              icon="hero-folder-open"
+              type="select"
+              label="Diretório (repositório git)"
+              prompt="Escolha um diretório"
+              options={directory_options(@online_runners, @generate_params["runner_id"])}
+              data-testid="generate-directory"
+            />
+          </div>
+          <.markdown_editor
+            id="generate-request"
+            field={@generate_form[:request]}
+            label="O que o pipeline deve fazer"
+            icon="hero-chat-bubble-bottom-center-text"
+            testid="generate-request"
+            rows={6}
+            placeholder="Ex.: implementar funcionalidades a partir de issues do GitHub, com testes, revisão e um PR no final."
+          />
+          <div class="flex justify-end gap-2">
+            <.button type="button" variant="ghost" color="gray" phx-click="close_generate">
+              Cancelar
+            </.button>
+            <.button type="submit" icon="hero-cpu-chip" data-testid="generate-submit">
+              Analisar e propor
+            </.button>
+          </div>
+        </.form>
       </.modal>
 
       <.modal

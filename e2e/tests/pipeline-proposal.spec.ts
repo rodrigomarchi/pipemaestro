@@ -1,0 +1,96 @@
+/**
+ * @section Tarefas e pipelines
+ * @flow A [done] An admin asks the agent, through a real runner, to study a git directory and propose a pipeline and its project; the analysis runs in a disposable worktree that leaves the directory untouched and goes away
+ * @flow B [done] The proposal shows what the agent understood, the commands it checked and the stages; saving its project opens the pipeline form filled with it, and both are saved
+ */
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { expect, test } from "@playwright/test";
+import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
+import { RunnerProcess } from "../helpers/runnerProcess";
+import { shot } from "../helpers/screenshots";
+import { AppPage } from "../pages/AppPage";
+import { BackofficePage } from "../pages/BackofficePage";
+import { PipelinesPage } from "../pages/PipelinesPage";
+import { ProjectsPage } from "../pages/ProjectsPage";
+import { ProposalPage } from "../pages/ProposalPage";
+import { RunnersPage } from "../pages/RunnersPage";
+
+test.describe("Pipeline proposal", () => {
+  // Real CLI processes: the first one may compile the runner app.
+  test.setTimeout(240_000);
+
+  let runner: RunnerProcess;
+
+  test.afterEach(() => runner?.cleanup());
+
+  test("the agent studies a directory and proposes a pipeline and its project", async ({ page, browser }) => {
+    const suffix = uniqueSuffix();
+    const workspace = { name: `Propostas ${suffix}`, slug: `propostas-${suffix}` };
+    const user = { name: `Pietra ${suffix}`, email: `pietra-${suffix}@e2e.test` };
+    const runnerName = `analise-${suffix}`;
+
+    const backoffice = new BackofficePage(page);
+    await backoffice.signInExpectingSuccess(bootstrapOperator.email, bootstrapOperator.password);
+    await backoffice.createWorkspace(workspace.name);
+    await backoffice.createMember(user.name, user.email, userPassword);
+
+    const context = await browser.newContext();
+    const app = new AppPage(await context.newPage());
+    await app.signIn(user.email, userPassword);
+    await app.expectBoard(workspace.name);
+
+    runner = new RunnerProcess();
+    const root = runner.createCodeRoot();
+    runner.start("runner.login", ["--url", app.page.url().replace(/\/w\/.*$/, "")]);
+    const [, code] = await runner.waitFor(/digite o código:\s+([A-Z]{4}-[A-Z]{4})/);
+    await new RunnersPage(app.page).approve(code, runnerName);
+    expect(await runner.waitForExit()).toBe(0);
+
+    runner.start("runner.start", ["--root", root]);
+    await runner.waitFor(/Online como/);
+
+    // Flow A: only git directories can be studied.
+    const pipelines = new PipelinesPage(app.page);
+    await pipelines.open(workspace.slug);
+    const proposal = new ProposalPage(app.page);
+    await app.page.getByTestId("generate-pipeline").click();
+    await app.page.getByTestId("generate-runner").selectOption({ label: runnerName });
+    await expect(proposal.directoryOptions).toHaveText(["Escolha um diretório", "app"]);
+    await app.page.getByTestId("generate-request").fill("[proposta] Entregar issues com testes e um PR.");
+    await shot(app.page, "proposal-request");
+    await app.page.keyboard.press("Escape");
+
+    await proposal.request(runnerName, "app", "[proposta] Entregar issues com testes e um PR.");
+    await expect(proposal.status).toHaveText("Concluído", { timeout: 60_000 });
+
+    // The agent ran in a disposable worktree: its file never reached the directory.
+    expect(existsSync(join(root, "app", "fake-claude.txt"))).toBe(false);
+    await expect
+      .poll(() => (existsSync(join(runner.workdir, "scratch")) ? readdirSync(join(runner.workdir, "scratch")) : []))
+      .toEqual([]);
+
+    // Flow B: the review.
+    await expect(proposal.analysis).toContainText("make test");
+    await expect(proposal.checks).toContainText("make lint");
+    await expect(proposal.checks).toContainText("Sem alvo de lint");
+    await expect(proposal.stage(1)).toContainText("Implementação");
+    await expect(proposal.stage(1)).toContainText("{{projeto.teste}}");
+    await expect(proposal.projectField("test")).toHaveValue("make test");
+    await shot(app.page, "proposal-review");
+
+    await proposal.projectField("lint").fill("make check");
+    await proposal.saveProject();
+    await expect(app.page.getByTestId("pipeline-name")).toHaveValue("Entrega proposta");
+    await expect(pipelines.stageGates(1)).toHaveValue("{{projeto.teste}}");
+    await shot(app.page, "proposal-pipeline-form");
+    await pipelines.save();
+
+    await expect(pipelines.pipeline("Entrega proposta")).toBeVisible();
+    await expect(app.page.getByTestId("proposals")).toContainText("app");
+
+    const projects = new ProjectsPage(app.page);
+    await projects.open(workspace.slug);
+    await expect(projects.project("app")).toContainText("App do fake");
+  });
+});

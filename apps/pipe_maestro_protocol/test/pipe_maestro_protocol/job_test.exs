@@ -65,6 +65,28 @@ defmodule PipeMaestroProtocol.JobTest do
       refute job |> Job.to_map() |> Map.has_key?("permissions")
     end
 
+    test "scratch runs in a disposable worktree of a directory, without worktree or delivery" do
+      base = %{id: "j", prompt: "p", directory: "app"}
+      assert {:ok, %Job{scratch: true}} = Job.new(Map.put(base, :scratch, true))
+      assert Job.to_map(elem(Job.new(Map.put(base, :scratch, true)), 1))["scratch"] == true
+
+      assert {:error, "scratch needs a directory"} =
+               Job.new(%{id: "j", prompt: "p", scratch: true})
+
+      assert {:error, "scratch takes no worktree nor delivery"} =
+               Job.new(
+                 Map.merge(base, %{
+                   scratch: true,
+                   worktree: %{"task_id" => "t1", "branch" => "cp/t1"}
+                 })
+               )
+
+      assert {:error, "scratch takes no worktree nor delivery"} =
+               Job.new(Map.merge(base, %{scratch: true, delivery: %{"commit_message" => "m"}}))
+
+      assert {:error, "scratch" <> _} = Job.new(Map.put(base, :scratch, "yes"))
+    end
+
     test "rejects a bad context" do
       base = %{id: "j", prompt: "p"}
       assert {:error, "directory" <> _} = Job.new(Map.put(base, :directory, "../etc"))

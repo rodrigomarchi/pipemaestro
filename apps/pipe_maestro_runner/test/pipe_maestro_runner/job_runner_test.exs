@@ -185,6 +185,63 @@ defmodule PipeMaestroRunner.JobRunnerTest do
     assert finished["error"] =~ "não existe"
   end
 
+  test "an analysis runs in a disposable worktree, removed when it ends", %{tmp_dir: dir} do
+    root = Path.join(dir, "src")
+    repo = git_repo!(Path.join(root, "app"))
+    File.mkdir_p!(Path.join([repo, "deps", "lib"]))
+    File.mkdir_p!(Path.join(root, "notas"))
+
+    workdir = Path.join(dir, "workdir")
+    # A worktree left by a runner that stopped mid-analysis goes at start.
+    File.mkdir_p!(Path.join([workdir, "scratch", "velho"]))
+    runner = start_runner(workdir, root: root)
+    refute File.exists?(Path.join([workdir, "scratch", "velho"]))
+
+    job = %Job{
+      id: "a1",
+      prompt: "analise",
+      directory: "app",
+      scratch: true,
+      output_schema: %{"type" => "object"}
+    }
+
+    JobRunner.enqueue(runner, job)
+    {_messages, finished} = collect_until_finished("a1")
+
+    scratch = Path.join([workdir, "scratch", "a1"])
+    assert finished["status"] == "succeeded"
+    assert finished["workdir"] == scratch
+    assert finished["setup"]["copied"] == ["deps"]
+    refute Map.has_key?(finished, "changes")
+    # The agent's file never reaches the directory, and the worktree goes.
+    refute File.exists?(Path.join(repo, "fake-claude.txt"))
+    assert eventually(fn -> not File.exists?(scratch) end)
+    {list, 0} = System.cmd("git", ["-C", repo, "worktree", "list"])
+    refute list =~ "scratch"
+    {status, 0} = System.cmd("git", ["-C", repo, "status", "--porcelain"])
+    assert status == ""
+
+    # A directory without git cannot be analysed.
+    JobRunner.enqueue(runner, %Job{id: "a2", prompt: "x", directory: "notas", scratch: true})
+    {[{"job:started", _}], finished} = collect_until_finished("a2")
+    assert finished["status"] == "failed"
+    assert finished["error"] =~ "repositório git"
+  end
+
+  defp eventually(fun, tries \\ 50) do
+    cond do
+      fun.() ->
+        true
+
+      tries == 0 ->
+        false
+
+      true ->
+        Process.sleep(50)
+        eventually(fun, tries - 1)
+    end
+  end
+
   test "relays what the agent is writing, apart from the events", %{tmp_dir: dir} do
     runner = start_runner(dir)
     JobRunner.enqueue(runner, job("j1", "responda [digitando]"))

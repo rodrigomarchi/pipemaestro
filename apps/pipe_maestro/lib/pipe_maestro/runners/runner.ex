@@ -23,6 +23,7 @@ defmodule PipeMaestro.Runners.Runner do
           labels: [String.t()],
           capacity: pos_integer(),
           directories: [map()],
+          capabilities: [String.t()],
           worktree_usage: map() | nil,
           agent: map() | nil,
           last_connected_at: DateTime.t() | nil,
@@ -44,6 +45,7 @@ defmodule PipeMaestro.Runners.Runner do
     field :labels, {:array, :string}, default: []
     field :capacity, :integer, default: 1
     field :directories, {:array, :map}, default: []
+    field :capabilities, {:array, :string}, default: []
     field :worktree_usage, :map
     field :agent, :map
     field :last_connected_at, :utc_datetime
@@ -80,6 +82,7 @@ defmodule PipeMaestro.Runners.Runner do
       labels: hello.labels,
       capacity: hello.capacity,
       directories: hello.directories,
+      capabilities: hello.capabilities,
       agent: hello.agent,
       last_connected_at: now,
       last_seen_at: now

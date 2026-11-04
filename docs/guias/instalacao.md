@@ -132,6 +132,16 @@ O login mostra um código. Um **admin** do workspace o aprova em
 
 ## 3. O primeiro pipeline
 
+**O atalho: Pipelines → Gerar com IA.** Escolha um runner online, um dos diretórios git
+dele, e conte o que o pipeline deve fazer. O agente estuda o projeto num worktree
+descartável (nada muda no seu código) e roda os comandos que encontrar. Depois propõe a
+configuração do projeto e um pipeline. Revise e salve o projeto, depois o pipeline, que
+abre preenchido. Se precisar, gere de novo com um comentário
+([ADR 0021](../adr/0021-propostas-de-pipeline-pelo-agente.md)). Isso exige um runner
+atualizado: os antigos aparecem como "atualize o runner".
+
+Ou, à mão:
+
 1. **Pipelines → Criar pipelines padrão.** Os templates (correção de bug,
    funcionalidade, refatoração, revisão, investigação de produção...) já vêm prontos.
    As etapas rodam com todas as permissões e seguem sozinhas; a tarefa só para quando

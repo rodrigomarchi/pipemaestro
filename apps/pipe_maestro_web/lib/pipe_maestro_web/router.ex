@@ -67,6 +67,7 @@ defmodule PipeMaestroWeb.Router do
       live "/w/:workspace_slug/projects/:id/edit", ProjectLive.Form, :edit
       live "/w/:workspace_slug/pipelines", PipelineLive.Index
       live "/w/:workspace_slug/pipelines/new", PipelineLive.Form, :new
+      live "/w/:workspace_slug/pipelines/proposals/:id", PipelineLive.Proposal
       live "/w/:workspace_slug/pipelines/:id/edit", PipelineLive.Form, :edit
     end
   end

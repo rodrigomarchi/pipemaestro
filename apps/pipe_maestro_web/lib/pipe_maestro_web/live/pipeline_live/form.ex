@@ -3,6 +3,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   Creates or edits a pipeline: its name, delivery and context, and its stages,
   which can be added, removed, moved and collapsed. Prompts are written in a
   Markdown editor (`PipeMaestroWeb.FormComponents.markdown_editor/1`).
+  A new pipeline can start from an agent's proposal (`?proposta=<job id>`,
+  `PipeMaestro.Proposals`), to be reviewed and saved.
   The form's params are kept as they are typed, so moving a stage keeps
   whatever was written in it; a collapsed stage keeps its inputs in the page,
   hidden.
@@ -12,6 +14,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   alias PipeMaestro.Audit
   alias PipeMaestro.Pipelines
   alias PipeMaestro.Pipelines.{Json, Pipeline, Prompt, Stage}
+  alias PipeMaestro.Proposals
 
   @impl true
   def mount(params, session, socket) do
@@ -36,9 +39,45 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     {:ok,
      socket
      |> assign(page_title: page_title(socket.assigns.live_action), pipeline: pipeline)
-     |> assign(collapsed: MapSet.new())
-     |> put_params(initial_params(pipeline), nil)}
+     |> assign(collapsed: MapSet.new(), from_proposal: from_proposal?(params))
+     |> put_params(starting_params(pipeline, params, workspace), nil)}
   end
+
+  defp from_proposal?(params), do: is_binary(params["proposta"])
+
+  # A new pipeline starts from a proposal when one is named, and the proposal
+  # has one; otherwise from scratch.
+  defp starting_params(%Pipeline{id: nil} = pipeline, %{"proposta" => job_id}, workspace)
+       when is_binary(job_id) do
+    with {:ok, _uuid} <- Ecto.UUID.cast(job_id),
+         {:ok, result} <- workspace |> Proposals.get_proposal!(job_id) |> Proposals.result() do
+      proposal_params(result.pipeline)
+    else
+      _no_proposal -> initial_params(pipeline)
+    end
+  end
+
+  defp starting_params(pipeline, _params, _workspace), do: initial_params(pipeline)
+
+  # A proposal's attributes (`PipeMaestro.Pipelines.Yaml.from_map/1`) as the
+  # form's params: stages indexed, every value text.
+  defp proposal_params(attrs) do
+    stages =
+      attrs
+      |> Map.get("stages", [])
+      |> Enum.map(fn stage -> Map.merge(new_stage(), Map.new(stage, &text_param/1)) end)
+      |> to_indexed()
+
+    attrs
+    |> Map.delete("stages")
+    |> Map.new(&text_param/1)
+    |> Map.put_new("description", "")
+    |> Map.put("stages", stages)
+  end
+
+  defp text_param({key, nil}), do: {key, ""}
+  defp text_param({key, value}) when is_binary(value), do: {key, value}
+  defp text_param({key, value}), do: {key, to_string(value)}
 
   defp page_title(:new), do: "Novo pipeline"
   defp page_title(:edit), do: "Editar pipeline"
@@ -245,6 +284,16 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           Pipelines
         </.button>
       </:actions>
+
+      <.alert
+        :if={@from_proposal}
+        color="info"
+        class="mb-6"
+        with_icon
+        data-testid="pipeline-from-proposal"
+      >
+        Este é o pipeline que o agente propôs. Revise as etapas, ajuste o que quiser e salve.
+      </.alert>
 
       <.form for={@form} id="pipeline-form" phx-change="validate" phx-submit="save" class="space-y-6">
         <div class="grid gap-6 xl:grid-cols-3">

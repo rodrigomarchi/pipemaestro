@@ -75,6 +75,22 @@ defmodule PipeMaestroProtocolTest do
       assert {:error, "agent" <> _} = Hello.new(Map.put(@valid, :agent, "claude"))
     end
 
+    test "capabilities: none by default, validated, deduplicated and sorted" do
+      assert {:ok, %Hello{capabilities: []}} = Hello.new(@valid)
+
+      assert {:ok, %Hello{capabilities: ["scratch"]}} =
+               Hello.new(Map.put(@valid, :capabilities, ["scratch", "scratch"]))
+
+      assert {:ok, %Hello{capabilities: ["a", "b"]}} =
+               Hello.new(Map.put(@valid, "capabilities", ["b", "a"]))
+
+      assert {:error, "capabilities" <> _} =
+               Hello.new(Map.put(@valid, :capabilities, ["Bad Name"]))
+
+      assert {:error, "capabilities" <> _} = Hello.new(Map.put(@valid, :capabilities, "scratch"))
+      assert "scratch" in Hello.capabilities()
+    end
+
     test "directories are validated, deduplicated and sorted" do
       dirs = [
         %{"name" => "b", "git" => false},

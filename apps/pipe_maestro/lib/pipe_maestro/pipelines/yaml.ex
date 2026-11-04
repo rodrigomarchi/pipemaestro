@@ -107,13 +107,20 @@ defmodule PipeMaestro.Pipelines.Yaml do
   @spec from_yaml(String.t()) :: {:ok, map()} | {:error, String.t()}
   def from_yaml(yaml) do
     case YamlElixir.read_from_string(yaml) do
-      {:ok, %{} = map} -> {:ok, attrs(map)}
+      {:ok, %{} = map} -> {:ok, from_map(map)}
       {:ok, _other} -> {:error, "precisa ser um pipeline: um mapa com name e stages"}
       {:error, error} -> {:error, "YAML inválido: #{Exception.message(error)}"}
     end
   end
 
-  defp attrs(map) do
+  @doc """
+  Attributes for a new pipeline from a map in the YAML's shape (string keys,
+  `gates` and `rules` as lists, `mcp_config`, `agents` and `output_schema` as
+  objects), as `PipeMaestro.Pipelines.create_pipeline/2` and the pipeline
+  form take them.
+  """
+  @spec from_map(map()) :: map()
+  def from_map(%{} = map) do
     map
     |> Map.take(~w(name description system_prompt max_task_cost_usd delivery))
     |> put_json(map, "mcp_config")

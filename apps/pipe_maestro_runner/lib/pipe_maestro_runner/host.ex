@@ -32,7 +32,8 @@ defmodule PipeMaestroRunner.Host do
         labels: [os, arch | detected_tools()] ++ Keyword.get(opts, :labels, []),
         capacity: Keyword.get(opts, :capacity) || System.schedulers_online(),
         directories: Keyword.get(opts, :directories, []),
-        agent: Keyword.get(opts, :agent)
+        agent: Keyword.get(opts, :agent),
+        capabilities: Hello.capabilities()
       })
 
     # Matching the struct makes this module depend on Hello at compile time:

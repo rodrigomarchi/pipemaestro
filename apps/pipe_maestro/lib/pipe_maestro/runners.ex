@@ -239,6 +239,15 @@ defmodule PipeMaestro.Runners do
     Scheme.outdated?(version, reference)
   end
 
+  @doc """
+  Whether `runner` announced `capability` when it last connected
+  (`PipeMaestroProtocol.Hello`): `"scratch"` runs a job in a disposable
+  worktree.
+  """
+  @spec capable?(Runner.t(), String.t()) :: boolean()
+  def capable?(%Runner{capabilities: capabilities}, capability),
+    do: capability in (capabilities || [])
+
   @doc "Stores what a runner announced as it connected."
   @spec record_hello(Runner.t(), Hello.t()) :: {:ok, Runner.t()}
   def record_hello(%Runner{} = runner, %Hello{} = hello) do

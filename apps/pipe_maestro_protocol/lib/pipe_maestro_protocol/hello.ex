@@ -15,10 +15,15 @@ defmodule PipeMaestroProtocol.Hello do
   `agent` describes the agent CLI on the machine: `"cli_version"` (`nil` when
   it was not found) and `"auth"`, how it authenticates: `"api_key"` (the
   runner's own key) or `"login"` (whoever is signed in to the CLI).
+
+  `capabilities` names what this runner supports beyond the protocol version,
+  so the control plane offers a feature only to runners that have it:
+  `"scratch"` runs a job in a disposable worktree (`PipeMaestroProtocol.Job`).
+  A runner that sends none has none.
   """
 
   @enforce_keys [:protocol_version, :runner_version, :hostname, :os, :arch, :labels, :capacity]
-  defstruct @enforce_keys ++ [running_job_ids: [], directories: [], agent: nil]
+  defstruct @enforce_keys ++ [running_job_ids: [], directories: [], agent: nil, capabilities: []]
 
   @type t :: %__MODULE__{
           protocol_version: pos_integer(),
@@ -30,7 +35,8 @@ defmodule PipeMaestroProtocol.Hello do
           capacity: pos_integer(),
           running_job_ids: [String.t()],
           directories: [directory()],
-          agent: %{String.t() => String.t() | nil} | nil
+          agent: %{String.t() => String.t() | nil} | nil,
+          capabilities: [String.t()]
         }
 
   @typedoc "A code directory the runner offers, in the wire form."
@@ -40,6 +46,11 @@ defmodule PipeMaestroProtocol.Hello do
   @max_running_jobs 64
   @max_directories 500
   @label_format ~r/^[a-z0-9][a-z0-9._-]{0,39}$/
+  @max_capabilities 32
+
+  @doc "What a runner of this build supports (`capabilities`)."
+  @spec capabilities() :: [String.t()]
+  def capabilities, do: ["scratch"]
 
   @doc """
   Builds a validated hello from a map with atom or string keys. Labels are
@@ -56,7 +67,8 @@ defmodule PipeMaestroProtocol.Hello do
          {:ok, capacity} <- positive_integer(attrs, :capacity),
          {:ok, running_job_ids} <- running_job_ids(attrs),
          {:ok, directories} <- parse_directories(fetch(attrs, :directories) || []),
-         {:ok, agent} <- agent(fetch(attrs, :agent)) do
+         {:ok, agent} <- agent(fetch(attrs, :agent)),
+         {:ok, capabilities} <- capabilities(fetch(attrs, :capabilities)) do
       {:ok,
        %__MODULE__{
          protocol_version: protocol_version,
@@ -68,7 +80,8 @@ defmodule PipeMaestroProtocol.Hello do
          capacity: capacity,
          running_job_ids: running_job_ids,
          directories: directories,
-         agent: agent
+         agent: agent,
+         capabilities: capabilities
        }}
     end
   end
@@ -84,6 +97,17 @@ defmodule PipeMaestroProtocol.Hello do
   @doc "Parses the wire form."
   @spec from_map(map()) :: {:ok, t()} | {:error, String.t()}
   def from_map(map), do: new(map)
+
+  defp capabilities(nil), do: {:ok, []}
+
+  defp capabilities(list) when is_list(list) and length(list) <= @max_capabilities do
+    if Enum.all?(list, &(is_binary(&1) and Regex.match?(@label_format, &1))),
+      do: {:ok, list |> Enum.uniq() |> Enum.sort()},
+      else: {:error, "capabilities must be lowercase words"}
+  end
+
+  defp capabilities(_list),
+    do: {:error, "capabilities must be a list of at most #{@max_capabilities} names"}
 
   defp agent(nil), do: {:ok, nil}
 

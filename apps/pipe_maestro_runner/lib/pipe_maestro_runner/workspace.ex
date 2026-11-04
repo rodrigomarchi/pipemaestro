@@ -9,6 +9,10 @@ defmodule PipeMaestroRunner.Workspace do
       creates it from the directory's current `HEAD`; later stages reuse it,
       so what one stage leaves behind is there for the next. The developer's
       own checkout is never touched.
+    * A `scratch` job (an analysis) runs in a disposable worktree of its
+      directory, at `<workdir>/scratch/<job_id>`, detached at the directory's
+      `HEAD` and removed when the job ends (`remove_scratch/3`). Nothing it
+      does reaches the directory.
     * A job with a `directory` and no `worktree` runs in the directory itself.
   """
 
@@ -35,6 +39,9 @@ defmodule PipeMaestroRunner.Workspace do
       not File.dir?(source) ->
         {:error, "O diretório #{directory} não existe em #{root}."}
 
+      job.scratch == true ->
+        scratch(source, job.id, workdir)
+
       is_nil(job.worktree) ->
         {:ok, source, nil}
 
@@ -57,6 +64,48 @@ defmodule PipeMaestroRunner.Workspace do
         File.mkdir_p!(Path.dirname(path))
         add_worktree(source, path, branch)
     end
+  end
+
+  defp scratch(source, job_id, workdir) do
+    path = scratch_path(workdir, job_id)
+
+    if repository_root?(source) do
+      _stale = remove_worktree(source, path)
+      File.mkdir_p!(Path.dirname(path))
+
+      case git(source, ["worktree", "add", "--detach", path, "HEAD"]) do
+        {:ok, _output} -> {:ok, path, source}
+        {:error, output} -> {:error, "Não foi possível criar o worktree da análise: #{output}"}
+      end
+    else
+      {:error,
+       "A análise precisa de um repositório git: #{Path.basename(source)} não é a raiz de um."}
+    end
+  end
+
+  @doc "Where the disposable worktree of `scratch` job `job_id` lives."
+  @spec scratch_path(Path.t(), String.t()) :: Path.t()
+  def scratch_path(workdir, job_id), do: Path.join([workdir, "scratch", job_id])
+
+  @doc """
+  Removes the disposable worktree of `job` (a `scratch` job), made from its
+  directory under `root`. Removing one that is not there is fine.
+  """
+  @spec remove_scratch(Job.t(), Path.t() | nil, Path.t()) :: :ok | {:error, String.t()}
+  def remove_scratch(%Job{id: id, directory: directory}, root, workdir) do
+    path = scratch_path(workdir, id)
+    source = if root && directory, do: Path.join(root, directory), else: workdir
+    remove_worktree(source, path)
+  end
+
+  @doc """
+  Deletes every disposable worktree left behind, as when the runner stopped in
+  the middle of an analysis. git forgets their entries on its next prune.
+  """
+  @spec clear_scratch(Path.t()) :: :ok
+  def clear_scratch(workdir) do
+    _removed = File.rm_rf(Path.join(workdir, "scratch"))
+    :ok
   end
 
   # git looks for a repository upwards from the directory it is given: without

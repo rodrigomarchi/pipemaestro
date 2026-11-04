@@ -96,7 +96,11 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
     da raiz com que foi iniciado (`[{"name": "app", "git": true}, …]`, até 500);
   - `agent` (opcional): `{"cli_version", "auth"}`, a versão do CLI do agente (`null`
     se não foi encontrado) e como ele se autentica: `api_key` (a chave própria do
-    runner) ou `login` (o login da máquina).
+    runner) ou `login` (o login da máquina);
+  - `capabilities` (opcional): o que o runner suporta além da versão do protocolo
+    (vazio se omitido). Hoje, `"scratch"`: roda um job num worktree descartável (§4.4).
+    O control plane só oferece uma funcionalidade a quem a anuncia, o que permite
+    acrescentar campos ao job sem quebrar runners antigos.
 
   O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
@@ -212,6 +216,7 @@ plane antigo ainda mande.
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
 | `delivery` | `{"commit_message", "push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou (ADR 0013): commit, push do branch, PR em rascunho (`{"title", "body", "ready"}`) e comentário na issue (`{"url", "body"}`). O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}` |
+| `scratch` | `true` numa análise (ADR 0021): roda num worktree descartável do `directory`, em `<workdir>/scratch/<job_id>`, destacado no `HEAD` (`git worktree add --detach`) e removido quando o job termina. Recebe só a cópia de dependências do `setup`, sem comando, e não reporta `changes`. Exige `directory` e não aceita `worktree` nem `delivery`. O control plane só manda `scratch` a um runner que anunciou a capacidade `"scratch"` no `Hello`: um runner antigo descartaria o campo e rodaria no próprio diretório |
 | `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |
 | `gates` | `[{"command", "expect"}]` (até 10, `expect` igual a `pass` ou `fail`): comandos que o runner roda no diretório de trabalho, em ordem, **depois que o agente termina bem**. O `job:finished` traz `gates` com cada um mais `exit_code`, `output` (o fim), `passed` e `duration_ms`. O runner só informa; quem decide é o control plane |
@@ -233,8 +238,10 @@ no fim da etapa, e na criação do worktree.
 | `files` | `[{"path", "added", "removed"}]` alterados na etapa; `added` e `removed` são `null` num arquivo binário |
 | `patch` | o diff unificado da etapa, cortado numa linha inteira em 200 KB |
 | `truncated` | se o patch foi cortado |
-| `task_files` | os arquivos alterados desde a criação do worktree, no mesmo formato de `files` | Um diretório que não existe ou que não é a raiz
-de um repositório git (para `worktree`) faz o job falhar com o motivo em `error`.
+| `task_files` | os arquivos alterados desde a criação do worktree, no mesmo formato de `files` |
+
+Um diretório que não existe, ou que não é a raiz de um repositório git (para `worktree`
+e `scratch`), faz o job falhar com o motivo em `error`.
 
 ### 4.5 Worktrees
 

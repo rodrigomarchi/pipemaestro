@@ -55,13 +55,15 @@ defmodule PipeMaestro.Jobs do
 
   @doc """
   Creates a job for one of the workspace's runners and hands it to that runner.
-  A revoked runner or one from another workspace is refused.
+  A revoked runner or one from another workspace is refused. `context` is
+  the wire form of the job's context (`PipeMaestroProtocol.Job`), plus any
+  key of the control plane's own, which never reaches the runner.
   """
-  @spec create_job(User.t(), Workspace.t(), map()) ::
+  @spec create_job(User.t(), Workspace.t(), map(), map()) ::
           {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
-  def create_job(%User{} = user, %Workspace{} = workspace, attrs) do
+  def create_job(%User{} = user, %Workspace{} = workspace, attrs, context \\ %{}) do
     changeset =
-      %Job{workspace_id: workspace.id, created_by_user_id: user.id}
+      %Job{workspace_id: workspace.id, created_by_user_id: user.id, context: context}
       |> Job.create_changeset(attrs)
       |> validate_runner(workspace)
 

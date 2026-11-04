@@ -94,6 +94,7 @@ defmodule PipeMaestroRunner.JobRunner do
   def init(opts) do
     workdir = Keyword.fetch!(opts, :workdir)
     File.mkdir_p!(workdir)
+    :ok = Workspace.clear_scratch(workdir)
 
     endpoint =
       if Keyword.get(opts, :telemetry, false) do
@@ -309,6 +310,8 @@ defmodule PipeMaestroRunner.JobRunner do
   # Where a job runs, as far as waiting goes: jobs with the same place never run
   # at once.
   defp place(%Job{directory: nil}), do: :workdir
+  # An analysis has a worktree of its own: it waits for nothing.
+  defp place(%Job{scratch: true, id: id}), do: {:scratch, id}
   # Stages of a group run at once in their task's worktree.
   defp place(%Job{worktree: %{"task_id" => task_id}, parallel: true, id: id}),
     do: {:task, task_id, id}
@@ -390,6 +393,9 @@ defmodule PipeMaestroRunner.JobRunner do
     Changes.start(workdir, task_id, dir, setup != nil, (setup && setup["copied"]) || [])
   end
 
+  # An analysis's worktree is thrown away: what it changed there does not matter.
+  defp track(%Job{scratch: true}, _workdir, _dir, _setup), do: nil
+
   # A directory without git: which files the stage created, changed or removed.
   defp track(%Job{directory: directory}, _workdir, dir, _setup) when is_binary(directory),
     do: %{files: Changes.file_snapshot(dir), exclude: []}
@@ -453,6 +459,7 @@ defmodule PipeMaestroRunner.JobRunner do
       for {key, value} <- payload, value != nil, into: %{"job_id" => run.job.id}, do: {key, value}
 
     out(state, Job.finished_event(), payload)
+    discard_scratch(state, run.job)
     start_ready(%{state | running: Map.delete(state.running, run.job.id)})
   end
 
@@ -569,8 +576,19 @@ defmodule PipeMaestroRunner.JobRunner do
           do: {key, value}
 
     out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+    discard_scratch(state, current.job)
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
   end
+
+  # An analysis's worktree goes once its job reported (its artifact read), in
+  # the background: deleting copied dependencies can take a while.
+  defp discard_scratch(state, %Job{scratch: true} = job) do
+    %{root: root, workdir: workdir} = state
+    {:ok, _pid} = Task.start(fn -> Workspace.remove_scratch(job, root, workdir) end)
+    :ok
+  end
+
+  defp discard_scratch(_state, _job), do: :ok
 
   # What the run reported about itself, from its first and last lines and the
   # runner's own measures.

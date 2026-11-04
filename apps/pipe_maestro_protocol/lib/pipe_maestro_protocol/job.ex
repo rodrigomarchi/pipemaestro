@@ -28,6 +28,14 @@ defmodule PipeMaestroProtocol.Job do
   The agent always runs with every permission: a job carries no permission
   settings, and a `"permissions"` key from an older control plane is ignored.
 
+  `scratch` runs the job in a disposable git worktree of `directory`,
+  detached at its `HEAD` and removed when the job ends: the agent may read,
+  build and test, but nothing it does reaches the directory. It needs a
+  `directory` and takes no `worktree` nor `delivery`. A runner older than
+  this field would run the job in the directory itself, so the control plane
+  sends it only to runners that announce the `"scratch"` capability
+  (`PipeMaestroProtocol.Hello`).
+
   `setup` prepares a task's worktree once, when the runner creates it:
   `"copy"` names paths of the directory (dependencies, build output) the runner
   clones into the worktree, copy-on-write where the file system allows, and
@@ -96,7 +104,8 @@ defmodule PipeMaestroProtocol.Job do
                 agent: nil,
                 env: nil,
                 parallel: nil,
-                delivery: nil
+                delivery: nil,
+                scratch: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -120,7 +129,8 @@ defmodule PipeMaestroProtocol.Job do
           agent: String.t() | nil,
           env: %{String.t() => String.t()} | nil,
           parallel: boolean() | nil,
-          delivery: map() | nil
+          delivery: map() | nil,
+          scratch: boolean() | nil
         }
 
   @optional [
@@ -139,7 +149,8 @@ defmodule PipeMaestroProtocol.Job do
     :agent,
     :env,
     :parallel,
-    :delivery
+    :delivery,
+    :scratch
   ]
 
   @env_name ~r/^[A-Z][A-Z0-9_]{0,63}$/
@@ -190,7 +201,7 @@ defmodule PipeMaestroProtocol.Job do
     with {:ok, id} <- id(attrs),
          {:ok, prompt} <- prompt(attrs),
          {:ok, optional} <- optional(attrs) do
-      {:ok, struct!(%__MODULE__{id: id, prompt: prompt}, optional)}
+      %__MODULE__{id: id, prompt: prompt} |> struct!(optional) |> consistent()
     end
   end
 
@@ -243,6 +254,18 @@ defmodule PipeMaestroProtocol.Job do
   defp optional_value(key, value) do
     with :ok <- check(key, value), do: {:ok, value}
   end
+
+  defp consistent(%__MODULE__{scratch: true, directory: nil}),
+    do: {:error, "scratch needs a directory"}
+
+  defp consistent(%__MODULE__{scratch: true, worktree: worktree, delivery: delivery})
+       when worktree != nil or delivery != nil,
+       do: {:error, "scratch takes no worktree nor delivery"}
+
+  defp consistent(%__MODULE__{} = job), do: {:ok, job}
+
+  defp check(:scratch, value) when is_boolean(value), do: :ok
+  defp check(:scratch, _value), do: {:error, "must be a boolean"}
 
   defp check(:directory, value) do
     if Hello.valid_directory_name?(value), do: :ok, else: {:error, "must be a directory name"}
