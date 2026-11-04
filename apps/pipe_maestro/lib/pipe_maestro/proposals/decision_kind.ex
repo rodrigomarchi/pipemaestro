@@ -101,7 +101,6 @@ defmodule PipeMaestro.Proposals.DecisionKind do
       system_prompt: system_prompt(),
       output_schema: schema(),
       scratch: input[:directory] != nil,
-      max_budget_usd: 2,
       timeout_ms: 15 * 60 * 1000
     }
   end

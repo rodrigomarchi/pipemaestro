@@ -2,8 +2,9 @@ defmodule PipeMaestro.Pipelines.Stage do
   @moduledoc """
   One stage of a pipeline: what the agent is asked to do (`prompt`, a template
   over `PipeMaestro.Pipelines.Prompt.variables/0`), how many attempts it
-  gets, and the model, budget, time limit (`timeout_minutes`, past which the runner stops
-  the agent and the attempt fails) and extra output fields its run uses.
+  gets, and the model, budget (only when a person sets one), time limit
+  (`timeout_minutes`, past which the runner stops the agent and the attempt
+  fails) and extra output fields its run uses.
 
   `gates` are commands the runner runs after the agent, each expected to pass
   or to fail (a gate not met fails the attempt); `rules` pause the task for a
@@ -12,9 +13,9 @@ defmodule PipeMaestro.Pipelines.Stage do
   a command that must fail; `rules_text`).
 
   A stage passes on to the next one by itself: the agent runs with every
-  permission, and only a rule, a failure or the budget stops the task for a
-  person. `agent` names the agent the stage runs as: one of the repository's
-  (`.claude/agents/`) or of the pipeline's `agents`. Consecutive stages with
+  permission, and only a rule, a failure or a cost cap a person set stops the
+  task for a person. `agent` names the agent the stage runs as: one of the
+  repository's (`.claude/agents/`) or of the pipeline's `agents`. Consecutive stages with
   the same `group` run at once, in the same worktree (an empty group: alone).
   """
   use Ecto.Schema

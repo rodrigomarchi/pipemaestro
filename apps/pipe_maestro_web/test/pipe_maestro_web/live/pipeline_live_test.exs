@@ -288,8 +288,19 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
       meta = view |> element("[data-testid=pipeline-meta-Editor]") |> render()
       assert meta =~ "Pull request"
-      assert meta =~ "Sem teto"
+      assert meta =~ "Sem limite de custo"
       assert meta =~ "2 etapas"
+    end
+
+    test "the form says an empty cost cap is no limit", %{conn: conn, workspace: workspace} do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
+      html = render(view)
+
+      assert html =~ "Teto de custo por tarefa (US$, opcional)"
+      assert html =~ "Vazio é sem limite. Com um valor, a tarefa para e pede uma decisão"
+      assert html =~ "Um teto de custo, se quiser, e o que vira do código."
+      assert html =~ "Teto de custo (US$, opcional)"
+      refute html =~ "Orçamento"
     end
   end
 end

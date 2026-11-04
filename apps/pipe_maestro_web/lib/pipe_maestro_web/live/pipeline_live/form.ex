@@ -337,7 +337,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
               <.section_heading
                 icon="hero-rocket-launch"
                 title="Execução"
-                description="Quanto uma tarefa pode gastar e o que vira do código."
+                description="Um teto de custo, se quiser, e o que vira do código."
               />
               <.icon_field
                 field={@form[:max_task_cost_usd]}
@@ -345,8 +345,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
                 type="number"
                 step="0.01"
                 min="0"
-                label="Orçamento por tarefa (US$, opcional)"
-                help_text="Passou disso, a tarefa para e pede uma decisão."
+                label="Teto de custo por tarefa (US$, opcional)"
+                help_text="Vazio é sem limite. Com um valor, a tarefa para e pede uma decisão ao passar dele."
                 data-testid="pipeline-max-cost"
               />
               <.icon_field
@@ -501,7 +501,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
                           type="number"
                           step="0.01"
                           min="0"
-                          label="Orçamento (US$)"
+                          label="Teto de custo (US$, opcional)"
+                          help_text="Vazio é sem limite."
                           data-testid={"stage-budget-#{stage.index}"}
                         />
                         <.icon_field

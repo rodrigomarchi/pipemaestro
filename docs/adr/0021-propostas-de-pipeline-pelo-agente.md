@@ -24,7 +24,7 @@ diretório do usuário poderia alterá-lo.
   - o JSON Schema da resposta (hoje em `Proposals.PipelineKind`, ver a ADR 0022):
     `analise`, `verificacoes`,
     `projeto` e `pipeline`, este no formato do YAML (`Pipelines.Yaml.from_map/1`);
-  - teto de US$ 3 e 20 minutos.
+  - limite de 20 minutos, sem teto de custo (ADR 0028).
 - **A análise roda num worktree descartável.** O campo `scratch` do job faz o runner
   criar `git worktree add --detach` em `<workdir>/scratch/<job_id>`, copiar as
   dependências (copy-on-write) e apagar o worktree quando o job termina. Um worktree

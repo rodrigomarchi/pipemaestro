@@ -89,7 +89,6 @@ defmodule PipeMaestro.Proposals do
         %{
           "system_prompt" => spec.system_prompt,
           "output_schema" => spec.output_schema,
-          "max_budget_usd" => spec.max_budget_usd,
           "timeout_ms" => spec.timeout_ms,
           "proposal" => %{"kind" => kind, "input" => stored_input(data), "title" => spec.title}
         }

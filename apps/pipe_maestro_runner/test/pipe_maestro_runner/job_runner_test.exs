@@ -710,6 +710,18 @@ defmodule PipeMaestroRunner.JobRunnerTest do
                Enum.drop(argv, 8)
     end
 
+    test "argv has no budget when the job carries none" do
+      {:ok, job} =
+        Job.from_map(%{
+          "id" => "j",
+          "prompt" => "p",
+          "output_schema" => %{"type" => "object"},
+          "timeout_ms" => 60_000
+        })
+
+      refute "--max-budget-usd" in Claude.argv(job)
+    end
+
     test "argv gives the pipeline's context: system prompt, MCP servers and agents" do
       argv =
         Claude.argv(%Job{

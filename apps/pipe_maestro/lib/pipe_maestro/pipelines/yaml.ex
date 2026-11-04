@@ -128,6 +128,19 @@ defmodule PipeMaestro.Pipelines.Yaml do
     |> Map.put("stages", Enum.map(List.wrap(map["stages"]), &stage_attrs/1))
   end
 
+  @doc """
+  `attrs` (from `from_map/1`) without cost caps: no `max_task_cost_usd` and no
+  `max_budget_usd` on any stage. A cap is only what a person sets.
+  """
+  @spec without_caps(map()) :: map()
+  def without_caps(%{} = attrs) do
+    attrs
+    |> Map.delete("max_task_cost_usd")
+    |> Map.update("stages", [], fn stages ->
+      Enum.map(stages, &Map.delete(&1, "max_budget_usd"))
+    end)
+  end
+
   defp stage_attrs(%{} = stage) do
     stage
     |> Map.take(~w(key name prompt max_attempts model max_budget_usd timeout_minutes agent group))
