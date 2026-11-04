@@ -154,7 +154,14 @@ defmodule ClaudeControlPlaneWeb.RunnersLive do
                 </.link>
               </div>
               <p class="mt-0.5 font-mono text-xs text-gray-500 dark:text-gray-400">
-                {runner.hostname} · {runner.os}/{runner.arch} · {runner.runner_version}
+                {runner.hostname} · {runner.os}/{runner.arch}
+              </p>
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                <.runner_version
+                  runner={runner}
+                  version_testid={"runner-version-#{runner.name}"}
+                  outdated_testid={"runner-outdated-#{runner.name}"}
+                />
               </p>
             </:col>
             <:col :let={runner} label="Status">

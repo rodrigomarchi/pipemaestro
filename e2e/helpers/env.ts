@@ -16,6 +16,16 @@ export const bootstrapOperator = {
 /** A password that passes the product's rules, for users the specs create. */
 export const userPassword = "senha-e2e-usuario";
 
+/**
+ * The versions the suite pins (`CP_VERSION`): the server is built as
+ * `controlPlane`; a runner started with `outdatedRunner` is an older release,
+ * so its pages show it as outdated.
+ */
+export const versions = {
+  controlPlane: "2026-11-04.02",
+  outdatedRunner: "2026-11-04.01",
+};
+
 /** A suffix that keeps names, e-mails and slugs unique across runs. */
 export function uniqueSuffix(): string {
   return `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;

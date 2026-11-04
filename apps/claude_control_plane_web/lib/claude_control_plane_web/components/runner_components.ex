@@ -2,6 +2,9 @@ defmodule ClaudeControlPlaneWeb.RunnerComponents do
   @moduledoc "Pieces every runner screen shares: status, last seen, how to connect."
   use ClaudeControlPlaneWeb, :html
 
+  alias ClaudeControlPlane.Runners
+  alias ClaudeControlPlane.Runners.Runner
+
   @doc "Online/offline badge."
   attr :online, :boolean, required: true
   attr :rest, :global
@@ -11,6 +14,37 @@ defmodule ClaudeControlPlaneWeb.RunnerComponents do
     ~H"""
     <.badge :if={@online} size="sm" variant="soft" color="success" dot label="Online" {@rest} />
     <.badge :if={!@online} size="sm" variant="soft" color="gray" dot label="Offline" {@rest} />
+    """
+  end
+
+  @doc """
+  The version a runner announced, with a "desatualizado" badge when it is a
+  release older than this control plane's (`Runners.outdated?/1`).
+  """
+  attr :runner, Runner, required: true
+  attr :version_testid, :string, required: true, doc: "test id of the version"
+  attr :outdated_testid, :string, required: true, doc: "test id of the badge"
+
+  @spec runner_version(map()) :: Phoenix.LiveView.Rendered.t()
+  def runner_version(assigns) do
+    assigns =
+      assign(assigns,
+        version: assigns.runner.runner_version || "—",
+        outdated: Runners.outdated?(assigns.runner)
+      )
+
+    ~H"""
+    <span class="inline-flex flex-wrap items-center gap-1.5">
+      <span class="whitespace-nowrap font-mono" data-testid={@version_testid}>{@version}</span>
+      <.badge
+        :if={@outdated}
+        size="xs"
+        variant="soft"
+        color="warning"
+        label="desatualizado"
+        data-testid={@outdated_testid}
+      />
+    </span>
     """
   end
 

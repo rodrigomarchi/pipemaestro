@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { versions } from "./helpers/env";
 
 const e2ePort = process.env.E2E_PORT || "4003";
 const baseURL = process.env.E2E_BASE_URL || `http://localhost:${e2ePort}`;
@@ -44,9 +45,10 @@ export default defineConfig({
       },
     },
   ],
-  // Boots the e2e server from the repo root unless one is already up.
+  // Boots the e2e server from the repo root unless one is already up, built
+  // as a fixed version so the runners' "outdated" badge is predictable.
   webServer: {
-    command: `cd .. && MIX_ENV=e2e E2E_PORT=${e2ePort} mix phx.server`,
+    command: `cd .. && CP_VERSION=${versions.controlPlane} MIX_ENV=e2e E2E_PORT=${e2ePort} mix phx.server`,
     url: `${baseURL}/healthz`,
     reuseExistingServer: true,
     timeout: 180_000,

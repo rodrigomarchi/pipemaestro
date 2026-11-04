@@ -44,14 +44,9 @@ defmodule ClaudeControlPlaneRunner.Host do
     end
   end
 
-  @doc "This build's version."
+  @doc "This build's version (`ClaudeControlPlaneRunner.Version`)."
   @spec runner_version() :: String.t()
-  def runner_version do
-    case Application.spec(:claude_control_plane_runner, :vsn) do
-      nil -> "0.0.0"
-      vsn -> to_string(vsn)
-    end
-  end
+  defdelegate runner_version, to: ClaudeControlPlaneRunner.Version, as: :version
 
   @doc "The machine's hostname."
   @spec hostname() :: String.t()

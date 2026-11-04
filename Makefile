@@ -1,7 +1,7 @@
 .PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
 	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
-	runner.status runner.logout runner.binary \
+	runner.status runner.logout runner.binary runner.rel runner.version \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
 
 # Burrito's single binary sets __BURRITO, and the runner app boots as the CLI when it
@@ -111,10 +111,10 @@ runner.doctor: ## Check this machine as a runner: claude, its sign-in, git, cred
 runner.service: ## Run the runner in the background (ACTION=print|install|uninstall; launchd or systemd --user)
 	cd $(RUNNER_DIR) && mix runner.service $(or $(ACTION),print)
 
-runner.release: ## Build the runner's release (cp-runner) into _build/prod/rel
+runner.rel: ## Build the runner's Mix release (cp-runner) into _build/prod/rel
 	MIX_ENV=prod mix release claude_control_plane_runner --overwrite
 
-runner.install: runner.release ## Install cp-runner for this user (~/.local/share and ~/.local/bin)
+runner.install: runner.rel ## Install cp-runner for this user (~/.local/share and ~/.local/bin)
 	rm -rf $(HOME)/.local/share/claude-control-plane-runner
 	mkdir -p $(HOME)/.local/share $(HOME)/.local/bin
 	cp -R _build/prod/rel/claude_control_plane_runner $(HOME)/.local/share/claude-control-plane-runner
@@ -132,8 +132,31 @@ runner.binary: ## Build the runner as one binary per platform into burrito_out/ 
 	PATH="$(ZIG_BIN):$$PATH" ASDF_ERLANG_VERSION=$(BINARY_OTP) MIX_ENV=prod \
 		$(if $(TARGET),BURRITO_TARGET=$(TARGET)) mix release cp_runner --overwrite
 
-image: ## Build the control plane's Docker image (claude-control-plane)
-	docker build -t claude-control-plane .
+# The version this checkout builds as (AAAA-MM-DD.NN, or +dev.<commit> after one).
+# Mix may print what it compiles first: the version is the last line.
+runner.version: ## Print the version this checkout builds as (runner and control plane)
+	@cd $(RUNNER_DIR) && mix runner.version | tail -n 1
+
+# A release is an annotated tag runner-AAAA-MM-DD.NN at a clean HEAD, named
+# after today's local date and the day's next number, then the binary built
+# from it. Nothing is pushed.
+runner.release: ## Tag the next runner release (runner-AAAA-MM-DD.NN) and build its binary ([TARGET=...]); does not push
+	@test -z "$$(git status --porcelain)" || \
+		{ echo "A árvore de trabalho tem mudanças: faça commit antes de gerar uma release."; exit 1; }
+	@existing=$$(git tag --points-at HEAD --list 'runner-*'); \
+		test -z "$$existing" || { echo "Este commit já é a release $$existing."; exit 1; }
+	@version=$$(cd $(RUNNER_DIR) && mix runner.version --next | tail -n 1); \
+		echo "$$version" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2,}$$' || \
+			{ echo "Não consegui calcular a próxima versão: $$version"; exit 1; }; \
+		git tag -a "runner-$$version" -m "Runner $$version" || exit 1; \
+		echo "Tag runner-$$version criada."; \
+		$(MAKE) runner.binary || \
+			{ echo "O build falhou. A tag é só local; para apagá-la: git tag -d runner-$$version"; exit 1; }; \
+		echo "Release $$version pronta em burrito_out/. Para publicar: git push origin runner-$$version"
+
+image: ## Build the control plane's Docker image (claude-control-plane), with this checkout's version
+	docker build --build-arg CP_VERSION=$$(cd $(RUNNER_DIR) && mix runner.version | tail -n 1) \
+		-t claude-control-plane .
 
 runner.status: ## Show this runner's credentials and whether the platform accepts them
 	cd $(RUNNER_DIR) && mix runner.status

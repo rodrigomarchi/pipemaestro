@@ -27,6 +27,7 @@ defmodule ClaudeControlPlaneRunner.Commands.Start do
     {opts, _rest, invalid} = OptionParser.parse(args, strict: @switches)
     if invalid != [], do: Output.fail!("Opção inválida: #{inspect(invalid)}")
 
+    Output.info("cp-runner #{Host.runner_version()}")
     config = config_with_root(Output.config!(), opts[:root])
     agent = Claude.agent(Claude.executable())
 
