@@ -523,6 +523,7 @@ defmodule PipeMaestro.TasksTest do
 
       assert body =~ "Closes #{issue}"
       assert body =~ "O botão de login não responde"
+      assert body =~ "- [ ] Etapa A"
 
       task =
         run_current(ctx, task, %{
@@ -540,7 +541,9 @@ defmodule PipeMaestro.TasksTest do
 
       assert_receive {:job_assign, second}
       assert second.context["delivery"]["pr"]["ready"] == true
-      assert second.context["delivery"]["pr"]["body"] =~ "Etapa A"
+      # The last stage's delivery marks the PR ready: every stage is checked.
+      refute second.context["delivery"]["pr"]["body"] =~ "- [ ]"
+      assert second.context["delivery"]["pr"]["body"] =~ "- [x] Etapa A"
     end
 
     test "a decision is commented on the issue with the next stage", ctx do

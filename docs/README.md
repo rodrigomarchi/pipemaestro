@@ -49,6 +49,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0024 | [Resumo da execução e métricas do agente](adr/0024-resumo-da-execucao-e-metricas-do-agente.md) | Aceita |
 | 0025 | [Atualização automática do runner](adr/0025-atualizacao-automatica-do-runner.md) | Aceita |
 | 0026 | [Deploy pelo Forgejo e main protegida](adr/0026-deploy-pelo-forgejo-e-main-protegida.md) | Aceita |
+| 0027 | [Entrega em PR no Forgejo](adr/0027-entrega-em-pr-no-forgejo.md) | Aceita |
 
 ## Specs
 

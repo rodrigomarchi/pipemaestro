@@ -237,6 +237,12 @@ defmodule PipeMaestroRunner.JobRunner do
       else: put_run(state, after_agent(run, code, gates, delivery))
   end
 
+  # Of the job's secrets, only the one the delivery signs in to a Forgejo
+  # with, when git has no credential for it.
+  defp delivery_env(job) do
+    for {"FORGEJO_TOKEN" = name, value} <- job.env || %{}, do: {name, value}
+  end
+
   # After the agent, off this process (they take a while): the gates, the
   # delivery when every gate passed, then what the stage changed.
   defp after_agent(run, code, gates, delivery) do
@@ -251,7 +257,8 @@ defmodule PipeMaestroRunner.JobRunner do
         exclude = (tracking && tracking.exclude) || []
 
         delivered =
-          if delivery && gates_passed, do: Delivery.deliver(dir, delivery, exclude)
+          if delivery && gates_passed,
+            do: Delivery.deliver(dir, delivery, exclude, env: delivery_env(job))
 
         changes = if tracking, do: Changes.report(dir, tracking)
         %{"gates" => results, "changes" => changes, "delivery" => delivered}
