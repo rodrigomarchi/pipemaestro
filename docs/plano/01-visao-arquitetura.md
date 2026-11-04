@@ -142,7 +142,7 @@ O produto não substitui a revisão humana: ele a concentra nos pontos onde ela 
 | **Serviço de decisões** | Cria, notifica e resolve decisões humanas; reflete nas integrações. |
 | **Serviço de PR** | Abre o PR em rascunho, atualiza descrição e estado, marca como pronto. |
 | **Serviço de segredos** | Emite credenciais git de curta duração por tarefa; guarda tokens de executor e configurações da GitHub App. |
-| **Medição e limites** | Agrega métricas de uso; aplica tetos por tenant/pipeline. |
+| **Medição e limites** | Agrega métricas de uso; aplica os tetos que o tenant configurou. |
 | **Jobs internos** | Trabalhos do próprio servidor: sincronizações, expiração de leases, limpeza, notificações, relatórios. |
 | **Interface web** | Board em tempo real, detalhe da tarefa, decisões pendentes, executores, configuração da organização. |
 

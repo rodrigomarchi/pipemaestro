@@ -23,6 +23,11 @@ defmodule PipeMaestro.Pipelines do
   def get_pipeline!(%Workspace{id: workspace_id}, id),
     do: Repo.get_by!(Pipeline, id: id, workspace_id: workspace_id)
 
+  @doc "One of the pipelines of the workspace `workspace_id`, or `nil`."
+  @spec get_pipeline(Ecto.UUID.t(), Ecto.UUID.t()) :: Pipeline.t() | nil
+  def get_pipeline(workspace_id, id),
+    do: Repo.get_by(Pipeline, id: id, workspace_id: workspace_id)
+
   @doc "A changeset for the pipeline form."
   @spec change_pipeline(Pipeline.t(), map()) :: Ecto.Changeset.t()
   def change_pipeline(%Pipeline{} = pipeline, attrs \\ %{}),

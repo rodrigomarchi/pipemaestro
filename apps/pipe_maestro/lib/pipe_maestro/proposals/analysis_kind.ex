@@ -9,8 +9,8 @@ defmodule PipeMaestro.Proposals.AnalysisKind do
   questions (`perguntas`, `PipeMaestro.Pipelines.Prompt.questions_schema/0`)
   whose answers would fix the failure; they become the task's questionnaire.
 
-  It runs with no one asking, so its budget and time are smaller than a
-  suggested decision's. It is good only for the pause it was asked about
+  It runs with no one asking, so its time limit is shorter than a suggested
+  decision's, and like every proposal it has no cost cap. It is good only for the pause it was asked about
   (`current?/2`).
   """
   @behaviour PipeMaestro.Proposals.Kind
@@ -32,7 +32,6 @@ defmodule PipeMaestro.Proposals.AnalysisKind do
     feedback: :string
   }
 
-  @max_budget_usd 1
   @timeout_ms 10 * 60 * 1000
 
   @impl true
@@ -108,7 +107,6 @@ defmodule PipeMaestro.Proposals.AnalysisKind do
       system_prompt: system_prompt(),
       output_schema: schema(),
       scratch: input[:directory] != nil,
-      max_budget_usd: @max_budget_usd,
       timeout_ms: @timeout_ms
     }
   end

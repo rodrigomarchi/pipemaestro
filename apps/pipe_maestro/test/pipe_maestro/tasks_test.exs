@@ -630,7 +630,7 @@ defmodule PipeMaestro.TasksTest do
       refute Map.has_key?(job.context, "directory")
       refute Map.has_key?(job.context, "scratch")
       assert job.context["output_schema"]["$comment"] == "pipemaestro-kind:analysis"
-      assert job.context["max_budget_usd"] == 1
+      refute Map.has_key?(job.context, "max_budget_usd")
 
       assert %{questionnaire: nil, analysis: :running} = Tasks.questionnaire(task)
     end
@@ -1226,10 +1226,15 @@ defmodule PipeMaestro.TasksTest do
       assert {:ok, %Task{status: :running}} = Tasks.retry_stage(task, nil)
     end
 
-    test "without a cap the task goes on", ctx do
+    test "without a cap the task goes on, with no alert and no budget for its stages", ctx do
       task = create_task(ctx)
+      assert current_job(task).context["max_budget_usd"] == nil
+
       task = run_current(ctx, task, %{"cost_usd" => 99.0})
       assert %Task{status: :running, current_stage: 1} = task
+
+      assert Tasks.alerts(ctx.workspace, MapSet.new([ctx.runner.id])) == []
+      assert current_job(task).context["max_budget_usd"] == nil
     end
   end
 

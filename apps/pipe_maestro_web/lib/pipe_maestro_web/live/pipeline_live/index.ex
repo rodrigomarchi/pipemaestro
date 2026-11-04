@@ -155,7 +155,7 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   defp delivery_label("commit"), do: "Commit por etapa"
   defp delivery_label(_none), do: "Sem entrega"
 
-  defp budget_label(nil), do: "Sem teto"
+  defp budget_label(nil), do: "Sem limite de custo"
   defp budget_label(cost), do: "Até US$ #{cost}"
 
   defp stages_label(1), do: "1 etapa"

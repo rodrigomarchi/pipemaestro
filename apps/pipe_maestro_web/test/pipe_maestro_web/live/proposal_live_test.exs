@@ -222,6 +222,29 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
                Pipelines.list_pipelines(ctx.workspace)
     end
 
+    test "a cost cap the agent proposes does not reach the form", ctx do
+      job = ask(ctx, "pipeline", %{"request" => "Entregar issues com PR"})
+
+      capped =
+        @pipeline
+        |> Map.put("max_task_cost_usd", 40)
+        |> Map.update!("stages", fn [first | rest] ->
+          [Map.put(first, "max_budget_usd", 2) | rest]
+        end)
+
+      succeed(ctx, job, Map.put(@pipeline_output, "pipeline", capped))
+
+      {:ok, form, _html} =
+        live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/new?proposta=#{job.id}")
+
+      refute form |> element("[data-testid=pipeline-max-cost]") |> render() =~ ~s(value="40")
+      refute form |> element("[data-testid=stage-budget-0]") |> render() =~ ~s(value="2")
+      {:error, {:live_redirect, _}} = form |> form("#pipeline-form") |> render_submit()
+
+      assert [%{max_task_cost_usd: nil, stages: [%{max_budget_usd: nil}, _]}] =
+               Pipelines.list_pipelines(ctx.workspace)
+    end
+
     test "a failed proposal says why and can be asked again with a comment", ctx do
       job =
         finish(ctx, ask(ctx, "pipeline", %{"request" => "x"}), %{
@@ -550,6 +573,31 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
       assert %{version: 2, name: "Entrega do App"} =
                Pipelines.get_pipeline!(ctx.workspace, pipeline.id)
+    end
+
+    test "the revision keeps the pipeline's own cost caps", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "name" => "Entrega",
+          "max_task_cost_usd" => "40",
+          "stages" => [
+            %{"key" => "plano", "name" => "Plano", "prompt" => "p", "max_budget_usd" => "1.5"}
+          ]
+        })
+
+      job = ask(ctx, "improve", %{"pipeline_id" => pipeline.id})
+      capped = Map.put(@pipeline, "max_task_cost_usd", 5)
+      succeed(ctx, job, %{"analise" => "x", "mudancas" => [], "pipeline" => capped})
+
+      {:ok, form, _html} =
+        live(
+          ctx.conn,
+          ~p"/w/#{ctx.workspace.slug}/pipelines/#{pipeline.id}/edit?proposta=#{job.id}"
+        )
+
+      assert form |> element("[data-testid=pipeline-max-cost]") |> render() =~ ~s(value="40")
+      assert form |> element("[data-testid=stage-budget-0]") |> render() =~ ~s(value="1.5")
+      refute form |> element("[data-testid=stage-budget-1]") |> render() =~ ~s(value=")
     end
 
     test "a proposal named on another pipeline's form is ignored", ctx do

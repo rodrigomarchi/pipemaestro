@@ -20,7 +20,7 @@ create_task ──► running ──(gate: bloqueada, esgotada, regra)──► 
 | Estado | Significado |
 |---|---|
 | `running` | Uma tentativa da etapa `current_stage` está na fila ou rodando no runner. |
-| `awaiting_decision` | Uma pessoa precisa decidir; o motivo está em `decision_reason`, e as perguntas, quando há, em `decision_questionnaire` ([ADR 0028](../adr/0028-questionario-de-decisao.md)). |
+| `awaiting_decision` | Uma pessoa precisa decidir; o motivo está em `decision_reason`, e as perguntas, quando há, em `decision_questionnaire` ([ADR 0029](../adr/0029-questionario-de-decisao.md)). |
 | `succeeded` | Todas as etapas passaram (ou a pessoa seguiu adiante após a última). |
 | `canceled` | Cancelada por uma pessoa. |
 | `failed` | Reservado; hoje as falhas levam a `awaiting_decision`. |

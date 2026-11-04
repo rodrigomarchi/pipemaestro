@@ -50,7 +50,8 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0025 | [Atualização automática do runner](adr/0025-atualizacao-automatica-do-runner.md) | Aceita |
 | 0026 | [Deploy pelo Forgejo e main protegida](adr/0026-deploy-pelo-forgejo-e-main-protegida.md) | Aceita |
 | 0027 | [Entrega em PR no Forgejo](adr/0027-entrega-em-pr-no-forgejo.md) | Aceita |
-| 0028 | [Questionário de decisão](adr/0028-questionario-de-decisao.md) | Aceita |
+| 0028 | [Teto de custo só quando configurado](adr/0028-teto-de-custo-so-quando-configurado.md) | Aceita |
+| 0029 | [Questionário de decisão](adr/0029-questionario-de-decisao.md) | Aceita |
 
 ## Specs
 

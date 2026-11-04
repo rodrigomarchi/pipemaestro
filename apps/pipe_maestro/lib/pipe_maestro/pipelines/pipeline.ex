@@ -8,8 +8,9 @@ defmodule PipeMaestro.Pipelines.Pipeline do
   to the agent's system prompt), `mcp_config` (MCP servers, the CLI's
   `--mcp-config` object) and `agents` (subagents a stage may run as, the CLI's
   `--agents` object); a form edits the last two as JSON (`mcp_config_json`,
-  `agents_json`). `max_task_cost_usd` caps what a task may spend: past it,
-  the task pauses for a decision after the stage that crossed it.
+  `agents_json`). `max_task_cost_usd`, when a person sets it, caps what a task
+  may spend: past it, the task pauses for a decision after the stage that
+  crossed it. Without it, a task has no cost limit.
   `delivery` is what the runner does with a stage that passed, in a git
   directory: `"none"` (whatever the prompts say), `"commit"` (a commit per
   stage) or `"pr"` (also push the branch and keep a draft pull request,

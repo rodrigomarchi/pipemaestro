@@ -5,7 +5,7 @@ defmodule PipeMaestro.ProposalsTest do
 
   alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Runners, Tasks}
   alias PipeMaestro.Pipelines.{Prompt, Stage}
-  alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind}
+  alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind, Instructions, PipelineKind}
   alias PipeMaestroProtocol.Job, as: WireJob
 
   @directories [%{"name" => "app", "git" => true}, %{"name" => "notas", "git" => false}]
@@ -74,6 +74,22 @@ defmodule PipeMaestro.ProposalsTest do
     refute Map.has_key?(WireJob.to_map(wire), "proposal")
     wire
   end
+
+  # A proposal runs until the agent is done: no cost cap reaches the runner.
+  defp refute_budget(job) do
+    refute Map.has_key?(job.context, "max_budget_usd")
+    assert %WireJob{max_budget_usd: nil} = wire!(job)
+  end
+
+  # Words that would have the agent propose, discuss or keep a cost cap.
+  defp refute_caps(text) do
+    assert Regex.scan(~r/orçamento|\bteto|max_task_cost_usd|max_budget_usd/iu, text) == []
+  end
+
+  @capped_output put_in(@pipeline_output, ["pipeline", "max_task_cost_usd"], 40)
+                 |> update_in(["pipeline", "stages"], fn [first | rest] ->
+                   [Map.put(first, "max_budget_usd", 2) | rest]
+                 end)
 
   describe "the shared mechanism" do
     test "a directory is studied in a disposable worktree, only by a capable runner", ctx do
@@ -154,6 +170,21 @@ defmodule PipeMaestro.ProposalsTest do
       {:ok, third} = ask(ctx, "pipeline", %{"request" => "PRs", "feedback" => "Só 2"}, failed)
       refute third.prompt =~ "Sua proposta anterior"
       assert third.prompt =~ "Só 2"
+    end
+
+    test "neither the instructions nor the answer carry a cost cap", ctx do
+      {:ok, job} = ask(ctx, "pipeline", %{"request" => "Um pipeline de entrega com PR"})
+      refute_budget(job)
+      refute_caps(job.context["system_prompt"])
+      refute_caps(job.prompt)
+
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, @capped_output))
+      refute Map.has_key?(result.pipeline, "max_task_cost_usd")
+      assert Enum.all?(result.pipeline["stages"], &(not Map.has_key?(&1, "max_budget_usd")))
+
+      assert {:ok, pipeline} = Pipelines.create_pipeline(ctx.workspace, result.pipeline)
+      assert pipeline.max_task_cost_usd == nil
+      assert Enum.all?(pipeline.stages, &(&1.max_budget_usd == nil))
     end
 
     test "an incomplete answer is refused", ctx do
@@ -259,6 +290,11 @@ defmodule PipeMaestro.ProposalsTest do
                {:error, :already_triaging}
     end
 
+    test "runs without a cost cap", ctx do
+      {:ok, job} = ask(ctx, "task", %{"request" => "x"})
+      refute_budget(job)
+    end
+
     test "an answer without a title or description is refused", ctx do
       {:ok, job} = ask(ctx, "task", %{"request" => "x"})
 
@@ -354,6 +390,13 @@ defmodule PipeMaestro.ProposalsTest do
       assert "não é uma tarefa deste workspace" in errors_on(changeset).task_id
     end
 
+    test "runs without a cost cap", ctx do
+      {:ok, job} =
+        Proposals.request("decision", ctx.user, ctx.workspace, %{"task_id" => ctx.task.id})
+
+      refute_budget(job)
+    end
+
     test "an answer without a known action is refused", ctx do
       {:ok, job} =
         Proposals.request("decision", ctx.user, ctx.workspace, %{"task_id" => ctx.task.id})
@@ -443,7 +486,8 @@ defmodule PipeMaestro.ProposalsTest do
       assert job.prompt =~ "O botão não responde"
       assert job.prompt =~ "1 failure em LoginTest"
       assert job.prompt =~ "+timeout"
-      assert job.context["max_budget_usd"] == 1
+      refute_budget(job)
+      refute_caps(job.prompt <> job.context["system_prompt"])
       assert job.context["timeout_ms"] == 10 * 60 * 1000
 
       schema = job.context["output_schema"]
@@ -557,6 +601,56 @@ defmodule PipeMaestro.ProposalsTest do
       assert [%{decisions: _}] = Tasks.history(ctx.pipeline)
     end
 
+    test "keeps the pipeline's own caps, which the agent never sees", ctx do
+      {:ok, capped} =
+        Pipelines.create_pipeline(ctx.workspace, %{
+          "name" => "Limitado",
+          "max_task_cost_usd" => "40",
+          "stages" => [
+            %{"key" => "plano", "name" => "Plano", "prompt" => "p", "max_budget_usd" => "1.5"},
+            %{"key" => "codigo", "name" => "Código", "prompt" => "c", "max_budget_usd" => "3"}
+          ]
+        })
+
+      assert {:ok, job} = ask(ctx, "improve", %{"pipeline_id" => capped.id})
+      refute_budget(job)
+      refute_caps(job.context["system_prompt"])
+      refute_caps(job.prompt)
+
+      # The agent answers with a cap of its own, none on `plano`, drops
+      # `codigo` and adds `revisao`.
+      revised = %{
+        "name" => "Limitado",
+        "max_task_cost_usd" => 5,
+        "stages" => [
+          %{"key" => "plano", "name" => "Plano", "prompt" => "p2"},
+          %{"key" => "revisao", "name" => "Revisão", "prompt" => "r", "max_budget_usd" => 9}
+        ]
+      }
+
+      output = %{"analise" => "x", "mudancas" => [], "pipeline" => revised, "notas" => "n"}
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
+      assert result.pipeline["max_task_cost_usd"] == "40"
+
+      assert [plano, revisao] = result.pipeline["stages"]
+      assert plano["max_budget_usd"] == "1.5"
+      refute Map.has_key?(revisao, "max_budget_usd")
+
+      assert {:ok, saved} = Pipelines.update_pipeline(capped, result.pipeline)
+      assert Decimal.equal?(saved.max_task_cost_usd, Decimal.new("40"))
+      assert [%{max_budget_usd: plano_cap}, %{max_budget_usd: nil}] = saved.stages
+      assert Decimal.equal?(plano_cap, Decimal.new("1.5"))
+    end
+
+    test "a pipeline without caps is improved without caps", ctx do
+      {:ok, job} = ask(ctx, "improve", %{"pipeline_id" => ctx.pipeline.id})
+      output = %{"analise" => "x", "mudancas" => [], "pipeline" => @capped_output["pipeline"]}
+
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
+      refute Map.has_key?(result.pipeline, "max_task_cost_usd")
+      assert Enum.all?(result.pipeline["stages"], &(not Map.has_key?(&1, "max_budget_usd")))
+    end
+
     test "refuses another workspace's pipeline", ctx do
       assert {:error, changeset} = ask(ctx, "improve", %{"pipeline_id" => Ecto.UUID.generate()})
       assert "não é um pipeline deste workspace" in errors_on(changeset).pipeline_id
@@ -575,6 +669,26 @@ defmodule PipeMaestro.ProposalsTest do
 
       stage = Prompt.output_schema(%Stage{})
       assert extensions(stage) == []
+    end
+
+    test "a pipeline in an answer has no cost cap" do
+      for schema <- [
+            PipelineKind.pipeline_schema(),
+            ImproveKind.schema()["properties"]["pipeline"]
+          ] do
+        refute Map.has_key?(schema["properties"], "max_task_cost_usd")
+
+        refute Map.has_key?(
+                 schema["properties"]["stages"]["items"]["properties"],
+                 "max_budget_usd"
+               )
+      end
+
+      assert PipelineKind.schema()["properties"]["pipeline"] == PipelineKind.pipeline_schema()
+    end
+
+    test "how a pipeline works says nothing of a cost cap" do
+      refute_caps(Instructions.pipeline_format())
     end
   end
 

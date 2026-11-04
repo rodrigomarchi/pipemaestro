@@ -19,7 +19,6 @@ defmodule PipeMaestro.Proposals.Kind do
           required(:system_prompt) => String.t(),
           required(:output_schema) => map(),
           required(:scratch) => boolean(),
-          required(:max_budget_usd) => number(),
           required(:timeout_ms) => pos_integer()
         }
 
