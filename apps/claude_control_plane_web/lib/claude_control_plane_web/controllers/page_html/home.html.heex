@@ -7,8 +7,7 @@
     <div class="mx-auto max-w-7xl px-4 pt-20 pb-16 sm:px-6 lg:px-8 lg:pt-28">
       <div class="mx-auto max-w-3xl text-center">
         <.badge color="primary" variant="soft" size="md" class="mb-6">
-          <.icon name="hero-sparkles-mini" class="size-4" />
-          Pipeline de agentes de IA para engenharia
+          <.icon name="hero-sparkles-mini" class="size-4" /> Agentes de IA trabalhando em equipe
         </.badge>
         <h1
           data-testid="hero-title"
@@ -20,9 +19,9 @@
           </span>
         </h1>
         <p class="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-          Cada tarefa percorre um pipeline determinístico de agentes, com gates mecânicos,
-          pausas para decisão humana e artefatos versionados no próprio PR. O código fica na
-          sua infraestrutura; a revisão, o merge e o deploy continuam com o seu time.
+          Você descreve o que precisa. O Claude Code faz o trabalho na sua máquina, uma etapa
+          de cada vez, testando tudo pelo caminho. Quando termina, entrega um Pull Request
+          pronto para você revisar. Se precisar de ajuda, ele para e pergunta.
         </p>
         <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <.button
@@ -34,78 +33,341 @@
           >
             Começar agora
           </.button>
-          <.button to="#como-funciona" link_type="a" size="lg" variant="outline" color="gray">
+          <.button
+            to="#como-funciona"
+            link_type="a"
+            size="lg"
+            variant="outline"
+            color="gray"
+            icon="hero-play-circle"
+          >
             Ver como funciona
           </.button>
         </div>
       </div>
 
-      <.card class="mx-auto mt-16 max-w-5xl shadow-xl shadow-primary-500/5">
-        <.card_header
-          title="acme/storefront #466 · N+1 na listagem de pedidos"
-          description="Pipeline bug fix · executor runner-sp-01 · 14m 05s"
-        >
-          <:action>
-            <.badge color="warning" variant="soft" dot label="Aguardando decisão" />
-          </:action>
-        </.card_header>
-        <.card_content>
-          <.stepper
-            size="sm"
-            label_placement="bottom"
-            steps={[
-              %{name: "Triagem", complete?: true, active?: false},
-              %{name: "Investigação", complete?: true, active?: false},
-              %{name: "Reprodução", complete?: false, active?: true},
-              %{name: "Implementação", complete?: false, active?: false},
-              %{name: "Auditoria", complete?: false, active?: false},
-              %{name: "PR pronto", complete?: false, active?: false}
-            ]}
-          />
-        </.card_content>
-      </.card>
+      <%!-- The journey of a task, at a glance --%>
+      <div
+        class="mx-auto mt-16 max-w-5xl rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-xl shadow-primary-500/5 backdrop-blur sm:p-8 dark:border-gray-800 dark:bg-gray-900/80"
+        data-testid="hero-journey"
+      >
+        <ol class="flex flex-col items-stretch gap-3 lg:flex-row lg:items-center">
+          <li
+            :for={
+              {{icon, title, text}, index} <-
+                Enum.with_index([
+                  {"hero-chat-bubble-left-ellipsis", "Pedido", "uma issue ou uma tarefa"},
+                  {"hero-squares-2x2", "Pipeline", "a receita, etapa por etapa"},
+                  {"hero-cpu-chip", "Claude Code", "trabalha no seu computador"},
+                  {"hero-shield-check", "Gates", "testes conferem cada etapa"},
+                  {"hero-code-bracket-square", "Pull Request", "você revisa e faz o merge"}
+                ])
+            }
+            class="flex flex-1 flex-col items-center gap-3 lg:flex-row"
+          >
+            <div class="flex w-full flex-1 flex-col items-center rounded-xl bg-gray-50 px-3 py-4 text-center dark:bg-gray-800/60">
+              <span class="flex size-11 items-center justify-center rounded-full bg-primary-600 text-white shadow-md shadow-primary-500/30">
+                <.icon name={icon} class="size-6" />
+              </span>
+              <p class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{text}</p>
+            </div>
+            <.icon
+              :if={index < 4}
+              name="hero-arrow-right"
+              class="size-5 shrink-0 rotate-90 text-primary-400 lg:rotate-0"
+            />
+          </li>
+        </ol>
+      </div>
     </div>
   </section>
 
-  <section id="como-funciona" class="border-t border-gray-200 py-24 dark:border-gray-800">
-    <div class="mx-auto grid max-w-7xl gap-16 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
-      <div>
-        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">Como funciona</p>
+  <%!-- The whole idea, told to a child --%>
+  <section
+    id="como-funciona"
+    class="border-t border-gray-200 py-24 dark:border-gray-800"
+    data-testid="kid-explainer"
+  >
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">
+          Explicado como para uma criança
+        </p>
         <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
-          Orquestração determinística, trabalho não determinístico
+          Imagine uma cozinha com um ajudante robô muito caprichoso
         </h2>
-        <p class="mt-4 text-gray-600 dark:text-gray-300">
-          A ordem das etapas é decidida pelo produto, nunca por um agente. Cada etapa roda com
-          contexto zerado, lê os artefatos da anterior e só avança quando os gates passam.
+        <p class="mt-4 text-lg text-gray-600 dark:text-gray-300">
+          Programar é como cozinhar: alguém pede um prato, alguém segue uma receita, alguém prova
+          antes de servir. A plataforma organiza essa cozinha para que um robô, o Claude, cozinhe
+          sozinho e direitinho, e chame você só quando precisar.
         </p>
       </div>
-      <.timeline label="Fluxo de uma tarefa">
-        <:item
-          title="A issue recebe o gatilho"
-          description="Uma label ou comando no GitHub cria a execução com o pipeline definido no seu repositório."
-          marker="number"
-        />
-        <:item
-          title="O PR em rascunho vira o canvas"
-          description="Triagem, hipótese de causa, plano e auditoria são commitados como Markdown no branch da tarefa."
-          marker="number"
-        />
-        <:item
-          title="Gates decidem a passagem"
-          description="Schema, testes, lint e regras específicas. Falhou além do limite, vira decisão humana."
-          marker="number"
-        />
-        <:item
-          title="Você revisa e faz o merge"
-          description="O PR sai de rascunho pronto para revisão. Merge e deploy nunca são feitos pelo produto."
-          marker="number"
-          state="current"
-        />
-      </.timeline>
+
+      <ol class="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <li
+          :for={
+            {{icon, color, title, kid, real}, index} <-
+              Enum.with_index([
+                {"hero-chat-bubble-left-ellipsis", "bg-sky-500", "Você faz o pedido",
+                 "\"Quero um bolo de chocolate!\" Você conta o que quer, do seu jeito.",
+                 "Uma tarefa ou uma issue do GitHub, com o que precisa ser feito."},
+                {"hero-book-open", "bg-violet-500", "A receita diz os passos",
+                 "Primeiro lê a receita, depois separa os ingredientes, depois mistura, depois assa.",
+                 "O pipeline: etapas em ordem, como entender, testar, implementar e revisar."},
+                {"hero-cpu-chip", "bg-fuchsia-500", "O robô cozinha na sua cozinha",
+                 "O robô trabalha na sua casa, com os seus ingredientes. Nada sai de lá.",
+                 "O runner roda o Claude Code no seu computador, no seu código."},
+                {"hero-beaker", "bg-amber-500", "Alguém prova cada passo",
+                 "Antes de seguir, alguém prova a massa. Ficou ruim? O robô faz de novo.",
+                 "Os gates rodam os testes e o lint. Se falhar, a etapa tenta outra vez."},
+                {"hero-hand-raised", "bg-rose-500", "Se tiver dúvida, ele chama você",
+                 "\"Acabou o chocolate, posso usar morango?\" Ele para e espera a sua resposta.",
+                 "Quando precisa de uma decisão, a tarefa pausa e aparece em Decisões."},
+                {"hero-cake", "bg-emerald-500", "O prato chega para você provar",
+                 "O bolo vai para a mesa. Você prova e decide se está bom para servir.",
+                 "Sai um Pull Request pronto. Revisar e fazer o merge continua com você."}
+              ])
+          }
+          class="relative rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900"
+          data-testid={"kid-step-#{index + 1}"}
+        >
+          <span class="absolute top-4 right-4 text-4xl font-bold text-gray-100 dark:text-gray-800">
+            {index + 1}
+          </span>
+          <span class={[
+            "flex size-12 items-center justify-center rounded-2xl text-white shadow-lg",
+            color
+          ]}>
+            <.icon name={icon} class="size-7" />
+          </span>
+          <h3 class="mt-4 text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+          <p class="mt-2 text-gray-600 dark:text-gray-300">{kid}</p>
+          <p class="mt-4 flex gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:bg-gray-800/60 dark:text-gray-300">
+            <.icon name="hero-code-bracket" class="mt-0.5 size-4 shrink-0 text-primary-500" />
+            <span><span class="font-medium">Na plataforma:</span> {real}</span>
+          </p>
+        </li>
+      </ol>
     </div>
   </section>
 
-  <section id="recursos" class="bg-gray-50 py-24 dark:bg-gray-900/40">
+  <%!-- Diagram: the path of a task through the pipeline --%>
+  <section class="bg-gray-50 py-24 dark:bg-gray-900/40" data-testid="diagram-pipeline">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">
+          Diagrama 1 · O caminho de uma tarefa
+        </p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          Uma etapa de cada vez, e só passa quem foi aprovado
+        </h2>
+        <p class="mt-4 text-gray-600 dark:text-gray-300">
+          A ordem é sempre a mesma, decidida pelo pipeline e não pelo robô. Cada etapa começa com
+          a cabeça limpa, lê o que as anteriores escreveram e só segue quando os testes passam.
+        </p>
+      </div>
+
+      <div class="mt-14 grid items-center gap-4 lg:grid-cols-[auto_1fr_auto]">
+        <div class="flex flex-col items-center rounded-2xl border-2 border-dashed border-sky-300 bg-white p-5 text-center dark:border-sky-700 dark:bg-gray-900">
+          <.icon name="hero-inbox-arrow-down" class="size-8 text-sky-500" />
+          <p class="mt-2 font-semibold text-gray-900 dark:text-white">Tarefa</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">ou issue com label</p>
+        </div>
+
+        <div class="relative rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+          <p class="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+            <.icon name="hero-squares-2x2" class="size-5 text-primary-500" /> Pipeline
+            <span class="font-normal text-gray-500 dark:text-gray-400">
+              · cada etapa faz um commit no branch da tarefa
+            </span>
+          </p>
+          <ol class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <li
+              :for={
+                {{icon, name, what}, index} <-
+                  Enum.with_index([
+                    {"hero-magnifying-glass", "Entender", "lê o código e escreve o plano"},
+                    {"hero-beaker", "Testar", "escreve os testes que provam o pedido"},
+                    {"hero-wrench-screwdriver", "Implementar",
+                     "muda o código até os testes passarem"},
+                    {"hero-eye", "Revisar", "outro olhar procura problemas"}
+                  ])
+              }
+              class="rounded-xl bg-primary-50/60 p-3 dark:bg-primary-950/40"
+            >
+              <div class="flex items-center gap-2">
+                <span class="flex size-7 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">
+                  {index + 1}
+                </span>
+                <.icon name={icon} class="size-4 text-primary-600 dark:text-primary-300" />
+                <span class="text-sm font-semibold text-gray-900 dark:text-white">{name}</span>
+              </div>
+              <p class="mt-1.5 text-xs text-gray-600 dark:text-gray-400">{what}</p>
+              <p class="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <.icon name="hero-check-circle-mini" class="size-4" /> gate: passou
+              </p>
+            </li>
+          </ol>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <p class="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              <.icon name="hero-arrow-path" class="size-4 shrink-0" />
+              Um gate falhou? A etapa tenta de novo, já sabendo o que deu errado.
+            </p>
+            <p class="flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+              <.icon name="hero-hand-raised" class="size-4 shrink-0" />
+              Bloqueou ou esgotou as tentativas? A tarefa pausa e pede a sua decisão.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center rounded-2xl border-2 border-emerald-300 bg-white p-5 text-center dark:border-emerald-700 dark:bg-gray-900">
+          <.icon name="hero-code-bracket-square" class="size-8 text-emerald-500" />
+          <p class="mt-2 font-semibold text-gray-900 dark:text-white">Pull Request</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">pronto para revisão</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Diagram: who does what --%>
+  <section class="py-24" data-testid="diagram-architecture">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">
+          Diagrama 2 · Quem faz o quê
+        </p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          O maestro fica na nuvem, a orquestra toca na sua casa
+        </h2>
+        <p class="mt-4 text-gray-600 dark:text-gray-300">
+          O control plane é o maestro: guarda as receitas, mostra tudo e decide o próximo passo. O
+          runner é a orquestra: roda no seu computador, perto do seu código, e é ele quem liga para
+          o maestro. Nenhuma porta da sua rede precisa ficar aberta.
+        </p>
+      </div>
+
+      <div class="mt-14 grid items-stretch gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
+        <div class="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+          <p class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
+            <.icon name="hero-user-circle" class="size-6 text-sky-500" /> Você, no navegador
+          </p>
+          <ul class="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <li
+              :for={
+                {icon, text} <- [
+                  {"hero-plus-circle", "cria tarefas e pipelines"},
+                  {"hero-eye", "acompanha cada etapa ao vivo"},
+                  {"hero-hand-raised", "responde às decisões"},
+                  {"hero-chart-bar", "vê custo, tokens e auditoria"}
+                ]
+              }
+              class="flex items-center gap-2"
+            >
+              <.icon name={icon} class="size-4 text-gray-400" />{text}
+            </li>
+          </ul>
+        </div>
+
+        <.diagram_link label="páginas ao vivo" />
+
+        <div class="rounded-2xl bg-gradient-to-br from-primary-600 to-secondary-600 p-6 text-white shadow-xl shadow-primary-500/20">
+          <p class="flex items-center gap-2 font-semibold">
+            <.icon name="hero-cloud" class="size-6" /> Control plane, o maestro
+          </p>
+          <ul class="mt-4 space-y-2 text-sm text-white/90">
+            <li
+              :for={
+                {icon, text} <- [
+                  {"hero-book-open", "guarda pipelines e projetos"},
+                  {"hero-arrows-right-left", "manda cada etapa para um runner"},
+                  {"hero-shield-check", "julga os gates e decide o próximo passo"},
+                  {"hero-archive-box", "registra tudo para auditoria"}
+                ]
+              }
+              class="flex items-center gap-2"
+            >
+              <.icon name={icon} class="size-4" />{text}
+            </li>
+          </ul>
+        </div>
+
+        <.diagram_link label="o runner liga para cá" />
+
+        <div class="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+          <p class="flex items-center gap-2 font-semibold text-gray-900 dark:text-white">
+            <.icon name="hero-computer-desktop" class="size-6 text-fuchsia-500" />
+            Runner, no seu computador
+          </p>
+          <ul class="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <li
+              :for={
+                {icon, text} <- [
+                  {"hero-cpu-chip", "roda o Claude Code com o seu login"},
+                  {"hero-folder-open", "um worktree git por tarefa"},
+                  {"hero-beaker", "roda os testes e o lint"},
+                  {"hero-arrow-up-tray", "faz commit, push e abre o PR"}
+                ]
+              }
+              class="flex items-center gap-2"
+            >
+              <.icon name={icon} class="size-4 text-gray-400" />{text}
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%!-- Diagram: inside one stage --%>
+  <section class="bg-gray-50 py-24 dark:bg-gray-900/40" data-testid="diagram-stage">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">
+          Diagrama 3 · Uma etapa por dentro
+        </p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          Lê, trabalha, escreve o que fez e passa pela prova
+        </h2>
+      </div>
+
+      <ol class="mt-14 flex flex-col gap-3 lg:flex-row lg:items-stretch">
+        <li
+          :for={
+            {{icon, title, text}, index} <-
+              Enum.with_index([
+                {"hero-document-text", "Recebe o prompt",
+                 "As instruções da etapa e o que as anteriores deixaram escrito."},
+                {"hero-cpu-chip", "Trabalha sozinho",
+                 "Lê arquivos, roda comandos e muda o código, com todas as permissões."},
+                {"hero-pencil-square", "Deixa um artefato",
+                 "Um Markdown explicando o que fez, para a próxima etapa e para você."},
+                {"hero-shield-check", "Passa pelos gates",
+                 "Testes, lint e as regras da etapa decidem: segue, tenta de novo ou pede ajuda."},
+                {"hero-check-badge", "Vira commit",
+                 "O que mudou entra no branch da tarefa, e o PR é atualizado."}
+              ])
+          }
+          class="flex flex-1 flex-col items-center gap-3 lg:flex-row"
+        >
+          <div class="h-full w-full flex-1 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <span class="flex size-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
+              <.icon name={icon} class="size-6" />
+            </span>
+            <p class="mt-3 font-semibold text-gray-900 dark:text-white">{title}</p>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{text}</p>
+          </div>
+          <.icon
+            :if={index < 4}
+            name="hero-arrow-right"
+            class="size-5 shrink-0 rotate-90 text-primary-400 lg:rotate-0"
+          />
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="recursos" class="py-24">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
         <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">Recursos</p>
@@ -117,18 +379,18 @@
         <.card
           :for={
             {icon, title, text} <- [
-              {"hero-squares-2x2", "Pipeline do seu projeto",
-               "Etapas, prompts, gates e limites versionados no seu repositório, a partir de templates."},
-              {"hero-server-stack", "Executores na sua infra",
-               "Daemons com conexão de saída, workspace quente e um container efêmero por etapa."},
-              {"hero-document-text", "PR como canvas",
-               "Cada etapa commita seus artefatos; a descrição do PR mostra o estado em tempo real."},
-              {"hero-hand-raised", "Decisões humanas",
-               "Quando algo foge do esperado o pipeline pausa e pergunta, na UI, na issue e no PR."},
+              {"hero-squares-2x2", "Pipelines prontos e editáveis",
+               "Templates para bug, funcionalidade, refatoração e revisão, com um editor de prompt rico."},
+              {"hero-server-stack", "Runners na sua máquina",
+               "Um binário que se conecta para fora. Várias tarefas em paralelo, cada uma no seu worktree."},
+              {"hero-document-text", "Artefatos e PR",
+               "Cada etapa deixa um Markdown e um commit; o PR abre em rascunho e fica pronto no fim."},
+              {"hero-hand-raised", "Decisões quando importa",
+               "As etapas seguem sozinhas. A tarefa só para quando precisa de ajuda de verdade."},
               {"hero-shield-check", "Gates objetivos",
-               "Passagem por testes e schema, não pela opinião do agente. Auditoria em contexto novo."},
-              {"hero-chart-bar", "Uso e limites",
-               "Tokens, turnos e tempo por etapa, com tetos por tarefa, pipeline e organização."}
+               "Quem decide se uma etapa passou são os testes e as regras, não a opinião do agente."},
+              {"hero-chart-bar", "Uso e auditoria",
+               "Custo, tokens, cache, ferramentas e tempo de cada execução, por tarefa e por workspace."}
             ]
           }
           variant="outline"
@@ -146,22 +408,22 @@
     </div>
   </section>
 
-  <section id="seguranca" class="py-24">
+  <section id="seguranca" class="bg-gray-50 py-24 dark:bg-gray-900/40">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div class="grid items-center gap-12 lg:grid-cols-2">
         <div>
           <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">Segurança</p>
           <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
-            Seu código e sua chave nunca saem da sua infraestrutura
+            O seu código fica com você
           </h2>
           <ul class="mt-8 space-y-4 text-gray-600 dark:text-gray-300">
             <li
               :for={
                 item <- [
-                  "O executor abre a conexão; nenhuma porta de entrada na sua rede.",
-                  "A API key da Anthropic vive no executor, nunca no control plane.",
-                  "Credenciais git de curta duração, emitidas por tarefa.",
-                  "Escrita restrita ao branch da tarefa. Sem merge, sem deploy, sem push em branch protegido."
+                  "O runner abre a conexão; nenhuma porta de entrada na sua rede.",
+                  "O código e o login do Claude ficam na máquina do runner, nunca no control plane.",
+                  "Cada tarefa trabalha no próprio worktree e no próprio branch.",
+                  "Merge e deploy nunca são feitos pela plataforma: o PR espera a sua revisão."
                 ]
               }
               class="flex gap-3"
@@ -180,7 +442,7 @@
               Pronto para colocar o primeiro pipeline de pé?
             </p>
             <p class="mt-3 text-white/85">
-              Conecte o GitHub, instale um executor com um comando e escolha um template.
+              Instale o runner com um comando, escolha um template e crie a primeira tarefa.
             </p>
             <div class="mt-8">
               <.button
@@ -192,7 +454,7 @@
                 icon="hero-arrow-right"
                 icon_placement="right"
               >
-                Criar conta
+                Entrar
               </.button>
             </div>
           </.card_content>
