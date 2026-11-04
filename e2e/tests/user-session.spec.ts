@@ -1,6 +1,7 @@
 /**
  * @section Workspace users
  * @flow A [done] A user in one workspace signs in straight to its board, sees their account and signs out
+ *   (the sidebar carries the PipeMaestro mark)
  * @flow B [done] A user in two workspaces picks one after signing in and switches from the top bar
  * @flow C [done] A password reset by an operator closes the user's open board and replaces the old password
  * @flow D [done] A disabled user cannot sign in until re-enabled
@@ -32,6 +33,7 @@ test.describe("Workspace user sessions", () => {
     await app.signIn(user.email, userPassword);
     await app.expectBoard(workspace);
     await expect(app.page.getByTestId("board-column-running")).toBeVisible();
+    await expect(app.page.getByTestId("brand").getByTestId("brand-mark")).toBeVisible();
     await shot(app.page, "board");
 
     await app.openAccountMenu();

@@ -3,10 +3,19 @@
  * @flow A [done] A visitor reads the landing page (the simple explanation and the
  *   diagrams) and reaches the sign-in from it
  * @flow B [done] The sign-in page shows the e-mail and password form
+ * @flow C [done] Every public page shows the PipeMaestro mark (its own SVG symbol and the
+ *   name); the SVG favicon is checked by the control plane's ExUnit
  */
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
+
+async function expectBrand(page: Page, testid = "brand") {
+  const brand = page.getByTestId(testid);
+  await expect(brand).toBeVisible();
+  await expect(brand).toContainText("PipeMaestro");
+  await expect(page.getByTestId(`${testid}-mark`)).toBeVisible();
+}
 
 test.describe("Public pages", () => {
   test("the landing page leads to the sign-in", async ({ page }) => {
@@ -36,5 +45,17 @@ test.describe("Public pages", () => {
     await expect(page.getByTestId("login-email")).toBeVisible();
     await expect(page.getByTestId("login-password")).toBeVisible();
     await shot(page, "login");
+  });
+
+  test("the public pages carry the PipeMaestro mark", async ({ page }) => {
+    await page.goto("/");
+    await expectBrand(page);
+    await expectBrand(page, "footer-brand");
+    await shot(page.getByTestId("brand"), "brand");
+
+    await page.goto("/login");
+    await waitForLiveView(page);
+    await expectBrand(page);
+    await shot(page.getByTestId("brand"), "login-brand");
   });
 });

@@ -5,6 +5,8 @@ defmodule PipeMaestroWeb.Layouts do
   """
   use PipeMaestroWeb, :html
 
+  import PipeMaestroWeb.BrandComponents, only: [logo_mark: 1]
+
   alias PipeMaestro.Version
 
   embed_templates "layouts/*"
@@ -71,7 +73,7 @@ defmodule PipeMaestroWeb.Layouts do
 
       <footer :if={@nav} class="border-t border-gray-200 dark:border-gray-800">
         <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-gray-500 sm:flex-row sm:px-6 lg:px-8 dark:text-gray-400">
-          <.brand size="sm" />
+          <.brand size="sm" testid="footer-brand" />
           <p>Powered by Claude · O merge e o deploy continuam com você.</p>
           <.app_version />
         </div>
@@ -496,20 +498,22 @@ defmodule PipeMaestroWeb.Layouts do
     """
   end
 
-  @doc "The product mark: logo glyph and name."
+  @doc "The product mark: the PipeMaestro symbol (`BrandComponents.logo_mark/1`) and name."
   attr :size, :string, default: "md", values: ["sm", "md"]
   attr :compact, :boolean, default: false, doc: "glyph and name sized for the sidebar"
+
+  attr :testid, :string,
+    default: "brand",
+    doc: "test id of the link; the symbol's is `<testid>-mark`"
 
   @spec brand(map()) :: Phoenix.LiveView.Rendered.t()
   def brand(assigns) do
     ~H"""
-    <.link navigate={~p"/"} class="flex items-center gap-2.5">
-      <span class={[
-        "inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-secondary-500 text-white shadow-sm",
-        if(@size == "sm", do: "size-7", else: "size-8")
-      ]}>
-        <.icon name="hero-musical-note" class="size-5" />
-      </span>
+    <.link navigate={~p"/"} class="flex items-center gap-2.5" data-testid={@testid}>
+      <.logo_mark
+        class={if(@size == "sm", do: "size-7", else: "size-8")}
+        data-testid={@testid <> "-mark"}
+      />
       <span class={[
         "font-semibold tracking-tight text-gray-900 dark:text-white",
         @compact && "pc-sidebar__brand",
