@@ -228,9 +228,33 @@ O alvo que só gera a release Mix (sem tag) é `make runner.rel`.
 
 **Só conecta o runner que está na versão da plataforma**
 ([ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md)). Um runner em outra versão é
-recusado no `login` e no `start`, com as duas versões e o link para baixar a atual. A cada
-deploy, baixe o binário novo pela tela **Executores** (ou pelo link da mensagem) e rode de
-novo. Em dev, reinicie o runner junto com o servidor depois de um commit.
+recusado no `login` e no `start`.
+
+O binário único se atualiza sozinho
+([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)). No terminal, ele pergunta:
+
+```
+Este runner está na versão dev+abc1234 e a plataforma está na dev+def5678.
+Baixar e instalar a versão dev+def5678 agora? [S/n]
+```
+
+Com "sim" (ou Enter), ele baixa o binário da plataforma, confere o SHA-256 contra o
+`SHA256SUMS`, troca o executável e roda o mesmo comando de novo. Com "não", mostra as
+duas versões e o link para baixar a atual, e sai.
+
+- **`--auto-update`** (no `start` ou no `login`) atualiza sem perguntar. Sem terminal e
+  sem essa opção, o runner não pergunta: mostra a mensagem e sai.
+- **Serviço:** `pipemaestro service install` já grava `start --auto-update`. O serviço
+  sai depois de trocar o binário, e o launchd ou o systemd o sobe na versão nova. Quem
+  instalou o serviço antes desta versão precisa rodar `pipemaestro service install` de
+  novo.
+- **Sem permissão de escrita** no diretório do binário: o runner mostra o caminho e os
+  comandos para atualizar à mão (`curl`, `shasum -a 256 -c`, `chmod`, `mv`).
+- Runners anteriores a esta versão não sabem se atualizar: a primeira atualização
+  automática acontece no deploy seguinte ao que publicar esta versão. Até lá, baixe o
+  binário pela tela **Executores** (ou pelo link da mensagem).
+- **Em dev** (`make runner.*`), o runner não se atualiza: atualize o código e reinicie o
+  runner junto com o servidor depois de um commit.
 
 A lista de runners e a página de cada runner mostram a versão. Um runner numa release
 anterior à do control plane recebe o selo **desatualizado**. Um control plane num

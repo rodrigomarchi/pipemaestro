@@ -49,7 +49,19 @@ build, recebe `409`:
  "download_url": "https://pipemaestro.app/downloads/runner/"}
 ```
 
-O runner mostra as duas versões e o link, e não pede o código.
+O runner não pede o código. O `download_url` é um diretório com um binário por alvo,
+`pipemaestro_<alvo>` (`macos_arm64`, `macos_x86_64`, `linux_x86_64`, `linux_arm64`), e
+um `SHA256SUMS` no formato do `sha256sum` (`PipeMaestroProtocol.Downloads`). O binário
+único oferece baixar e instalar a versão da plataforma
+([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)), e só baixa se:
+
+- o `download_url` estiver na mesma origem (esquema, host e porta) da plataforma;
+- o esquema for `https` (`http` só para `localhost`, `127.0.0.1` e `::1`);
+- o SHA-256 do binário baixado conferir com o do `SHA256SUMS`.
+
+Ele troca o executável por `rename` de um temporário no mesmo diretório, e roda o mesmo
+comando de novo. Fora disso (sob Mix, sem terminal e sem `--auto-update`, recusando a
+pergunta), mostra as duas versões e o link, e sai.
 
 A resposta é `200`:
 
@@ -118,7 +130,7 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   Um runner fora da versão do control plane recebe o mesmo payload do `409` do login
   (`{"reason": "outdated", "version", "runner_version", "download_url"}`). Nada dele é
   gravado e ele não fica online. O runner cancela os jobs que roda, não tenta de novo e
-  pede para baixar a versão atual. Como o deploy reinicia o control plane, todo runner
+  se atualiza ou pede para baixar a versão atual, como no login. Como o deploy reinicia o control plane, todo runner
   reconecta e passa por essa checagem a cada versão nova.
 - **O que acontece no join:** o control plane grava o `Hello` (labels, capacidade,
   versão, hostname, SO e arch) e passa a mostrar o runner como **online** no

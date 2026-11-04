@@ -46,7 +46,11 @@ O `scripts/deploy_sun.sh` faz quatro coisas:
 3. ainda no Sun, o mesmo script gera os binários do runner do mesmo commit, na imagem
    `docker/runner-binary`, e os publica em `/var/www/pipemaestro/downloads/runner/`.
    O nginx serve esses binários em `/downloads/runner/`, e a tela de runners tem os
-   links. O primeiro deploy constrói a imagem e o cache, e é mais lento;
+   links. O primeiro deploy constrói a imagem e o cache, e é mais lento. Os runners se
+   atualizam a partir desse diretório
+   ([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)), só se ele estiver na
+   mesma origem da plataforma (o mesmo host, com https): um `RUNNER_DOWNLOADS_URL` em
+   outro host desliga a atualização automática;
 4. consulta `https://pipemaestro.app/version` até a release nova responder. Desiste depois de
    `ROLLOUT_TIMEOUT_S`, que por padrão é 300 segundos.
 
