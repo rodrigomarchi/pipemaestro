@@ -214,6 +214,9 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 4. **✓ Versão do runner e do control plane** ([ADR 0016](../adr/0016-esquema-de-versao.md)):
    `AAAA-MM-DD.NN` a partir de tags `runner-*`, `make runner.release`,
    `pipemaestro --version` e o selo "desatualizado" na lista de runners.
+5. **✓ Atualização automática do runner** ([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)):
+   ao ser recusado por versão, o runner pergunta, baixa o binário da plataforma, confere o
+   SHA-256 e se reexecuta; `--auto-update` para serviços.
 
 ### Marco 6 — Integração com git e GitHub (por último)
 

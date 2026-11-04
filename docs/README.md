@@ -47,6 +47,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0022 | [Propostas do agente como mecanismo geral](adr/0022-propostas-do-agente-como-mecanismo-geral.md) | Aceita |
 | 0023 | [Runner na versão da plataforma](adr/0023-runner-na-versao-da-plataforma.md) | Aceita |
 | 0024 | [Resumo da execução e métricas do agente](adr/0024-resumo-da-execucao-e-metricas-do-agente.md) | Aceita |
+| 0025 | [Atualização automática do runner](adr/0025-atualizacao-automatica-do-runner.md) | Aceita |
 
 ## Specs
 
