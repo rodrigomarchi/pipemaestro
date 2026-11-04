@@ -28,7 +28,7 @@ SSH_PORT="${SSH_PORT:-2222}"
 DEPLOY_URL="${DEPLOY_URL:-https://pipemaestro.app}"
 ROLLOUT_TIMEOUT_S="${ROLLOUT_TIMEOUT_S:-300}"
 
-LOG="$(mktemp -t pipemaestro-deploy)"
+LOG="$(mktemp "${TMPDIR:-/tmp}/pipemaestro-deploy.XXXXXX")"
 trap 'rm -f "${LOG}"' EXIT
 
 if [ -z "$(git ls-remote origin "refs/heads/${REF}" "refs/tags/${REF}" 2>/dev/null)" ]; then
