@@ -30,7 +30,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   alias PipeMaestro.{Insights, Jobs, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
-  alias PipeMaestroWeb.{Markdown, ProposalRequest}
+  alias Phoenix.Socket.Broadcast
+  alias PipeMaestroWeb.{Markdown, ProposalRequest, RunnerStatus}
 
   @live_every 2_000
 
@@ -43,6 +44,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     task =
       if connected?(socket) do
         Tasks.subscribe({:task, task.id})
+        RunnerStatus.subscribe(workspace.id)
         Tasks.get_task!(workspace, id)
       else
         task
@@ -53,12 +55,16 @@ defmodule PipeMaestroWeb.TaskLive.Show do
      |> assign(page_title: task.title, task: task, live_job_id: nil, timelines: %{})
      |> assign(live_spent: nil, live_pending: false)
      |> assign(raw_artifacts: MapSet.new(), typing: nil, step_filters: %{})
+     |> load_online()
      |> load_decisions()
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
      |> follow_running_job()}
   end
 
   @impl true
+  def handle_info(%Broadcast{event: "presence_diff"}, socket), do: {:noreply, load_online(socket)}
+  def handle_info(:runners_changed, socket), do: {:noreply, load_online(socket)}
+
   def handle_info({:task_updated, %Task{} = task}, socket),
     do: {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
 
@@ -343,6 +349,10 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       is_nil(task.worktree_removal_requested_at)
   end
 
+  # The workspace's runners online now: a running task on any other is stuck.
+  defp load_online(socket),
+    do: assign(socket, online: RunnerStatus.online_ids(socket.assigns.current_scope.workspace.id))
+
   defp worktree_state(%Task{worktree_removed_at: %DateTime{}}), do: "Removido do runner."
 
   defp worktree_state(%Task{worktree_removal_requested_at: %DateTime{}}),
@@ -520,6 +530,15 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 </dd>
               </div>
             </dl>
+            <.alert
+              :if={Tasks.runner_offline?(@task, @online)}
+              color="danger"
+              with_icon
+              class="mt-4"
+              data-testid="task-runner-offline"
+            >
+              A tarefa está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
+            </.alert>
             <div :if={task_files(@task) != []} class="mt-4 text-sm">
               <p class="mb-1 text-gray-500 dark:text-gray-400">Arquivos alterados na tarefa</p>
               <.file_list files={task_files(@task)} data-testid="task-files" />

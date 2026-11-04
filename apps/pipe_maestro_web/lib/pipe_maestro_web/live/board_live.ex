@@ -3,7 +3,9 @@ defmodule PipeMaestroWeb.BoardLive do
   The workspace's board: the week in numbers, the tasks by state (running,
   waiting for a decision, done, failed), filterable by pipeline, runner,
   directory and person, the decisions waiting, recent activity and the
-  runners. Everything updates live.
+  runners. Everything updates live: the alerts follow the runners' presence
+  and limits, and an alert on a runner's limit ends by itself when the limit
+  resets (`PipeMaestro.Tasks.alerts_change_at/2`).
   """
   use PipeMaestroWeb, :live_view
 
@@ -17,6 +19,9 @@ defmodule PipeMaestroWeb.BoardLive do
   alias PipeMaestroWeb.RunnerStatus
 
   @period_days 7
+
+  # The longest wait before the alerts are recomputed for a reset far ahead.
+  @max_alerts_wait :timer.hours(24)
 
   @columns [
     %{
@@ -56,6 +61,7 @@ defmodule PipeMaestroWeb.BoardLive do
        page_title: "Board",
        columns: @columns,
        filters: %{},
+       alerts_timer: nil,
        pipelines: Pipelines.list_pipelines(workspace),
        members: Workspaces.list_members(workspace)
      )
@@ -65,9 +71,12 @@ defmodule PipeMaestroWeb.BoardLive do
 
   @impl true
   def handle_info(%Broadcast{event: "presence_diff"}, socket),
-    do: {:noreply, socket |> load_runners() |> load_tasks()}
+    do: {:noreply, socket |> load_runners() |> load_alerts()}
 
-  def handle_info(:runners_changed, socket), do: {:noreply, load_runners(socket)}
+  def handle_info(:runners_changed, socket),
+    do: {:noreply, socket |> load_runners() |> load_alerts()}
+
+  def handle_info(:alerts_expired, socket), do: {:noreply, load_alerts(socket)}
   def handle_info({:task_updated, _task}, socket), do: {:noreply, load_tasks(socket)}
 
   # The cost of a job counts as soon as it ends, task or not.
@@ -86,11 +95,32 @@ defmodule PipeMaestroWeb.BoardLive do
     |> assign(
       tasks: Tasks.list_tasks(workspace, socket.assigns.filters),
       awaiting: Tasks.list_awaiting(workspace),
-      alerts: Tasks.alerts(workspace, RunnerStatus.online_ids(workspace.id)),
       recent: all |> Enum.sort_by(& &1.updated_at, {:desc, DateTime}) |> Enum.take(8),
       directories: all |> Enum.map(& &1.directory) |> Enum.uniq() |> Enum.sort()
     )
+    |> load_alerts()
     |> load_stats()
+  end
+
+  # Recomputes the alerts and keeps one timer for the next instant an alert
+  # ends by itself, capped at @max_alerts_wait (it recomputes and waits again).
+  defp load_alerts(socket) do
+    workspace = socket.assigns.current_scope.workspace
+    alerts = Tasks.alerts(workspace, RunnerStatus.online_ids(workspace.id))
+
+    if timer = socket.assigns.alerts_timer, do: Process.cancel_timer(timer)
+
+    timer =
+      case connected?(socket) && Tasks.alerts_change_at(alerts) do
+        %DateTime{} = at ->
+          wait = DateTime.diff(at, DateTime.utc_now(), :millisecond)
+          Process.send_after(self(), :alerts_expired, min(max(wait, 0), @max_alerts_wait))
+
+        _none ->
+          nil
+      end
+
+    assign(socket, alerts: alerts, alerts_timer: timer)
   end
 
   defp load_stats(socket) do
