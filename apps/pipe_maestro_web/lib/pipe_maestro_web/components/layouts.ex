@@ -73,7 +73,7 @@ defmodule PipeMaestroWeb.Layouts do
 
       <footer :if={@nav} class="border-t border-gray-200 dark:border-gray-800">
         <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-gray-500 sm:flex-row sm:px-6 lg:px-8 dark:text-gray-400">
-          <.brand size="sm" />
+          <.brand size="sm" testid="footer-brand" />
           <p>Powered by Claude · O merge e o deploy continuam com você.</p>
           <.app_version />
         </div>
@@ -502,13 +502,17 @@ defmodule PipeMaestroWeb.Layouts do
   attr :size, :string, default: "md", values: ["sm", "md"]
   attr :compact, :boolean, default: false, doc: "glyph and name sized for the sidebar"
 
+  attr :testid, :string,
+    default: "brand",
+    doc: "test id of the link; the symbol's is `<testid>-mark`"
+
   @spec brand(map()) :: Phoenix.LiveView.Rendered.t()
   def brand(assigns) do
     ~H"""
-    <.link navigate={~p"/"} class="flex items-center gap-2.5" data-testid="brand">
+    <.link navigate={~p"/"} class="flex items-center gap-2.5" data-testid={@testid}>
       <.logo_mark
         class={if(@size == "sm", do: "size-7", else: "size-8")}
-        data-testid="brand-mark"
+        data-testid={@testid <> "-mark"}
       />
       <span class={[
         "font-semibold tracking-tight text-gray-900 dark:text-white",

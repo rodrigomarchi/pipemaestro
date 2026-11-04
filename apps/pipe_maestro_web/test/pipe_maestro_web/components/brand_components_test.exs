@@ -64,6 +64,13 @@ defmodule PipeMaestroWeb.BrandComponentsTest do
       assert Enum.empty?(find(html, ~s(.pc-sidebar__brand svg)))
     end
 
+    test "testid names the link and its symbol" do
+      html = render_component(&Layouts.brand/1, testid: "footer-brand")
+
+      link = one!(html, ~s(a[data-testid="footer-brand"]))
+      assert link |> LazyHTML.query(~s(svg[data-testid="footer-brand-mark"])) |> Enum.count() == 1
+    end
+
     test "is not compact by default" do
       assert Enum.empty?(find(render_component(&Layouts.brand/1, []), ".pc-sidebar__brand"))
     end
