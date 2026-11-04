@@ -6,7 +6,9 @@ set -euo pipefail
 #
 # Usage:  bash deploy.sh <git-ref>
 #
-# Runs ON the server (Sun), started by `make deploy` (scripts/deploy_sun.sh).
+# Runs ON the server (Sun), started by ~/bin/pipemaestro-deploy (the infra's
+# deploy_access role), which scripts/deploy_sun.sh calls on merges to main
+# (.forgejo/workflows/deploy.yml) and on `make deploy`.
 # The server's clone (~/pipemaestro, from the Forgejo, made by the infra's
 # app_clone role) is aligned with origin/<ref>; the release is built there,
 # its tarball goes to DeployEx's dist directory, and current.json tells

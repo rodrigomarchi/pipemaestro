@@ -28,17 +28,33 @@ lá, o vhost serve em HTTP.
 
 ## Publicar
 
+A `main` só muda por pull request: o Forgejo recusa push direto nela, inclusive de admins.
+Cada merge publica sozinho
+([ADR 0026](../adr/0026-deploy-pelo-forgejo-e-main-protegida.md)):
+
+1. o merge na `main` dispara `.forgejo/workflows/deploy.yml`;
+2. o runner do repositório, no Moon, roda `scripts/deploy_sun.sh main`;
+3. o deploy aparece em Forgejo → pipemaestro → **Ações**, com o log inteiro e o
+   `RELEASE=...` no fim.
+
+Para refazer o deploy da `main` sem um merge novo, use **Ações → deploy → Executar
+workflow** (`workflow_dispatch`).
+
+O deploy manual continua valendo, para uma emergência ou outra ref:
+
 ```bash
 cp .env.example .env    # uma vez: DEPLOY_USER e SUN_IP
-git push                # o servidor busca do origin (Forgejo)
 make deploy             # make ci, build no Sun e espera o rollout
 make deploy.skip-ci     # o mesmo sem o make ci; REF=<branch|tag> escolhe outra ref
 ```
 
 O `scripts/deploy_sun.sh` faz quatro coisas:
 
-1. copia o `scripts/deploy.sh` para o Sun;
-2. roda esse script lá, e ele:
+1. pede ao Sun `~/bin/pipemaestro-deploy deploy <ref>`. Esse script, instalado pela role
+   `deploy_access` da infra, busca o clone e roda o `scripts/deploy.sh` daquela ref, um
+   deploy por vez. A chave SSH do runner do Forgejo está presa a ele no
+   `authorized_keys` e não abre shell;
+2. o `scripts/deploy.sh`, no Sun:
    - alinha o clone com `origin/<ref>`;
    - compila a release `pipe_maestro` com a versão `<mix>-<sha>`;
    - entrega o tarball ao DeployEx, que roda `PipeMaestro.Release.migrate` antes de subir a
