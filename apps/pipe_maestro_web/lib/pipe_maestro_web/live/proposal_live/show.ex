@@ -23,7 +23,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals.DecisionKind
-  alias PipeMaestroWeb.Markdown
+  alias PipeMaestroWeb.{Markdown, QuestionnaireComponents}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -64,7 +64,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     do: scope.role == :admin or job.created_by_user_id == scope.user.id
 
   # Tasks and decisions are anyone's who runs tasks; pipelines are admins'.
-  defp can_review?(scope, kind) when kind in ["task", "decision"], do: can?(scope, :run_tasks)
+  defp can_review?(scope, kind) when kind in ["task", "decision", "analysis"],
+    do: can?(scope, :run_tasks)
+
   defp can_review?(scope, _kind), do: can?(scope, :manage_pipelines)
 
   defp assign_result(%{assigns: %{job: job}} = socket) do
@@ -112,6 +114,12 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       project: project,
       form: to_form(%{"notes" => result.notes}, as: "notes")
     )
+  end
+
+  # An analysis is answered on its task; here it is only read.
+  defp assign_review(%{assigns: %{result: result}} = socket, "analysis") do
+    task = Tasks.get_task!(socket.assigns.current_scope.workspace, result.task_id)
+    assign(socket, task: task, current: DecisionKind.current?(socket.assigns.input, task))
   end
 
   defp assign_review(socket, "task"), do: socket
@@ -427,6 +435,13 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         current={@current}
         may_cancel={@task && can?(@current_scope, :cancel_task, @task)}
       />
+      <.analysis_review
+        :if={@result && @kind == "analysis"}
+        result={@result}
+        task={@task}
+        current={@current}
+        workspace={@current_scope.workspace}
+      />
       <.improve_review
         :if={@result && @kind == "improve"}
         result={@result}
@@ -682,6 +697,33 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           </.card_content>
         </.card>
       </div>
+    </div>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :task, :any, required: true
+  attr :current, :boolean, required: true
+  attr :workspace, :any, required: true
+
+  defp analysis_review(assigns) do
+    ~H"""
+    <div class="space-y-4" data-testid="proposal-analysis">
+      <.alert :if={!@current} color="gray" with_icon data-testid="proposal-analysis-stale">
+        A tarefa não espera mais esta decisão.
+      </.alert>
+      <QuestionnaireComponents.questionnaire questionnaire={
+        %{"diagnostico" => @result.diagnosis, "perguntas" => @result.questions}
+      } />
+      <.button
+        link_type="live_redirect"
+        to={~p"/w/#{@workspace.slug}/tasks/#{@result.task_id}"}
+        variant="outline"
+        icon="hero-arrow-right"
+        data-testid="proposal-analysis-task"
+      >
+        Responder na tarefa
+      </.button>
     </div>
     """
   end

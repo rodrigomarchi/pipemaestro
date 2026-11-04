@@ -354,6 +354,54 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
     end
   end
 
+  describe "analysis" do
+    test "the analysis a block asked for is read on its page, to answer on the task", ctx do
+      pipeline = pipeline_fixture(ctx.workspace)
+
+      {:ok, task} =
+        Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Corrigir o login",
+          "prompt" => "O botão não responde",
+          "pipeline_id" => pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+
+      stage_job = hd(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+
+      succeed(ctx, stage_job, %{"status" => "bloqueado", "resumo" => "Algo deu errado"})
+
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      job = Jobs.get_job!(ctx.workspace, task.decision_analysis_job_id)
+
+      job =
+        succeed(ctx, job, %{
+          "diagnostico" => "Falta o **timeout**.",
+          "perguntas" => [
+            %{
+              "titulo" => "Correção",
+              "pergunta" => "Como corrigir a falha?",
+              "multipla" => false,
+              "opcoes" => [
+                %{"rotulo" => "Aumentar", "descricao" => "", "recomendada" => true},
+                %{"rotulo" => "Desistir", "descricao" => "", "recomendada" => false}
+              ]
+            }
+          ]
+        })
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=questionnaire-diagnosis] strong", "timeout")
+      assert has_element?(view, "[data-testid=question-0]", "Como corrigir a falha?")
+      refute has_element?(view, "[data-testid=proposal-analysis-stale]")
+      refute has_element?(view, "[data-testid=questionnaire-submit]")
+
+      {:ok, _} = Tasks.retry_stage(task, nil, by: ctx.user)
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-analysis-stale]")
+    end
+  end
+
   describe "decision guards" do
     setup ctx do
       pipeline = pipeline_fixture(ctx.workspace)

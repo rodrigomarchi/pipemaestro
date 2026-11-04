@@ -1213,7 +1213,8 @@ defmodule PipeMaestro.Tasks do
   Moves on to the next stage (the task succeeds if there is none), giving it
   the person's instructions (and the option chosen, if any). `:answers`, to
   the pause's questionnaire, may leave questions unanswered
-  (`Questionnaire.validate_partial/2`); the next stage gets them.
+  (`Questionnaire.validate_partial/2`); the next stage gets them. None
+  answered is the same as no answers.
   """
   @spec advance(Task.t(), String.t() | nil, decision_opts()) ::
           {:ok, Task.t()} | {:error, :not_awaiting} | {:error, :invalid_answers, String.t()}
@@ -1231,6 +1232,7 @@ defmodule PipeMaestro.Tasks do
 
   defp partial_answers(task, opts) do
     with answers when is_list(answers) <- opts[:answers],
+         true <- Enum.any?(answers, &Questionnaire.answered?/1),
          %Task{decision_questionnaire: %{"perguntas" => questions}} <- Repo.get!(Task, task.id) do
       case Questionnaire.validate_partial(questions, answers) do
         {:ok, answers} -> {:ok, Keyword.put(opts, :answers, answers)}
