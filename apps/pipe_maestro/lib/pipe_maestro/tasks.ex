@@ -677,6 +677,13 @@ defmodule PipeMaestro.Tasks do
 
   defp grouped?(task, index), do: group_of(task, index) != nil
 
+  @doc """
+  The indexes of the stages of the step `index` belongs to, in order: just
+  `index`, or every stage of its group.
+  """
+  @spec step_indexes(Task.t(), non_neg_integer()) :: [non_neg_integer()]
+  def step_indexes(%Task{} = task, index), do: step(task, index)
+
   # The indexes of the step `index` belongs to, in order.
   defp step(task, index) do
     case group_of(task, index) do
@@ -878,6 +885,25 @@ defmodule PipeMaestro.Tasks do
     else
       _no_options -> []
     end
+  end
+
+  @doc """
+  The latest finished tasks of `pipeline` (succeeded, failed or canceled),
+  newest first, each with its stage runs (and their jobs) and decisions: how
+  the pipeline has worked, for improving it.
+  """
+  @spec history(Pipeline.t(), pos_integer()) :: [Task.t()]
+  def history(%Pipeline{id: pipeline_id}, limit \\ 20) do
+    runs = from r in StageRun, order_by: [asc: r.index, asc: r.attempt], preload: :job
+    decisions = from d in Decision, order_by: [asc: d.inserted_at]
+
+    Repo.all(
+      from t in Task,
+        where: t.pipeline_id == ^pipeline_id and t.status in [:succeeded, :failed, :canceled],
+        order_by: [desc: t.finished_at, desc: t.inserted_at],
+        limit: ^limit,
+        preload: [stage_runs: ^runs, decisions: ^decisions]
+    )
   end
 
   @doc "The decisions taken on a task, oldest first."

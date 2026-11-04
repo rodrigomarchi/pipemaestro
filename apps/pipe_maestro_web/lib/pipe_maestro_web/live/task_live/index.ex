@@ -1,8 +1,10 @@
 defmodule PipeMaestroWeb.TaskLive.Index do
   @moduledoc """
   The workspace's tasks, newest first, searchable and updated live, and the
-  form that starts one (empty, or a copy of a task: `?duplicate=<id>`): what to do, which pipeline, and which online runner (with how
-  busy it is) and directory to work in.
+  form that starts one (empty, a copy of a task: `?duplicate=<id>`, or a task
+  the agent wrote: `?proposta=<id>`, `PipeMaestro.Proposals`): what to do,
+  which pipeline, and which online runner (with how busy it is) and directory
+  to work in. "Escrever com IA" asks the agent to write one from an idea.
   """
   use PipeMaestroWeb, :live_view
 
@@ -10,8 +12,8 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
 
   alias Phoenix.Socket.Broadcast
-  alias PipeMaestro.{Jobs, Pipelines, Runners, Tasks}
-  alias PipeMaestroWeb.RunnerStatus
+  alias PipeMaestro.{Jobs, Pipelines, Proposals, Runners, Tasks}
+  alias PipeMaestroWeb.{ProposalRequest, RunnerStatus}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -26,6 +28,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     {:ok,
      socket
      |> assign(page_title: "Tarefas", creating: false, form: nil, params: %{}, query: "")
+     |> assign(proposal_request: nil, from_proposal: false)
      |> assign(pipelines: Pipelines.list_pipelines(workspace))
      |> load_tasks()
      |> load_online_runners()}
@@ -42,6 +45,28 @@ defmodule PipeMaestroWeb.TaskLive.Index do
        params: params,
        form: to_form(Tasks.change_task(params), as: "task")
      )}
+  end
+
+  def handle_params(%{"proposta" => id}, _uri, socket) do
+    workspace = socket.assigns.current_scope.workspace
+
+    with {:ok, _uuid} <- Ecto.UUID.cast(id),
+         job = Proposals.get_proposal!(workspace, id),
+         "task" <- Proposals.kind(job),
+         {:ok, result} <- Proposals.result(job) do
+      params = Map.new(result.task_params, fn {k, v} -> {k, v || ""} end)
+
+      {:noreply,
+       assign(socket,
+         creating: true,
+         from_proposal: true,
+         params: params,
+         form: to_form(Tasks.change_task(params), as: "task")
+       )}
+    else
+      _no_task ->
+        {:noreply, put_flash(socket, :error, "Esta proposta não tem uma tarefa pronta.")}
+    end
   end
 
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
@@ -64,11 +89,23 @@ defmodule PipeMaestroWeb.TaskLive.Index do
      |> assign(form: to_form(Tasks.change_task(), as: "task"))}
   end
 
+  def handle_event("open_proposal_request", _params, socket),
+    do: {:noreply, ProposalRequest.open(socket, "task")}
+
+  def handle_event("close_proposal_request", _params, socket),
+    do: {:noreply, ProposalRequest.close(socket)}
+
+  def handle_event("validate_proposal_request", %{"proposal" => params}, socket),
+    do: {:noreply, ProposalRequest.validate(socket, params)}
+
+  def handle_event("submit_proposal_request", %{"proposal" => params}, socket),
+    do: {:noreply, ProposalRequest.submit(socket, params)}
+
   def handle_event("search", %{"search" => %{"q" => query}}, socket),
     do: {:noreply, socket |> assign(query: query) |> load_tasks()}
 
   def handle_event("close_new", _params, socket),
-    do: {:noreply, assign(socket, creating: false, form: nil)}
+    do: {:noreply, assign(socket, creating: false, form: nil, from_proposal: false)}
 
   def handle_event("validate", %{"task" => params}, socket) do
     form = params |> Tasks.change_task() |> Map.put(:action, :validate) |> to_form(as: "task")
@@ -146,6 +183,15 @@ defmodule PipeMaestroWeb.TaskLive.Index do
       title="Tarefas"
     >
       <:actions>
+        <.button
+          size="sm"
+          variant="outline"
+          icon="hero-cpu-chip"
+          phx-click="open_proposal_request"
+          data-testid="task-generate"
+        >
+          Escrever com IA
+        </.button>
         <.button size="sm" icon="hero-plus" phx-click="open_new" data-testid="new-task">
           Nova tarefa
         </.button>
@@ -241,6 +287,16 @@ defmodule PipeMaestroWeb.TaskLive.Index do
           Nenhum runner online. Rode <code>make runner.start ROOT=~/src</code> numa máquina conectada.
         </.alert>
 
+        <.alert
+          :if={@from_proposal}
+          color="info"
+          class="mb-4"
+          with_icon
+          data-testid="task-from-proposal"
+        >
+          Esta é a tarefa que o agente escreveu. Revise, ajuste o que quiser e inicie.
+        </.alert>
+
         <.form for={@form} id="new-task-form" phx-change="validate" phx-submit="create">
           <.icon_field
             field={@form[:title]}
@@ -313,6 +369,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
           </div>
         </.form>
       </.modal>
+      <ProposalRequest.request_modal :if={@proposal_request} request={@proposal_request} />
     </Layouts.app>
     """
   end

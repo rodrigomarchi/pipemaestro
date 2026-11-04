@@ -11,6 +11,7 @@ defmodule PipeMaestroWeb.DecisionsLive do
 
   alias PipeMaestro.{Tasks, Workspaces}
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestroWeb.ProposalRequest
 
   @impl true
   def mount(_params, _session, socket) do
@@ -28,6 +29,9 @@ defmodule PipeMaestroWeb.DecisionsLive do
 
   @impl true
   # An option button sends the choice without an action: it retries the stage.
+  def handle_event("suggest_decision", %{"task_id" => task_id}, socket),
+    do: {:noreply, ProposalRequest.suggest_decision(socket, task_id)}
+
   def handle_event("decide", %{"choice" => _choice} = params, socket)
       when not is_map_key(params, "action"),
       do: handle_event("decide", Map.put(params, "action", "retry"), socket)
@@ -207,6 +211,19 @@ defmodule PipeMaestroWeb.DecisionsLive do
             </.form>
 
             <.alert color="warning" with_icon class="mt-3">{task.decision_reason}</.alert>
+            <div class="mt-2 flex justify-end">
+              <.button
+                type="button"
+                size="sm"
+                variant="outline"
+                icon="hero-cpu-chip"
+                phx-click="suggest_decision"
+                phx-value-task_id={task.id}
+                data-testid={"decision-suggest-#{task.id}"}
+              >
+                Sugerir com IA
+              </.button>
+            </div>
 
             <.form
               for={to_form(%{}, as: "decision")}

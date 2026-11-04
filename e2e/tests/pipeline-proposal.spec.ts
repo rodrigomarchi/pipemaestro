@@ -55,14 +55,12 @@ test.describe("Pipeline proposal", () => {
     await pipelines.open(workspace.slug);
     const proposal = new ProposalPage(app.page);
     await app.page.getByTestId("generate-pipeline").click();
-    await app.page.getByTestId("generate-runner").selectOption({ label: runnerName });
+    await app.page.getByTestId("proposal-request-runner").selectOption({ label: runnerName });
     await expect(proposal.directoryOptions).toHaveText(["Escolha um diretório", "app"]);
-    await app.page.getByTestId("generate-request").fill("[proposta] Entregar issues com testes e um PR.");
+    await app.page.getByTestId("proposal-request-text").fill("Entregar issues com testes e um PR.");
     await shot(app.page, "proposal-request");
-    await app.page.keyboard.press("Escape");
-
-    await proposal.request(runnerName, "app", "[proposta] Entregar issues com testes e um PR.");
-    await expect(proposal.status).toHaveText("Concluído", { timeout: 60_000 });
+    await proposal.submitRequest({ runner: runnerName, directory: "app" });
+    await proposal.waitForAnswer();
 
     // The agent ran in a disposable worktree: its file never reached the directory.
     expect(existsSync(join(root, "app", "fake-claude.txt"))).toBe(false);
@@ -87,7 +85,8 @@ test.describe("Pipeline proposal", () => {
     await pipelines.save();
 
     await expect(pipelines.pipeline("Entrega proposta")).toBeVisible();
-    await expect(app.page.getByTestId("proposals")).toContainText("app");
+    await app.page.goto(`/w/${workspace.slug}/proposals`);
+    await expect(app.page.getByTestId("proposals")).toContainText("Entregar issues");
 
     const projects = new ProjectsPage(app.page);
     await projects.open(workspace.slug);

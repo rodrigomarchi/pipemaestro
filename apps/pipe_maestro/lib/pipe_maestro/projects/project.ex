@@ -11,7 +11,9 @@ defmodule PipeMaestro.Projects.Project do
 
   With a `github_repo` (`dono/repo`) and a `trigger_label`, a GitHub webhook
   starts a task with the `trigger_pipeline` when an issue of the repository
-  gets the label, on behalf of `trigger_user` (who set the trigger up).
+  gets the label, on behalf of `trigger_user` (who set the trigger up). With
+  `trigger_mode` `"triage"`, the agent writes the task from the issue first
+  (`PipeMaestro.Proposals`), for a person to review before it starts.
   """
   use PipeMaestro.Schema
 
@@ -32,6 +34,7 @@ defmodule PipeMaestro.Projects.Project do
           notes: String.t() | nil,
           github_repo: String.t() | nil,
           trigger_label: String.t() | nil,
+          trigger_mode: String.t(),
           trigger_pipeline_id: Ecto.UUID.t() | nil,
           trigger_user_id: Ecto.UUID.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
@@ -53,6 +56,7 @@ defmodule PipeMaestro.Projects.Project do
     field :notes, :string
     field :github_repo, :string
     field :trigger_label, :string
+    field :trigger_mode, :string, default: "task"
     field :trigger_pipeline_id, :binary_id
     field :trigger_user_id, :binary_id
 
@@ -60,6 +64,10 @@ defmodule PipeMaestro.Projects.Project do
 
     timestamps()
   end
+
+  @doc ~s(What a labeled issue does: "task" starts one, "triage" has the agent write it first.)
+  @spec trigger_modes() :: [String.t()]
+  def trigger_modes, do: ~w(task triage)
 
   @doc """
   Changeset for a project. The paths to clone may come as one per line
@@ -79,8 +87,10 @@ defmodule PipeMaestro.Projects.Project do
       :notes,
       :github_repo,
       :trigger_label,
+      :trigger_mode,
       :trigger_pipeline_id
     ])
+    |> validate_inclusion(:trigger_mode, trigger_modes())
     |> update_change(:github_repo, &String.downcase(String.trim(&1)))
     |> validate_format(:github_repo, ~r{^[\w.-]+/[\w.-]+$}, message: "use dono/repositório")
     |> validate_length(:trigger_label, max: 50)

@@ -3,7 +3,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   Creates or edits a pipeline: its name, delivery and context, and its stages,
   which can be added, removed, moved and collapsed. Prompts are written in a
   Markdown editor (`PipeMaestroWeb.FormComponents.markdown_editor/1`).
-  A new pipeline can start from an agent's proposal (`?proposta=<job id>`,
+  A new pipeline can start from an agent's proposal, and an existing one from
+  an improvement the agent proposed for it (`?proposta=<job id>`,
   `PipeMaestro.Proposals`), to be reviewed and saved.
   The form's params are kept as they are typed, so moving a stage keeps
   whatever was written in it; a collapsed stage keeps its inputs in the page,
@@ -45,12 +46,20 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
 
   defp from_proposal?(params), do: is_binary(params["proposta"])
 
-  # A new pipeline starts from a proposal when one is named, and the proposal
-  # has one; otherwise from scratch.
-  defp starting_params(%Pipeline{id: nil} = pipeline, %{"proposta" => job_id}, workspace)
-       when is_binary(job_id) do
+  defp proposal_fits?("pipeline", %Pipeline{id: nil}, _job), do: true
+
+  defp proposal_fits?("improve", %Pipeline{id: id}, job) when is_binary(id),
+    do: Proposals.input(job)["pipeline_id"] == id
+
+  defp proposal_fits?(_kind, _pipeline, _job), do: false
+
+  # A new pipeline starts from a pipeline proposal, and an existing one from
+  # an improvement of it, when one is named; otherwise from what it has.
+  defp starting_params(pipeline, %{"proposta" => job_id}, workspace) when is_binary(job_id) do
     with {:ok, _uuid} <- Ecto.UUID.cast(job_id),
-         {:ok, result} <- workspace |> Proposals.get_proposal!(job_id) |> Proposals.result() do
+         job = Proposals.get_proposal!(workspace, job_id),
+         true <- proposal_fits?(Proposals.kind(job), pipeline, job),
+         {:ok, result} <- Proposals.result(job) do
       proposal_params(result.pipeline)
     else
       _no_proposal -> initial_params(pipeline)
@@ -292,7 +301,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         with_icon
         data-testid="pipeline-from-proposal"
       >
-        Este é o pipeline que o agente propôs. Revise as etapas, ajuste o que quiser e salve.
+        Este é o pipeline que o agente propôs. Revise as etapas, ajuste o que quiser e salve {if @pipeline.id,
+          do: "(vira a versão #{@pipeline.version + 1})"}.
       </.alert>
 
       <.form for={@form} id="pipeline-form" phx-change="validate" phx-submit="save" class="space-y-6">

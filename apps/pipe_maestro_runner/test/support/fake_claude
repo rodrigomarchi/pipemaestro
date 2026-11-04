@@ -13,9 +13,11 @@
 #     first, as `--include-partial-messages` does
 #   a prompt with "[gotejando]" waits 3 s after the first tool result, then
 #     runs one more tool (a Bash call and its result) before answering
-#   a prompt with "[proposta]" answers, when asked for structured output, a
-#     fixed proposal of a project and a two-stage pipeline
-#     (PipeMaestro.Proposals.Schema)
+#
+# A JSON Schema with "x-pipemaestro-kind" (a proposal, PipeMaestro.Proposals)
+# gets that kind's fixed answer: a project and a two-stage pipeline
+# ("pipeline"), a task ("task"), a decision to retry ("decision"), or a
+# revised pipeline with notes ("improve").
 #
 # Its lines have what a real run reports for auditing (session, tools, MCP
 # servers, each message's id, model and tokens, the permission behind each
@@ -37,9 +39,13 @@ prompt="$2"
 printf '%s\n' "$prompt" > fake-claude.txt
 
 structured=""
+schema=""
+next_is_schema=""
 for arg in "$@"; do
-  if [ "$arg" = "--json-schema" ]; then structured=1; fi
+  if [ -n "$next_is_schema" ]; then schema="$arg"; next_is_schema=""; fi
+  if [ "$arg" = "--json-schema" ]; then structured=1; next_is_schema=1; fi
 done
+kind=$(printf '%s' "$schema" | sed -n 's/.*"x-pipemaestro-kind":"\([a-z]*\)".*/\1/p')
 
 echo "fake_claude: aviso de exemplo" >&2
 
@@ -102,12 +108,22 @@ totals='"session_id":"fake-session","stop_reason":"end_turn","duration_api_ms":9
 
 if [ -n "$structured" ]; then
   output='{"status":"'"$status"'","resumo":"'"$summary"'"}'
-  case "$prompt" in
-    *"[proposta]"*)
+  case "$kind" in
+    pipeline)
       output='{"analise":"Um app de exemplo do fake_claude. Os testes rodam com `make test`.","verificacoes":[{"comando":"make test","passou":true},{"comando":"make lint","passou":false,"observacao":"Sem alvo de lint no Makefile."}],"projeto":{"nome":"App do fake","setup":"make deps","teste":"make test","lint":"make lint","copy_paths":["deps"],"notas":"Rode `make test` antes de entregar."},"pipeline":{"name":"Entrega proposta","description":"Plano e implementação com testes.","delivery":"pr","stages":[{"key":"plano","name":"Plano","prompt":"Planeje a mudança: {{tarefa.descricao}}"},{"key":"implementacao","name":"Implementação","prompt":"Implemente o plano e rode {{projeto.teste}}.","gates":["{{projeto.teste}}"],"max_attempts":3}]}}'
       ;;
+    task)
+      output='{"analise":"O README do app descreve o login; o fake_claude leu o projeto.","titulo":"Destravar o login sob carga","descricao":"## Problema\n\nO login trava com muitos acessos.\n\n## Critérios de aceite\n\n- 100 logins simultâneos terminam em menos de 2 s.","pipeline":"Prompt único","pronta":true,"perguntas":[]}'
+      ;;
+    decision)
+      output='{"diagnostico":"A etapa parou porque **falta saber o navegador**.","acao":"retry","instrucoes":"Considere o Chrome e siga. [desbloqueio]","alternativas":[{"acao":"cancel","motivo":"Se o problema não reproduzir em nenhum navegador."}]}'
+      ;;
+    improve)
+      output='{"analise":"A etapa única terminou bem; falta um gate de testes.","mudancas":[{"onde":"Etapa Executar","o_que":"Gate {{projeto.teste}}","por_que":"Nenhuma tarefa verificou os testes."}],"pipeline":{"name":"Prompt único","description":"Um prompt, com testes.","stages":[{"key":"executar","name":"Executar","prompt":"{{tarefa.descricao}}","gates":["{{projeto.teste}}"]}]},"notas":"Rode `make test` antes de entregar."}'
+      ;;
   esac
-  echo '{"type":"result","subtype":"success","is_error":false,"result":"'"$(printf '%s' "$output" | sed 's/"/\\"/g')"'","structured_output":'"$output"',"total_cost_usd":0.0042,"duration_ms":1234,"num_turns":2,'"$totals"'}'
+  # printf, not echo: sh's echo would turn the answer's \n into newlines.
+  printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"'"$(printf '%s' "$output" | sed 's/\\/\\\\/g; s/"/\\"/g')"'","structured_output":'"$output"',"total_cost_usd":0.0042,"duration_ms":1234,"num_turns":2,'"$totals"'}'
 else
   echo '{"type":"result","subtype":"success","is_error":false,"result":"Pronto: gravei o prompt em fake-claude.txt.","total_cost_usd":0.0042,"duration_ms":1234,"num_turns":2,'"$totals"'}'
 fi

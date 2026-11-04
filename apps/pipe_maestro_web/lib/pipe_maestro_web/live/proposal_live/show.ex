@@ -1,0 +1,814 @@
+defmodule PipeMaestroWeb.ProposalLive.Show do
+  @moduledoc """
+  One proposal (`PipeMaestro.Proposals`): while the agent works, its run as a
+  live timeline; once it ends, the review of its kind
+  (`PipeMaestroWeb.ProposalComponents`), and what the person can do with it:
+
+    * pipeline: edit and save the directory's project, then open the
+      pipeline form filled with the proposal;
+    * task: open the new-task form filled with it;
+    * decision: apply the suggested decision (retry, advance or cancel), with
+      the instructions as the person left them;
+    * improve: save the project's notes, then open the pipeline's form filled
+      with the revision.
+
+  Any kind can be asked again with the person's comment.
+  """
+  use PipeMaestroWeb, :live_view
+
+  import PipeMaestroWeb.JobComponents
+  import PipeMaestroWeb.ProposalComponents
+
+  alias PipeMaestro.{Audit, Jobs, Projects, Proposals, Tasks}
+  alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Projects.Project
+  alias PipeMaestroWeb.Markdown
+
+  @impl true
+  def mount(%{"id" => id}, _session, socket) do
+    workspace = socket.assigns.current_scope.workspace
+    job = Proposals.get_proposal!(workspace, id)
+
+    if can_review?(socket.assigns.current_scope, Proposals.kind(job)) do
+      # Subscribe before reading, so nothing that happens in between is missed.
+      job =
+        if connected?(socket) do
+          Jobs.subscribe({:job, job.id})
+          Proposals.get_proposal!(workspace, id)
+        else
+          job
+        end
+
+      segments = job |> Jobs.list_events() |> timeline_items("all")
+
+      {:ok,
+       socket
+       |> assign(page_title: "Proposta do agente", job: job, kind: Proposals.kind(job))
+       |> assign(input: Proposals.input(job), title: Proposals.title(job))
+       |> assign(typing: nil, timeline_tail: timeline_tail(segments), feedback_form: nil)
+       |> assign_result()
+       |> stream(:timeline, segments)}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "Só admins do workspace revisam esta proposta.")
+       |> push_navigate(to: ~p"/w/#{workspace.slug}/proposals")}
+    end
+  end
+
+  # Tasks and decisions are anyone's who runs tasks; pipelines are admins'.
+  defp can_review?(scope, kind) when kind in ["task", "decision"], do: can?(scope, :run_tasks)
+  defp can_review?(scope, _kind), do: can?(scope, :manage_pipelines)
+
+  defp assign_result(%{assigns: %{job: job}} = socket) do
+    socket = assign(socket, result: nil, error: nil, form: nil, project: nil, task: nil)
+
+    if Job.active?(job) do
+      socket
+    else
+      case Proposals.result(job) do
+        {:ok, result} -> socket |> assign(result: result) |> assign_review(socket.assigns.kind)
+        {:error, message} -> assign(socket, error: message)
+      end
+    end
+  end
+
+  # The project form, filled with the proposal over the directory's project.
+  defp assign_review(%{assigns: %{result: result}} = socket, "pipeline") do
+    project = directory_project(socket, result.project["directory"]) || %Project{}
+
+    assign(socket,
+      project: project,
+      form: to_form(Projects.change_project(project, result.project))
+    )
+  end
+
+  defp assign_review(%{assigns: %{result: result}} = socket, "decision") do
+    task = Tasks.get_task!(socket.assigns.current_scope.workspace, result.task_id)
+
+    assign(socket,
+      task: task,
+      form:
+        to_form(
+          %{"instructions" => result.instructions, "choice" => result.choice || ""},
+          as: "decision"
+        )
+    )
+  end
+
+  defp assign_review(%{assigns: %{result: result}} = socket, "improve") do
+    project = directory_project(socket, result.directory)
+
+    assign(socket,
+      project: project,
+      form: to_form(%{"notes" => result.notes}, as: "notes")
+    )
+  end
+
+  defp assign_review(socket, "task"), do: socket
+
+  defp directory_project(socket, directory),
+    do: Projects.for_directory(socket.assigns.current_scope.workspace, directory)
+
+  @impl true
+  def handle_info({:job_updated, %Job{} = job}, socket) do
+    {:noreply,
+     socket
+     |> assign(job: job, typing: if(Job.active?(job), do: socket.assigns.typing))
+     |> assign_result()}
+  end
+
+  def handle_info({:job_telemetry, _id}, socket), do: {:noreply, socket}
+
+  def handle_info({:job_delta, _id, text}, socket), do: {:noreply, assign(socket, typing: text)}
+
+  def handle_info({:job_event, event}, socket) do
+    case timeline_push(socket.assigns.timeline_tail, event) do
+      {:seen, _tail} ->
+        {:noreply, socket}
+
+      {segment, tail} ->
+        {:noreply,
+         socket
+         |> stream_insert(:timeline, segment)
+         |> assign(timeline_tail: tail, typing: nil)}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel", _params, socket) do
+    case Jobs.request_cancel(socket.assigns.job) do
+      {:ok, job} -> {:noreply, assign(socket, job: job)}
+      {:error, :finished} -> {:noreply, put_flash(socket, :error, "O agente já terminou.")}
+    end
+  end
+
+  # Pipeline: the project.
+  def handle_event("validate_project", %{"project" => params}, socket) do
+    changeset =
+      socket.assigns.project
+      |> Projects.change_project(with_directory(params, socket))
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, form: to_form(changeset))}
+  end
+
+  def handle_event("save_project", %{"project" => params}, socket) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    params = with_directory(params, socket)
+
+    result =
+      if socket.assigns.project.id,
+        do: Projects.update_project(socket.assigns.project, params, user),
+        else: Projects.create_project(workspace, params, user)
+
+    case result do
+      {:ok, project} ->
+        Audit.record(workspace, user, "project.saved", project)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Projeto #{project.name} salvo. Revise o pipeline proposto.")
+         |> push_navigate(
+           to: ~p"/w/#{workspace.slug}/pipelines/new?proposta=#{socket.assigns.job.id}"
+         )}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, form: to_form(changeset))}
+    end
+  end
+
+  # Decision: apply it.
+  def handle_event("apply_decision", %{"action" => action} = params, socket) do
+    %{task: task} = socket.assigns
+    user = socket.assigns.current_scope.user
+    decision = params["decision"] || %{}
+    instructions = blank_to_nil(decision["instructions"])
+    opts = [by: user, choice: blank_to_nil(decision["choice"])]
+
+    result =
+      case action do
+        "retry" -> Tasks.retry_stage(task, instructions, opts)
+        "advance" -> Tasks.advance(task, instructions, opts)
+        "cancel" -> Tasks.cancel_task(task, by: user)
+      end
+
+    case result do
+      {:ok, task} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Decisão aplicada: #{action_label(action)}.")
+         |> push_navigate(
+           to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/tasks/#{task.id}"
+         )}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "A tarefa não espera mais esta decisão.")}
+    end
+  end
+
+  # Improve: the notes, then the pipeline.
+  def handle_event("save_notes", %{"notes" => %{"notes" => notes}}, socket) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+
+    case Projects.update_project(socket.assigns.project, %{"notes" => notes}, user) do
+      {:ok, project} ->
+        Audit.record(workspace, user, "project.saved", project)
+
+        {:noreply,
+         socket
+         |> assign(project: project)
+         |> put_flash(:info, "Notas de #{project.name} salvas.")}
+
+      {:error, changeset} ->
+        message = changeset.errors |> Keyword.values() |> Enum.map_join("; ", &elem(&1, 0))
+        {:noreply, put_flash(socket, :error, "As notas não foram salvas: #{message}")}
+    end
+  end
+
+  # Any kind: ask again with a comment.
+  def handle_event("open_feedback", _params, socket),
+    do: {:noreply, assign(socket, feedback_form: to_form(%{"feedback" => ""}, as: "round"))}
+
+  def handle_event("close_feedback", _params, socket),
+    do: {:noreply, assign(socket, feedback_form: nil)}
+
+  def handle_event("regenerate", %{"round" => %{"feedback" => feedback}}, socket) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    %{job: job, kind: kind, input: input} = socket.assigns
+    attrs = Map.merge(input, %{"runner_id" => job.runner_id, "feedback" => feedback})
+
+    case Proposals.request(kind, user, workspace, attrs, job) do
+      {:ok, next} ->
+        Audit.record(workspace, user, "proposal.requested", next)
+        {:noreply, push_navigate(socket, to: ~p"/w/#{workspace.slug}/proposals/#{next.id}")}
+
+      {:error, changeset} ->
+        message =
+          changeset
+          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
+          |> Map.values()
+          |> List.flatten()
+          |> Enum.join("; ")
+
+        {:noreply, put_flash(socket, :error, "Não foi possível pedir de novo: #{message}")}
+    end
+  end
+
+  # The directory is the one studied, not a field the person changes here.
+  defp with_directory(params, socket),
+    do: Map.put(params, "directory", socket.assigns.input["directory"])
+
+  defp blank_to_nil(value) when is_binary(value),
+    do: if(String.trim(value) == "", do: nil, else: value)
+
+  defp blank_to_nil(_value), do: nil
+
+  defp task_link(workspace, task_id), do: ~p"/w/#{workspace.slug}/tasks/#{task_id}"
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <Layouts.app
+      flash={@flash}
+      pending_decisions={@pending_decisions}
+      current_scope={@current_scope}
+      workspaces={@workspaces}
+      active={:proposals}
+      title="Proposta do agente"
+    >
+      <:actions>
+        <.button
+          link_type="live_redirect"
+          to={~p"/w/#{@current_scope.workspace.slug}/proposals"}
+          size="sm"
+          variant="ghost"
+          color="gray"
+          icon="hero-arrow-left"
+          data-testid="back-to-proposals"
+        >
+          Propostas
+        </.button>
+        <.button
+          :if={Job.active?(@job)}
+          size="sm"
+          variant="outline"
+          color="danger"
+          icon="hero-stop"
+          phx-click="cancel"
+          data-testid="proposal-cancel"
+        >
+          Cancelar
+        </.button>
+        <.button
+          :if={!Job.active?(@job)}
+          size="sm"
+          variant="outline"
+          icon="hero-arrow-path"
+          phx-click="open_feedback"
+          data-testid="proposal-regenerate"
+        >
+          Pedir de novo com ajustes
+        </.button>
+      </:actions>
+
+      <.card variant="outline" class="mb-6">
+        <.card_content>
+          <div class="flex flex-wrap items-start gap-4">
+            <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
+              <.icon name="hero-cpu-chip" class="size-5" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <.kind_badge kind={@kind} data-testid="proposal-kind" />
+                <h2 class="font-semibold text-gray-900 dark:text-white" data-testid="proposal-title">
+                  {@title}
+                </h2>
+                <.job_status job={@job} data-testid="proposal-status" />
+              </div>
+              <p class="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-gray-500 dark:text-gray-400">
+                <span :if={@input["directory"]} class="flex items-center gap-1">
+                  <.icon name="hero-folder-open" class="size-4" />
+                  <span data-testid="proposal-directory">{@input["directory"]}</span>
+                </span>
+                <span :if={@job.runner}>no runner {@job.runner.name}</span>
+                <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>
+                <span :if={@job.duration_ms}>{format_duration(@job.duration_ms)}</span>
+                <.link
+                  :if={@input["task_id"]}
+                  navigate={task_link(@current_scope.workspace, @input["task_id"])}
+                  class="text-primary-600 hover:underline dark:text-primary-400"
+                  data-testid="proposal-task-link"
+                >
+                  ver a tarefa
+                </.link>
+              </p>
+              <div
+                :if={@input["request"] || @input["focus"]}
+                id="proposal-request"
+                class="prose prose-sm mt-2 max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
+                data-testid="proposal-request"
+              >
+                {Markdown.to_html(@input["request"] || @input["focus"])}
+              </div>
+            </div>
+          </div>
+        </.card_content>
+      </.card>
+
+      <.alert :if={@error} color="danger" class="mb-6" data-testid="proposal-error">
+        {@error}
+      </.alert>
+
+      <.pipeline_review
+        :if={@result && @kind == "pipeline"}
+        result={@result}
+        form={@form}
+        project={@project}
+        input={@input}
+      />
+      <.task_review
+        :if={@result && @kind == "task"}
+        result={@result}
+        job={@job}
+        workspace={@current_scope.workspace}
+      />
+      <.decision_review
+        :if={@result && @kind == "decision"}
+        result={@result}
+        form={@form}
+        task={@task}
+      />
+      <.improve_review
+        :if={@result && @kind == "improve"}
+        result={@result}
+        form={@form}
+        project={@project}
+        input={@input}
+        job={@job}
+        workspace={@current_scope.workspace}
+      />
+
+      <.card variant="outline" class={if(@result, do: "mt-6", else: "")}>
+        <.card_content>
+          <.section_heading
+            icon="hero-eye"
+            title="Como o agente trabalhou"
+            description={if Job.active?(@job), do: "Ao vivo, enquanto ele estuda e escreve."}
+          />
+          <p
+            :if={@job.status == :queued}
+            class="text-sm text-gray-500 dark:text-gray-400"
+            data-testid="proposal-waiting"
+          >
+            Aguardando o runner começar…
+          </p>
+          <ol id="proposal-events" phx-update="stream" class="space-y-4" data-testid="proposal-events">
+            <.timeline_segment
+              :for={{id, segment} <- @streams.timeline}
+              id={id}
+              timeline="proposal-events"
+              segment={segment}
+            />
+          </ol>
+          <.typing :if={@typing} text={@typing} />
+        </.card_content>
+      </.card>
+
+      <.modal
+        :if={@feedback_form}
+        id="feedback-modal"
+        title="Pedir de novo com ajustes"
+        max_width="xl"
+        on_cancel={JS.push("close_feedback")}
+      >
+        <.form for={@feedback_form} id="feedback-form" phx-submit="regenerate">
+          <.markdown_editor
+            id="proposal-feedback"
+            field={@feedback_form[:feedback]}
+            label="O que mudar na proposta"
+            icon="hero-chat-bubble-left-ellipsis"
+            testid="proposal-feedback"
+            rows={5}
+          />
+          <div class="flex justify-end gap-2">
+            <.button type="button" variant="ghost" color="gray" phx-click="close_feedback">
+              Cancelar
+            </.button>
+            <.button type="submit" icon="hero-arrow-path" data-testid="proposal-feedback-submit">
+              Pedir de novo
+            </.button>
+          </div>
+        </.form>
+      </.modal>
+    </Layouts.app>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :form, :any, required: true
+  attr :project, :any, required: true
+  attr :input, :map, required: true
+
+  defp pipeline_review(assigns) do
+    ~H"""
+    <div class="grid gap-6 xl:grid-cols-3">
+      <div class="space-y-6 xl:col-span-2">
+        <.markdown_card
+          id="proposal-analysis"
+          icon="hero-magnifying-glass"
+          title="O que o agente entendeu do projeto"
+          markdown={@result.analysis}
+          testid="proposal-analysis"
+        />
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading
+              icon="hero-squares-2x2"
+              title={"Pipeline: #{@result.pipeline["name"]}"}
+              description={@result.pipeline["description"]}
+            />
+            <.stages pipeline={@result.pipeline} />
+          </.card_content>
+        </.card>
+      </div>
+      <div class="space-y-6"><.checks checks={@result.checks} /></div>
+
+      <.card variant="outline" class="xl:col-span-3">
+        <.card_content>
+          <.section_heading
+            icon="hero-folder-open"
+            title={if @project.id, do: "Projeto (atualiza o existente)", else: "Projeto"}
+            description={"Como #{@input["directory"]} instala, testa e faz lint: as etapas usam esses comandos."}
+          />
+          <.form
+            for={@form}
+            id="proposal-project-form"
+            phx-change="validate_project"
+            phx-submit="save_project"
+          >
+            <div class="grid gap-4 md:grid-cols-2">
+              <.icon_field
+                field={@form[:name]}
+                icon="hero-tag"
+                label="Nome"
+                data-testid="proposal-project-name"
+              />
+              <.icon_field
+                field={@form[:setup_command]}
+                icon="hero-play"
+                label="Comando de setup"
+                data-testid="proposal-project-setup"
+              />
+              <.icon_field
+                field={@form[:test_command]}
+                icon="hero-beaker"
+                label="Comando de testes"
+                data-testid="proposal-project-test"
+              />
+              <.icon_field
+                field={@form[:lint_command]}
+                icon="hero-sparkles"
+                label="Comando de lint"
+                data-testid="proposal-project-lint"
+              />
+            </div>
+            <.icon_field
+              field={@form[:copy_paths_text]}
+              icon="hero-document-duplicate"
+              type="textarea"
+              rows="3"
+              label="Copiar para o worktree (um por linha)"
+              data-testid="proposal-project-copy-paths"
+            />
+            <.markdown_editor
+              id="proposal-project-notes"
+              field={@form[:notes]}
+              label="Notas para os agentes"
+              icon="hero-light-bulb"
+              testid="proposal-project-notes"
+              rows={6}
+            />
+            <div class="flex justify-end">
+              <.button
+                type="submit"
+                icon="hero-arrow-right-circle"
+                data-testid="proposal-save-project"
+              >
+                Salvar projeto e revisar o pipeline
+              </.button>
+            </div>
+          </.form>
+        </.card_content>
+      </.card>
+    </div>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :job, :any, required: true
+  attr :workspace, :any, required: true
+
+  defp task_review(assigns) do
+    ~H"""
+    <div class="grid gap-6 xl:grid-cols-3">
+      <div class="space-y-6 xl:col-span-2">
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading icon="hero-queue-list" title="A tarefa proposta" />
+            <h3
+              class="border-b border-gray-200 pb-3 text-xl font-semibold text-gray-900 dark:border-gray-700 dark:text-white"
+              data-testid="proposal-task-title"
+            >
+              {@result.title}
+            </h3>
+            <div
+              id="proposal-task-prompt"
+              phx-hook="Highlight"
+              class="prose prose-sm mt-3 max-w-none dark:prose-invert"
+              data-testid="proposal-task-prompt"
+            >
+              {Markdown.to_html(@result.prompt)}
+            </div>
+            <div class="mt-5 flex justify-end">
+              <.button
+                link_type="live_redirect"
+                to={~p"/w/#{@workspace.slug}/tasks?proposta=#{@job.id}"}
+                icon="hero-arrow-right-circle"
+                data-testid="proposal-create-task"
+              >
+                Revisar e criar a tarefa
+              </.button>
+            </div>
+          </.card_content>
+        </.card>
+        <.markdown_card
+          id="proposal-analysis"
+          icon="hero-magnifying-glass"
+          title="O que o agente entendeu"
+          markdown={@result.analysis}
+          testid="proposal-analysis"
+        />
+      </div>
+      <div class="space-y-6">
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading icon="hero-check-badge" title="Pronta para rodar?" />
+            <.badge
+              :if={@result.ready}
+              color="success"
+              variant="soft"
+              label="Sim, está clara"
+              data-testid="proposal-task-ready"
+            />
+            <.badge
+              :if={!@result.ready}
+              color="warning"
+              variant="soft"
+              label="Ainda não: responda antes"
+              data-testid="proposal-task-ready"
+            />
+            <ul
+              :if={@result.questions != []}
+              class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-200"
+              data-testid="proposal-task-questions"
+            >
+              <li :for={question <- @result.questions}>{question}</li>
+            </ul>
+            <p
+              class="mt-4 flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300"
+              data-testid="proposal-task-pipeline"
+            >
+              <.icon name="hero-squares-2x2" class="size-4 text-gray-400" />
+              {cond do
+                @result.pipeline ->
+                  "Pipeline: #{@result.pipeline.name}"
+
+                @result.pipeline_name != "" ->
+                  "Pipeline sugerido \"#{@result.pipeline_name}\" não existe"
+
+                true ->
+                  "Sem pipeline sugerido"
+              end}
+            </p>
+          </.card_content>
+        </.card>
+      </div>
+    </div>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :form, :any, required: true
+  attr :task, :any, required: true
+
+  defp decision_review(assigns) do
+    ~H"""
+    <div class="grid gap-6 xl:grid-cols-3">
+      <div class="space-y-6 xl:col-span-2">
+        <.markdown_card
+          id="proposal-diagnosis"
+          icon="hero-magnifying-glass"
+          title="Diagnóstico"
+          markdown={@result.diagnosis}
+          testid="proposal-diagnosis"
+        />
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading
+              icon={action_icon(@result.action)}
+              title={"Recomendação: #{action_label(@result.action)}"}
+              description={@task.decision_reason}
+            />
+            <.alert
+              :if={@task.status != :awaiting_decision}
+              color="warning"
+              class="mb-4"
+              data-testid="proposal-decision-stale"
+            >
+              A tarefa não espera mais esta decisão.
+            </.alert>
+            <.form for={@form} id="proposal-decision-form" phx-submit="apply_decision">
+              <.icon_field
+                :if={@result.choice}
+                field={@form[:choice]}
+                icon="hero-check-circle"
+                label="Opção escolhida"
+                data-testid="proposal-decision-choice"
+              />
+              <.markdown_editor
+                id="proposal-decision-instructions"
+                field={@form[:instructions]}
+                label="Instruções para a próxima tentativa"
+                icon="hero-chat-bubble-left-right"
+                testid="proposal-decision-instructions"
+                rows={6}
+              />
+              <div class="flex flex-wrap justify-end gap-2">
+                <.button
+                  :for={action <- ~w(cancel advance retry)}
+                  type="submit"
+                  name="action"
+                  value={action}
+                  icon={action_icon(action)}
+                  variant={if action == @result.action, do: "solid", else: "outline"}
+                  color={if action == "cancel", do: "danger", else: "primary"}
+                  disabled={@task.status != :awaiting_decision}
+                  data-testid={"proposal-decision-#{action}"}
+                >
+                  {action_label(action)}
+                </.button>
+              </div>
+            </.form>
+          </.card_content>
+        </.card>
+      </div>
+      <div class="space-y-6">
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading icon="hero-arrows-right-left" title="Alternativas" />
+            <p :if={@result.alternatives == []} class="text-sm text-gray-500 dark:text-gray-400">
+              O agente não propôs outras.
+            </p>
+            <ul class="space-y-3" data-testid="proposal-alternatives">
+              <li :for={alt <- @result.alternatives} class="text-sm">
+                <p class="flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
+                  <.icon name={action_icon(alt.action)} class="size-4 text-gray-400" />
+                  {action_label(alt.action)}
+                </p>
+                <p class="mt-0.5 text-gray-600 dark:text-gray-300">{alt.reason}</p>
+              </li>
+            </ul>
+          </.card_content>
+        </.card>
+      </div>
+    </div>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :form, :any, required: true
+  attr :project, :any, required: true
+  attr :input, :map, required: true
+  attr :job, :any, required: true
+  attr :workspace, :any, required: true
+
+  defp improve_review(assigns) do
+    ~H"""
+    <div class="grid gap-6 xl:grid-cols-3">
+      <div class="space-y-6 xl:col-span-2">
+        <.markdown_card
+          id="proposal-analysis"
+          icon="hero-chart-bar"
+          title="O que o histórico mostra"
+          markdown={@result.analysis}
+          testid="proposal-analysis"
+        />
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading
+              icon="hero-squares-2x2"
+              title={"Pipeline revisado: #{@result.pipeline["name"]}"}
+            />
+            <.stages pipeline={@result.pipeline} />
+            <div class="mt-5 flex justify-end">
+              <.button
+                link_type="live_redirect"
+                to={
+                  ~p"/w/#{@workspace.slug}/pipelines/#{@result.pipeline_id}/edit?proposta=#{@job.id}"
+                }
+                icon="hero-arrow-right-circle"
+                data-testid="proposal-review-pipeline"
+              >
+                Revisar e salvar o pipeline
+              </.button>
+            </div>
+          </.card_content>
+        </.card>
+      </div>
+      <div class="space-y-6">
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading icon="hero-pencil-square" title="Mudanças propostas" />
+            <ul class="space-y-3" data-testid="proposal-changes">
+              <li :for={change <- @result.changes} class="text-sm">
+                <p class="font-medium text-gray-900 dark:text-white">{change.where}</p>
+                <p class="text-gray-700 dark:text-gray-200">{change.what}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{change.why}</p>
+              </li>
+            </ul>
+          </.card_content>
+        </.card>
+      </div>
+
+      <.card variant="outline" class="xl:col-span-3">
+        <.card_content>
+          <.section_heading
+            icon="hero-light-bulb"
+            title="Notas do projeto revisadas"
+            description="O que todo agente do pipeline lê sobre o projeto ({{projeto.notas}})."
+          />
+          <.alert :if={!@project} color="warning" class="mb-4" data-testid="proposal-notes-no-project">
+            {@input["directory"]} ainda não tem projeto: crie um em Projetos para guardar as notas.
+          </.alert>
+          <.form :if={@project} for={@form} id="proposal-notes-form" phx-submit="save_notes">
+            <.markdown_editor
+              id="proposal-notes"
+              field={@form[:notes]}
+              label="Notas para os agentes"
+              icon="hero-light-bulb"
+              testid="proposal-notes"
+              rows={8}
+            />
+            <div class="flex justify-end">
+              <.button type="submit" icon="hero-check" data-testid="proposal-save-notes">
+                Salvar notas
+              </.button>
+            </div>
+          </.form>
+        </.card_content>
+      </.card>
+    </div>
+    """
+  end
+end

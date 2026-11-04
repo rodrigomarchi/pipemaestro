@@ -3,32 +3,34 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Runners}
+  alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Runners, Tasks}
   alias PipeMaestroWeb.RunnerStatus
 
   @directories [%{"name" => "app", "git" => true}, %{"name" => "notas", "git" => false}]
 
-  @output %{
+  @pipeline %{
+    "name" => "Entrega do App",
+    "delivery" => "pr",
+    "stages" => [
+      %{"key" => "plano", "name" => "Plano", "prompt" => "Planeje: {{tarefa.descricao}}"},
+      %{
+        "key" => "codigo",
+        "name" => "Código",
+        "prompt" => "Implemente.",
+        "gates" => ["{{projeto.teste}}"],
+        "max_attempts" => 3
+      }
+    ]
+  }
+
+  @pipeline_output %{
     "analise" => "Um app **Phoenix**.",
     "verificacoes" => [
       %{"comando" => "mix test", "passou" => true},
       %{"comando" => "mix credo", "passou" => false, "observacao" => "2 avisos"}
     ],
     "projeto" => %{"nome" => "App", "teste" => "mix test", "copy_paths" => ["deps"]},
-    "pipeline" => %{
-      "name" => "Entrega do App",
-      "delivery" => "pr",
-      "stages" => [
-        %{"key" => "plano", "name" => "Plano", "prompt" => "Planeje: {{tarefa.descricao}}"},
-        %{
-          "key" => "codigo",
-          "name" => "Código",
-          "prompt" => "Implemente.",
-          "gates" => ["{{projeto.teste}}"],
-          "max_attempts" => 3
-        }
-      ]
-    }
+    "pipeline" => @pipeline
   }
 
   setup :register_and_log_in_member
@@ -58,14 +60,9 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
     assert_receive :tracked
   end
 
-  defp proposal(ctx) do
-    {:ok, job} =
-      Proposals.request(ctx.user, ctx.workspace, %{
-        "runner_id" => ctx.runner.id,
-        "directory" => "app",
-        "request" => "Entregar *issues* com PR"
-      })
-
+  defp ask(ctx, kind, attrs) do
+    base = %{"runner_id" => ctx.runner.id, "directory" => "app"}
+    {:ok, job} = Proposals.request(kind, ctx.user, ctx.workspace, Map.merge(base, attrs))
     job
   end
 
@@ -75,132 +72,343 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
     job
   end
 
-  test "asks a capable runner to study one of its git directories", ctx do
-    bring_online(ctx.runner)
-    bring_online(ctx.old)
-    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
+  defp succeed(ctx, job, output),
+    do: finish(ctx, job, %{"status" => "succeeded", "structured_output" => output})
 
-    view |> element("[data-testid=generate-pipeline]") |> render_click()
-    runners = view |> element("[data-testid=generate-runner]") |> render()
-    assert runners =~ "mac"
-    assert runners =~ ~r/<option disabled[^>]*>antigo \(atualize o runner\)/
+  defp proposal_path(ctx, job), do: ~p"/w/#{ctx.workspace.slug}/proposals/#{job.id}"
 
-    view |> form("#generate-form", proposal: %{runner_id: ctx.runner.id}) |> render_change()
-    directories = view |> element("[data-testid=generate-directory]") |> render()
-    assert directories =~ "app"
-    refute directories =~ "notas"
+  describe "asking" do
+    test "pipelines: a capable runner studies one of its git directories", ctx do
+      bring_online(ctx.runner)
+      bring_online(ctx.old)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
 
-    {:error, {:live_redirect, %{to: path}}} =
+      view |> element("[data-testid=generate-pipeline]") |> render_click()
+      runners = view |> element("[data-testid=proposal-request-runner]") |> render()
+      assert runners =~ "mac"
+      assert runners =~ ~r/<option disabled[^>]*>antigo \(atualize o runner\)/
+
       view
-      |> form("#generate-form",
-        proposal: %{runner_id: ctx.runner.id, directory: "app", request: "Entregar com PR"}
-      )
-      |> render_submit()
+      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
+      |> render_change()
 
-    [job] = Proposals.list_recent(ctx.workspace)
-    assert path == ~p"/w/#{ctx.workspace.slug}/pipelines/proposals/#{job.id}"
-    assert job.context["scratch"] == true
-  end
+      directories = view |> element("[data-testid=proposal-request-directory]") |> render()
+      assert directories =~ "app"
+      refute directories =~ "notas"
 
-  test "a request without a runner or text shows what is missing", ctx do
-    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
-    view |> element("[data-testid=generate-pipeline]") |> render_click()
-    assert has_element?(view, "[data-testid=generate-no-runners]")
+      {:error, {:live_redirect, %{to: path}}} =
+        view
+        |> form("#proposal-request-form",
+          proposal: %{runner_id: ctx.runner.id, directory: "app", request: "Entregar com PR"}
+        )
+        |> render_submit()
 
-    html = view |> form("#generate-form", proposal: %{request: ""}) |> render_submit()
-    assert html =~ "escolha um runner online"
-    assert html =~ "conte o que o pipeline deve fazer"
-  end
+      [job] = Proposals.list_recent(ctx.workspace)
+      assert path == proposal_path(ctx, job)
+      assert Proposals.kind(job) == "pipeline"
+    end
 
-  test "follows the analysis live, then shows what it proposed", ctx do
-    job = proposal(ctx)
-    {:ok, index, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
-    assert has_element?(index, "[data-testid=proposal-status-#{job.id}]", "Na fila")
+    test "a request without a runner or text shows what is missing", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
+      view |> element("[data-testid=generate-pipeline]") |> render_click()
+      assert has_element?(view, "[data-testid=proposal-request-no-runners]")
 
-    {:ok, view, _html} =
-      live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/proposals/#{job.id}")
+      html = view |> form("#proposal-request-form", proposal: %{request: ""}) |> render_submit()
+      assert html =~ "escolha um runner online"
+      assert html =~ "conte o que o pipeline deve fazer"
+    end
 
-    assert has_element?(view, "[data-testid=proposal-directory]", "app")
-    assert has_element?(view, "[data-testid=proposal-request] em", "issues")
-    assert has_element?(view, "[data-testid=proposal-waiting]")
-    assert has_element?(view, "[data-testid=proposal-cancel]")
+    test "tasks: an idea, optionally from an issue", ctx do
+      bring_online(ctx.runner)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
+      view |> element("[data-testid=task-generate]") |> render_click()
+      assert has_element?(view, "[data-testid=proposal-request-issue-url]")
 
-    finish(ctx, job, %{"status" => "succeeded", "structured_output" => @output})
-
-    assert render(view) =~ "Phoenix"
-    assert has_element?(view, "[data-testid=proposal-analysis] strong", "Phoenix")
-    assert has_element?(view, "[data-testid=proposal-checks]", "mix credo")
-    assert has_element?(view, "[data-testid=proposal-checks]", "2 avisos")
-    assert has_element?(view, "[data-testid=proposal-stage-1]", "{{projeto.teste}}")
-    assert has_element?(view, "[data-testid=proposal-regenerate]")
-    assert has_element?(index, "[data-testid=proposal-status-#{job.id}]", "Pronta")
-  end
-
-  test "saves the project and opens the pipeline form filled with the proposal", ctx do
-    job = finish(ctx, proposal(ctx), %{"status" => "succeeded", "structured_output" => @output})
-
-    {:ok, view, _html} =
-      live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/proposals/#{job.id}")
-
-    {:error, {:live_redirect, %{to: path}}} =
       view
-      |> form("#proposal-project-form", project: %{lint_command: "mix credo"})
-      |> render_submit()
+      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
+      |> render_change()
 
-    assert path == ~p"/w/#{ctx.workspace.slug}/pipelines/new?proposta=#{job.id}"
-    project = Projects.for_directory(ctx.workspace, "app")
-    assert project.name == "App"
-    assert project.test_command == "mix test"
-    assert project.lint_command == "mix credo"
-    assert project.copy_paths == ["deps"]
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#proposal-request-form",
+          proposal: %{
+            runner_id: ctx.runner.id,
+            directory: "app",
+            request: "O login trava",
+            issue_url: "https://github.com/acme/app/issues/3"
+          }
+        )
+        |> render_submit()
 
-    {:ok, form, _html} = live(ctx.conn, path)
-    assert has_element?(form, "[data-testid=pipeline-from-proposal]")
-    assert form |> element("[data-testid=pipeline-name]") |> render() =~ "Entrega do App"
-    assert form |> element("[data-testid=stage-gates-1]") |> render() =~ "{{projeto.teste}}"
+      [job] = Proposals.list_recent(ctx.workspace, ["task"])
+      assert Proposals.input(job)["issue_url"] == "https://github.com/acme/app/issues/3"
+    end
 
-    {:error, {:live_redirect, _}} =
-      form |> form("#pipeline-form") |> render_submit()
+    test "improvements: a pipeline, from the directory its tasks ran in", ctx do
+      bring_online(ctx.runner)
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
 
-    assert [%{name: "Entrega do App", delivery: "pr", stages: [_, %{max_attempts: 3}]}] =
-             Pipelines.list_pipelines(ctx.workspace)
+      view |> element("[data-testid=pipeline-improve-Entrega]") |> render_click()
+      assert has_element?(view, "[data-testid=proposal-request-focus]")
+      refute has_element?(view, "[data-testid=proposal-request-text]")
 
-    # The directory's project is updated by the next proposal, not duplicated.
-    again = finish(ctx, proposal(ctx), %{"status" => "succeeded", "structured_output" => @output})
+      view
+      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
+      |> render_change()
 
-    {:ok, view, _html} =
-      live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/proposals/#{again.id}")
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#proposal-request-form",
+          proposal: %{runner_id: ctx.runner.id, directory: "app", focus: "Custo"}
+        )
+        |> render_submit()
 
-    assert render(view) =~ "atualiza o existente"
+      [job] = Proposals.list_recent(ctx.workspace, ["improve"])
+      assert Proposals.input(job)["pipeline_id"] == pipeline.id
+    end
   end
 
-  test "a failed proposal says why and can run again with a comment", ctx do
-    job = finish(ctx, proposal(ctx), %{"status" => "failed", "error" => "sem créditos"})
+  describe "the proposals page" do
+    test "lists every kind, filters by one and follows their status", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/proposals")
+      assert has_element?(view, "[data-testid=no-proposals]")
 
-    {:ok, view, _html} =
-      live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/proposals/#{job.id}")
+      pipeline = ask(ctx, "pipeline", %{"request" => "Um pipeline"})
+      task = ask(ctx, "task", %{"request" => "Uma tarefa"})
 
-    assert has_element?(view, "[data-testid=proposal-error]", "sem créditos")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/proposals")
+      assert has_element?(view, "[data-testid=proposal-link-#{pipeline.id}]", "Um pipeline")
+      assert has_element?(view, "[data-testid=proposal-status-#{task.id}]", "Na fila")
 
-    view |> element("[data-testid=proposal-regenerate]") |> render_click()
+      view |> form("#proposals-filter", filter: %{kind: "task"}) |> render_change()
+      refute has_element?(view, "[data-testid=proposal-link-#{pipeline.id}]")
+      assert has_element?(view, "[data-testid=proposal-link-#{task.id}]")
 
-    {:error, {:live_redirect, %{to: path}}} =
-      view |> form("#feedback-form", round: %{feedback: "Só duas etapas"}) |> render_submit()
-
-    next = Enum.find(Proposals.list_recent(ctx.workspace), &(&1.id != job.id))
-    assert path == ~p"/w/#{ctx.workspace.slug}/pipelines/proposals/#{next.id}"
-    assert next.prompt =~ "Só duas etapas"
+      succeed(ctx, task, %{})
+      assert has_element?(view, "[data-testid=proposal-status-#{task.id}]", "Concluído")
+    end
   end
 
-  test "a pipeline form named after a missing proposal starts empty", ctx do
-    job = finish(ctx, proposal(ctx), %{"status" => "failed", "error" => "x"})
+  describe "pipeline" do
+    test "follows the analysis live, then saves the project and fills the pipeline form", ctx do
+      job = ask(ctx, "pipeline", %{"request" => "Entregar *issues* com PR"})
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-kind]", "Pipeline e projeto")
+      assert has_element?(view, "[data-testid=proposal-request] em", "issues")
+      assert has_element?(view, "[data-testid=proposal-waiting]")
 
-    {:ok, form, _html} =
-      live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/new?proposta=#{job.id}")
+      succeed(ctx, job, @pipeline_output)
+      assert has_element?(view, "[data-testid=proposal-analysis] strong", "Phoenix")
+      assert has_element?(view, "[data-testid=proposal-checks]", "2 avisos")
+      assert has_element?(view, "[data-testid=proposal-stage-1]", "{{projeto.teste}}")
 
-    refute form |> element("[data-testid=pipeline-name]") |> render() =~ "Entrega"
+      {:error, {:live_redirect, %{to: path}}} =
+        view
+        |> form("#proposal-project-form", project: %{lint_command: "mix credo"})
+        |> render_submit()
 
-    {:ok, form, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/new?proposta=nada")
-    assert has_element?(form, "[data-testid=pipeline-name]")
+      assert path == ~p"/w/#{ctx.workspace.slug}/pipelines/new?proposta=#{job.id}"
+
+      assert %{name: "App", lint_command: "mix credo"} =
+               Projects.for_directory(ctx.workspace, "app")
+
+      {:ok, form, _html} = live(ctx.conn, path)
+      assert has_element?(form, "[data-testid=pipeline-from-proposal]")
+      assert form |> element("[data-testid=stage-gates-1]") |> render() =~ "{{projeto.teste}}"
+      {:error, {:live_redirect, _}} = form |> form("#pipeline-form") |> render_submit()
+
+      assert [%{name: "Entrega do App", stages: [_, %{max_attempts: 3}]}] =
+               Pipelines.list_pipelines(ctx.workspace)
+    end
+
+    test "a failed proposal says why and can be asked again with a comment", ctx do
+      job =
+        finish(ctx, ask(ctx, "pipeline", %{"request" => "x"}), %{
+          "status" => "failed",
+          "error" => "sem créditos"
+        })
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-error]", "sem créditos")
+
+      view |> element("[data-testid=proposal-regenerate]") |> render_click()
+
+      {:error, {:live_redirect, %{to: path}}} =
+        view |> form("#feedback-form", round: %{feedback: "Só duas etapas"}) |> render_submit()
+
+      next = Enum.find(Proposals.list_recent(ctx.workspace), &(&1.id != job.id))
+      assert path == proposal_path(ctx, next)
+      assert next.prompt =~ "Só duas etapas"
+    end
+  end
+
+  describe "task" do
+    test "opens the new-task form filled with the task the agent wrote", ctx do
+      bring_online(ctx.runner)
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})
+      job = ask(ctx, "task", %{"request" => "O login trava"})
+
+      job =
+        succeed(ctx, job, %{
+          "analise" => "O lock não tem timeout.",
+          "titulo" => "Destravar o login",
+          "descricao" => "## Problema\n\nO `Auth` espera sem timeout.",
+          "pipeline" => "Correção de bug",
+          "pronta" => false,
+          "perguntas" => ["Qual o timeout?"]
+        })
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-task-title]", "Destravar o login")
+      assert has_element?(view, "[data-testid=proposal-task-prompt] h2", "Problema")
+      assert has_element?(view, "[data-testid=proposal-task-ready]", "Ainda não")
+      assert has_element?(view, "[data-testid=proposal-task-questions]", "Qual o timeout?")
+      assert has_element?(view, "[data-testid=proposal-task-pipeline]", "Correção de bug")
+
+      {:ok, tasks, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks?proposta=#{job.id}")
+      assert has_element?(tasks, "[data-testid=task-from-proposal]")
+      assert tasks |> element("[data-testid=task-title]") |> render() =~ "Destravar o login"
+
+      {:error, {:live_redirect, _}} = tasks |> form("#new-task-form") |> render_submit()
+
+      assert [%{title: "Destravar o login", pipeline_id: pipeline_id}] =
+               Tasks.list_tasks(ctx.workspace)
+
+      assert pipeline_id == pipeline.id
+    end
+  end
+
+  describe "decision" do
+    setup ctx do
+      pipeline = pipeline_fixture(ctx.workspace)
+
+      {:ok, task} =
+        Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "Corrigir o login",
+          "prompt" => "O botão não responde",
+          "pipeline_id" => pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+
+      job = hd(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      {:ok, _} =
+        Jobs.finish_job(ctx.runner, job.id, %{
+          "status" => "succeeded",
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "Qual navegador?"}
+        })
+
+      %{task: Tasks.get_task!(ctx.workspace, task.id)}
+    end
+
+    test "is asked from the task and from the decisions page", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{ctx.task.id}")
+
+      {:error, {:live_redirect, %{to: path}}} =
+        view |> element("[data-testid=decision-suggest]") |> render_click()
+
+      [job] = Proposals.list_recent(ctx.workspace, ["decision"])
+      assert path == proposal_path(ctx, job)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
+
+      {:error, {:live_redirect, _}} =
+        view |> element("[data-testid=decision-suggest-#{ctx.task.id}]") |> render_click()
+
+      assert length(Proposals.list_recent(ctx.workspace, ["decision"])) == 2
+    end
+
+    test "applies the suggested decision with the instructions as left", ctx do
+      {:ok, job} =
+        Proposals.request("decision", ctx.user, ctx.workspace, %{"task_id" => ctx.task.id})
+
+      job =
+        succeed(ctx, job, %{
+          "diagnostico" => "Falta o **navegador**.",
+          "acao" => "retry",
+          "instrucoes" => "Reproduza no Chrome.",
+          "alternativas" => [%{"acao" => "cancel", "motivo" => "Se não reproduzir"}]
+        })
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-diagnosis] strong", "navegador")
+      assert has_element?(view, "[data-testid=proposal-alternatives]", "Se não reproduzir")
+      assert has_element?(view, "[data-testid=proposal-task-link]")
+
+      {:error, {:live_redirect, %{to: path}}} =
+        view
+        |> form("#proposal-decision-form", decision: %{instructions: "Reproduza no Safari."})
+        |> render_submit(%{"action" => "retry"})
+
+      assert path == ~p"/w/#{ctx.workspace.slug}/tasks/#{ctx.task.id}"
+      task = Tasks.get_task!(ctx.workspace, ctx.task.id)
+      assert task.status == :running
+      assert List.last(task.stage_runs).instructions =~ "Reproduza no Safari."
+
+      # Once decided, the proposal says so and does not decide again.
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-decision-stale]")
+    end
+  end
+
+  describe "improve" do
+    test "saves the notes and opens the pipeline's form with the revision", ctx do
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
+
+      {:ok, _project} =
+        Projects.create_project(ctx.workspace, %{"name" => "App", "directory" => "app"}, ctx.user)
+
+      job = ask(ctx, "improve", %{"pipeline_id" => pipeline.id})
+
+      job =
+        succeed(ctx, job, %{
+          "analise" => "O gate falha muito.",
+          "mudancas" => [
+            %{"onde" => "Código", "o_que" => "gate de teste", "por_que" => "falhou 3x"}
+          ],
+          "pipeline" => @pipeline,
+          "notas" => "Rode `mix test` antes."
+        })
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-changes]", "falhou 3x")
+      view |> form("#proposal-notes-form", notes: %{notes: "Rode mix test."}) |> render_submit()
+      assert Projects.for_directory(ctx.workspace, "app").notes == "Rode mix test."
+
+      {:error, {:live_redirect, %{to: path}}} =
+        view |> element("[data-testid=proposal-review-pipeline]") |> render_click()
+
+      assert path ==
+               ~p"/w/#{ctx.workspace.slug}/pipelines/#{pipeline.id}/edit?proposta=#{job.id}"
+
+      {:ok, form, _html} = live(ctx.conn, path)
+      assert render(form) =~ "vira a versão 2"
+      {:error, {:live_redirect, _}} = form |> form("#pipeline-form") |> render_submit()
+
+      assert %{version: 2, name: "Entrega do App"} =
+               Pipelines.get_pipeline!(ctx.workspace, pipeline.id)
+    end
+
+    test "a proposal named on another pipeline's form is ignored", ctx do
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
+      other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
+      job = ask(ctx, "improve", %{"pipeline_id" => pipeline.id})
+
+      succeed(ctx, job, %{
+        "analise" => "x",
+        "mudancas" => [],
+        "pipeline" => @pipeline,
+        "notas" => ""
+      })
+
+      {:ok, form, _html} =
+        live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/#{other.id}/edit?proposta=#{job.id}")
+
+      assert form |> element("[data-testid=pipeline-name]") |> render() =~ "Outro"
+      refute render(form) =~ "Entrega do App"
+    end
   end
 end

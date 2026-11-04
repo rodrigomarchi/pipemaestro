@@ -267,6 +267,17 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
                   data-testid="project-trigger-pipeline"
                 />
               </div>
+              <.icon_field
+                field={@form[:trigger_mode]}
+                icon="hero-funnel"
+                type="select"
+                label="Ao receber a issue"
+                options={[
+                  {"Começar a tarefa direto", "task"},
+                  {"O agente escreve a tarefa antes (triagem), e alguém revisa", "triage"}
+                ]}
+                data-testid="project-trigger-mode"
+              />
               <p class="flex gap-2 text-sm text-gray-600 dark:text-gray-300">
                 <.icon name="hero-information-circle" class="mt-0.5 size-4 shrink-0 text-primary-500" />
                 <span>

@@ -1,7 +1,7 @@
 defmodule PipeMaestroWeb.GithubWebhookControllerTest do
   use PipeMaestroWeb.ConnCase, async: false
 
-  alias PipeMaestro.{Projects, Secrets, Tasks}
+  alias PipeMaestro.{Projects, Proposals, Runners, Secrets, Tasks}
   alias PipeMaestroWeb.RunnerStatus
 
   @secret "segredo-do-webhook"
@@ -14,7 +14,7 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
     pipeline = pipeline_fixture(workspace)
     {:ok, _} = Secrets.put(workspace, "GITHUB_WEBHOOK_SECRET", @secret)
 
-    {:ok, _project} =
+    {:ok, project} =
       Projects.create_project(
         workspace,
         %{
@@ -27,7 +27,7 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
         admin
       )
 
-    %{workspace: workspace, runner: runner}
+    %{workspace: workspace, runner: runner, project: project, pipeline: pipeline}
   end
 
   defp bring_online(runner) do
@@ -79,6 +79,40 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
     assert task.runner_id == ctx.runner.id
 
     # The same issue again while its task runs: nothing new.
+    conn = deliver(build_conn(), ctx.workspace, labeled("claude"))
+    assert %{"ignored" => _} = json_response(conn, 200)
+  end
+
+  test "a triaging trigger has the agent write the task first, on an updated runner", ctx do
+    {:ok, _project} = Projects.update_project(ctx.project, %{"trigger_mode" => "triage"})
+    bring_online(ctx.runner)
+
+    # A runner that cannot study a directory cannot triage.
+    conn = deliver(ctx.conn, ctx.workspace, labeled("claude"))
+    assert %{"error" => "nenhum runner online e atualizado" <> _} = json_response(conn, 422)
+
+    {:ok, runner} =
+      Runners.record_hello(
+        ctx.runner,
+        hello_fixture(%{
+          directories: [%{"name" => "app", "git" => true}],
+          capabilities: ["scratch"]
+        })
+      )
+
+    bring_online(runner)
+    conn = deliver(build_conn(), ctx.workspace, labeled("claude"))
+    assert %{"proposal_id" => id} = json_response(conn, 201)
+    assert Tasks.list_tasks(ctx.workspace) == []
+
+    job = Proposals.get_proposal!(ctx.workspace, id)
+    assert Proposals.kind(job) == "task"
+    assert Proposals.input(job)["issue_url"] == "https://github.com/acme/app/issues/9"
+    assert job.prompt =~ "Botão quebrado"
+    assert job.prompt =~ "prefira-o"
+    assert job.context["scratch"] == true
+
+    # The same issue again while it is triaged: nothing new.
     conn = deliver(build_conn(), ctx.workspace, labeled("claude"))
     assert %{"ignored" => _} = json_response(conn, 200)
   end

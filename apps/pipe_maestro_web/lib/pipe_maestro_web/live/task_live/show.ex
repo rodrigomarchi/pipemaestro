@@ -28,7 +28,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   alias PipeMaestro.{Jobs, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
-  alias PipeMaestroWeb.Markdown
+  alias PipeMaestroWeb.{Markdown, ProposalRequest}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -85,6 +85,9 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   # The form has one submit button per decision; the pressed one comes as
   # "action", with the instructions typed.
   # An option button sends the choice without an action: it retries the stage.
+  def handle_event("suggest_decision", _params, socket),
+    do: {:noreply, ProposalRequest.suggest_decision(socket, socket.assigns.task.id)}
+
   def handle_event("decide", %{"choice" => _choice} = params, socket)
       when not is_map_key(params, "action"),
       do: handle_event("decide", Map.put(params, "action", "retry"), socket)
@@ -577,6 +580,18 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                   <.alert color="warning" with_icon data-testid="decision-reason">
                     {@task.decision_reason}
                   </.alert>
+                  <div class="mt-3 flex justify-end">
+                    <.button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      icon="hero-cpu-chip"
+                      phx-click="suggest_decision"
+                      data-testid="decision-suggest"
+                    >
+                      Sugerir com IA
+                    </.button>
+                  </div>
                   <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
                     <.markdown_editor
                       id="decision-instructions"

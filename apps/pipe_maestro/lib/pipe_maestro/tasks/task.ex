@@ -34,7 +34,7 @@ defmodule PipeMaestro.Tasks.Task do
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Pipelines.{Pipeline, Stage}
   alias PipeMaestro.Runners.Runner
-  alias PipeMaestro.Tasks.StageRun
+  alias PipeMaestro.Tasks.{Decision, StageRun}
   alias PipeMaestro.Workspaces.Workspace
 
   @type status :: :queued | :running | :awaiting_decision | :succeeded | :failed | :canceled
@@ -75,6 +75,7 @@ defmodule PipeMaestro.Tasks.Task do
           created_by_user_id: Ecto.UUID.t() | nil,
           created_by_user: User.t() | Ecto.Association.NotLoaded.t() | nil,
           stage_runs: [StageRun.t()] | Ecto.Association.NotLoaded.t(),
+          decisions: [Decision.t()] | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
         }
@@ -118,6 +119,7 @@ defmodule PipeMaestro.Tasks.Task do
     belongs_to :created_by_user, User
     belongs_to :decision_owner, User
     has_many :stage_runs, StageRun
+    has_many :decisions, Decision
 
     timestamps()
   end

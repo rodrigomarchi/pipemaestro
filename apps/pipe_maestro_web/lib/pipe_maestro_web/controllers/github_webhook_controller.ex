@@ -12,7 +12,7 @@ defmodule PipeMaestroWeb.GithubWebhookController do
   """
   use PipeMaestroWeb, :controller
 
-  alias PipeMaestro.{Projects, Runners, Secrets, Tasks, Workspaces}
+  alias PipeMaestro.{Projects, Proposals, Runners, Secrets, Tasks, Workspaces}
   alias PipeMaestroWeb.RunnerStatus
 
   @doc "Takes one delivery."
@@ -51,7 +51,8 @@ defmodule PipeMaestroWeb.GithubWebhookController do
            Projects.for_repo(workspace, get_in(params, ["repository", "full_name"]) || ""),
          true <- params["label"]["name"] == project.trigger_label,
          issue = params["issue"],
-         false <- Tasks.active_for_issue?(workspace, issue["html_url"]) do
+         false <- Tasks.active_for_issue?(workspace, issue["html_url"]),
+         false <- Proposals.triaging?(workspace, issue["html_url"]) do
       start_task(conn, workspace, project, issue)
     else
       _not_for_us -> json(conn, %{ignored: "sem gatilho para esta issue"})
@@ -60,16 +61,30 @@ defmodule PipeMaestroWeb.GithubWebhookController do
 
   defp handle(conn, _workspace, _event, _params), do: json(conn, %{ignored: "evento sem uso"})
 
-  defp start_task(conn, workspace, project, issue) do
-    online = RunnerStatus.online_ids(workspace.id)
+  # Triage needs a runner that can study the directory in a disposable worktree.
+  defp start_task(conn, workspace, %{trigger_mode: "triage"} = project, issue) do
+    runner = online_runner(workspace, project, &Proposals.capable?/1)
 
-    runner =
-      workspace
-      |> Runners.list_runners()
-      |> Enum.find(fn runner ->
-        MapSet.member?(online, runner.id) and
-          Enum.any?(runner.directories, &(&1["name"] == project.directory))
-      end)
+    with %{} <- runner,
+         {:ok, job} <- Proposals.triage_issue(workspace, project, issue, runner.id) do
+      conn |> put_status(201) |> json(%{proposal_id: job.id})
+    else
+      nil ->
+        conn
+        |> put_status(422)
+        |> json(%{
+          error: "nenhum runner online e atualizado oferece o diretório #{project.directory}"
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(422)
+        |> json(%{error: "a triagem não pôde começar: #{inspect(reason)}"})
+    end
+  end
+
+  defp start_task(conn, workspace, project, issue) do
+    runner = online_runner(workspace, project, fn _runner -> true end)
 
     with %{} <- runner,
          {:ok, task} <- Tasks.create_from_issue(workspace, project, issue, runner.id) do
@@ -83,5 +98,16 @@ defmodule PipeMaestroWeb.GithubWebhookController do
       {:error, reason} ->
         conn |> put_status(422) |> json(%{error: "a tarefa não pôde começar: #{inspect(reason)}"})
     end
+  end
+
+  defp online_runner(workspace, project, suitable?) do
+    online = RunnerStatus.online_ids(workspace.id)
+
+    workspace
+    |> Runners.list_runners()
+    |> Enum.find(fn runner ->
+      MapSet.member?(online, runner.id) and suitable?.(runner) and
+        Enum.any?(runner.directories, &(&1["name"] == project.directory))
+    end)
   end
 end

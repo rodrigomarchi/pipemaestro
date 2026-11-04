@@ -165,6 +165,24 @@ Ou, à mão:
 5. **Segredos** (admins) guarda tokens que os agentes usam, por exemplo de um servidor
    MCP do pipeline. No MCP, refira-se a eles como `${NOME}`.
 
+### Pedir ao agente
+
+O mesmo padrão (você pede, o agente estuda o projeto num worktree descartável e propõe,
+e você revisa) aparece em outros pontos. Tudo fica em **Propostas**
+([ADR 0022](../adr/0022-propostas-do-agente-como-mecanismo-geral.md)):
+
+- **Tarefas → Escrever com IA:** conte a ideia (e, se quiser, a issue). O agente escreve
+  título, contexto, arquivos envolvidos, critérios de aceite e o pipeline que serve, e
+  diz se está clara o bastante. "Revisar e criar a tarefa" abre o formulário preenchido.
+- **Decisões, ou o painel da tarefa → Sugerir com IA:** numa tarefa parada, o agente lê
+  a pergunta, as tentativas, os gates e o diff, e recomenda tentar de novo, avançar ou
+  cancelar, com as instruções prontas para você ajustar e aplicar.
+- **Pipelines → Melhorar com IA** (em cada pipeline): o agente lê como as últimas
+  tarefas correram (falhas, gates, decisões, custo por etapa) e propõe o pipeline
+  revisado e as notas do projeto. Salvar o pipeline gera a versão seguinte.
+- **Projetos → gatilho do GitHub → "O agente escreve a tarefa antes":** uma issue com a
+  label vira uma proposta de tarefa para alguém revisar, em vez de começar direto.
+
 Commit, push e PR ficam, por enquanto, a cargo do prompt de cada etapa (ver o
 [roadmap](../plano/03-roadmap-orquestrador.md), Marco 6).
 

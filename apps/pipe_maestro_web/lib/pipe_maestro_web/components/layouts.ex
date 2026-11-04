@@ -142,6 +142,14 @@ defmodule PipeMaestroWeb.Layouts do
               data-testid="sidebar-decisions"
             />
             <.sidebar_item
+              label="Propostas"
+              path={@home <> "/proposals"}
+              icon="hero-cpu-chip"
+              link_type="live_redirect"
+              active={@active == :proposals}
+              data-testid="sidebar-proposals"
+            />
+            <.sidebar_item
               label="Execuções"
               path={@home <> "/jobs"}
               icon="hero-command-line"
