@@ -5,7 +5,7 @@ Nenhum código de produção mudou nesta etapa. Os testes compilam contra o
 
 ## Testes criados ou alterados
 
-Todos em `apps/claude_control_plane_web/test/claude_control_plane_web/`.
+Todos em `apps/pipe_maestro_web/test/pipe_maestro_web/`.
 
 ### `components/job_components_test.exs` (reescrito)
 
@@ -57,9 +57,9 @@ faixa cresce ao vivo são provados no e2e (`job-execution.spec.ts`,
 Da raiz do umbrella (o `mix test` com caminhos roda só esses arquivos no app web):
 
 ```
-mix test apps/claude_control_plane_web/test/claude_control_plane_web/components/job_components_test.exs \
-         apps/claude_control_plane_web/test/claude_control_plane_web/live/job_live_test.exs \
-         apps/claude_control_plane_web/test/claude_control_plane_web/live/task_live_test.exs
+mix test apps/pipe_maestro_web/test/pipe_maestro_web/components/job_components_test.exs \
+         apps/pipe_maestro_web/test/pipe_maestro_web/live/job_live_test.exs \
+         apps/pipe_maestro_web/test/pipe_maestro_web/live/task_live_test.exs
 ```
 
 ## Saída (resumida)
@@ -75,11 +75,11 @@ As 37 falhas, por motivo:
 - **Funções que ainda não existem** (`UndefinedFunctionError`), em 30 testes do
   `JobComponentsTest`:
   ```
-  ** (UndefinedFunctionError) function ClaudeControlPlaneWeb.JobComponents.timeline/1 is undefined or private
-  ** (UndefinedFunctionError) function ClaudeControlPlaneWeb.JobComponents.icon?/1 is undefined or private
-  ** (UndefinedFunctionError) function ClaudeControlPlaneWeb.JobComponents.event_state/1 is undefined or private
-  ** (UndefinedFunctionError) function ClaudeControlPlaneWeb.JobComponents.event_summary/1 is undefined or private
-  ** (UndefinedFunctionError) function ClaudeControlPlaneWeb.JobComponents.timeline_tail/1 is undefined or private
+  ** (UndefinedFunctionError) function PipeMaestroWeb.JobComponents.timeline/1 is undefined or private
+  ** (UndefinedFunctionError) function PipeMaestroWeb.JobComponents.icon?/1 is undefined or private
+  ** (UndefinedFunctionError) function PipeMaestroWeb.JobComponents.event_state/1 is undefined or private
+  ** (UndefinedFunctionError) function PipeMaestroWeb.JobComponents.event_summary/1 is undefined or private
+  ** (UndefinedFunctionError) function PipeMaestroWeb.JobComponents.timeline_tail/1 is undefined or private
   ```
 - **Formato antigo de `timeline_items/2`** (3 testes de "segments"): `match (=) failed`
   com o lado direito ainda em `{:event, %Event{}}` / `{:group, "Leu 2 arquivos e fez 1

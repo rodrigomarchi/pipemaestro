@@ -2,14 +2,14 @@
 
 ## Mínimo para compilar
 
-`apps/claude_control_plane/lib/claude_control_plane/jobs.ex`: stub
+`apps/pipe_maestro/lib/pipe_maestro/jobs.ex`: stub
 `Jobs.recent_for_runner(Workspace.t(), Runner.t(), pos_integer()) :: [Job.t()]` com `@doc`
 e `@spec`, `limit \\ 10`, que por enquanto devolve `[]`. Sem isso, as chamadas virariam
 `UndefinedFunctionError` em vez de falhas de asserção. A `RunnerLive` não mudou.
 
 ## Testes criados
 
-### Domínio — `apps/claude_control_plane/test/claude_control_plane/jobs_test.exs`
+### Domínio — `apps/pipe_maestro/test/pipe_maestro/jobs_test.exs`
 
 `describe "recent_for_runner/3"` (helpers `run_and_finish/4` e `pin_finished_at/2`, que fixam
 um `finished_at` diferente para cada job porque a coluna tem resolução de segundo):
@@ -22,7 +22,7 @@ um `finished_at` diferente para cada job porque a coluna tem resolução de segu
 | only this workspace's jobs on this runner | CA7: outro runner do workspace e runner de outro workspace ficam de fora; workspace errado → `[]` |
 | a stage's job comes with its stage and task | CA3 (dado): `stage_run.task` pré-carregado |
 
-### LiveView — `apps/claude_control_plane_web/test/claude_control_plane_web/live/runner_live_test.exs`
+### LiveView — `apps/pipe_maestro_web/test/pipe_maestro_web/live/runner_live_test.exs`
 
 `describe "latest jobs"`:
 
@@ -47,10 +47,10 @@ como prevê o plano: depende do card já renderizado e do runner real.
 ### Domínio
 
 ```
-$ cd apps/claude_control_plane && mix test test/claude_control_plane/jobs_test.exs
+$ cd apps/pipe_maestro && mix test test/pipe_maestro/jobs_test.exs
 Running ExUnit with seed: 182464, max_cases: 28
 
-  1) test recent_for_runner/3 only this workspace's jobs on this runner (ClaudeControlPlane.JobsTest)
+  1) test recent_for_runner/3 only this workspace's jobs on this runner (PipeMaestro.JobsTest)
      match (=) failed
      code:  assert [%Job{id: id}] = Jobs.recent_for_runner(ctx.workspace, ctx.runner)
      right: []
@@ -82,7 +82,7 @@ Os cinco novos falham porque o stub devolve `[]`; os testes existentes seguem ve
 ### LiveView
 
 ```
-$ cd apps/claude_control_plane_web && mix test test/claude_control_plane_web/live/runner_live_test.exs
+$ cd apps/pipe_maestro_web && mix test test/pipe_maestro_web/live/runner_live_test.exs
   1) test latest jobs a runner that has not finished any job says so
      code: assert has_element?(view, "[data-testid=runner-recent-jobs]", "Últimas execuções")
   2) test latest jobs a job that failed without numbers shows dashes

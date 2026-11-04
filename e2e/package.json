@@ -1,5 +1,5 @@
 {
-  "name": "claude-control-plane-e2e",
+  "name": "pipemaestro-e2e",
   "version": "0.0.1",
   "private": true,
   "description": "Browser-level Playwright suite with opt-in visual evidence. See README.md.",

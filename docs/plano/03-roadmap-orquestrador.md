@@ -205,7 +205,7 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 
 ### Marco 5 — Distribuição
 
-1. **✓ Release do runner com `cp-runner`, instalação em um comando**
+1. **✓ Release do runner com `pipemaestro`, instalação em um comando**
    ([ADR 0013](../adr/0013-distribuicao-e-entrega-no-git.md); o binário único via
    Burrito veio depois, no [ADR 0014](../adr/0014-pendencias-do-roadmap.md)).
 2. **✓ Deploy do control plane** (ADR 0013): release, migrations, `PHX_HOST` e TLS
@@ -213,7 +213,7 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 3. **✓ Guia de instalação e de primeiro pipeline** ([`guias/instalacao.md`](../guias/instalacao.md)).
 4. **✓ Versão do runner e do control plane** ([ADR 0016](../adr/0016-esquema-de-versao.md)):
    `AAAA-MM-DD.NN` a partir de tags `runner-*`, `make runner.release`,
-   `cp-runner --version` e o selo "desatualizado" na lista de runners.
+   `pipemaestro --version` e o selo "desatualizado" na lista de runners.
 
 ### Marco 6 — Integração com git e GitHub (por último)
 

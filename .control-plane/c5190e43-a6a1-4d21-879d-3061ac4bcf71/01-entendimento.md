@@ -2,21 +2,21 @@
 
 ## 0. O que existe hoje (lido no código)
 
-- `ClaudeControlPlaneRunner.Host.runner_version/0` devolve o `vsn` da app (`"0.1.0"`) e vai no
-  `Hello` (`runner_version`), validado em `ClaudeControlPlaneProtocol.Hello` por `text/2`:
+- `PipeMaestroRunner.Host.runner_version/0` devolve o `vsn` da app (`"0.1.0"`) e vai no
+  `Hello` (`runner_version`), validado em `PipeMaestroProtocol.Hello` por `text/2`:
   string de **1 a 120 bytes**. A coluna `runners.runner_version` é `:string` (varchar 255).
   O formato novo mais longo (`2026-11-04.12+dev.abc1234`, ~25 bytes) cabe com folga: **sem
   migration e sem mudança no protocolo**.
 - A versão já aparece crua em `runners_live.ex:157` (lista), `runner_live.ex:121` (cabeçalho do
   card da página do runner), `board_live.ex:370`, `backoffice/workspace_live/show.ex:279` e
   `activate_runner_live.ex:123` — sem `data-testid`.
-- `mix.exs` (raiz): a release Burrito `cp_runner` usa `binary_version/0` = `0.1.0+<sha curto>`.
-- **`make runner.release` já existe**: gera a release Mix `claude_control_plane_runner` em
+- `mix.exs` (raiz): a release Burrito `pipemaestro` usa `binary_version/0` = `0.1.0+<sha curto>`.
+- **`make runner.release` já existe**: gera a release Mix `pipe_maestro_runner` em
   `_build/prod/rel`, e `make runner.install` depende dele. O pedido reaproveita o nome para outra
   coisa (tag + binário). Decisão tomada (ver §2.6): o alvo atual passa a se chamar
   `runner.rel`, `runner.install` passa a depender de `runner.rel`, e `runner.release` ganha o
   significado do pedido.
-- `ClaudeControlPlaneRunner.Main` despacha `login|start|status|logout|doctor|service`; qualquer
+- `PipeMaestroRunner.Main` despacha `login|start|status|logout|doctor|service`; qualquer
   outra coisa imprime o uso e sai com 2. O binário Burrito passa pelo mesmo `Main.run/1`
   (`Application.standalone/2`).
 - `.dockerignore` exclui `.git`: a imagem do control plane não enxerga as tags.
@@ -65,13 +65,13 @@
 
 ### 1.3 CLI do runner
 
-- `cp-runner --version` e `cp-runner version` imprimem **só** a versão (uma linha), saem com 0.
+- `pipemaestro --version` e `pipemaestro version` imprimem **só** a versão (uma linha), saem com 0.
   Em dev: `mix runner.version` (mesmo comando). `mix runner.version --next` imprime a próxima
   versão de release (usado pelo Makefile; não exposto no binário).
-- `cp-runner start`: a primeira linha é `cp-runner <versão>`.
-- `cp-runner status` e `cp-runner doctor`: uma linha `Versão: <versão>` (no doctor, como item
+- `pipemaestro start`: a primeira linha é `pipemaestro <versão>`.
+- `pipemaestro status` e `pipemaestro doctor`: uma linha `Versão: <versão>` (no doctor, como item
   informativo `✓ versão: <versão>`).
-- O uso (`cp-runner` sem comando) passa a listar `--version`.
+- O uso (`pipemaestro` sem comando) passa a listar `--version`.
 
 ### 1.4 Control plane
 
@@ -100,7 +100,7 @@
    `.10 > .09`.
 2. Num repositório git temporário: sem tag → `dev+<sha>`; tag no HEAD → a versão; commit depois
    da tag → `<tag>+dev.<sha>`; tag não alcançável não conta. Nenhuma tag criada neste repo.
-3. `cp-runner --version`/`version` imprimem só a versão; `start` a mostra na primeira linha;
+3. `pipemaestro --version`/`version` imprimem só a versão; `start` a mostra na primeira linha;
    `status` e `doctor` a mostram.
 4. O Hello leva a versão nova; versões até 120 bytes continuam aceitas, as antigas também.
 5. Lista e página do runner mostram a versão e o selo segundo §1.4; o rodapé mostra a versão do
@@ -115,17 +115,17 @@
 
 | App | O que entra |
 |---|---|
-| `claude_control_plane_protocol` | `ClaudeControlPlaneProtocol.Version`: o formato é contrato entre runner e control plane (os dois o calculam e o control plane compara o que o runner manda). Funções puras + a leitura do git (build-time), única app que runner e domínio compartilham. |
-| `claude_control_plane_runner` | Versão embutida, comando `version`, linhas em start/status/doctor, `mix runner.version [--next]`. |
-| `claude_control_plane` (domínio) | Versão do control plane embutida; `Runners.outdated?/1` (delegando à comparação do protocolo). |
-| `claude_control_plane_web` | Rodapé, versão + selo na lista e na página do runner. Sem lógica: chama o domínio. |
+| `pipe_maestro_protocol` | `PipeMaestroProtocol.Version`: o formato é contrato entre runner e control plane (os dois o calculam e o control plane compara o que o runner manda). Funções puras + a leitura do git (build-time), única app que runner e domínio compartilham. |
+| `pipe_maestro_runner` | Versão embutida, comando `version`, linhas em start/status/doctor, `mix runner.version [--next]`. |
+| `pipe_maestro` (domínio) | Versão do control plane embutida; `Runners.outdated?/1` (delegando à comparação do protocolo). |
+| `pipe_maestro_web` | Rodapé, versão + selo na lista e na página do runner. Sem lógica: chama o domínio. |
 
 Nenhuma mudança de `protocol_version`, de mensagens ou de schema do banco.
 
 ### 2.2 Arquivos
 
 **Protocolo**
-- `apps/claude_control_plane_protocol/lib/claude_control_plane_protocol/version.ex` (novo) —
+- `apps/pipe_maestro_protocol/lib/pipe_maestro_protocol/version.ex` (novo) —
   puro, com `@spec`/`@moduledoc`:
   - `parse(String.t()) :: {:release, Date.t(), pos_integer()} | {:dev, base | nil, sha} | :unknown`
   - `parse_tag(String.t()) :: {:ok, {Date.t(), pos_integer()}} | :error` (só `runner-AAAA-MM-DD.NN`, data válida, NN ≥ 01 com ao menos 2 dígitos)
@@ -134,25 +134,25 @@ Nenhuma mudança de `protocol_version`, de mensagens ou de schema do banco.
   - `compare(a, b) :: :lt | :eq | :gt` (releases)
   - `outdated?(runner_version :: String.t() | nil, reference_version :: String.t()) :: boolean()`
   - `format(Date.t(), pos_integer()) :: String.t()`
-- `apps/claude_control_plane_protocol/lib/claude_control_plane_protocol/version/git.ex` (novo) —
+- `apps/pipe_maestro_protocol/lib/pipe_maestro_protocol/version/git.ex` (novo) —
   I/O de git com diretório explícito (`System.cmd("git", ["-C", dir, ...])`):
   `current(dir)` (`CP_VERSION` ou `describe` com `tag --points-at HEAD`,
   `tag --merged HEAD --list 'runner-*'`, `rev-parse --short HEAD`), `next(dir, date)`,
   `local_today/0` (`:calendar.local_time/0`). Falha de git → `dev+unknown`.
 
 **Runner**
-- `lib/claude_control_plane_runner/version.ex` (novo) — `@version Git.current(<raiz do repo>)`
+- `lib/pipe_maestro_runner/version.ex` (novo) — `@version Git.current(<raiz do repo>)`
   em compilação, `version/0`, `__mix_recompile__?/0` (recompila quando o valor mudaria).
 - `host.ex` — `runner_version/0` passa a devolver `Version.version/0`.
 - `main.ex` — `run(["--version"])`/`run(["version"])` → `IO.puts` e 0; moduledoc com o uso.
 - `commands/version.ex` (novo) — o comando (imprime a versão; `--next` imprime a próxima).
-- `commands/start.ex` — primeira linha `cp-runner <versão>`.
+- `commands/start.ex` — primeira linha `pipemaestro <versão>`.
 - `commands/status.ex`, `commands/doctor.ex` (e `doctor.ex` se o item morar lá) — linha da versão.
 - `lib/mix/tasks/runner.version.ex` (novo) — `mix runner.version [--next]` via `CLI.run/2`.
 
 **Domínio**
-- `lib/claude_control_plane/version.ex` (novo) — mesma mecânica do runner, para o control plane.
-- `lib/claude_control_plane/runners.ex` — `outdated?(Runner.t()) :: boolean()`.
+- `lib/pipe_maestro/version.ex` (novo) — mesma mecânica do runner, para o control plane.
+- `lib/pipe_maestro/runners.ex` — `outdated?(Runner.t()) :: boolean()`.
 
 **Web**
 - `components/layouts.ex` — componente `app_version` nos três rodapés.
@@ -177,7 +177,7 @@ Nenhuma mudança de `protocol_version`, de mensagens ou de schema do banco.
 
 1. Protocolo: `Version` puro + testes; `Version.Git` + testes com repo temporário.
 2. Runner: `Version`, `Host`, `Main`, comandos, Mix task + testes.
-3. Domínio: `ClaudeControlPlane.Version`, `Runners.outdated?/1` + testes.
+3. Domínio: `PipeMaestro.Version`, `Runners.outdated?/1` + testes.
 4. Web: componentes, rodapé, lista e página + testes LiveView.
 5. Makefile/mix.exs/Dockerfile (`runner.rel`, `runner.release`, `image`, `binary_version`).
 6. e2e: spec, page object, capturas claro/escuro (`make e2e.shots`).
@@ -214,7 +214,7 @@ bytes. Só a spec documenta o formato esperado (informativo; formatos antigos se
 - `version/git_test.exs`: repo em `System.tmp_dir!` (`git init`, commits com `-c user.*`,
   `git tag -a`): sem tag; tag no HEAD; commit após tag; tag num branch não alcançável; `next`
   com tags do dia; `CP_VERSION` sobrepõe; diretório sem git → `dev+unknown`. `on_exit` apaga.
-- `claude_control_plane_protocol_test.exs`/Hello: versão no formato novo aceita; 121 bytes
+- `pipe_maestro_protocol_test.exs`/Hello: versão no formato novo aceita; 121 bytes
   recusada.
 
 **Runner (ExUnit)**
@@ -242,7 +242,7 @@ bytes. Só a spec documenta o formato esperado (informativo; formatos antigos se
 - servidor com `CP_VERSION=2026-11-04.02`; runner iniciado com `CP_VERSION=2026-11-04.01`;
 - `runner-version-<nome>` = `2026-11-04.01` e `runner-outdated-<nome>` visível na lista;
   `runner-detail-version` e `runner-detail-outdated` na página do runner;
-  `app-version` = `2026-11-04.02`; saída do CLI começa com `cp-runner 2026-11-04.01`.
+  `app-version` = `2026-11-04.02`; saída do CLI começa com `pipemaestro 2026-11-04.01`.
 - As demais specs (`job-execution`, `task-pipeline`) seguem sem versão fixa (runner dev, sem
   selo) — se a alternância de recompilação do módulo de versão do runner pesar, fixar a versão
   em todas via `RunnerProcess`.
@@ -260,7 +260,7 @@ usa (`next`) é a função pura testada. Conferência manual descrita no guia.
   dev `+dev.sha`, embutida na compilação com `CP_VERSION` de override, semver Burrito por baixo,
   regra do selo, por que no protocolo. Listar em `docs/README.md`.
 - `docs/guias/instalacao.md`: seção "Versões e releases do runner" — a regra, `make
-  runner.release` (passos, recusas, push manual), `cp-runner --version`, o selo, `runner.rel` /
+  runner.release` (passos, recusas, push manual), `pipemaestro --version`, o selo, `runner.rel` /
   `runner.install`, `CP_VERSION` na imagem.
 - `docs/specs/protocolo-runner.md`: exemplo do Hello com `"runner_version": "2026-11-04.01"` e
   nota do formato (informativo, sem mudança de versão do protocolo).

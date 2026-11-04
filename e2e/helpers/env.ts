@@ -3,7 +3,7 @@
  *
  * It is the one record the suite does not create through the browser: without
  * an operator nobody can reach the backoffice. `global-setup.ts` creates it the
- * way production does, through `ClaudeControlPlane.Release.create_operator/3`.
+ * way production does, through `PipeMaestro.Release.create_operator/3`.
  * Everything else - workspaces, users, other operators - each spec creates
  * itself through the UI.
  */

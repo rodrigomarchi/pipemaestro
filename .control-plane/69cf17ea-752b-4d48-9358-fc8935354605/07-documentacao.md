@@ -36,7 +36,7 @@ do agente e o resultado continuam em largura total e encerram a faixa. Ao vivo, 
 ícones novos entram na faixa e o painel aberto continua aberto. O agrupamento "Leu N
 arquivos" saiu.
 
-Código: só `claude_control_plane_web` (`JobComponents`, `JobLive`, `TaskLive.Show` e os
+Código: só `pipe_maestro_web` (`JobComponents`, `JobLive`, `TaskLive.Show` e os
 testes), mais o marcador `[gotejando]` no `fake_claude` de teste do runner e os specs e
 Page Objects do e2e. Protocolo, domínio e banco não mudaram.
 

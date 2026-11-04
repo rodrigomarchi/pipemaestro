@@ -1,3 +1,0 @@
-# ClaudeControlPlane
-
-**TODO: Add description**

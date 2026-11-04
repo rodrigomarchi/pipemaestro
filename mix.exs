@@ -1,4 +1,4 @@
-defmodule ClaudeControlPlane.Umbrella.MixProject do
+defmodule PipeMaestro.Umbrella.MixProject do
   use Mix.Project
 
   def project do
@@ -25,26 +25,26 @@ defmodule ClaudeControlPlane.Umbrella.MixProject do
   defp releases do
     [
       # `server` (rel/control_plane/bin) migrates, then starts the web server.
-      claude_control_plane: [
+      pipe_maestro: [
         applications: [
-          claude_control_plane: :permanent,
-          claude_control_plane_web: :permanent
+          pipe_maestro: :permanent,
+          pipe_maestro_web: :permanent
         ],
         overlays: ["rel/control_plane"],
         steps: [:assemble, :tar]
       ],
-      # `cp-runner` (rel/runner/bin) is the runner's command line.
-      claude_control_plane_runner: [
-        applications: [claude_control_plane_runner: :permanent],
+      # `pipemaestro` (rel/runner/bin) is the runner's command line.
+      pipe_maestro_runner: [
+        applications: [pipe_maestro_runner: :permanent],
         runtime_config_path: "config/runner_runtime.exs",
         overlays: ["rel/runner"],
         steps: [:assemble, :tar]
       ],
       # The same runner as a single binary per platform (Burrito, in
-      # burrito_out/): `cp_runner_<alvo> <comando>`, nothing to install first.
-      cp_runner: [
+      # burrito_out/): `pipemaestro_<alvo> <comando>`, nothing to install first.
+      pipemaestro: [
         version: binary_version(),
-        applications: [claude_control_plane_runner: :permanent],
+        applications: [pipe_maestro_runner: :permanent],
         runtime_config_path: "config/runner_runtime.exs",
         steps: [:assemble, &Burrito.wrap/1],
         burrito: [
@@ -64,7 +64,7 @@ defmodule ClaudeControlPlane.Umbrella.MixProject do
   # A binary unpacks itself once per version: the release (or the commit) and
   # the build's moment in its semver build metadata make each build a new one,
   # so an updated binary never runs an older payload. The version the runner
-  # shows is ClaudeControlPlaneRunner.Version's, not this one.
+  # shows is PipeMaestroRunner.Version's, not this one.
   defp binary_version do
     built_at = Calendar.strftime(DateTime.utc_now(), "%Y%m%d%H%M%S")
 
@@ -102,7 +102,7 @@ defmodule ClaudeControlPlane.Umbrella.MixProject do
       # Required to run "mix format" on ~H/.heex files from the umbrella root
       {:phoenix_live_view, ">= 0.0.0"},
 
-      # Builds the runner's single binary (the cp_runner release)
+      # Builds the runner's single binary (the pipemaestro release)
       {:burrito, "~> 1.6", runtime: false},
 
       # Static analysis

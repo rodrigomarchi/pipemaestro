@@ -32,7 +32,7 @@ achados que a documentação não trazia:
 
 1. **Três fontes.**
    - **O `stream-json`**, passado a extrair tudo o que serve para auditar
-     (`ClaudeControlPlaneProtocol.JobEvent`):
+     (`PipeMaestroProtocol.JobEvent`):
      - eventos novos: `thinking`, `api_retry`, `compact`, `permission_denied`,
        `rate_limit`;
      - os tokens de cada mensagem com o cache separado, contados uma vez por mensagem;
@@ -56,7 +56,7 @@ achados que a documentação não trazia:
      plane os aceita com o job já terminado.
    - Nada sai da máquina além do que já ia ao control plane.
 3. **Sem dados da pessoa e sem conteúdo na telemetria.**
-   - Só os atributos de uma lista fechada passam (`ClaudeControlPlaneProtocol.Telemetry`).
+   - Só os atributos de uma lista fechada passam (`PipeMaestroProtocol.Telemetry`).
      E-mail, conta e organização ficam no runner.
    - O conteúdo de prompts, respostas e argumentos fica desligado no CLI, porque os
      eventos já o trazem.
@@ -72,7 +72,7 @@ achados que a documentação não trazia:
    - **Retenção:** a `Maintenance` apaga a telemetria junto com os eventos, 30 dias
      depois do fim do job. O job mantém os totais.
 6. **Consolidação.**
-   - `ClaudeControlPlane.Insights` junta tudo:
+   - `PipeMaestro.Insights` junta tudo:
      - **por job:** ferramentas, API, cache, modelos, compactações, subagentes,
        raciocínio e limites;
      - **por workspace e período:** tokens, cache, modelos, ranking de ferramentas, API,

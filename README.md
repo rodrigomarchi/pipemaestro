@@ -1,4 +1,4 @@
-# claude_control_plane
+# PipeMaestro
 
 Plataforma SaaS que conduz tarefas de engenharia (issues do GitHub) por um pipeline
 determinístico de agentes de IA até um Pull Request pronto para revisão humana.
@@ -11,10 +11,10 @@ determinístico de agentes de IA até um Pull Request pronto para revisão human
 
 | App | Papel |
 |---|---|
-| [`apps/claude_control_plane`](apps/claude_control_plane) | Domínio do control plane (sem camada web) |
-| [`apps/claude_control_plane_web`](apps/claude_control_plane_web) | Phoenix + LiveView + Channels dos executores |
-| [`apps/claude_control_plane_protocol`](apps/claude_control_plane_protocol) | Contrato executor ↔ control plane |
-| [`apps/claude_control_plane_runner`](apps/claude_control_plane_runner) | Executor BYO (release própria) |
+| [`apps/pipe_maestro`](apps/pipe_maestro) | Domínio do control plane (sem camada web) |
+| [`apps/pipe_maestro_web`](apps/pipe_maestro_web) | Phoenix + LiveView + Channels dos executores |
+| [`apps/pipe_maestro_protocol`](apps/pipe_maestro_protocol) | Contrato executor ↔ control plane |
+| [`apps/pipe_maestro_runner`](apps/pipe_maestro_runner) | Executor BYO (release própria) |
 
 ## Começando
 
@@ -41,13 +41,13 @@ mix control_plane.create_operator ops@empresa.com "Nome"
 Numa release:
 
 ```bash
-bin/claude_control_plane eval 'ClaudeControlPlane.Release.migrate()'
-bin/claude_control_plane eval 'ClaudeControlPlane.Release.create_operator("ops@empresa.com", "Nome", "senha longa")'
+bin/pipe_maestro eval 'PipeMaestro.Release.migrate()'
+bin/pipe_maestro eval 'PipeMaestro.Release.create_operator("ops@empresa.com", "Nome", "senha longa")'
 ```
 
 ### Runner
 
-Para instalar em produção e em outras máquinas (imagem do control plane, `cp-runner`,
+Para instalar em produção e em outras máquinas (imagem do control plane, `pipemaestro`,
 TLS, primeiro pipeline), veja [`docs/guias/instalacao.md`](docs/guias/instalacao.md).
 
 ```bash
@@ -67,15 +67,15 @@ runners ficam em **Executores** (`/w/<workspace>/runners`). O protocolo está em
 
 Com o runner online, em **Execuções** (`/w/<workspace>/jobs`) um prompt enviado a ele
 roda no `claude` da máquina do runner (`claude -p`, com permissões totais), dentro do
-workdir `~/.config/claude-control-plane/workdir/`, e a execução aparece ao vivo.
+workdir `~/.config/pipemaestro/workdir/`, e a execução aparece ao vivo.
 `CLAUDE_BIN=...` troca o executável (os testes usam
-`apps/claude_control_plane_runner/test/support/fake_claude`).
+`apps/pipe_maestro_runner/test/support/fake_claude`).
 
 Em **Tarefas** (`/w/<workspace>/tasks`), uma tarefa percorre as etapas de um
 **Pipeline** (`/w/<workspace>/pipelines`; "Criar pipelines padrão" traz "Prompt único"
 e "Correção de bug") num dos diretórios que o runner oferece. Num repositório git,
 cada tarefa ganha um worktree próprio em
-`~/.config/claude-control-plane/workdir/worktrees/<tarefa>`, e o seu checkout não é
+`~/.config/pipemaestro/workdir/worktrees/<tarefa>`, e o seu checkout não é
 tocado. Cada etapa grava um artefato em `.control-plane/<tarefa>/`. Quando uma etapa
 bloqueia ou esgota as tentativas, a tarefa espera uma decisão na tela. O `ROOT` fica
 salvo, então os próximos `make runner.start` não precisam dele.

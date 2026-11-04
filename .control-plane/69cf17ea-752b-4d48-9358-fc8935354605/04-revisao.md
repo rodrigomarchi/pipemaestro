@@ -20,7 +20,7 @@ primeiros itens abaixo devem ser tratados antes do merge.
 Cada ícone novo faz `stream_insert` da faixa aberta inteira. O item de um stream não é
 diffado: o HTML do `<li>` volta todo para o cliente, e isso inclui o painel completo de
 cada evento da faixa (saídas de ferramenta, diffs do Edit, conteúdo do Write). A saída
-das ferramentas não é truncada no runner (nada em `apps/claude_control_plane_runner/lib`
+das ferramentas não é truncada no runner (nada em `apps/pipe_maestro_runner/lib`
 corta o `text` do evento). Uma etapa com dezenas de chamadas seguidas sem texto do agente
 é comum: muitas leituras com o pensamento entre elas. Nesse caso o tráfego cresce de forma
 quadrática. Com 50 `Read` de ~30 KB, cada evento novo manda ~1,5 MB. Antes desta mudança,
@@ -78,12 +78,12 @@ coisas.
 que o `use PetalComponents` faz, para liberar o nome `timeline/1`. O comentário só diz
 "`timeline/1` here is the run's timeline, not Petal's", o que não deixa claro por que
 existe um import vazio. Sugestão: "Drops Petal's `timeline/1`, imported by
-`use ClaudeControlPlaneWeb, :html`, so this module's own can take the name." Outra opção é
+`use PipeMaestroWeb, :html`, so this module's own can take the name." Outra opção é
 evitar a colisão dando outro nome ao componente (`run_timeline/1`).
 
 ## Conferido e sem problema
 
-- **Fronteiras:** só `claude_control_plane_web` muda, mais o `fake_claude` de teste do
+- **Fronteiras:** só `pipe_maestro_web` muda, mais o `fake_claude` de teste do
   runner. Nada vai para o protocolo nem para o domínio.
 - **Convenções:** os públicos novos têm `@spec` e `@doc` (`icon?/1`, `event_state/1`,
   `event_summary/1`, `timeline_items/2`, `timeline_tail/1`, `timeline_push/2`,

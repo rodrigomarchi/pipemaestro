@@ -1,0 +1,17 @@
+#!/bin/sh
+# The runner's command line from its release: pipemaestro <comando> [opções].
+# Runs PipeMaestroRunner.Main; see `pipemaestro` with no command.
+set -e
+
+# Follow a symlink (e.g. ~/.local/bin/pipemaestro) back to the release.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  TARGET="$(readlink "$SELF")"
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *) SELF="$(dirname "$SELF")/$TARGET" ;;
+  esac
+done
+RELEASE_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+exec "$RELEASE_ROOT/bin/pipe_maestro_runner" eval "PipeMaestroRunner.Main.main()" "$@"

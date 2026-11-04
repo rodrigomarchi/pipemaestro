@@ -1,4 +1,4 @@
-title = "ClaudeControlPlane gitleaks configuration"
+title = "PipeMaestro gitleaks configuration"
 
 [extend]
 useDefault = true

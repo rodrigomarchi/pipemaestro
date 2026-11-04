@@ -16,7 +16,7 @@ do cliente passa a ser de verdade. Não há auto-cadastro.
    `users` e `users_tokens`, entra em `/login`. São chaves de sessão, plugs,
    `on_mount` e rotas diferentes. Credencial de usuário nunca abre o backoffice,
    e vice-versa. Operadores criam outros operadores; o primeiro nasce de
-   `ClaudeControlPlane.Release.create_operator/3` (ou de
+   `PipeMaestro.Release.create_operator/3` (ou de
    `mix control_plane.create_operator`).
 2. **Um usuário pode estar em vários workspaces**, via `workspace_memberships`.
    Depois do login, `/workspaces` leva direto ao workspace quando há um só e

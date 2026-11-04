@@ -1,12 +1,12 @@
 import Config
 
 # Configure your database
-config :claude_control_plane, ClaudeControlPlane.Repo,
+config :pipe_maestro, PipeMaestro.Repo,
   username: System.get_env("PGUSER", "postgres"),
   password: System.get_env("PGPASSWORD", "postgres"),
   hostname: System.get_env("PGHOST", "localhost"),
   port: String.to_integer(System.get_env("DEV_DB_PORT", "5442")),
-  database: "claude_control_plane_dev",
+  database: "pipe_maestro_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
@@ -17,7 +17,7 @@ config :claude_control_plane, ClaudeControlPlane.Repo,
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
+config :pipe_maestro_web, PipeMaestroWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}],
@@ -26,9 +26,8 @@ config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "Fn5dv048Wr06cxp6DiGt3qb5uBeoVoR9ZYr16LZIthYvPTJv4R4dj6ssjjHYhElB",
   watchers: [
-    esbuild:
-      {Esbuild, :install_and_run, [:claude_control_plane_web, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:claude_control_plane_web, ~w(--watch)]}
+    esbuild: {Esbuild, :install_and_run, [:pipe_maestro_web, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:pipe_maestro_web, ~w(--watch)]}
   ]
 
 # ## SSL Support
@@ -55,7 +54,7 @@ config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
 # different ports.
 
 # Enable dev routes for dashboard and mailbox
-config :claude_control_plane_web, dev_routes: true
+config :pipe_maestro_web, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
@@ -76,5 +75,4 @@ config :phoenix_live_view,
 config :phoenix, :stacktrace_depth, 20
 
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
-config :claude_control_plane, ClaudeControlPlane.Secrets,
-  key: "dev_only_secrets_key_change_me_in_prod"
+config :pipe_maestro, PipeMaestro.Secrets, key: "dev_only_secrets_key_change_me_in_prod"

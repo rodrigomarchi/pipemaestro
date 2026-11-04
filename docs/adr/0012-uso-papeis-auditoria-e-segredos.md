@@ -17,14 +17,14 @@ Com o orquestrador completo (Marcos 1 a 3), faltava operá-lo como produto:
 
 ## Decisões
 
-1. **Uso a partir dos jobs** (`ClaudeControlPlane.Usage`). A conta considera os jobs que
+1. **Uso a partir dos jobs** (`PipeMaestro.Usage`). A conta considera os jobs que
    rodaram e terminaram no período; um job cancelado na fila não rodou. A tela mostra,
    para 7 ou 30 dias:
    - custo, execuções e tempo de agente;
    - o custo por dia;
    - a quebra por pipeline, runner e pessoa;
    - por etapa, com as execuções que falharam (as retentativas).
-2. **Dois papéis por workspace**, `admin` e `member` (`ClaudeControlPlane.Authorization`).
+2. **Dois papéis por workspace**, `admin` e `member` (`PipeMaestro.Authorization`).
    - Admins gerenciam pipelines, projetos, runners e segredos, veem a auditoria e
      cancelam qualquer tarefa.
    - Todos criam, acompanham e decidem tarefas e cancelam as próprias.
@@ -52,7 +52,7 @@ Com o orquestrador completo (Marcos 1 a 3), faltava operá-lo como produto:
    - tarefa que já gastou 80% ou mais do orçamento.
 
    As notificações do ADR 0010 continuam cobrindo pausas e fins.
-6. **Segredos do workspace como variáveis de ambiente** (`ClaudeControlPlane.Secrets`).
+6. **Segredos do workspace como variáveis de ambiente** (`PipeMaestro.Secrets`).
    - Ficam cifrados com AES-256-GCM, com chave em `SECRETS_KEY` em produção.
    - Vão ao runner com cada job, só no envio: não ficam no job nem no runner.
    - O MCP de um pipeline os usa como `${NOME}`.

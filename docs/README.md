@@ -41,6 +41,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0016 | [Esquema de versão do runner e do control plane](adr/0016-esquema-de-versao.md) | Aceita |
 | 0017 | [Linha do tempo compacta: faixas de ícones e painéis](adr/0017-linha-do-tempo-compacta.md) | Aceita |
 | 0018 | [Etapas autônomas: permissões totais e sem aprovação entre etapas](adr/0018-etapas-autonomas.md) | Aceita |
+| 0019 | [O nome PipeMaestro](adr/0019-o-nome-pipemaestro.md) | Aceita |
 
 ## Specs
 

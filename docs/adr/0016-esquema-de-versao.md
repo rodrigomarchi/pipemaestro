@@ -27,19 +27,19 @@ própria versão. Faltava um número que um operador lesse e comparasse.
      Sem tag alcançável, é `dev+<commit curto>`. Sem git ou sem repositório, é
      `dev+unknown`.
 3. **Embutida na compilação.**
-   - `ClaudeControlPlaneRunner.Version` e `ClaudeControlPlane.Version` guardam a versão
+   - `PipeMaestroRunner.Version` e `PipeMaestro.Version` guardam a versão
      num atributo de módulo. `__mix_recompile__?/0` os recompila quando o valor
      calculado mudaria, então um commit ou uma tag novos aparecem sem `--force`.
    - A variável `CP_VERSION`, quando definida e não vazia na compilação, é usada como
      está. A imagem Docker não tem `.git` (`make image` passa a versão como
      `--build-arg`), e o e2e fixa versões assim.
    - O control plane aceita também uma versão configurada
-     (`config :claude_control_plane, ClaudeControlPlane.Version, version: …`), que os
+     (`config :pipe_maestro, PipeMaestro.Version, version: …`), que os
      testes usam para não depender do git do checkout.
 4. **O esquema mora no `protocol`.**
-   - `ClaudeControlPlaneProtocol.Version` tem as funções puras: interpretar, comparar,
+   - `PipeMaestroProtocol.Version` tem as funções puras: interpretar, comparar,
      calcular a próxima e decidir se um runner está desatualizado.
-   - `ClaudeControlPlaneProtocol.Version.Git` lê o git, sempre com diretório explícito.
+   - `PipeMaestroProtocol.Version.Git` lê o git, sempre com diretório explícito.
    - Os dois lados calculam a versão do mesmo jeito, e o control plane interpreta a que
      o runner manda. O `protocol` é a única app que os dois compartilham.
    - O `Version.Git` vai junto nas releases, embora só sirva na compilação e no
@@ -58,7 +58,7 @@ própria versão. Faltava um número que um operador lesse e comparasse.
      plane `dev+<commit>` não marca ninguém.
    - A regra fica em `Runners.outdated?/1,2`, que delega ao `protocol`.
 7. **Onde a versão aparece.**
-   - No runner: `cp-runner --version` e `cp-runner version` (só a versão). Também na
+   - No runner: `pipemaestro --version` e `pipemaestro version` (só a versão). Também na
      primeira linha do `start`, no `status` e no primeiro item do `doctor`.
    - No control plane: no rodapé da sidebar dos layouts do workspace e do backoffice, e
      no pé das páginas públicas.
@@ -89,7 +89,7 @@ própria versão. Faltava um número que um operador lesse e comparasse.
   recompilação.
 - **Versão visível sem login.** As páginas públicas mostram a versão do control plane,
   que num build de dev inclui o commit curto.
-- **`--next` também existe no binário** (`cp-runner version --next`). Ele lê as tags do
+- **`--next` também existe no binário** (`pipemaestro version --next`). Ele lê as tags do
   diretório atual e não muda nada.
 - **Discos com binários antigos.** Como cada build do Burrito tem versão própria, cada
   um deixa um payload descompactado na pasta de dados do usuário.

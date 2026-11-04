@@ -5,7 +5,7 @@ não mudaram.
 
 ## O que mudou, arquivo por arquivo
 
-### `apps/claude_control_plane_web/lib/claude_control_plane_web/components/job_components.ex`
+### `apps/pipe_maestro_web/lib/pipe_maestro_web/components/job_components.ex`
 
 - **Funções puras novas** (todas com `@spec` e `@doc`):
   - `icon?/1`: tudo vira ícone, menos `assistant_text` e `result`.
@@ -61,7 +61,7 @@ não mudaram.
   import dele colidia com o componente local.
 - O `@moduledoc` agora descreve as faixas, os blocos e os painéis abertos por `JS`.
 
-### `apps/claude_control_plane_web/lib/claude_control_plane_web/live/job_live.ex`
+### `apps/pipe_maestro_web/lib/pipe_maestro_web/live/job_live.ex`
 
 - O mount faz `stream(:timeline, timeline_items(events, "all"))` e
   `assign(timeline_tail: timeline_tail(segments))`.
@@ -72,7 +72,7 @@ não mudaram.
 - `#job-events` desenha `<.timeline_segment … timeline="job-events">`.
 - O `@moduledoc` e o comentário do mount foram atualizados.
 
-### `apps/claude_control_plane_web/lib/claude_control_plane_web/live/task_live/show.ex`
+### `apps/pipe_maestro_web/lib/pipe_maestro_web/live/task_live/show.ex`
 
 - `follow_running_job/1` usa `live_timeline/2`, que monta o stream `:timeline` (com
   `reset: true`) e a cauda do job que está rodando, ou os dois vazios.
@@ -82,7 +82,7 @@ não mudaram.
   `timeline_segment` e `timeline_tail`), e o `@moduledoc` também. O passo a passo
   terminado continua com `timeline_items(@steps, @steps_filter)`.
 
-### `apps/claude_control_plane_runner/test/support/fake_claude` (só teste)
+### `apps/pipe_maestro_runner/test/support/fake_claude` (só teste)
 
 - Marcador novo `[gotejando]`: depois do primeiro `tool_result`, espera 3 s e emite
   mais um `tool_use` Bash (`msg_3`) e o resultado dele. O cabeçalho do script documenta
@@ -111,9 +111,9 @@ não mudaram.
 Os testes da etapa 2:
 
 ```
-mix test apps/claude_control_plane_web/test/claude_control_plane_web/components/job_components_test.exs \
-         apps/claude_control_plane_web/test/claude_control_plane_web/live/job_live_test.exs \
-         apps/claude_control_plane_web/test/claude_control_plane_web/live/task_live_test.exs
+mix test apps/pipe_maestro_web/test/pipe_maestro_web/components/job_components_test.exs \
+         apps/pipe_maestro_web/test/pipe_maestro_web/live/job_live_test.exs \
+         apps/pipe_maestro_web/test/pipe_maestro_web/live/task_live_test.exs
 
 Finished in 1.5 seconds (0.2s async, 1.3s sync)
 Result: 59 passed

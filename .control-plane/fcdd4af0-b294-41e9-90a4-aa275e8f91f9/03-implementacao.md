@@ -4,7 +4,7 @@ Os testes da etapa 2 passam sem alteração. Protocolo, runner e migrations não
 
 ## O que mudou
 
-### `apps/claude_control_plane/lib/claude_control_plane/jobs.ex`
+### `apps/pipe_maestro/lib/pipe_maestro/jobs.ex`
 
 `Jobs.recent_for_runner/3` deixa de ser um stub. A consulta filtra por `workspace_id` **e**
 `runner_id`, `status in Job.finished_statuses()` e `started_at` não nulo, porque um job
@@ -12,7 +12,7 @@ cancelado na fila nunca rodou no runner. Ordena por `finished_at desc, id desc`,
 `limit` (padrão 10) e pré-carrega `stage_run: :task`. O `@doc` explica por que os
 cancelados antes de começar ficam de fora.
 
-### `apps/claude_control_plane_web/lib/claude_control_plane_web/live/runner_live.ex`
+### `apps/pipe_maestro_web/lib/pipe_maestro_web/live/runner_live.ex`
 
 - `@moduledoc`: a página também lista as últimas execuções terminadas, cada uma levando
   à auditoria.
@@ -69,19 +69,19 @@ Depois, o fluxo C reabre a lista de runners antes de renomear.
 ## Saída dos testes
 
 ```
-$ cd apps/claude_control_plane && mix test test/claude_control_plane/jobs_test.exs
+$ cd apps/pipe_maestro && mix test test/pipe_maestro/jobs_test.exs
 Result: 21 passed
 
-$ cd apps/claude_control_plane_web && mix test test/claude_control_plane_web/live/runner_live_test.exs
+$ cd apps/pipe_maestro_web && mix test test/pipe_maestro_web/live/runner_live_test.exs
 Result: 9 passed
 
-$ cd apps/claude_control_plane && mix test --warnings-as-errors --cover
+$ cd apps/pipe_maestro && mix test --warnings-as-errors --cover
 Result: 149 passed (1 doctest, 148 tests)      Total 93.69%  (Jobs 96.15%)
 
-$ cd apps/claude_control_plane_web && mix test --warnings-as-errors --cover
+$ cd apps/pipe_maestro_web && mix test --warnings-as-errors --cover
 Result: 181 passed                             Total 95.55%  (RunnerLive 97.89%)
 
-$ cd apps/claude_control_plane_protocol && mix test --warnings-as-errors --cover
+$ cd apps/pipe_maestro_protocol && mix test --warnings-as-errors --cover
 Result: 40 passed                              Total 90.24%
 
 $ make ci.quick   # passos até o mix test
@@ -99,22 +99,22 @@ ok (tsc --noEmit sem erros)
 
 Nesta sessão não rodaram:
 
-- os testes do app `claude_control_plane_runner`;
+- os testes do app `pipe_maestro_runner`;
 - o `mix test` a partir da raiz (passo 5 de `make ci`);
 - o `make e2e` / `make e2e.shots`.
 
-Todos param no boot com o uso do `cp-runner` e saída 2:
+Todos param no boot com o uso do `pipemaestro` e saída 2:
 
 ```
-cp-runner login --url https://plataforma.exemplo.com
-    cp-runner start [--root ~/src]
-    cp-runner status | logout | doctor
-    cp-runner service print | install | uninstall
+pipemaestro login --url https://plataforma.exemplo.com
+    pipemaestro start [--root ~/src]
+    pipemaestro status | logout | doctor
+    pipemaestro service print | install | uninstall
 ```
 
-**Causa:** o ambiente desta execução herdou `__BURRITO` do `cp-runner` em binário único
+**Causa:** o ambiente desta execução herdou `__BURRITO` do `pipemaestro` em binário único
 (Burrito) que roda o pipeline. Com ela presente,
-`ClaudeControlPlaneRunner.Application.standalone/1` acredita estar no binário: chama
+`PipeMaestroRunner.Application.standalone/1` acredita estar no binário: chama
 `Main.run/1` com os argumentos da VM e faz `System.halt/1`. Isso acontece em qualquer VM
 que carregue o app do runner (testes do runner, `mix test` da raiz, o servidor do e2e).
 Nada disso vem desta mudança, que não toca o runner. Não consegui rodar com

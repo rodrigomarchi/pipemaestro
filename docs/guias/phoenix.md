@@ -9,7 +9,7 @@ come from `petal_components`, not from a generated `core_components.ex` (see
 
 ### Phoenix v1.8 guidelines
 
-- **Always** begin your LiveView templates with a layout from `ClaudeControlPlaneWeb.Layouts`: `<Layouts.app ...>` for signed-in screens, `<Layouts.public ...>` for public ones
+- **Always** begin your LiveView templates with a layout from `PipeMaestroWeb.Layouts`: `<Layouts.app ...>` for signed-in screens, `<Layouts.public ...>` for public ones
 - The `MyAppWeb.Layouts` module is aliased in the `my_app_web.ex` file, so you can use it without needing to alias it again
 - Anytime you run into errors with no `current_scope` assign:
   - You failed to follow the Authenticated Routes guidelines, or you failed to pass `current_scope` to `<Layouts.app>`

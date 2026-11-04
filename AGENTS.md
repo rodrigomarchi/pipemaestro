@@ -1,4 +1,4 @@
-# AGENTS.md — claude_control_plane
+# AGENTS.md — PipeMaestro
 
 A SaaS that takes engineering tasks (GitHub issues) through a deterministic
 pipeline of AI-agent stages up to a pull request ready for human review. The
@@ -10,13 +10,13 @@ non-trivial change.
 
 | App | Role | May depend on |
 |---|---|---|
-| `apps/claude_control_plane` | Control-plane domain: `Accounts` (workspace users), `Backoffice` (operators), `Workspaces`, `Runners` (device flow, runner tokens), `Jobs` (prompts sent to a runner, their events and outcome), `Pipelines` (stages kept per workspace, with their gates and rules), `Projects` (setup, test and lint commands per code directory), `Tasks` (a prompt worked through a pipeline's stages, the gate and decisions), `Usage`, `Insights` (how the agent worked, for auditing), `Audit`, `Secrets` (encrypted, handed to runners per job), `Authorization` (admin and member roles) and `Maintenance` (periodic housekeeping); later the dispatcher. **No web layer.** | `protocol` |
-| `apps/claude_control_plane_web` | Phoenix, LiveView board, Channels the runners connect to. The only place web concerns live. | domain, `protocol` |
-| `apps/claude_control_plane_protocol` | The runner ↔ control-plane contract (`Hello`, `Job`, `JobEvent`, paths, topics, versions). Public and versioned: [`docs/specs/protocolo-runner.md`](docs/specs/protocolo-runner.md). | nothing in the umbrella |
-| `apps/claude_control_plane_runner` | The BYO runner: `runner.*` Mix tasks (device-flow login, Slipstream connection), and `JobRunner`, which runs jobs with the `claude` CLI, a task's stages in a git worktree of a directory under the runner's root. Run its tasks from its own directory (`make runner.*`), never from the root. | `protocol` only |
+| `apps/pipe_maestro` | Control-plane domain: `Accounts` (workspace users), `Backoffice` (operators), `Workspaces`, `Runners` (device flow, runner tokens), `Jobs` (prompts sent to a runner, their events and outcome), `Pipelines` (stages kept per workspace, with their gates and rules), `Projects` (setup, test and lint commands per code directory), `Tasks` (a prompt worked through a pipeline's stages, the gate and decisions), `Usage`, `Insights` (how the agent worked, for auditing), `Audit`, `Secrets` (encrypted, handed to runners per job), `Authorization` (admin and member roles) and `Maintenance` (periodic housekeeping); later the dispatcher. **No web layer.** | `protocol` |
+| `apps/pipe_maestro_web` | Phoenix, LiveView board, Channels the runners connect to. The only place web concerns live. | domain, `protocol` |
+| `apps/pipe_maestro_protocol` | The runner ↔ control-plane contract (`Hello`, `Job`, `JobEvent`, paths, topics, versions). Public and versioned: [`docs/specs/protocolo-runner.md`](docs/specs/protocolo-runner.md). | nothing in the umbrella |
+| `apps/pipe_maestro_runner` | The BYO runner: `runner.*` Mix tasks (device-flow login, Slipstream connection), and `JobRunner`, which runs jobs with the `claude` CLI, a task's stages in a git worktree of a directory under the runner's root. Run its tasks from its own directory (`make runner.*`), never from the root. | `protocol` only |
 
 The runner never depends on the domain or the web app: it ships as its own
-release (`claude_control_plane_runner` in the root `mix.exs`) and must not carry
+release (`pipe_maestro_runner` in the root `mix.exs`) and must not carry
 Phoenix or Ecto. Anything both sides need to agree on goes in `protocol`.
 
 ## Stack

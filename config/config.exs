@@ -10,44 +10,44 @@
 import Config
 
 # Configure Mix tasks and generators
-config :claude_control_plane,
-  ecto_repos: [ClaudeControlPlane.Repo],
+config :pipe_maestro,
+  ecto_repos: [PipeMaestro.Repo],
   generators: [binary_id: true, timestamp_type: :utc_datetime]
 
-config :claude_control_plane_web,
-  ecto_repos: [ClaudeControlPlane.Repo],
-  generators: [context_app: :claude_control_plane, binary_id: true]
+config :pipe_maestro_web,
+  ecto_repos: [PipeMaestro.Repo],
+  generators: [context_app: :pipe_maestro, binary_id: true]
 
 # Configures the endpoint
-config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
+config :pipe_maestro_web, PipeMaestroWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [html: ClaudeControlPlaneWeb.ErrorHTML, json: ClaudeControlPlaneWeb.ErrorJSON],
+    formats: [html: PipeMaestroWeb.ErrorHTML, json: PipeMaestroWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: ClaudeControlPlane.PubSub,
+  pubsub_server: PipeMaestro.PubSub,
   live_view: [signing_salt: "7xB16y0O"]
 
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
-  claude_control_plane_web: [
+  pipe_maestro_web: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
-    cd: Path.expand("../apps/claude_control_plane_web/assets", __DIR__),
+    cd: Path.expand("../apps/pipe_maestro_web/assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
 # Configure tailwind (the version is required)
 config :tailwind,
   version: "4.3.3",
-  claude_control_plane_web: [
+  pipe_maestro_web: [
     args: ~w(
       --input=assets/css/app.css
       --output=priv/static/assets/css/app.css
     ),
-    cd: Path.expand("../apps/claude_control_plane_web", __DIR__),
+    cd: Path.expand("../apps/pipe_maestro_web", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
@@ -59,7 +59,7 @@ config :logger, :default_formatter,
 # Form field errors go through the app's translator (Portuguese, safe bindings)
 config :petal_components,
        :error_translator_function,
-       {ClaudeControlPlaneWeb.ErrorHelpers, :translate_error}
+       {PipeMaestroWeb.ErrorHelpers, :translate_error}
 
 # Elixir's own JSON (1.18+) for Phoenix, as everywhere in our code
 config :phoenix, :json_library, JSON

@@ -1,10 +1,13 @@
+# The project name fixes the containers and volumes, whatever the checkout folder is called.
+name: pipemaestro
+
 services:
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: claude_control_plane_dev
+      POSTGRES_DB: pipe_maestro_dev
     ports:
       - "${DEV_DB_PORT:-5442}:5432"
     volumes:
@@ -20,7 +23,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: claude_control_plane_test
+      POSTGRES_DB: pipe_maestro_test
     ports:
       - "${TEST_DB_PORT:-5443}:5432"
     volumes:

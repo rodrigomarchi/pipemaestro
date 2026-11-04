@@ -13,7 +13,7 @@ e cumpre as convenções. Os pontos abaixo são médios ou baixos.
   `protocol`, e o domínio expõe `Runners.outdated?/1,2`. A web chama o domínio e não tem lógica
   própria. Correto.
 - **`@spec`/`@moduledoc`**: estão presentes em todos os módulos e funções públicas novos
-  (`Version`, `Version.Git`, `ClaudeControlPlane.Version`, `ClaudeControlPlaneRunner.Version`,
+  (`Version`, `Version.Git`, `PipeMaestro.Version`, `PipeMaestroRunner.Version`,
   `Commands.Version`, `Mix.Tasks.Runner.Version`, `app_version/1`, `runner_version/1`). O
   `Mix.Tasks.Runner.Version.run/1` usa `@impl` sem `@spec`, como as outras tasks do projeto.
 - **LiveViews finas**: `runners_live.ex` e `runner_live.ex` só usam o componente.
@@ -30,7 +30,7 @@ e cumpre as convenções. Os pontos abaixo são médios ou baixos.
 
 1. **A documentação ainda não está atualizada** (prevista para a etapa de documentação, §4 do
    plano). Itens concretos que estão desatualizados:
-   - `docs/guias/instalacao.md:13`: `make image  # docker build -t claude-control-plane .`. O
+   - `docs/guias/instalacao.md:13`: `make image  # docker build -t pipemaestro .`. O
      alvo agora passa `--build-arg CP_VERSION=…`, e quem rodar o `docker build` à mão terá uma
      imagem `dev+unknown` sem nenhum selo.
    - `docs/specs/protocolo-runner.md:28`: o exemplo do Hello ainda mostra
@@ -57,11 +57,11 @@ e cumpre as convenções. Os pontos abaixo são médios ou baixos.
    uma aproximação, ou um filtro pelo mesmo regex, resolve.
 
 4. **`--next` aparece no binário** (`commands/version.ex:451`). O plano (§1.3) diz "não exposto no
-   binário", mas `cp-runner --version --next` funciona e lê as tags do diretório atual. É inofensivo,
+   binário", mas `pipemaestro --version --next` funciona e lê as tags do diretório atual. É inofensivo,
    mas difere do plano e não aparece no uso. Duas saídas: aceitar e documentar, ou restringir o
    `--next` à Mix task.
 
-5. **`ClaudeControlPlaneProtocol.Version.compare/2` levanta `MatchError`** quando um dos lados não
+5. **`PipeMaestroProtocol.Version.compare/2` levanta `MatchError`** quando um dos lados não
    é uma release pura (`version.ex:250-251`). Hoje nenhum chamador de produção a usa (o
    `outdated?/2` usa `compare_releases/2`), mas é pública e tem `@spec` que aceita qualquer
    `String.t()`. A doc deveria dizer que só aceita releases, ou a função deveria ficar privada ou
@@ -72,9 +72,9 @@ e cumpre as convenções. Os pontos abaixo são médios ou baixos.
    refluir o parágrafo.
 
 7. **A spec e2e depende da linha seguinte** (`runner-connection.spec.ts:899`): espera
-   `` `cp-runner ${version}\nWorkdir:` ``. Se a ordem das linhas do `start` mudar, o teste quebra
+   `` `pipemaestro ${version}\nWorkdir:` ``. Se a ordem das linhas do `start` mudar, o teste quebra
    por um motivo alheio à versão. Uma regex com âncora de linha
-   (`/^cp-runner 2026-11-04\.01$/m`) seria mais robusta.
+   (`/^pipemaestro 2026-11-04\.01$/m`) seria mais robusta.
 
 8. **`Version.Git` (I/O de build) vai junto em toda release que carrega o `protocol`.** Isso inclui
    o runtime do control plane e do runner, embora o módulo só seja usado em compilação e pelo

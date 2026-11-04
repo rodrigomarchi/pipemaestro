@@ -13,12 +13,12 @@ make e2e FILE=tests/user-session.spec.ts
 make e2e.headed FILE=...              # navegador visível, em câmera lenta (SLOW_MO=300)
 make e2e.ui                           # modo UI do Playwright, para depurar
 make e2e.shots                        # suíte + screenshots claro/escuro (DARK=0 só claro)
-make e2e.db.reset                     # recria o banco claude_control_plane_e2e
+make e2e.db.reset                     # recria o banco pipe_maestro_e2e
 make e2e.typecheck                    # TypeScript das specs, Page Objects e helpers
 ```
 
 O servidor sobe sozinho na porta `E2E_PORT` (padrão 4003), com o banco
-`claude_control_plane_e2e` no Postgres de teste. Os alvos do Makefile matam
+`pipe_maestro_e2e` no Postgres de teste. Os alvos do Makefile matam
 qualquer servidor que esteja na porta antes de rodar, para nunca validar código
 antigo.
 
@@ -26,7 +26,7 @@ antigo.
 
 - **Caixa-preta.** A única coisa criada fora do navegador é o operador inicial
   (`global-setup.ts`), pelo mesmo caminho da produção:
-  `ClaudeControlPlane.Release.create_operator/3`. Workspaces, usuários e outros
+  `PipeMaestro.Release.create_operator/3`. Workspaces, usuários e outros
   operadores, cada spec cria pela interface, com nomes únicos (`uniqueSuffix()`),
   então as specs não dependem umas das outras nem de um banco limpo.
 - **Seletores: só `data-testid`.** O frontend marca tudo o que um teste toca.

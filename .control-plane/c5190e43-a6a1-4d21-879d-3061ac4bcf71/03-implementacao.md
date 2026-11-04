@@ -6,44 +6,44 @@ conferidas.
 
 ## O que mudou, por arquivo
 
-### Protocolo (`apps/claude_control_plane_protocol`)
+### Protocolo (`apps/pipe_maestro_protocol`)
 
-- `lib/claude_control_plane_protocol/version.ex` (novo): o esquema, só com funções puras.
+- `lib/pipe_maestro_protocol/version.ex` (novo): o esquema, só com funções puras.
   `format/2`, `parse_tag/1` (só `runner-AAAA-MM-DD.NN`, com data válida, NN com 2 ou mais dígitos
   e ≥ 01), `parse/1` (`{:release, d, n}`, `{:dev, {d, n} | nil, sha}` ou `:unknown`), `next/2`,
   `describe/3`, `compare/2` e `outdated?/2`. Fica no protocolo porque é o contrato que o runner e
   o control plane compartilham.
-- `lib/claude_control_plane_protocol/version/git.ex` (novo): a leitura do git com
+- `lib/pipe_maestro_protocol/version/git.ex` (novo): a leitura do git com
   `git -C <dir>`. `current/1` usa `CP_VERSION` se não estiver vazia. Sem isso, usa
   `tag --points-at HEAD`, `tag --merged HEAD` e `rev-parse --short HEAD`, e cai em
   `dev+unknown` quando falta git ou repositório. Também tem `next/2` (todas as tags `runner-*`)
   e `local_today/0`.
 
-### Runner (`apps/claude_control_plane_runner`)
+### Runner (`apps/pipe_maestro_runner`)
 
-- `lib/claude_control_plane_runner/version.ex` (novo): `@version Git.current(__DIR__)`, calculado
+- `lib/pipe_maestro_runner/version.ex` (novo): `@version Git.current(__DIR__)`, calculado
   na compilação. `__mix_recompile__?/0` recompila o módulo quando a versão mudaria (novo commit,
   nova tag, outro `CP_VERSION`).
 - `host.ex`: `runner_version/0` delega para `Version.version/0`, e o Hello leva o valor novo.
-- `main.ex`: os comandos `version` e `--version` existem, e o uso lista `cp-runner --version`.
+- `main.ex`: os comandos `version` e `--version` existem, e o uso lista `pipemaestro --version`.
 - `commands/version.ex` (novo): imprime só a versão. Com `--next`, imprime a próxima release a
   partir do diretório atual e da data local.
 - `lib/mix/tasks/runner.version.ex` (novo): `mix runner.version [--next]`.
-- `commands/start.ex`: a primeira linha é `cp-runner <versão>`, antes de validar `--root`.
+- `commands/start.ex`: a primeira linha é `pipemaestro <versão>`, antes de validar `--root`.
 - `commands/status.ex`: imprime a linha `Versão: <versão>` antes do resumo das credenciais.
 - `doctor.ex`: o primeiro item é `versão` (`:ok`, com a versão como detalhe), e o
-  `cp-runner doctor` imprime `✓ versão: …`.
+  `pipemaestro doctor` imprime `✓ versão: …`.
 
-### Domínio (`apps/claude_control_plane`)
+### Domínio (`apps/pipe_maestro`)
 
-- `lib/claude_control_plane/version.ex` (novo): `build_version/0` vem embutida pela mesma
+- `lib/pipe_maestro/version.ex` (novo): `build_version/0` vem embutida pela mesma
   mecânica do runner. `version/0` devolve a versão configurada
-  (`config :claude_control_plane, ClaudeControlPlane.Version, version: …`, que os testes usam)
+  (`config :pipe_maestro, PipeMaestro.Version, version: …`, que os testes usam)
   ou, sem configuração, a do build. Também tem `__mix_recompile__?/0`.
 - `runners.ex`: `outdated?(runner, reference \\ Version.version())` delega para
-  `ClaudeControlPlaneProtocol.Version.outdated?/2`.
+  `PipeMaestroProtocol.Version.outdated?/2`.
 
-### Web (`apps/claude_control_plane_web`)
+### Web (`apps/pipe_maestro_web`)
 
 - `components/layouts.ex`: novo componente `app_version` (`data-testid="app-version"`, mono e
   discreto). Aparece no `<:footer>` da sidebar dos layouts `app` e `backoffice` e no rodapé do
@@ -83,7 +83,7 @@ conferidas.
   `version`, passa uma string vazia, para o runner nunca herdar a versão do servidor.
 - `pages/RunnersPage.ts`: `version()`, `outdated()`, `detailVersion` e `detailOutdated`.
 - `tests/runner-connection.spec.ts` (Flow B): o runner é a release antiga. A spec confere a saída
-  `cp-runner 2026-11-04.01`, a versão e o selo na lista e na página do runner, e
+  `pipemaestro 2026-11-04.01`, a versão e o selo na lista e na página do runner, e
   `app-version = 2026-11-04.02`.
 
 ## Saída

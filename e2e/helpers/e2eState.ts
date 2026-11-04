@@ -29,9 +29,9 @@ export function ensureBootstrapOperator() {
   // Only the domain app: the e2e server already holds the HTTP port.
   const expression = [
     "Logger.configure(level: :warning)",
-    "Application.ensure_all_started(:claude_control_plane)",
-    `if !Enum.any?(ClaudeControlPlane.Backoffice.list_operators(), &(&1.email == ${JSON.stringify(email)})),`,
-    `do: {:ok, _} = ClaudeControlPlane.Release.create_operator(${JSON.stringify(email)}, ${JSON.stringify(name)}, ${JSON.stringify(password)})`,
+    "Application.ensure_all_started(:pipe_maestro)",
+    `if !Enum.any?(PipeMaestro.Backoffice.list_operators(), &(&1.email == ${JSON.stringify(email)})),`,
+    `do: {:ok, _} = PipeMaestro.Release.create_operator(${JSON.stringify(email)}, ${JSON.stringify(name)}, ${JSON.stringify(password)})`,
   ].join("\n");
 
   runMix(["run", "--no-start", "-e", expression], "Failed to create the bootstrap operator.");

@@ -35,7 +35,7 @@ e da parte de jobs do protocolo (§5.4).
    esta decisão, com permissões negativas no repositório e rede restrita.
 5. **O runner resume o `stream-json`.** As linhas do CLI são grandes e, na maior
    parte, internas: metadados da sessão, contadores de tokens, assinaturas. O runner
-   reduz cada linha a eventos pequenos (`ClaudeControlPlaneProtocol.JobEvent`: sessão,
+   reduz cada linha a eventos pequenos (`PipeMaestroProtocol.JobEvent`: sessão,
    texto do agente, chamada e resultado de ferramenta, fim), com o texto cortado em
    8 KB. O formato desses eventos é contrato e fica no app `protocol`.
 6. **Eventos numerados e idempotentes.** Cada evento leva um `seq`, e o par

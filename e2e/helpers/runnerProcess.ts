@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const runnerDir = resolve(process.cwd(), "..", "apps", "claude_control_plane_runner");
+const runnerDir = resolve(process.cwd(), "..", "apps", "pipe_maestro_runner");
 
 // Specs never call a real model: jobs run the runner's fake agent CLI, which
 // prints the same kind of stream a real run prints.
@@ -24,7 +24,7 @@ export class RunnerProcess {
 
   /** `version`, when given, is the version the runner is built as (`CP_VERSION`). */
   constructor(options: { version?: string } = {}) {
-    this.configDir = mkdtempSync(join(tmpdir(), "cp-runner-e2e-"));
+    this.configDir = mkdtempSync(join(tmpdir(), "pipemaestro-e2e-"));
     this.version = options.version;
   }
 

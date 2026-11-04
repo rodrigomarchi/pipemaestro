@@ -45,7 +45,7 @@ com o toolchain dela.
 
    O prompt da etapa é um template com variáveis (`{{tarefa.descricao}}` e outras)
    precedido de um cabeçalho fixo com essas regras.
-7. **Gate** (`ClaudeControlPlane.Tasks.Engine`, puro):
+7. **Gate** (`PipeMaestro.Tasks.Engine`, puro):
    - **Aprovada:** saída `ok` com artefato. A tarefa segue para a próxima etapa, sem
      aprovação humana ([ADR 0018](0018-etapas-autonomas.md)).
    - **Bloqueada:** saída `bloqueado`. Pausa sem retentativa, porque o agente pediu uma

@@ -7,9 +7,9 @@
 - ADR 0010 §7: define o que a página do runner (`/w/:slug/runners/:id`) mostra hoje
   (agente, capacidade, worktrees, jobs ativos, diretórios). ADR 0015: auditoria da execução,
   que vive na página do job (`/w/:slug/jobs/:id`, `data-testid="job-audit"`).
-- `apps/claude_control_plane_web/lib/claude_control_plane_web/live/runner_live.ex`: já assina
+- `apps/pipe_maestro_web/lib/pipe_maestro_web/live/runner_live.ex`: já assina
   `Jobs.subscribe({:workspace, id})` e recarrega tudo em `{:job_updated, _}`.
-- `apps/claude_control_plane/lib/claude_control_plane/jobs.ex`: `active_for_runner/1`,
+- `apps/pipe_maestro/lib/pipe_maestro/jobs.ex`: `active_for_runner/1`,
   `finish_job/3` → `notify/1` faz broadcast de `{:job_updated, job}` em `{:workspace, id}`;
   o mesmo acontece em `request_cancel/1` (fila) e `reconcile/2` (via `update!/2`).
 - `jobs/job.ex`: `cost_usd`, `duration_ms`, `wall_ms`, colunas de tokens, `Job.tokens/1`,
@@ -94,8 +94,8 @@ falhou, cancelada, ou falhou por reinício do runner), ela entra no topo, e a 11
 
 ### Apps tocados (dentro das fronteiras)
 
-- **`claude_control_plane` (domínio):** nova função de consulta em `Jobs`. Sem web.
-- **`claude_control_plane_web`:** `RunnerLive` e (opcional) um componente de linha.
+- **`pipe_maestro` (domínio):** nova função de consulta em `Jobs`. Sem web.
+- **`pipe_maestro_web`:** `RunnerLive` e (opcional) um componente de linha.
 - **`protocol` e `runner`: nada.** Não há mudança no protocolo runner ↔ control plane: os
   dados (custo, duração, tokens, cache) já chegam em `job:finish` e já estão em `jobs`.
 - **Migrations: nenhuma.** O índice `jobs(runner_id, status)` atende o filtro; o volume por
@@ -103,7 +103,7 @@ falhou, cancelada, ou falhou por reinício do runner), ela entra no topo, e a 11
 
 ### Arquivos
 
-1. `apps/claude_control_plane/lib/claude_control_plane/jobs.ex`
+1. `apps/pipe_maestro/lib/pipe_maestro/jobs.ex`
    - `@doc` + `@spec recent_for_runner(Workspace.t(), Runner.t(), pos_integer()) :: [Job.t()]`
      com `limit \\ 10` (atributo `@recent_limit 10`):
      ```elixir
@@ -115,7 +115,7 @@ falhou, cancelada, ou falhou por reinício do runner), ela entra no topo, e a 11
        preload: [stage_run: :task]
      ```
    - Atualizar o `@moduledoc` de `Jobs` se ele enumerar as consultas (sem contagens).
-2. `apps/claude_control_plane_web/lib/claude_control_plane_web/live/runner_live.ex`
+2. `apps/pipe_maestro_web/lib/pipe_maestro_web/live/runner_live.ex`
    - `@moduledoc`: incluir "as últimas execuções que terminou, que levam à auditoria".
    - `load/1` passa a atribuir `recent_jobs: Jobs.recent_for_runner(workspace, runner)`;
      extrair `load_recent/1` para que `handle_info({:job_updated, %Job{runner_id: id}}, …)`
@@ -164,7 +164,7 @@ falhou, cancelada, ou falhou por reinício do runner), ela entra no topo, e a 11
 
 ## 3. Testes por critério
 
-### ExUnit — domínio (`apps/claude_control_plane/test/claude_control_plane/jobs_test.exs`)
+### ExUnit — domínio (`apps/pipe_maestro/test/pipe_maestro/jobs_test.exs`)
 
 `describe "recent_for_runner/3"`:
 - CA2: cria jobs no runner com `job_fixture` + `mark_started` + `finish_job` (succeeded,
@@ -182,7 +182,7 @@ falhou, cancelada, ou falhou por reinício do runner), ela entra no topo, e a 11
 Se `format_tokens/1` (ou o rótulo tarefa · etapa) for para `JobComponents`, testes de
 unidade no app web (`job_components_test.exs`, se existir; senão via LiveView).
 
-### ExUnit — LiveView (`apps/claude_control_plane_web/test/claude_control_plane_web/live/runner_live_test.exs`)
+### ExUnit — LiveView (`apps/pipe_maestro_web/test/pipe_maestro_web/live/runner_live_test.exs`)
 
 - CA1/CA5: runner sem execuções → `runner-recent-jobs` presente e `runner-no-recent-jobs`
   com o texto "ainda não terminou nenhuma".

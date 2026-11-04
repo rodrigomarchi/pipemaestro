@@ -97,9 +97,9 @@ ci.quick: ## Run every check but Dialyzer (iteration only)
 # ── Runner ──────────────────────────────────────────────────────────────────
 
 # The runner's tasks run inside its own app, so the control plane does not boot
-# along with them. Credentials go to ~/.config/claude-control-plane (or
+# along with them. Credentials go to ~/.config/pipemaestro (or
 # RUNNER_CONFIG_DIR).
-RUNNER_DIR = apps/claude_control_plane_runner
+RUNNER_DIR = apps/pipe_maestro_runner
 
 runner.login: ## Sign this machine in as a runner (URL=http://localhost:4000 [NAME=...] [LABELS="gpu cuda"] [CAPACITY=N])
 	@test -n "$(URL)" || { echo "usage: make runner.login URL=http://localhost:4000"; exit 2; }
@@ -115,15 +115,15 @@ runner.doctor: ## Check this machine as a runner: claude, its sign-in, git, cred
 runner.service: ## Run the runner in the background (ACTION=print|install|uninstall; launchd or systemd --user)
 	cd $(RUNNER_DIR) && mix runner.service $(or $(ACTION),print)
 
-runner.rel: ## Build the runner's Mix release (cp-runner) into _build/prod/rel
-	MIX_ENV=prod mix release claude_control_plane_runner --overwrite
+runner.rel: ## Build the runner's Mix release (pipemaestro) into _build/prod/rel
+	MIX_ENV=prod mix release pipe_maestro_runner --overwrite
 
-runner.install: runner.rel ## Install cp-runner for this user (~/.local/share and ~/.local/bin)
-	rm -rf $(HOME)/.local/share/claude-control-plane-runner
+runner.install: runner.rel ## Install pipemaestro for this user (~/.local/share and ~/.local/bin)
+	rm -rf $(HOME)/.local/share/pipemaestro-runner
 	mkdir -p $(HOME)/.local/share $(HOME)/.local/bin
-	cp -R _build/prod/rel/claude_control_plane_runner $(HOME)/.local/share/claude-control-plane-runner
-	ln -sf $(HOME)/.local/share/claude-control-plane-runner/bin/cp-runner $(HOME)/.local/bin/cp-runner
-	@echo "Instalado: $(HOME)/.local/bin/cp-runner (ponha ~/.local/bin no PATH). Comece com: cp-runner login --url <plataforma>"
+	cp -R _build/prod/rel/pipe_maestro_runner $(HOME)/.local/share/pipemaestro-runner
+	ln -sf $(HOME)/.local/share/pipemaestro-runner/bin/pipemaestro $(HOME)/.local/bin/pipemaestro
+	@echo "Instalado: $(HOME)/.local/bin/pipemaestro (ponha ~/.local/bin no PATH). Comece com: pipemaestro login --url <plataforma>"
 
 # Burrito needs exactly this Zig (brew install zig@0.16, keg-only), plus xz.
 # Its precompiled ERTS exist per OTP release, not per patch: the binary is
@@ -134,7 +134,7 @@ BINARY_OTP ?= 28.5
 
 runner.binary: ## Build the runner as one binary per platform into burrito_out/ ([TARGET=linux_x86_64] only one; needs zig 0.16, xz and OTP 28.5)
 	PATH="$(ZIG_BIN):$$PATH" ASDF_ERLANG_VERSION=$(BINARY_OTP) MIX_ENV=prod \
-		$(if $(TARGET),BURRITO_TARGET=$(TARGET)) mix release cp_runner --overwrite
+		$(if $(TARGET),BURRITO_TARGET=$(TARGET)) mix release pipemaestro --overwrite
 
 # The version this checkout builds as (AAAA-MM-DD.NN, or +dev.<commit> after one).
 # Mix may print what it compiles first: the version is the last line.
@@ -158,9 +158,9 @@ runner.release: ## Tag the next runner release (runner-AAAA-MM-DD.NN) and build 
 			{ echo "O build falhou. A tag é só local; para apagá-la: git tag -d runner-$$version"; exit 1; }; \
 		echo "Release $$version pronta em burrito_out/. Para publicar: git push origin runner-$$version"
 
-image: ## Build the control plane's Docker image (claude-control-plane), with this checkout's version
+image: ## Build the control plane's Docker image (pipemaestro), with this checkout's version
 	docker build --build-arg CP_VERSION=$$(cd $(RUNNER_DIR) && mix runner.version | tail -n 1) \
-		-t claude-control-plane .
+		-t pipemaestro .
 
 runner.status: ## Show this runner's credentials and whether the platform accepts them
 	cd $(RUNNER_DIR) && mix runner.status
@@ -188,7 +188,7 @@ e2e.db: ## Create and migrate the e2e database if needed
 	$(E2E_MIX) ecto.migrate --quiet
 
 e2e.assets: ## Build the CSS and JS the e2e server serves
-	cd apps/claude_control_plane_web && MIX_ENV=e2e mix assets.build
+	cd apps/pipe_maestro_web && MIX_ENV=e2e mix assets.build
 
 # The server is restarted on every run: playwright.config.ts reuses whatever is
 # on the port, and a server left from before a fix would validate the old code.

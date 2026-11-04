@@ -68,7 +68,7 @@ pendentes.
      cancelamento manda KILL em seguida.
 
 9. **Binário único do runner (Burrito).**
-   - A release `cp_runner` gera um executável por plataforma (macOS arm64 e x86_64,
+   - A release `pipemaestro` gera um executável por plataforma (macOS arm64 e x86_64,
      Linux x86_64 e arm64), com o Erlang dentro (`make runner.binary`).
    - No binário, a release sobe em vez de rodar `eval`, e o CLI do Elixir leria os
      argumentos como scripts. Por isso o `start/2` do runner roda o comando e encerra

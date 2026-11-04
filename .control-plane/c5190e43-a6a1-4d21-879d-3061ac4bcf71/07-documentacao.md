@@ -18,21 +18,21 @@
   antigo `runner.release`.
 - `docs/plano/03-roadmap-orquestrador.md`: item 4 do Marco 5 marcado como feito.
 - `AGENTS.md`: sem mudança. O `protocol` já lista "versions" no seu papel, e nenhum contexto
-  novo de domínio foi criado (`ClaudeControlPlane.Version` é utilitário, não contexto).
+  novo de domínio foi criado (`PipeMaestro.Version` é utilitário, não contexto).
 
 ## Resumo para quem revisa e faz o merge
 
 ### O que mudou
 
-- **Esquema** (`ClaudeControlPlaneProtocol.Version`, com a leitura do git em `Version.Git`):
+- **Esquema** (`PipeMaestroProtocol.Version`, com a leitura do git em `Version.Git`):
   - uma release é `AAAA-MM-DD.NN`, vinda da tag anotada `runner-AAAA-MM-DD.NN`;
   - fora de uma release, a versão é `<release>+dev.<commit>`, `dev+<commit>` ou `dev+unknown`.
 - **Runner**:
-  - a versão é embutida na compilação (`ClaudeControlPlaneRunner.Version`) e vai no `Hello`;
-  - novos `cp-runner --version`/`version` e `mix runner.version [--next]`;
+  - a versão é embutida na compilação (`PipeMaestroRunner.Version`) e vai no `Hello`;
+  - novos `pipemaestro --version`/`version` e `mix runner.version [--next]`;
   - a versão aparece no `start`, no `status` e no `doctor`.
 - **Control plane**:
-  - `ClaudeControlPlane.Version` e `Runners.outdated?/1,2`;
+  - `PipeMaestro.Version` e `Runners.outdated?/1,2`;
   - a versão aparece no rodapé da sidebar e no pé das páginas públicas (`app-version`);
   - a versão do runner e o selo "desatualizado" aparecem na lista e na página do runner.
 - **Build**:
@@ -54,7 +54,7 @@ estava atrás do control plane.
 - Para um teste manual de release, use um clone descartável. O `make runner.release` cria uma
   tag de verdade e precisa de Zig, `xz` e do Erlang do Burrito. No clone:
   - rode `make runner.release TARGET=<plataforma>`;
-  - confira `git tag --points-at HEAD` e `burrito_out/cp_runner_* --version`;
+  - confira `git tag --points-at HEAD` e `burrito_out/pipemaestro_* --version`;
   - rode de novo e veja a recusa ("Este commit já é a release …").
 - Nas capturas de `make e2e.shots`, confira `runner-online` e `runner-detail-*` (claro e
   escuro): a versão `2026-11-04.01` com o selo e o rodapé `2026-11-04.02`.
@@ -77,4 +77,4 @@ estava atrás do control plane.
   - `mix.exs` compara as tags do HEAD como strings;
   - `Version.compare/2` levanta erro fora de releases;
   - `--next` existe no binário;
-  - a spec e2e depende da linha seguinte ao `cp-runner <versão>`.
+  - a spec e2e depende da linha seguinte ao `pipemaestro <versão>`.

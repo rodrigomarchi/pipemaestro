@@ -12,7 +12,7 @@ descrita abaixo, que precisa ser fechada fora desta sessão antes do merge.
 
 ## Conferências feitas
 
-- **Fronteiras:** `Jobs.recent_for_runner/3` fica em `claude_control_plane`, sem nada de web.
+- **Fronteiras:** `Jobs.recent_for_runner/3` fica em `pipe_maestro`, sem nada de web.
   `RunnerLive` só chama o contexto e formata. Protocolo e runner não mudam.
 - **`@spec`/`@doc`/`@moduledoc`:** a função pública nova tem `@doc` e `@spec`. O `@moduledoc`
   de `RunnerLive` foi atualizado. Os helpers novos são privados.
@@ -53,7 +53,7 @@ descrita abaixo, que precisa ser fechada fora desta sessão antes do merge.
    `make e2e.shots FILE=tests/runner-connection.spec.ts`, fora de um job do runner em
    binário.
 2. **Achado de outra tarefa (registrado pela implementação, confirmo que é relevante):** o
-   `cp-runner` em binário passa `__BURRITO` para o `claude` e para os comandos do agente.
+   `pipemaestro` em binário passa `__BURRITO` para o `claude` e para os comandos do agente.
    Assim, nenhuma etapa que trabalhe neste repositório consegue rodar `make ci`/`make e2e`.
    Merece uma issue própria. Ela não muda este diff.
 

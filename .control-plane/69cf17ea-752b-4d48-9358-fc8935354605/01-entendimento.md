@@ -2,7 +2,7 @@
 
 ## 0. Onde está hoje
 
-- `ClaudeControlPlaneWeb.JobComponents` (`apps/claude_control_plane_web/lib/claude_control_plane_web/components/job_components.ex`):
+- `PipeMaestroWeb.JobComponents` (`apps/pipe_maestro_web/lib/pipe_maestro_web/components/job_components.ex`):
   - `job_event/1` desenha cada evento como um `<li>` inteiro: bolha com ícone, rótulo e
     corpo (`event_body/1`, `tool_body/1`). O visual de cada tipo vem de `event_look/1`.
   - `timeline_items/2` filtra (`all | agent | tools | thinking | errors`) e junta duas ou
@@ -150,10 +150,10 @@ no tooltip de cada ícone.
 
 | App | Muda? | O quê |
 |---|---|---|
-| `claude_control_plane_web` | sim | `JobComponents`, `JobLive`, `TaskLive.Show`, testes |
-| `claude_control_plane` (domínio) | não | — |
-| `claude_control_plane_protocol` | não | — |
-| `claude_control_plane_runner` | só o CLI falso dos testes | um marcador novo em `test/support/fake_claude` para o e2e ao vivo (ver abaixo); nenhum código de produção |
+| `pipe_maestro_web` | sim | `JobComponents`, `JobLive`, `TaskLive.Show`, testes |
+| `pipe_maestro` (domínio) | não | — |
+| `pipe_maestro_protocol` | não | — |
+| `pipe_maestro_runner` | só o CLI falso dos testes | um marcador novo em `test/support/fake_claude` para o e2e ao vivo (ver abaixo); nenhum código de produção |
 
 **Migrations:** nenhuma. **Protocolo runner ↔ control plane:** sem impacto. Só apresentação.
 
@@ -284,7 +284,7 @@ a lista inteira e o ao vivo usem a mesma regra.
 
 ### CLI falso (só teste)
 
-`apps/claude_control_plane_runner/test/support/fake_claude`: um marcador novo
+`apps/pipe_maestro_runner/test/support/fake_claude`: um marcador novo
 `[gotejando]` que, depois do `tool_result`, espera ~3 s e emite mais um par
 `tool_use` Bash + `tool_result`, e segue normalmente. Não mexe em `[lento]` (usado pelos
 testes do runner). Serve para o e2e provar D2 de forma determinística: abrir um painel

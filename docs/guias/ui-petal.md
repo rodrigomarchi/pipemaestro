@@ -9,13 +9,13 @@ A escolha e as alternativas avaliadas estão no
 - **Use um componente Petal antes de escrever markup Tailwind.** Botão, input, tabela,
   modal, dropdown, badge, card, tabs, toast, timeline, stepper, sidebar, data table:
   todos existem. `use PetalComponents` (em `html_helpers/0` de
-  `ClaudeControlPlaneWeb`) importa todos como `<.button>`, `<.card>` etc.
+  `PipeMaestroWeb`) importa todos como `<.button>`, `<.card>` etc.
 - **Confira os attrs e slots antes de usar.** Não invente atributos de memória: cada
   componente declara `attr`/`slot` em `lib/petal_components/*.ex`. O `.claude/settings.json`
   bloqueia a leitura de `deps/`; para ler o código, baixe o pacote:
   `mix hex.package fetch petal_components <versão> --unpack --output <dir>`.
   O pacote traz `rules.md`, as regras oficiais do Petal para agentes.
-- **Formulários seguem um padrão só** (`ClaudeControlPlaneWeb.FormComponents`, importado
+- **Formulários seguem um padrão só** (`PipeMaestroWeb.FormComponents`, importado
   em todas as telas):
   - **todo campo tem ícone:** `<.icon_field field={@form[:x]} icon="hero-…" label="..." />`
     em vez de `<.field>`. Ele recebe os mesmos attrs, e o rótulo do Petal continua no HTML

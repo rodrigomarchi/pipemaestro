@@ -10,7 +10,7 @@ a [0012](../adr/0012-uso-papeis-auditoria-e-segredos.md); o protocolo, em
 ### Imagem
 
 ```bash
-make image        # docker build --build-arg CP_VERSION=<versão> -t claude-control-plane .
+make image        # docker build --build-arg CP_VERSION=<versão> -t pipemaestro .
 ```
 
 A imagem roda `bin/server`: aplica as migrations pendentes e sobe o servidor web na
@@ -34,10 +34,10 @@ desatualizado (seção 4).
 
 ```bash
 docker run -d -p 4000:4000 \
-  -e DATABASE_URL=ecto://cp:senha@db/claude_control_plane \
+  -e DATABASE_URL=ecto://cp:senha@db/pipe_maestro \
   -e SECRET_KEY_BASE=... -e SECRETS_KEY=... \
   -e PHX_HOST=plataforma.exemplo.com \
-  claude-control-plane
+  pipemaestro
 ```
 
 ### TLS e WebSocket
@@ -64,8 +64,8 @@ reconecta sozinho, mas cada queda é uma reconexão à toa.
 ### Primeiro operador, workspace e pessoas
 
 ```bash
-docker exec -it <container> bin/claude_control_plane eval \
-  'ClaudeControlPlane.Release.create_operator("ops@empresa.com", "Ops", "uma senha longa")'
+docker exec -it <container> bin/pipe_maestro eval \
+  'PipeMaestro.Release.create_operator("ops@empresa.com", "Ops", "uma senha longa")'
 ```
 
 Com esse operador, entre em `/backoffice`:
@@ -88,17 +88,17 @@ sem container.
 Numa máquina com Elixir, a partir deste repositório:
 
 ```bash
-make runner.install      # gera a release (make runner.rel) e instala ~/.local/bin/cp-runner
+make runner.install      # gera a release (make runner.rel) e instala ~/.local/bin/pipemaestro
 ```
 
-A release não leva Phoenix nem Ecto (`_build/prod/rel/claude_control_plane_runner`, ou o
+A release não leva Phoenix nem Ecto (`_build/prod/rel/pipe_maestro_runner`, ou o
 `.tar.gz` ao lado, para copiar para outra máquina com o mesmo sistema). Sem Elixir na
-máquina de destino, basta descompactar o tarball e usar `bin/cp-runner`.
+máquina de destino, basta descompactar o tarball e usar `bin/pipemaestro`.
 
 **Binário único (sem instalar nada):** `make runner.binary` gera em `burrito_out/` um
-executável por plataforma: `cp_runner_macos_arm64`, `cp_runner_macos_x86_64`,
-`cp_runner_linux_x86_64` e `cp_runner_linux_arm64`. Cada um leva o Erlang dentro;
-basta copiar, renomear para `cp-runner` e usar os mesmos comandos abaixo. Na primeira
+executável por plataforma: `pipemaestro_macos_arm64`, `pipemaestro_macos_x86_64`,
+`pipemaestro_linux_x86_64` e `pipemaestro_linux_arm64`. Cada um leva o Erlang dentro;
+basta copiar, renomear para `pipemaestro` e usar os mesmos comandos abaixo. Na primeira
 execução, ele se descompacta na pasta de dados do usuário.
 
 Para gerar os binários, a máquina do build precisa de:
@@ -113,16 +113,16 @@ Para gerar os binários, a máquina do build precisa de:
 ### Conectar
 
 ```bash
-cp-runner doctor                                   # confere claude, git, disco...
-cp-runner login --url https://plataforma.exemplo.com
-cp-runner start --root ~/src                       # oferece os diretórios de ~/src
+pipemaestro doctor                                   # confere claude, git, disco...
+pipemaestro login --url https://plataforma.exemplo.com
+pipemaestro start --root ~/src                       # oferece os diretórios de ~/src
 ```
 
 O login mostra um código. Um **admin** do workspace o aprova em
 `/runners/activate`. A raiz fica salva, então os próximos `start` não precisam dela.
 
-- **Em segundo plano:** `cp-runner service install` (launchd no macOS, systemd no
-  Linux, log em `~/.config/claude-control-plane/runner.log`); `cp-runner service
+- **Em segundo plano:** `pipemaestro service install` (launchd no macOS, systemd no
+  Linux, log em `~/.config/pipemaestro/runner.log`); `pipemaestro service
   uninstall` desfaz.
 - **Chave própria:** com `RUNNER_ANTHROPIC_API_KEY` no ambiente do runner, o agente
   usa essa chave em vez do login de quem roda o `claude`. A página do runner mostra
@@ -171,8 +171,8 @@ A regra está no [ADR 0016](../adr/0016-esquema-de-versao.md).
 - Um build de um commit sem tag é `<última release>+dev.<commit>`, ou `dev+<commit>` se
   ainda não houver release. Sem git, é `dev+unknown`.
 - Runner e control plane usam a mesma série.
-- `make runner.version` imprime a versão do checkout. `cp-runner --version` (ou
-  `cp-runner version`) imprime a do runner instalado.
+- `make runner.version` imprime a versão do checkout. `pipemaestro --version` (ou
+  `pipemaestro version`) imprime a do runner instalado.
 - O runner também mostra a versão na primeira linha do `start`, no `status` e no
   `doctor`.
 - O control plane mostra a dele no rodapé da barra lateral e no pé das páginas

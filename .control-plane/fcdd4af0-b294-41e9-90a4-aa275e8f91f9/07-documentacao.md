@@ -31,14 +31,14 @@ nenhum contexto ou app ganhou papel novo.
 
    Cada linha leva à página do job, onde está a auditoria. A lista se atualiza ao vivo.
 2. **Domínio:** `Jobs.recent_for_runner/3`
-   (`apps/claude_control_plane/lib/claude_control_plane/jobs.ex`) filtra por workspace **e**
+   (`apps/pipe_maestro/lib/pipe_maestro/jobs.ex`) filtra por workspace **e**
    runner, por status terminado e por `started_at` não nulo. Ordena por
    `finished_at desc, id desc` e pré-carrega `stage_run: :task`.
 3. **`RunnerLive`:** o `handle_info({:job_updated, _})` só recarrega quando o job é do
    runner da página. Antes, qualquer job do workspace provocava uma recarga.
 4. **Ambiente de execução (etapa 6), fora do escopo original mas necessário para o CI:**
    - `Makefile`: `unexport __BURRITO`;
-   - `ClaudeControlPlaneRunner.Claude.env/2` remove `__BURRITO` e, num job sem artefato,
+   - `PipeMaestroRunner.Claude.env/2` remove `__BURRITO` e, num job sem artefato,
      `CP_ARTIFACT_PATH` do ambiente do `claude`.
 
    Sem isso, nenhuma etapa do pipeline que trabalhe neste repositório roda `mix test` ou

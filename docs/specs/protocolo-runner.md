@@ -1,6 +1,6 @@
 # Protocolo runner ↔ control plane (v3)
 
-> Status: v3, implementada em `apps/claude_control_plane_protocol`, que é a fonte da
+> Status: v3, implementada em `apps/pipe_maestro_protocol`, que é a fonte da
 > verdade das constantes e dos formatos `Hello`, `Job` e `JobEvent`. Ela cobre login,
 > conexão, jobs (seção 4) e o contexto das etapas de tarefa (seção 4.4). Leases e
 > dispatcher entram em versões seguintes. As versões anteriores nunca foram
@@ -12,7 +12,7 @@
 - **O runner tem identidade própria.** Ele recebe um token próprio e nunca guarda a
   credencial de uma pessoa. O control plane armazena só o SHA-256 desse token.
 - **A versão é declarada em toda conexão.** O control plane aceita as versões de
-  `ClaudeControlPlaneProtocol.supported_versions/0`.
+  `PipeMaestroProtocol.supported_versions/0`.
 
 ## 1. Login (device flow)
 
@@ -37,7 +37,7 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 
 `runner_version` é uma string de 1 a 120 bytes. Os runners deste repositório mandam
 `AAAA-MM-DD.NN` numa release, `AAAA-MM-DD.NN+dev.<commit>` ou `dev+<commit>` fora dela
-(`ClaudeControlPlaneProtocol.Version`, [ADR 0016](../adr/0016-esquema-de-versao.md)).
+(`PipeMaestroProtocol.Version`, [ADR 0016](../adr/0016-esquema-de-versao.md)).
 O formato é informativo: outros valores continuam aceitos e só não recebem o selo
 "desatualizado".
 
@@ -122,7 +122,7 @@ canal `runner:<runner_id>`.
 
 | Evento | Payload | O que o runner faz |
 |---|---|---|
-| `job:assign` | `{"id", "prompt"}` (`ClaudeControlPlaneProtocol.Job`; prompt de até 32 000 bytes) | põe o job na fila local; ignora um job que já tem na fila ou em execução |
+| `job:assign` | `{"id", "prompt"}` (`PipeMaestroProtocol.Job`; prompt de até 32 000 bytes) | põe o job na fila local; ignora um job que já tem na fila ou em execução |
 | `job:cancel` | `{"job_id"}` | tira da fila, ou interrompe o job em execução (SIGTERM ao grupo de processos e, depois de 5 s, SIGKILL) |
 
 No join, o control plane reenvia `job:assign` para cada job ainda `queued` daquele
@@ -139,7 +139,7 @@ Cada mensagem recebe uma resposta: `ok`, ou `error` com `{"reason"}`, onde `reas
 | `job:event` | `{"job_id", "seq", "type", "data"}`, com `seq` contando a partir de 1 |
 | `job:finished` | `{"job_id", "status", "exit_code", "result", "cost_usd", "duration_ms", "num_turns", "error"?}`, com `status` igual a `succeeded`, `failed` ou `canceled` |
 | `job:delta` | `{"job_id", "text"}`: o que o agente está escrevendo (até 4 KB do fim), no máximo a cada 250 ms. Sem resposta, fora da outbox e não guardado |
-| `job:telemetry` | `{"job_id", "records"}`: até 200 registros `{"name", "at", "attrs"}` da telemetria OpenTelemetry do CLI (`ClaudeControlPlaneProtocol.Telemetry`, ADR 0015). Pode chegar depois do `job:finished`; a outbox o descarta primeiro, como os eventos, quando enche |
+| `job:telemetry` | `{"job_id", "records"}`: até 200 registros `{"name", "at", "attrs"}` da telemetria OpenTelemetry do CLI (`PipeMaestroProtocol.Telemetry`, ADR 0015). Pode chegar depois do `job:finished`; a outbox o descarta primeiro, como os eventos, quando enche |
 
 Para a auditoria (ADR 0015), o `job:finished` também traz o que a execução contou de
 si:
@@ -154,7 +154,7 @@ si:
   `plugins`, `permission_mode`, `auth` e `output_style`;
 - `stderr`: o fim do que o CLI escreveu lá, até 16 KB.
 
-Os tipos de `job:event` (`ClaudeControlPlaneProtocol.JobEvent`) resumem as linhas do
+Os tipos de `job:event` (`PipeMaestroProtocol.JobEvent`) resumem as linhas do
 `claude -p --output-format stream-json`. Os textos são cortados em 32 KB e os
 argumentos de ferramenta em 16 KB.
 
@@ -239,7 +239,7 @@ de um repositório git (para `worktree`) faz o job falhar com o motivo em `error
 ### 4.5 Worktrees
 
 O worktree de uma tarefa fica no runner depois que ela termina, até alguém pedir a
-remoção (`ClaudeControlPlaneProtocol.Worktree`).
+remoção (`PipeMaestroProtocol.Worktree`).
 
 | Evento | Sentido | Payload |
 |---|---|---|

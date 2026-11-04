@@ -1,7 +1,7 @@
 ---
 paths:
-  - "apps/claude_control_plane_web/lib/**"
-  - "apps/claude_control_plane_web/assets/**"
+  - "apps/pipe_maestro_web/lib/**"
+  - "apps/pipe_maestro_web/assets/**"
 ---
 
 # UI

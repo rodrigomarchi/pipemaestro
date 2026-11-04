@@ -15,15 +15,15 @@ por último: até aqui, commit, push e PR eram a critério do prompt de cada eta
 ### Distribuição (Marco 5)
 
 1. **Os comandos do runner saem do Mix.**
-   - `ClaudeControlPlaneRunner.Commands.*` têm a lógica e escrevem por `Output` (o
+   - `PipeMaestroRunner.Commands.*` têm a lógica e escrevem por `Output` (o
      shell do Mix ou o terminal).
    - As tasks `mix runner.*` viram atalhos.
-   - A release ganha um lançador, `cp-runner <comando>`, que chama
-     `ClaudeControlPlaneRunner.Main` com `eval`.
+   - A release ganha um lançador, `pipemaestro <comando>`, que chama
+     `PipeMaestroRunner.Main` com `eval`.
    - `make runner.install` instala a release em `~/.local/share` e o lançador em
      `~/.local/bin`. (A release Mix é gerada por `make runner.rel`; o
      `make runner.release` cria uma versão, como no [ADR 0016](0016-esquema-de-versao.md).)
-   - O `cp-runner service install` instala o serviço apontando para o próprio
+   - O `pipemaestro service install` instala o serviço apontando para o próprio
      lançador.
 2. **Burrito fica para depois.** O binário único precisa de Zig no build. A release
    (com seu tarball) já roda sem Elixir na máquina de destino, desde que o sistema seja
@@ -72,4 +72,4 @@ por último: até aqui, commit, push e PR eram a critério do prompt de cada eta
 
 - O protocolo ganha `delivery` no `Job` e no `job:finished`, de forma aditiva.
 - Com `delivery: pr`, o runner precisa de `origin` e de um `gh` autenticado; o
-  `cp-runner doctor` mostra o git, mas ainda não o `gh`.
+  `pipemaestro doctor` mostra o git, mas ainda não o `gh`.

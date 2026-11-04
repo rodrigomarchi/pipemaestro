@@ -13,15 +13,15 @@ import Config
 {worktree, _binding} = Code.eval_file("worktree.exs", __DIR__)
 e2e_http_port = String.to_integer(System.get_env("E2E_PORT", "4003"))
 
-config :claude_control_plane, ClaudeControlPlane.Repo,
+config :pipe_maestro, PipeMaestro.Repo,
   username: System.get_env("PGUSER", "postgres"),
   password: System.get_env("PGPASSWORD", "postgres"),
   hostname: System.get_env("PGHOST", "localhost"),
   port: String.to_integer(System.get_env("TEST_DB_PORT", "5443")),
-  database: "claude_control_plane_e2e#{worktree}",
+  database: "pipe_maestro_e2e#{worktree}",
   pool_size: 10
 
-config :claude_control_plane_web, ClaudeControlPlaneWeb.Endpoint,
+config :pipe_maestro_web, PipeMaestroWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: e2e_http_port],
   secret_key_base:
     "e2e_only_secret_key_base_not_for_production_run_mix_phx_gen_secret_to_replace_it",
@@ -40,4 +40,4 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view, enable_expensive_runtime_checks: true
 
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
-config :claude_control_plane, ClaudeControlPlane.Secrets, key: "e2e_only_secrets_key"
+config :pipe_maestro, PipeMaestro.Secrets, key: "e2e_only_secrets_key"

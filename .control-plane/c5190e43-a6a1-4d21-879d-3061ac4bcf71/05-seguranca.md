@@ -1,7 +1,7 @@
 # 05 — Revisão de segurança: versão do runner no formato AAAA-MM-DD.NN
 
-Escopo: `git diff main...HEAD` (Makefile, Dockerfile, `mix.exs`, `ClaudeControlPlaneProtocol.Version`
-e `.Version.Git`, `ClaudeControlPlane.Version`, `Runners.outdated?/2`, CLI do runner
+Escopo: `git diff main...HEAD` (Makefile, Dockerfile, `mix.exs`, `PipeMaestroProtocol.Version`
+e `.Version.Git`, `PipeMaestro.Version`, `Runners.outdated?/2`, CLI do runner
 `version`/`--version`, componentes `app_version` e `runner_version`, e2e).
 
 **Veredito: sem risco grave. Nada bloqueia.** Há três observações de baixo risco, abaixo.
@@ -9,7 +9,7 @@ e `.Version.Git`, `ClaudeControlPlane.Version`, `Runners.outdated?/2`, CLI do ru
 ## O que foi verificado
 
 ### Canal do runner (entrada não confiável)
-- `runner_version` continua validado em `ClaudeControlPlaneProtocol.Hello.text/2` (string de 1 a
+- `runner_version` continua validado em `PipeMaestroProtocol.Hello.text/2` (string de 1 a
   120 bytes) antes de ser gravado; a mudança não altera o protocolo nem a validação.
 - `Version.parse/1` e `outdated?/2` tratam esse valor: regexes ancoradas e sem backtracking
   catastrófico, `String.to_integer/1` só sobre `\d` já casado (no máximo ~110 dígitos, pelo limite
@@ -35,7 +35,7 @@ e `.Version.Git`, `ClaudeControlPlane.Version`, `Runners.outdated?/2`, CLI do ru
   Papéis admin/membro não são afetados.
 
 ### Segredos e dados sensíveis
-- Nenhum segredo, token ou credencial nos novos caminhos. `cp-runner status`/`doctor`/`start`
+- Nenhum segredo, token ou credencial nos novos caminhos. `pipemaestro status`/`doctor`/`start`
   passam a imprimir só a versão. `CP_VERSION` é um valor público por natureza.
 
 ## Observações de baixo risco (não bloqueiam)
@@ -45,8 +45,8 @@ e `.Version.Git`, `ClaudeControlPlane.Version`, `Runners.outdated?/2`, CLI do ru
    curto (`…+dev.abc1234`). É divulgação de informação mínima e é o pedido da tarefa; em produção
    a imagem é construída de uma release tagueada (`make image`). Aceitável. Se quiserem reduzir a
    superfície, o layout `public` poderia omitir a versão.
-2. **`cp-runner version --next` existe no binário.** O plano dizia que `--next` não seria exposto
-   no binário, mas `Commands.Version.run(["--next"])` é alcançável por `cp-runner version --next`.
+2. **`pipemaestro version --next` existe no binário.** O plano dizia que `--next` não seria exposto
+   no binário, mas `Commands.Version.run(["--next"])` é alcançável por `pipemaestro version --next`.
    Ele só roda `git -C <cwd> tag --list runner-*` e imprime uma string; `git tag --list` não executa
    hooks. Sem impacto de segurança; é uma divergência do plano para a revisão de código.
 3. **`CP_VERSION` é usado como está.** Um valor com mais de 120 bytes faria o `Hello` do runner ser

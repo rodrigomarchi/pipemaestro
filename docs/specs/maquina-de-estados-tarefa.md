@@ -1,7 +1,7 @@
 # Máquina de estados da tarefa
 
-> Implementada em `ClaudeControlPlane.Tasks` (transições) e
-> `ClaudeControlPlane.Tasks.Engine` (gate). Decisão de desenho: [ADR 0005](../adr/0005-pipelines-e-tarefas.md).
+> Implementada em `PipeMaestro.Tasks` (transições) e
+> `PipeMaestro.Tasks.Engine` (gate). Decisão de desenho: [ADR 0005](../adr/0005-pipelines-e-tarefas.md).
 
 ## Tarefa
 

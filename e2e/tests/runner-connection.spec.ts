@@ -57,7 +57,7 @@ test.describe("Runner connection", () => {
     runner.start("runner.start");
     await runner.waitFor(/Online como/);
     // Mix may print what it compiled first; the command's first line is its version.
-    expect(runner.text).toContain(`cp-runner ${versions.outdatedRunner}\nWorkdir:`);
+    expect(runner.text).toContain(`pipemaestro ${versions.outdatedRunner}\nWorkdir:`);
     await expect(runners.status(runnerName)).toHaveText("Online");
     await expect(app.page.getByTestId(`runner-labels-${runnerName}`)).toContainText("e2e");
     await expect(runners.version(runnerName)).toHaveText(versions.outdatedRunner);
