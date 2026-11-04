@@ -19,7 +19,7 @@ defmodule PipeMaestroRunner.Commands.Start do
   (`PipeMaestroRunner.Claude`).
   """
 
-  alias PipeMaestroRunner.{Claude, Config, Connection, Directories, Host, Output}
+  alias PipeMaestroRunner.{Claude, Config, Connection, Directories, Host, Output, Update}
 
   @switches [root: :string]
   @spec run([String.t()]) :: no_return()
@@ -82,6 +82,9 @@ defmodule PipeMaestroRunner.Commands.Start do
       {:runner_connection, {:disconnected, reason}} ->
         Output.info("Conexão perdida (#{inspect(reason)}). Reconectando...")
         loop(config, ref)
+
+      {:runner_connection, {:outdated, refusal}} ->
+        Output.fail!(Update.message(refusal))
 
       {:runner_connection, :rejected} ->
         Output.fail!("""

@@ -9,7 +9,7 @@ defmodule PipeMaestroRunner.Commands.Login do
   approves the runner. The credentials are saved for `pipemaestro start`.
   """
 
-  alias PipeMaestroRunner.{Config, DeviceLogin, Host, Output}
+  alias PipeMaestroRunner.{Config, DeviceLogin, Host, Output, Update}
 
   @switches [url: :string, name: :string, label: :keep, capacity: :integer]
   @spec run([String.t()]) :: any()
@@ -52,6 +52,9 @@ defmodule PipeMaestroRunner.Commands.Login do
 
       {:error, {:unreachable, exception}} ->
         Output.fail!("Não foi possível falar com #{url}: #{Exception.message(exception)}")
+
+      {:error, {:outdated, refusal}} ->
+        Output.fail!(Update.message(refusal))
 
       {:error, {:unexpected, detail}} ->
         Output.fail!("Resposta inesperada da plataforma: #{inspect(detail)}")

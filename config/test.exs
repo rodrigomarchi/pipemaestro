@@ -44,5 +44,8 @@ config :phoenix,
 # depend on the git state of the checkout running the tests.
 config :pipe_maestro, PipeMaestro.Version, version: "2026-11-04.02"
 
+# Fixture runners announce made-up versions; the tests of the rule turn it on.
+config :pipe_maestro, :runner_version_policy, :off
+
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
 config :pipe_maestro, PipeMaestro.Secrets, key: "test_only_secrets_key"

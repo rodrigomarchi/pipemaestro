@@ -6,7 +6,10 @@ defmodule PipeMaestroRunner.Connection do
 
   When the platform refuses the connection itself (HTTP 403: the token was
   revoked or the protocol version is no longer accepted) reconnecting cannot
-  help, so the connection stops and reports `:rejected`.
+  help, so the connection stops and reports `:rejected`. Likewise when it
+  refuses the join because this runner is not on the platform's version
+  (`"outdated"`): it stops the jobs it runs, reports `{:outdated, refusal}`
+  and stops, for the person to download the current runner.
 
   Given a `:workdir`, it also runs jobs: it starts a
   `PipeMaestroRunner.JobRunner` with the capacity announced in the
@@ -35,7 +38,8 @@ defmodule PipeMaestroRunner.Connection do
 
   Progress is reported to `:notify` (a pid) as `{:runner_connection, event}`
   with `event` one of `{:joined, reply}`, `{:disconnected, reason}`,
-  `:rejected`, `{:job_started, job_id}` and `{:job_finished, payload}`.
+  `:rejected`, `{:outdated, refusal}`, `{:job_started, job_id}` and
+  `{:job_finished, payload}`.
   """
   use Slipstream, restart: :temporary
 
@@ -96,6 +100,32 @@ defmodule PipeMaestroRunner.Connection do
 
   defp schedule_rescan(%{assigns: %{rescan_every: every}}),
     do: Process.send_after(self(), :rescan, every)
+
+  # The agent's processes must not outlive the runner: each running job is
+  # canceled (the platform counts them as lost on the next join), waiting a
+  # little for them to stop.
+  @stop_wait_ms 10_000
+  defp stop_jobs(nil), do: :ok
+
+  defp stop_jobs(job_runner) do
+    ids = JobRunner.running_job_ids(job_runner)
+    Enum.each(ids, &JobRunner.cancel(job_runner, &1))
+    wait_stopped(job_runner, System.monotonic_time(:millisecond) + @stop_wait_ms)
+  end
+
+  defp wait_stopped(job_runner, deadline) do
+    cond do
+      JobRunner.running_job_ids(job_runner) == [] ->
+        :ok
+
+      System.monotonic_time(:millisecond) > deadline ->
+        :ok
+
+      true ->
+        Process.sleep(100)
+        wait_stopped(job_runner, deadline)
+    end
+  end
 
   defp start_job_runner(opts) do
     case Keyword.fetch(opts, :workdir) do
@@ -166,6 +196,12 @@ defmodule PipeMaestroRunner.Connection do
   end
 
   @impl Slipstream
+  def handle_topic_close(_topic, {:failed_to_join, %{"reason" => "outdated"} = refusal}, socket) do
+    stop_jobs(socket.assigns.job_runner)
+    notify(socket, {:outdated, refusal})
+    {:stop, :normal, socket}
+  end
+
   def handle_topic_close(topic, _reason, socket) do
     socket = assign(socket, directories: Directories.scan(socket.assigns.root))
     rejoin(socket, topic, hello_payload(socket))

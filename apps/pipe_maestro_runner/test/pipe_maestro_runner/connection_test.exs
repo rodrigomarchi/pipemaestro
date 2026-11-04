@@ -44,6 +44,15 @@ defmodule PipeMaestroRunner.ConnectionTest do
     assert_receive {:DOWN, ^ref, :process, _pid, :normal}
   end
 
+  test "stops, without rejoining, when the platform refuses its version", %{client: client} do
+    ref = Process.monitor(client)
+    refusal = %{"reason" => "outdated", "version" => "2026-11-04.02"}
+    connect_and_assert_join(client, "runner:r1", _params, {:error, refusal})
+
+    assert_receive {:runner_connection, {:outdated, ^refusal}}
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+  end
+
   test "reports a dropped connection and reconnects", %{client: client} do
     connect_and_assert_join(client, "runner:r1", _params, :ok)
 

@@ -25,6 +25,7 @@ defmodule PipeMaestroRunner.DeviceLogin do
   @type error ::
           :denied
           | :expired
+          | {:outdated, map()}
           | {:unexpected, term()}
           | {:unreachable, Exception.t()}
 
@@ -64,9 +65,17 @@ defmodule PipeMaestroRunner.DeviceLogin do
     body = %{hello: Hello.to_map(hello), name: name}
 
     case Req.post(req, url: PipeMaestroProtocol.device_code_path(), json: body) do
-      {:ok, %Req.Response{status: 200, body: %{"device_code" => _} = body}} -> {:ok, body}
-      {:ok, %Req.Response{} = response} -> {:error, {:unexpected, response.body}}
-      {:error, exception} -> {:error, {:unreachable, exception}}
+      {:ok, %Req.Response{status: 200, body: %{"device_code" => _} = body}} ->
+        {:ok, body}
+
+      {:ok, %Req.Response{status: 409, body: %{"error" => "outdated"} = body}} ->
+        {:error, {:outdated, body}}
+
+      {:ok, %Req.Response{} = response} ->
+        {:error, {:unexpected, response.body}}
+
+      {:error, exception} ->
+        {:error, {:unreachable, exception}}
     end
   end
 

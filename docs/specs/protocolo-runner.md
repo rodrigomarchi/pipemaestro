@@ -38,8 +38,18 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 `runner_version` é uma string de 1 a 120 bytes. Os runners deste repositório mandam
 `AAAA-MM-DD.NN` numa release, `AAAA-MM-DD.NN+dev.<commit>` ou `dev+<commit>` fora dela
 (`PipeMaestroProtocol.Version`, [ADR 0016](../adr/0016-esquema-de-versao.md)).
-O formato é informativo: outros valores continuam aceitos e só não recebem o selo
-"desatualizado".
+O control plane só aceita o runner que está **exatamente na versão dele**
+(`PipeMaestro.Runners.version_check/1`, [ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md)).
+O deploy publica o runner do mesmo commit. Qualquer outra versão, mais velha ou de outro
+build, recebe `409`:
+
+```json
+{"error": "outdated", "reason": "outdated", "version": "dev+6f85389",
+ "runner_version": "dev+fdafa32",
+ "download_url": "https://pipemaestro.app/downloads/runner/"}
+```
+
+O runner mostra as duas versões e o link, e não pede o código.
 
 A resposta é `200`:
 
@@ -105,6 +115,11 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
+  Um runner fora da versão do control plane recebe o mesmo payload do `409` do login
+  (`{"reason": "outdated", "version", "runner_version", "download_url"}`). Nada dele é
+  gravado e ele não fica online. O runner cancela os jobs que roda, não tenta de novo e
+  pede para baixar a versão atual. Como o deploy reinicia o control plane, todo runner
+  reconecta e passa por essa checagem a cada versão nova.
 - **O que acontece no join:** o control plane grava o `Hello` (labels, capacidade,
   versão, hostname, SO e arch) e passa a mostrar o runner como **online** no
   workspace enquanto o canal existir.

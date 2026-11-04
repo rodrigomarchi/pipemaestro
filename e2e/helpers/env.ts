@@ -18,8 +18,9 @@ export const userPassword = "senha-e2e-usuario";
 
 /**
  * The versions the suite pins (`CP_VERSION`): the server is built as
- * `controlPlane`; a runner started with `outdatedRunner` is an older release,
- * so its pages show it as outdated.
+ * `controlPlane`, and runners by default too, since the platform refuses any
+ * other version; a runner started with `outdatedRunner` is an older release,
+ * refused on login and on start.
  */
 export const versions = {
   controlPlane: "2026-11-04.02",

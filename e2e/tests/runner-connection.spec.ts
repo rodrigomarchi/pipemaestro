@@ -1,7 +1,8 @@
 /**
  * @section Runners
  * @flow A [done] A runner signs in with the device flow: the CLI prints a code, a workspace member approves it in the browser, the CLI saves its credentials
- * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice, with its version, marked outdated when older than the control plane's; the page links the deploy's runner binaries per platform and the connect steps use them
+ * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice, with its version; the page links the deploy's runner binaries per platform and the connect steps use them
+ * @flow E [done] A runner not on the platform's version is refused, on login and on start, and told the platform's version and where to download it
  * @flow D [done] A runner's page lists the latest jobs it finished, each leading to its audit
  * @flow C [done] A member renames the runner, then revokes it: the CLI is refused and stops, and the runner leaves the list
  */
@@ -40,9 +41,18 @@ test.describe("Runner connection", () => {
     await app.expectBoard(workspace.name);
     const runners = new RunnersPage(app.page);
 
-    // Flow A: device-flow sign-in.
+    const platform = app.page.url().replace(/\/w\/.*$/, "");
+
+    // Flow E: an outdated runner cannot even sign in.
     runner = new RunnerProcess({ version: versions.outdatedRunner });
-    runner.start("runner.login", ["--url", app.page.url().replace(/\/w\/.*$/, ""), "--label", "e2e"]);
+    runner.start("runner.login", ["--url", platform]);
+    expect(await runner.waitForExit()).not.toBe(0);
+    expect(runner.text).toContain(`versão ${versions.outdatedRunner}, e a plataforma está na ${versions.controlPlane}`);
+    expect(runner.text).toContain(`${platform}/downloads/runner/`);
+
+    // Flow A: device-flow sign-in, on the platform's version.
+    runner.useVersion(versions.controlPlane);
+    runner.start("runner.login", ["--url", platform, "--label", "e2e"]);
     const [, code] = await runner.waitFor(/digite o código:\s+([A-Z]{4}-[A-Z]{4})/);
 
     await runners.approve(code, runnerName);
@@ -53,15 +63,23 @@ test.describe("Runner connection", () => {
     await runners.open(workspace.slug);
     await expect(runners.status(runnerName)).toHaveText("Offline");
 
+    // Flow E: signed in, but started on an older build, it is refused and stops.
+    runner.useVersion(versions.outdatedRunner);
+    runner.start("runner.start");
+    expect(await runner.waitForExit()).not.toBe(0);
+    expect(runner.text).toContain(`a plataforma está na ${versions.controlPlane}`);
+    await expect(runners.status(runnerName)).toHaveText("Offline");
+
     // Flow B: connect and show online live.
+    runner.useVersion(versions.controlPlane);
     runner.start("runner.start");
     await runner.waitFor(/Online como/);
     // Mix may print what it compiled first; the command's first line is its version.
-    expect(runner.text).toContain(`pipemaestro ${versions.outdatedRunner}\nWorkdir:`);
+    expect(runner.text).toContain(`pipemaestro ${versions.controlPlane}\nWorkdir:`);
     await expect(runners.status(runnerName)).toHaveText("Online");
     await expect(app.page.getByTestId(`runner-labels-${runnerName}`)).toContainText("e2e");
-    await expect(runners.version(runnerName)).toHaveText(versions.outdatedRunner);
-    await expect(runners.outdated(runnerName)).toHaveText("desatualizado");
+    await expect(runners.version(runnerName)).toHaveText(versions.controlPlane);
+    await expect(runners.outdated(runnerName)).toHaveCount(0);
     await expect(app.page.getByTestId("app-version")).toHaveText(versions.controlPlane);
     await shot(app.page, "runner-online");
 
@@ -82,8 +100,8 @@ test.describe("Runner connection", () => {
     // Flow D: the runner's page lists the jobs it finished.
     await runners.openRunner(workspace.slug, runnerName);
     await expect(runners.noRecentJobs).toBeVisible();
-    await expect(runners.detailVersion).toHaveText(versions.outdatedRunner);
-    await expect(runners.detailOutdated).toHaveText("desatualizado");
+    await expect(runners.detailVersion).toHaveText(versions.controlPlane);
+    await expect(runners.detailOutdated).toHaveCount(0);
     await shot(app.page, "runner-detail-no-recent-jobs");
 
     const jobs = new JobsPage(app.page);

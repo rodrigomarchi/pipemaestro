@@ -230,6 +230,27 @@ defmodule PipeMaestro.Runners do
   end
 
   @doc """
+  Whether a runner of `runner_version` may connect: it must be this control
+  plane's version (`PipeMaestro.Version.version/0`). The deploy publishes the
+  runner built from the same commit, so any other version, older or a
+  different build, is refused and asked to download the current one.
+  Production builds are `dev+<commit>`, which do not order, hence equality.
+
+  `config :pipe_maestro, :runner_version_policy` turns it `:off` (the tests,
+  whose runners announce made-up versions); the default is `:exact`.
+  """
+  @spec version_check(String.t() | nil) :: :ok | {:outdated, String.t()}
+  def version_check(runner_version) do
+    expected = Version.version()
+
+    cond do
+      Application.get_env(:pipe_maestro, :runner_version_policy, :exact) == :off -> :ok
+      runner_version == expected -> :ok
+      true -> {:outdated, expected}
+    end
+  end
+
+  @doc """
   Whether `runner` announced a release older than `reference` (by default,
   this control plane's version). Development builds and versions outside the
   scheme are never outdated (`PipeMaestroProtocol.Version.outdated?/2`).

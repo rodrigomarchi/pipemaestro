@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { versions } from "./env";
 
 const runnerDir = resolve(process.cwd(), "..", "apps", "pipe_maestro_runner");
 
@@ -20,12 +21,21 @@ export class RunnerProcess {
   private output = "";
   private exit?: Promise<number | null>;
 
-  private readonly version?: string;
+  /**
+   * The version the runner is built as (`CP_VERSION`). The platform takes only
+   * runners on its own version, so by default it is the server's
+   * (`versions.controlPlane`); `useVersion` changes it, keeping the credentials.
+   */
+  private version: string;
 
-  /** `version`, when given, is the version the runner is built as (`CP_VERSION`). */
   constructor(options: { version?: string } = {}) {
     this.configDir = mkdtempSync(join(tmpdir(), "pipemaestro-e2e-"));
-    this.version = options.version;
+    this.version = options.version ?? versions.controlPlane;
+  }
+
+  /** Builds the next commands as `version`. */
+  useVersion(version: string): void {
+    this.version = version;
   }
 
   /** Starts `mix <task> <args>` in the runner app (MIX_ENV=e2e, like the server). */
@@ -38,8 +48,7 @@ export class RunnerProcess {
         MIX_ENV: "e2e",
         RUNNER_CONFIG_DIR: this.configDir,
         CLAUDE_BIN: fakeClaude,
-        // Without a pinned version, the checkout's own (never the server's).
-        CP_VERSION: this.version ?? "",
+        CP_VERSION: this.version,
       },
     });
     this.child.stdout?.on("data", (chunk) => (this.output += chunk.toString()));

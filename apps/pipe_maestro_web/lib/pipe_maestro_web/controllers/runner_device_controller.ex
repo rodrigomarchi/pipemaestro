@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.RunnerDeviceController do
 
   alias PipeMaestro.{Runners, Workspaces}
   alias PipeMaestroProtocol.Hello
-  alias PipeMaestroWeb.RateLimit
+  alias PipeMaestroWeb.{RateLimit, RunnerUpdate}
 
   @doc "Starts a sign-in for the runner described in the body."
   @spec create_code(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -30,7 +30,8 @@ defmodule PipeMaestroWeb.RunnerDeviceController do
 
   defp issue_code(conn, params) do
     with {:ok, hello} <- Hello.from_map(Map.get(params, "hello", %{})),
-         true <- hello.protocol_version in PipeMaestroProtocol.supported_versions() do
+         true <- hello.protocol_version in PipeMaestroProtocol.supported_versions(),
+         :ok <- Runners.version_check(hello.runner_version) do
       {:ok, _auth, device_code, user_code} =
         Runners.start_device_authorization(hello, params["name"])
 
@@ -45,8 +46,19 @@ defmodule PipeMaestroWeb.RunnerDeviceController do
         interval: Runners.poll_interval_seconds()
       })
     else
-      {:error, reason} -> error(conn, :invalid_request, reason)
-      false -> error(conn, :invalid_request, "unsupported protocol version")
+      {:error, reason} ->
+        error(conn, :invalid_request, reason)
+
+      false ->
+        error(conn, :invalid_request, "unsupported protocol version")
+
+      # An outdated runner cannot even sign in: it would be refused on joining.
+      {:outdated, expected} ->
+        runner_version = get_in(params, ["hello", "runner_version"])
+
+        conn
+        |> put_status(409)
+        |> json(Map.put(RunnerUpdate.refusal(runner_version, expected), "error", "outdated"))
     end
   end
 

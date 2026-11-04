@@ -2,7 +2,9 @@ defmodule PipeMaestroWeb.RunnerChannel do
   @moduledoc """
   One runner's channel (`runner:<id>`). Joining announces the runner
   (`PipeMaestroProtocol.Hello`): the details are stored and the runner
-  is tracked as online in its workspace until the channel ends.
+  is tracked as online in its workspace until the channel ends. A runner not
+  on this control plane's version is refused (`"outdated"`, with where to
+  download the current one: `PipeMaestroWeb.RunnerUpdate`).
 
   Jobs travel on it too (`PipeMaestroProtocol.Job`): the channel pushes
   `job:assign` and `job:cancel` as the runner's jobs are created and canceled,
@@ -10,8 +12,8 @@ defmodule PipeMaestroWeb.RunnerChannel do
   reports (`job:started`, `job:event`, `job:finished`) and passes on what
   the agent is writing (`job:delta`). A job of a task's
   stage carries its context (directory, worktree, schema, artifact path), and
-  every job the workspace's secrets (`PipeMaestro.Secrets`), added only
-  on the way out.
+  every job but a proposal the workspace's secrets (`PipeMaestro.Secrets`),
+  added only on the way out.
 
   So do the task worktrees (`PipeMaestroProtocol.Worktree`): the channel
   pushes `worktree:remove` when someone asks for a task's worktree to go, and
@@ -25,14 +27,15 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   alias PipeMaestro.{Jobs, Runners, Secrets, Tasks}
   alias PipeMaestroProtocol.{Hello, Job, Worktree}
-  alias PipeMaestroWeb.RunnerStatus
+  alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
 
   @impl true
   def join("runner:" <> runner_id, payload, socket) do
     runner = socket.assigns.runner
 
     with true <- runner_id == runner.id,
-         {:ok, hello} <- Hello.from_map(payload) do
+         {:ok, hello} <- Hello.from_map(payload),
+         :ok <- Runners.version_check(hello.runner_version) do
       {:ok, runner} = Runners.record_hello(runner, hello)
       send(self(), {:after_join, hello})
 
@@ -42,6 +45,8 @@ defmodule PipeMaestroWeb.RunnerChannel do
     else
       false -> {:error, %{"reason" => "unauthorized"}}
       {:error, reason} -> {:error, %{"reason" => "invalid_hello", "detail" => reason}}
+      # Nothing is recorded: the runner stays offline until it runs the current version.
+      {:outdated, expected} -> {:error, RunnerUpdate.refusal(payload["runner_version"], expected)}
     end
   end
 

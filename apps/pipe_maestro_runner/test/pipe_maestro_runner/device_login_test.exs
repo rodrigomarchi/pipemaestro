@@ -80,6 +80,30 @@ defmodule PipeMaestroRunner.DeviceLoginTest do
     assert run(__MODULE__.Expired, hello, self()) == {:error, :expired}
   end
 
+  test "an outdated runner is told the platform's version and where to download it", %{
+    hello: hello
+  } do
+    refusal = %{
+      "error" => "outdated",
+      "reason" => "outdated",
+      "version" => "2026-11-04.02",
+      "runner_version" => "2026-11-04.01",
+      "download_url" => "https://pipemaestro.app/downloads/runner/"
+    }
+
+    Req.Test.stub(__MODULE__.Outdated, fn conn ->
+      conn |> Plug.Conn.put_status(409) |> Req.Test.json(refusal)
+    end)
+
+    assert {:error, {:outdated, ^refusal}} = run(__MODULE__.Outdated, hello, self())
+    refute_received {:code, _}
+
+    message = PipeMaestroRunner.Update.message(refusal)
+    assert message =~ "versão 2026-11-04.01"
+    assert message =~ "na 2026-11-04.02"
+    assert message =~ "https://pipemaestro.app/downloads/runner/"
+  end
+
   test "reports unexpected answers", %{hello: hello} do
     stub(__MODULE__.Weird, [{400, %{"error" => "nope"}}])
     assert {:error, {:unexpected, :invalid_request}} = run(__MODULE__.Weird, hello, self())

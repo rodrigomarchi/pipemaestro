@@ -226,6 +226,12 @@ O alvo que só gera a release Mix (sem tag) é `make runner.rel`.
 
 ### Runner desatualizado
 
+**Só conecta o runner que está na versão da plataforma**
+([ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md)). Um runner em outra versão é
+recusado no `login` e no `start`, com as duas versões e o link para baixar a atual. A cada
+deploy, baixe o binário novo pela tela **Executores** (ou pelo link da mensagem) e rode de
+novo. Em dev, reinicie o runner junto com o servidor depois de um commit.
+
 A lista de runners e a página de cada runner mostram a versão. Um runner numa release
 anterior à do control plane recebe o selo **desatualizado**. Um control plane num
 commit depois de uma release compara com essa release.
