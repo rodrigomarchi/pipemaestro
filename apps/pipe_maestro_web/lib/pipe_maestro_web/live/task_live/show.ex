@@ -676,6 +676,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     open={
                       is_nil(@questionnaire.questionnaire) and @questionnaire.analysis != :running
                     }
+                    id="decision-manual"
+                    phx-mounted={JS.ignore_attributes(["open"])}
                     data-testid="decision-manual"
                   >
                     <summary
