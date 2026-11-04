@@ -3,8 +3,9 @@ defmodule ClaudeControlPlaneWeb.JobLive do
   One job: its prompt, status and numbers, and the agent's run as a timeline
   that grows live while the runner reports events. The timeline is a stream of
   segments (strips of icons and blocks of text, `ClaudeControlPlaneWeb.JobComponents`);
-  only the strip still open at its end is kept here, to grow it in place. A queued or running job can
-  be canceled from here. Once it ends, its audit (`ClaudeControlPlaneWeb.AuditComponents`)
+  only the strip still open at its end is kept here, to grow it in place. A queued or
+  running job can be canceled from here. Once it ends, its audit
+  (`ClaudeControlPlaneWeb.AuditComponents`)
   shows how the agent worked, kept up to date as the CLI's telemetry arrives.
   """
   use ClaudeControlPlaneWeb, :live_view
@@ -67,6 +68,7 @@ defmodule ClaudeControlPlaneWeb.JobLive do
 
   # Events are numbered from 1, so the highest seq counts them (a gap only
   # when the runner lost its connection mid-run).
+  #
   # A new icon joins the open strip in place (its open panel stays open); text
   # starts a block of its own.
   def handle_info({:job_event, event}, socket) do
