@@ -146,6 +146,7 @@ defmodule PipeMaestroRunner.Update do
   defp describe({:file, path, reason}), do: "#{path}: #{:file.format_error(reason)}"
 
   # The new binary takes over: this one exits with its status.
+  @spec relaunch(Path.t(), [String.t()], SelfUpdate.mode()) :: no_return()
   defp relaunch(bin, argv, mode) do
     case SelfUpdate.relaunch(bin, argv, mode) do
       status when is_integer(status) -> System.halt(status)
