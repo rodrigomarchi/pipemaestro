@@ -81,7 +81,7 @@ diretório `loja-api`, em `director/scenario.ts`), com um runner real, e fotogra
 `<nome>-dark.png`, sempre os mesmos nomes).
 
 ```bash
-make landing.shots    # APAGA o banco e2e deste worktree e regrava as 12 imagens
+make landing.shots    # APAGA o banco e2e deste worktree e regrava as imagens
 ```
 
 - **Fora da suíte.** O projeto `director` do `playwright.config.ts` só existe com

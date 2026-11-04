@@ -13,7 +13,7 @@ de quem as gerou.
 ## Decisão
 
 - **Um diretor e2e gera as imagens.** `e2e/director/landing.spec.ts` monta o workspace
-  Nimbus pela interface, com um runner real, e fotografa seis telas em claro e escuro
+  Nimbus pela interface, com um runner real, e fotografa as telas em claro e escuro
   (`make landing.shots`). Roda à parte, só com `E2E_DIRECTOR=1`, num banco e2e recriado.
 - **As imagens são versionadas** em `apps/pipe_maestro_web/priv/static/images/landing/`,
   com nomes fixos; rodar de novo sobrescreve os mesmos arquivos. Não são geradas no CI
