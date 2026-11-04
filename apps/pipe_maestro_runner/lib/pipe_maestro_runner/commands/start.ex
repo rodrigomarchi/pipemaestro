@@ -2,13 +2,16 @@ defmodule PipeMaestroRunner.Commands.Start do
   @moduledoc """
   Connects with the saved credentials and stays online until stopped (Ctrl+C):
 
-      pipemaestro start [--root ~/src]
+      pipemaestro start [--root ~/src] [--auto-update]
 
   `--root` is where the code directories it offers are (every directory at its
   first level); it is saved with the credentials, so later starts reuse it.
 
   Reconnects on its own when the network drops. Stops when the platform
-  refuses the runner (revoked), since retrying could not help.
+  refuses the runner (revoked), since retrying could not help. Refused for
+  not being on the platform's version, the single binary offers to update
+  itself and start again (`PipeMaestroRunner.Update`); `--auto-update` does it
+  without asking, as the service does.
 
   Runs the jobs the platform sends with the agent CLI (`claude`, or
   `$CLAUDE_BIN`), up to the runner's capacity at once
@@ -19,15 +22,25 @@ defmodule PipeMaestroRunner.Commands.Start do
   (`PipeMaestroRunner.Claude`).
   """
 
-  alias PipeMaestroRunner.{Claude, Config, Connection, Directories, Host, Output, Update}
+  alias PipeMaestroRunner.{
+    Claude,
+    Config,
+    Connection,
+    Directories,
+    Host,
+    Output,
+    SelfUpdate,
+    Update
+  }
 
-  @switches [root: :string]
+  @switches [root: :string, auto_update: :boolean]
   @spec run([String.t()]) :: no_return()
   def run(args) do
     {opts, _rest, invalid} = OptionParser.parse(args, strict: @switches)
     if invalid != [], do: Output.fail!("Opção inválida: #{inspect(invalid)}")
 
     Output.info("pipemaestro #{Host.runner_version()}")
+    if bin = System.get_env("__BURRITO_BIN_PATH"), do: SelfUpdate.clean_stale(bin)
     config = config_with_root(Output.config!(), opts[:root])
     agent = Claude.agent(Claude.executable())
 
@@ -61,30 +74,32 @@ defmodule PipeMaestroRunner.Commands.Start do
       )
 
     ref = Process.monitor(pid)
-    loop(config, ref)
+    update = [argv: ["start" | args], auto_update: opts[:auto_update], platform_url: config.url]
+    loop(config, ref, update)
   end
 
-  defp loop(config, ref) do
+  defp loop(config, ref, update) do
     receive do
       {:runner_connection, {:joined, _reply}} ->
         Output.info("Online como #{config.runner_name} no workspace #{config.workspace_name}.")
 
-        loop(config, ref)
+        loop(config, ref, update)
 
       {:runner_connection, {:job_started, job_id}} ->
         Output.info("Job #{job_id} iniciado.")
-        loop(config, ref)
+        loop(config, ref, update)
 
       {:runner_connection, {:job_finished, payload}} ->
         Output.info("Job #{payload["job_id"]} #{finished_label(payload)}.")
-        loop(config, ref)
+        loop(config, ref, update)
 
       {:runner_connection, {:disconnected, reason}} ->
         Output.info("Conexão perdida (#{inspect(reason)}). Reconectando...")
-        loop(config, ref)
+        loop(config, ref, update)
 
       {:runner_connection, {:outdated, refusal}} ->
-        Output.fail!(Update.message(refusal))
+        {:fail, message} = Update.handle(refusal, update)
+        Output.fail!(message)
 
       {:runner_connection, :rejected} ->
         Output.fail!("""

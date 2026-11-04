@@ -15,6 +15,8 @@ defmodule PipeMaestroRunner.MixProject do
       deps: deps(),
       aliases: aliases(),
       consolidate_protocols: Mix.env() != :test,
+      # Helpers test_helper.exs loads, not tests.
+      test_ignore_filters: [&String.starts_with?(&1, "test/support/")],
       test_coverage: [
         summary: [threshold: 60],
         ignore_modules: [PipeMaestroRunner.Application]

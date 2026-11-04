@@ -22,6 +22,43 @@ defmodule PipeMaestroRunner.Output do
     :ok
   end
 
+  @doc """
+  Asks `question` and reads the answer's line from stdin; `:eof` when the
+  input ended (Ctrl+D).
+  """
+  @spec ask(String.t()) :: String.t() | :eof
+  def ask(question) do
+    case IO.gets(question <> " ") do
+      answer when is_binary(answer) -> answer
+      _eof_or_error -> :eof
+    end
+  end
+
+  @doc """
+  Whether a person is at a terminal to answer a question: never under Mix
+  (`mix runner.*`), and from the release, when stdin is a terminal.
+  """
+  @spec tty?() :: boolean()
+  def tty? do
+    with false <- mix?(),
+         opts when is_list(opts) <- :io.getopts(:standard_io) do
+      Keyword.get(opts, :terminal, false) == true
+    else
+      _mix_or_error -> false
+    end
+  end
+
+  @doc "Shows a download's progress on one line of stderr; nothing under Mix."
+  @spec progress(non_neg_integer()) :: :ok
+  def progress(percent) do
+    unless mix?() do
+      IO.write(:stderr, "\rBaixando... #{percent}%")
+      if percent == 100, do: IO.write(:stderr, "\n")
+    end
+
+    :ok
+  end
+
   @doc "Stops the command with `message`."
   @spec fail!(String.t()) :: no_return()
   def fail!(message), do: raise(CommandError, message: message)
