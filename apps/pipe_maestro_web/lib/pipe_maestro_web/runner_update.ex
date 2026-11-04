@@ -3,6 +3,10 @@ defmodule PipeMaestroWeb.RunnerUpdate do
   What a runner not on this control plane's version is told when it is
   refused (`PipeMaestro.Runners.version_check/1`), on login and on every
   (re)join: the version it must run and where to download it.
+
+  `download_url` is a directory with one binary per target and a
+  `SHA256SUMS` (`PipeMaestroProtocol.Downloads`); a runner updates itself
+  from it only when it is on the platform's own origin.
   """
 
   alias PipeMaestroWeb.RunnerComponents

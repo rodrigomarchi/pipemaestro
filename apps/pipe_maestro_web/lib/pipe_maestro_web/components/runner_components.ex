@@ -7,6 +7,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
 
   alias PipeMaestro.Runners
   alias PipeMaestro.Runners.Runner
+  alias PipeMaestroProtocol.Downloads
 
   @doc "Online/offline badge."
   attr :online, :boolean, required: true
@@ -87,13 +88,18 @@ defmodule PipeMaestroWeb.RunnerComponents do
 
   defp scale(value, [unit | _rest]), do: {value, unit}
 
-  # The binaries scripts/deploy.sh publishes, one per Burrito target (mix.exs).
-  @downloads [
-    {"macos_arm64", "macOS", "Apple Silicon"},
-    {"macos_x86_64", "macOS", "Intel"},
-    {"linux_x86_64", "Linux", "x86_64"},
-    {"linux_arm64", "Linux", "arm64"}
-  ]
+  # The screen's name for each target the deploy publishes a binary for.
+  @target_labels %{
+    "macos_arm64" => {"macOS", "Apple Silicon"},
+    "macos_x86_64" => {"macOS", "Intel"},
+    "linux_x86_64" => {"Linux", "x86_64"},
+    "linux_arm64" => {"Linux", "arm64"}
+  }
+
+  @downloads (for target <- Downloads.targets() do
+                {os, arch} = Map.fetch!(@target_labels, target)
+                {target, os, arch}
+              end)
 
   @doc """
   Where this deploy published the runner's binaries (`:runner_downloads_url`),
@@ -119,7 +125,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
       <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <a
           :for={{target, os, arch} <- @targets}
-          href={"#{@downloads}/pipemaestro_#{target}"}
+          href={"#{@downloads}/#{Downloads.binary_name(target)}"}
           download={"pipemaestro_#{target}"}
           class="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2.5 transition hover:border-primary-400 hover:bg-primary-50 dark:border-gray-700 dark:hover:border-primary-500 dark:hover:bg-gray-800"
           data-testid={"runner-download-#{target}"}
