@@ -25,7 +25,7 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 ```json
 {
   "hello": {
-    "protocol_version": 3, "runner_version": "0.1.0",
+    "protocol_version": 3, "runner_version": "2026-11-04.01",
     "hostname": "build-01", "os": "linux", "arch": "x86_64",
     "labels": ["linux", "docker"], "capacity": 4
   },
@@ -33,7 +33,15 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 }
 ```
 
-`name` é opcional; o padrão é o hostname. A resposta é `200`:
+`name` é opcional; o padrão é o hostname.
+
+`runner_version` é uma string de 1 a 120 bytes. Os runners deste repositório mandam
+`AAAA-MM-DD.NN` numa release, `AAAA-MM-DD.NN+dev.<commit>` ou `dev+<commit>` fora dela
+(`ClaudeControlPlaneProtocol.Version`, [ADR 0016](../adr/0016-esquema-de-versao.md)).
+O formato é informativo: outros valores continuam aceitos e só não recebem o selo
+"desatualizado".
+
+A resposta é `200`:
 
 ```json
 {
