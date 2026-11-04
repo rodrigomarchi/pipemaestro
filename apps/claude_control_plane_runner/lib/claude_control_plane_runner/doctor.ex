@@ -1,7 +1,7 @@
 defmodule ClaudeControlPlaneRunner.Doctor do
   @moduledoc """
-  Checks that this machine can work as a runner (`mix runner.doctor`): the
-  agent CLI and how it signs in, git, the GitHub CLI (for pipelines that
+  Checks that this machine can work as a runner (`mix runner.doctor`), after
+  showing the runner's version: the agent CLI and how it signs in, git, the GitHub CLI (for pipelines that
   deliver a pull request), the saved credentials, the root and its
   directories, the free space for worktrees and whether the platform answers.
 
@@ -9,7 +9,7 @@ defmodule ClaudeControlPlaneRunner.Doctor do
   an `:error` (jobs would fail), with what was found or what to do.
   """
 
-  alias ClaudeControlPlaneRunner.{Claude, Config, Directories, Disk}
+  alias ClaudeControlPlaneRunner.{Claude, Config, Directories, Disk, Version}
 
   @type check :: %{name: String.t(), status: :ok | :warning | :error, detail: String.t()}
 
@@ -31,6 +31,7 @@ defmodule ClaudeControlPlaneRunner.Doctor do
     agent = Claude.agent(executable, Keyword.get_lazy(opts, :api_key, &Claude.api_key/0))
 
     [
+      check("versão", :ok, Version.version()),
       agent_check(agent),
       auth_check(agent),
       git_check(),

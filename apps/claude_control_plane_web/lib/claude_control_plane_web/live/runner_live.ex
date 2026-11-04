@@ -118,7 +118,12 @@ defmodule ClaudeControlPlaneWeb.RunnerLive do
           <.card_content>
             <div class="flex flex-wrap items-center justify-between gap-2">
               <p class="font-mono text-sm text-gray-600 dark:text-gray-300">
-                {@runner.hostname} · {@runner.os}/{@runner.arch} · runner {@runner.runner_version}
+                {@runner.hostname} · {@runner.os}/{@runner.arch} · runner
+                <.runner_version
+                  runner={@runner}
+                  version_testid="runner-detail-version"
+                  outdated_testid="runner-detail-outdated"
+                />
               </p>
               <.runner_status online={@online} />
             </div>

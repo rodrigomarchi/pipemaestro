@@ -21,7 +21,8 @@ por último: até aqui, commit, push e PR eram a critério do prompt de cada eta
    - A release ganha um lançador, `cp-runner <comando>`, que chama
      `ClaudeControlPlaneRunner.Main` com `eval`.
    - `make runner.install` instala a release em `~/.local/share` e o lançador em
-     `~/.local/bin`.
+     `~/.local/bin`. (A release Mix é gerada por `make runner.rel`; o
+     `make runner.release` cria uma versão, como no [ADR 0016](0016-esquema-de-versao.md).)
    - O `cp-runner service install` instala o serviço apontando para o próprio
      lançador.
 2. **Burrito fica para depois.** O binário único precisa de Zig no build. A release

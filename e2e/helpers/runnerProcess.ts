@@ -20,8 +20,12 @@ export class RunnerProcess {
   private output = "";
   private exit?: Promise<number | null>;
 
-  constructor() {
+  private readonly version?: string;
+
+  /** `version`, when given, is the version the runner is built as (`CP_VERSION`). */
+  constructor(options: { version?: string } = {}) {
     this.configDir = mkdtempSync(join(tmpdir(), "cp-runner-e2e-"));
+    this.version = options.version;
   }
 
   /** Starts `mix <task> <args>` in the runner app (MIX_ENV=e2e, like the server). */
@@ -34,6 +38,8 @@ export class RunnerProcess {
         MIX_ENV: "e2e",
         RUNNER_CONFIG_DIR: this.configDir,
         CLAUDE_BIN: fakeClaude,
+        // Without a pinned version, the checkout's own (never the server's).
+        CP_VERSION: this.version ?? "",
       },
     });
     this.child.stdout?.on("data", (chunk) => (this.output += chunk.toString()));

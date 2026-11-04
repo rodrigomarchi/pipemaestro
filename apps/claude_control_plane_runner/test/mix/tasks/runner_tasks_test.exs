@@ -1,8 +1,9 @@
 defmodule Mix.Tasks.RunnerTasksTest do
   use ExUnit.Case, async: false
 
-  alias ClaudeControlPlaneRunner.Config
+  alias ClaudeControlPlaneRunner.{Config, Version}
   alias Mix.Tasks.Runner.{Login, Logout, Start, Status}
+  alias Mix.Tasks.Runner.Version, as: RunnerVersion
 
   @moduletag :tmp_dir
 
@@ -41,6 +42,58 @@ defmodule Mix.Tasks.RunnerTasksTest do
   test "start reports corrupt credentials", %{dir: dir} do
     File.write!(Config.path(dir), "not json")
     assert_raise Mix.Error, ~r/corrompidas/, fn -> Start.run([]) end
+  end
+
+  defp save_config(attrs \\ %{}) do
+    Config.save(
+      Map.merge(
+        %{
+          url: "http://127.0.0.1:1",
+          runner_id: "r1",
+          runner_name: "mac",
+          token: "cpr_x",
+          workspace_name: "Acme",
+          workspace_slug: "acme",
+          labels: [],
+          capacity: 1,
+          root: nil
+        },
+        attrs
+      )
+    )
+  end
+
+  test "version prints only the runner's version" do
+    RunnerVersion.run([])
+
+    assert_received {:mix_shell, :info, [output]}
+    assert output == Version.version()
+  end
+
+  test "version --next prints the next release, in the release scheme" do
+    RunnerVersion.run(["--next"])
+
+    assert_received {:mix_shell, :info, [output]}
+    assert {:release, _date, _number} = ClaudeControlPlaneProtocol.Version.parse(output)
+  end
+
+  test "start shows the version on its first line", %{dir: dir} do
+    save_config()
+
+    assert_raise Mix.Error, ~r/não existe/, fn ->
+      Start.run(["--root", Path.join(dir, "missing")])
+    end
+
+    assert_received {:mix_shell, :info, [first]}
+    assert first == "cp-runner #{Version.version()}"
+  end
+
+  test "status shows the version" do
+    save_config()
+    Status.run([])
+
+    assert_received {:mix_shell, :info, [summary]}
+    assert summary =~ "Versão: #{Version.version()}"
   end
 
   test "logout removes the credentials", %{dir: dir} do

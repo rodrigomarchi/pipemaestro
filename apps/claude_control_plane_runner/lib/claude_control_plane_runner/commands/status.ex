@@ -13,6 +13,8 @@ defmodule ClaudeControlPlaneRunner.Commands.Status do
     config = Output.config!()
     {:ok, hello} = Host.hello(labels: config.labels, capacity: config.capacity)
 
+    Output.info("Versão: #{hello.runner_version}")
+
     Output.info("""
     Plataforma:  #{config.url}
     Runner:      #{config.runner_name} (#{config.runner_id})

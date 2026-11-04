@@ -61,13 +61,32 @@ defmodule ClaudeControlPlane.Umbrella.MixProject do
     ]
   end
 
-  # A binary unpacks itself once per version: the commit in it makes each
-  # build a new one, so an updated binary never runs an older payload.
+  # A binary unpacks itself once per version: the release (or the commit) and
+  # the build's moment in its semver build metadata make each build a new one,
+  # so an updated binary never runs an older payload. The version the runner
+  # shows is ClaudeControlPlaneRunner.Version's, not this one.
   defp binary_version do
-    case System.cmd("git", ["rev-parse", "--short", "HEAD"], stderr_to_stdout: true) do
-      {sha, 0} -> "0.1.0+#{String.trim(sha)}"
-      _no_git -> "0.1.0"
+    built_at = Calendar.strftime(DateTime.utc_now(), "%Y%m%d%H%M%S")
+
+    build =
+      case git(["tag", "--points-at", "HEAD", "--list", "runner-*"]) do
+        "runner-" <> _ = tags ->
+          tags |> String.split("\n", trim: true) |> Enum.max() |> String.trim_leading("runner-")
+
+        _no_release ->
+          git(["rev-parse", "--short", "HEAD"]) || "unknown"
+      end
+
+    "0.1.0+#{String.replace(build, ~r/[^0-9A-Za-z.-]/, "-")}.#{built_at}"
+  end
+
+  defp git(args) do
+    case System.cmd("git", args, stderr_to_stdout: true) do
+      {output, 0} -> String.trim(output)
+      _no_git -> nil
     end
+  rescue
+    ErlangError -> nil
   end
 
   def cli do

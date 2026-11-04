@@ -7,6 +7,27 @@ defmodule ClaudeControlPlaneWeb.RunnerLiveTest do
 
   setup :register_and_log_in_member
 
+  test "shows the runner's version, marked when older than the control plane's", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    # The control plane runs as 2026-11-04.02 in tests (config/test.exs).
+    {old, _token} =
+      runner_fixture(workspace, user, %{name: "antigo", runner_version: "2026-11-04.01"})
+
+    {current, _token} =
+      runner_fixture(workspace, user, %{name: "atual", runner_version: "2026-11-04.02"})
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{old.id}")
+    assert has_element?(view, "[data-testid=runner-detail-version]", "2026-11-04.01")
+    assert has_element?(view, "[data-testid=runner-detail-outdated]", "desatualizado")
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{current.id}")
+    assert has_element?(view, "[data-testid=runner-detail-version]", "2026-11-04.02")
+    refute has_element?(view, "[data-testid=runner-detail-outdated]")
+  end
+
   test "shows a runner: agent, directories, worktrees and its jobs, live", %{
     conn: conn,
     workspace: workspace,

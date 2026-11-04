@@ -40,6 +40,8 @@ defmodule ClaudeControlPlaneRunner.DoctorTest do
         reach: fn _url -> {:error, "connection refused"} end
       )
 
+    version = ClaudeControlPlaneRunner.Version.version()
+    assert %{status: :ok, detail: ^version} = check(checks, "versão")
     assert %{status: :ok, detail: "0.0.0-fake" <> _} = check(checks, "Agente (claude)")
 
     assert %{status: :warning, detail: "login pessoal" <> _} =

@@ -40,5 +40,9 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
+# A fixed control-plane version, so the runners' "outdated" badge does not
+# depend on the git state of the checkout running the tests.
+config :claude_control_plane, ClaudeControlPlane.Version, version: "2026-11-04.02"
+
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
 config :claude_control_plane, ClaudeControlPlane.Secrets, key: "test_only_secrets_key"

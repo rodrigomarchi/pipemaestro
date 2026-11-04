@@ -16,9 +16,11 @@ defmodule ClaudeControlPlane.Runners do
   alias ClaudeControlPlane.Auth.Token
   alias ClaudeControlPlane.Repo
   alias ClaudeControlPlane.Runners.{DeviceAuthorization, Runner}
+  alias ClaudeControlPlane.Version
   alias ClaudeControlPlane.Workspaces
   alias ClaudeControlPlane.Workspaces.Workspace
   alias ClaudeControlPlaneProtocol.{Hello, Worktree}
+  alias ClaudeControlPlaneProtocol.Version, as: Scheme
 
   @authorization_ttl_seconds 600
   @poll_interval_seconds 5
@@ -225,6 +227,16 @@ defmodule ClaudeControlPlane.Runners do
       from r in Runner,
         where: r.id == ^id and r.workspace_id == ^workspace_id and is_nil(r.revoked_at)
     )
+  end
+
+  @doc """
+  Whether `runner` announced a release older than `reference` (by default,
+  this control plane's version). Development builds and versions outside the
+  scheme are never outdated (`ClaudeControlPlaneProtocol.Version.outdated?/2`).
+  """
+  @spec outdated?(Runner.t(), String.t()) :: boolean()
+  def outdated?(%Runner{runner_version: version}, reference \\ Version.version()) do
+    Scheme.outdated?(version, reference)
   end
 
   @doc "Stores what a runner announced as it connected."

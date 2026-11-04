@@ -10,11 +10,16 @@ a [0012](../adr/0012-uso-papeis-auditoria-e-segredos.md); o protocolo, em
 ### Imagem
 
 ```bash
-make image        # docker build -t claude-control-plane .
+make image        # docker build --build-arg CP_VERSION=<versão> -t claude-control-plane .
 ```
 
 A imagem roda `bin/server`: aplica as migrations pendentes e sobe o servidor web na
 porta 4000.
+
+A imagem não leva o `.git`, então a versão entra pelo `--build-arg CP_VERSION`, que o
+`make image` calcula (`make runner.version`). Num `docker build` feito à mão sem esse
+argumento, o control plane fica `dev+unknown` e não marca nenhum runner como
+desatualizado (seção 4).
 
 ### Variáveis
 
@@ -83,7 +88,7 @@ sem container.
 Numa máquina com Elixir, a partir deste repositório:
 
 ```bash
-make runner.install      # gera a release e instala ~/.local/bin/cp-runner
+make runner.install      # gera a release (make runner.rel) e instala ~/.local/bin/cp-runner
 ```
 
 A release não leva Phoenix nem Ecto (`_build/prod/rel/claude_control_plane_runner`, ou o
@@ -152,3 +157,53 @@ O login mostra um código. Um **admin** do workspace o aprova em
 
 Commit, push e PR ficam, por enquanto, a cargo do prompt de cada etapa (ver o
 [roadmap](../plano/03-roadmap-orquestrador.md), Marco 6).
+
+## 4. Versões e releases
+
+A regra está no [ADR 0016](../adr/0016-esquema-de-versao.md).
+
+### A versão
+
+- Uma release é `AAAA-MM-DD.NN`: a data local de quem fez a release e o número dela no
+  dia (`2026-11-04.01`, `2026-11-04.02`, `2026-11-05.01`). Ela é a tag anotada
+  `runner-AAAA-MM-DD.NN`.
+- Um build de um commit sem tag é `<última release>+dev.<commit>`, ou `dev+<commit>` se
+  ainda não houver release. Sem git, é `dev+unknown`.
+- Runner e control plane usam a mesma série.
+- `make runner.version` imprime a versão do checkout. `cp-runner --version` (ou
+  `cp-runner version`) imprime a do runner instalado.
+- O runner também mostra a versão na primeira linha do `start`, no `status` e no
+  `doctor`.
+- O control plane mostra a dele no rodapé da barra lateral e no pé das páginas
+  públicas.
+
+### Gerar uma release
+
+```bash
+git fetch --tags        # para não repetir um número já publicado
+make runner.release     # tag runner-AAAA-MM-DD.NN + binário em burrito_out/ ([TARGET=...])
+git push origin runner-AAAA-MM-DD.NN
+```
+
+O `make runner.release`:
+
+- recusa uma árvore com mudanças e um commit que já seja release;
+- cria a tag e roda `make runner.binary`;
+- não publica nada. Se o build falhar, a tag continua local, e a mensagem diz como
+  apagá-la (`git tag -d runner-…`).
+
+Para o control plane da mesma release, rode `make image` no mesmo commit.
+
+O alvo que só gera a release Mix (sem tag) é `make runner.rel`.
+
+### Runner desatualizado
+
+A lista de runners e a página de cada runner mostram a versão. Um runner numa release
+anterior à do control plane recebe o selo **desatualizado**. Um control plane num
+commit depois de uma release compara com essa release.
+
+Não recebem o selo:
+
+- runners de dev (`+dev`, `dev+`);
+- runners de formato antigo (`0.1.0`);
+- runners de qualquer versão, quando o control plane não tem release nenhuma.

@@ -2,7 +2,7 @@
 # protocol, never the runner) on the same Elixir/OTP image it was built with,
 # so the release's runtime matches the system's libraries.
 #
-#   docker build -t claude-control-plane .
+#   make image   (docker build --build-arg CP_VERSION=<versão> -t claude-control-plane .)
 #   docker run -p 4000:4000 -e DATABASE_URL=... -e SECRET_KEY_BASE=... \
 #     -e SECRETS_KEY=... -e PHX_HOST=plataforma.exemplo.com claude-control-plane
 #
@@ -31,6 +31,11 @@ RUN mix deps.get --only prod && mix deps.compile
 COPY apps apps
 COPY config/runtime.exs config/
 COPY rel rel
+
+# The image has no .git to read its version from: `make image` passes it
+# (ClaudeControlPlaneProtocol.Version.Git); without it, dev+unknown.
+ARG CP_VERSION=""
+ENV CP_VERSION=${CP_VERSION}
 
 RUN mix compile \
     && cd apps/claude_control_plane_web && mix assets.deploy && cd ../.. \

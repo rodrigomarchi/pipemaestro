@@ -21,6 +21,32 @@ defmodule ClaudeControlPlaneWeb.RunnersLiveTest do
     refute has_element?(view, "[data-testid=connect-login-command]")
   end
 
+  test "shows each runner's version and marks the ones older than the control plane", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    # The control plane runs as 2026-11-04.02 in tests (config/test.exs).
+    runner_fixture(workspace, user, %{name: "antigo", runner_version: "2026-11-04.01"})
+    runner_fixture(workspace, user, %{name: "atual", runner_version: "2026-11-04.02"})
+    runner_fixture(workspace, user, %{name: "dev", runner_version: "2026-11-04.01+dev.abc1234"})
+    runner_fixture(workspace, user, %{name: "legado", runner_version: "0.1.0"})
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+
+    assert has_element?(view, "[data-testid=runner-version-antigo]", "2026-11-04.01")
+    assert has_element?(view, "[data-testid=runner-outdated-antigo]", "desatualizado")
+
+    assert has_element?(view, "[data-testid=runner-version-atual]", "2026-11-04.02")
+    refute has_element?(view, "[data-testid=runner-outdated-atual]")
+
+    assert has_element?(view, "[data-testid=runner-version-dev]", "2026-11-04.01+dev.abc1234")
+    refute has_element?(view, "[data-testid=runner-outdated-dev]")
+
+    assert has_element?(view, "[data-testid=runner-version-legado]", "0.1.0")
+    refute has_element?(view, "[data-testid=runner-outdated-legado]")
+  end
+
   test "lists the workspace's runners and only those", %{
     conn: conn,
     workspace: workspace,

@@ -5,6 +5,8 @@ defmodule ClaudeControlPlaneWeb.Layouts do
   """
   use ClaudeControlPlaneWeb, :html
 
+  alias ClaudeControlPlane.Version
+
   embed_templates "layouts/*"
 
   @doc """
@@ -24,7 +26,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
   @spec public(map()) :: Phoenix.LiveView.Rendered.t()
   def public(assigns) do
     ~H"""
-    <div class="flex min-h-screen flex-col bg-white dark:bg-gray-950">
+    <div class="relative flex min-h-screen flex-col bg-white dark:bg-gray-950">
       <header
         :if={@nav}
         class="sticky top-0 z-30 border-b border-gray-200/70 bg-white/80 backdrop-blur dark:border-gray-800/70 dark:bg-gray-950/80"
@@ -71,7 +73,12 @@ defmodule ClaudeControlPlaneWeb.Layouts do
         <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-gray-500 sm:flex-row sm:px-6 lg:px-8 dark:text-gray-400">
           <.brand size="sm" />
           <p>Powered by Claude · O merge e o deploy continuam com você.</p>
+          <.app_version />
         </div>
+      </footer>
+      <%!-- Pages without the navigation fill the screen themselves: the version sits over their bottom. --%>
+      <footer :if={!@nav} class="pointer-events-none absolute inset-x-0 bottom-4 text-center">
+        <.app_version />
       </footer>
 
       <.toast_group flash={@flash} position="top-center" data-testid="toasts" />
@@ -215,6 +222,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
 
           <:footer>
             <.logout_button to={~p"/logout"} variant="sidebar" data-testid="sidebar-logout" />
+            <.app_version class="pc-sidebar__brand block px-3 pt-2" />
           </:footer>
         </.sidebar_nav>
       </:sidebar>
@@ -369,6 +377,7 @@ defmodule ClaudeControlPlaneWeb.Layouts do
               variant="sidebar"
               data-testid="sidebar-logout"
             />
+            <.app_version class="pc-sidebar__brand block px-3 pt-2" />
           </:footer>
         </.sidebar_nav>
       </:sidebar>
@@ -501,6 +510,24 @@ defmodule ClaudeControlPlaneWeb.Layouts do
         Control Plane
       </span>
     </.link>
+    """
+  end
+
+  @doc "This control plane's version (`ClaudeControlPlane.Version`), small and muted."
+  attr :class, :any, default: nil
+
+  @spec app_version(map()) :: Phoenix.LiveView.Rendered.t()
+  def app_version(assigns) do
+    assigns = assign(assigns, :version, Version.version())
+
+    ~H"""
+    <span
+      class={["font-mono text-xs text-gray-400 dark:text-gray-500", @class]}
+      title="Versão do control plane"
+      data-testid="app-version"
+    >
+      {@version}
+    </span>
     """
   end
 

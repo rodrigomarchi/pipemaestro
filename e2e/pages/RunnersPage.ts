@@ -39,6 +39,26 @@ export class RunnersPage {
     return this.page.getByTestId(`runner-status-${name}`);
   }
 
+  /** The version a runner announced, in the list. */
+  version(name: string): Locator {
+    return this.page.getByTestId(`runner-version-${name}`);
+  }
+
+  /** The "desatualizado" badge of a runner on an older release, in the list. */
+  outdated(name: string): Locator {
+    return this.page.getByTestId(`runner-outdated-${name}`);
+  }
+
+  /** The version on the runner's page. */
+  get detailVersion(): Locator {
+    return this.page.getByTestId("runner-detail-version");
+  }
+
+  /** The "desatualizado" badge on the runner's page. */
+  get detailOutdated(): Locator {
+    return this.page.getByTestId("runner-detail-outdated");
+  }
+
   /** From the runners list, opens the page of the runner named `name`. */
   async openRunner(workspaceSlug: string, name: string) {
     await this.open(workspaceSlug);

@@ -7,6 +7,7 @@ defmodule ClaudeControlPlaneRunner.Main do
       cp-runner start [--root ~/src]
       cp-runner status | logout | doctor
       cp-runner service print | install | uninstall
+      cp-runner --version
   """
 
   alias ClaudeControlPlaneRunner.{CommandError, Commands}
@@ -17,7 +18,9 @@ defmodule ClaudeControlPlaneRunner.Main do
     "status" => Commands.Status,
     "logout" => Commands.Logout,
     "doctor" => Commands.Doctor,
-    "service" => Commands.Service
+    "service" => Commands.Service,
+    "version" => Commands.Version,
+    "--version" => Commands.Version
   }
 
   @doc "Runs a command; returns the exit status."

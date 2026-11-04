@@ -136,6 +136,27 @@ defmodule ClaudeControlPlane.RunnersTest do
       assert Repo.reload(updated).last_seen_at
     end
 
+    test "a runner on a release older than the control plane's is outdated", %{runner: runner} do
+      outdated? = fn version, reference ->
+        Runners.outdated?(%{runner | runner_version: version}, reference)
+      end
+
+      assert outdated?.("2026-11-04.01", "2026-11-04.02")
+      assert outdated?.("2026-11-04.01", "2026-11-04.02+dev.abc1234")
+      refute outdated?.("2026-11-04.02", "2026-11-04.02")
+      refute outdated?.("2026-11-05.01", "2026-11-04.02")
+      refute outdated?.("2026-11-04.01+dev.abc1234", "2026-11-04.02")
+      refute outdated?.("dev+abc1234", "2026-11-04.02")
+      refute outdated?.("0.1.0", "2026-11-04.02")
+      refute outdated?.(nil, "2026-11-04.02")
+      refute outdated?.("2026-11-04.01", "dev+abc1234")
+    end
+
+    test "by default, compared with this control plane's version", %{runner: runner} do
+      assert Runners.outdated?(%{runner | runner_version: "2026-11-04.01"})
+      refute Runners.outdated?(%{runner | runner_version: "2026-11-04.02"})
+    end
+
     test "records its worktrees' disk usage", %{runner: runner} do
       usage = %{"count" => 2, "bytes" => 2_048, "free_bytes" => nil}
       assert {:ok, %Runner{worktree_usage: ^usage}} = Runners.update_worktree_usage(runner, usage)

@@ -208,6 +208,9 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
 2. **✓ Deploy do control plane** (ADR 0013): release, migrations, `PHX_HOST` e TLS
    para o WebSocket.
 3. **✓ Guia de instalação e de primeiro pipeline** ([`guias/instalacao.md`](../guias/instalacao.md)).
+4. **✓ Versão do runner e do control plane** ([ADR 0016](../adr/0016-esquema-de-versao.md)):
+   `AAAA-MM-DD.NN` a partir de tags `runner-*`, `make runner.release`,
+   `cp-runner --version` e o selo "desatualizado" na lista de runners.
 
 ### Marco 6 — Integração com git e GitHub (por último)
 
