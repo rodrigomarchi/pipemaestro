@@ -61,6 +61,14 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-prompt-${index}-preview`);
   }
 
+  get maxCost(): Locator {
+    return this.page.getByTestId("pipeline-max-cost");
+  }
+
+  stageBudget(index: number): Locator {
+    return this.page.getByTestId(`stage-budget-${index}`);
+  }
+
   stageGates(index: number): Locator {
     return this.page.getByTestId(`stage-gates-${index}`);
   }

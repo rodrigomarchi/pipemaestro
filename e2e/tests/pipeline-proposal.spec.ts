@@ -2,6 +2,7 @@
  * @section Tarefas e pipelines
  * @flow A [done] An admin asks the agent, through a real runner, to study a git directory and propose a pipeline and its project; the analysis runs in a disposable worktree that leaves the directory untouched and goes away
  * @flow B [done] The proposal shows what the agent understood, the commands it checked and the stages; saving its project opens the pipeline form filled with it, and both are saved
+ * @flow C [todo] A cost cap the agent proposes never reaches the form: the pipeline opens with no cap per task nor per stage, and saves without one
  */
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -81,6 +82,9 @@ test.describe("Pipeline proposal", () => {
     await proposal.saveProject();
     await expect(app.page.getByTestId("pipeline-name")).toHaveValue("Entrega proposta");
     await expect(pipelines.stageGates(1)).toHaveValue("{{projeto.teste}}");
+    // Flow C: the agent answered with caps; the form opens without them.
+    await expect(pipelines.maxCost).toHaveValue("");
+    await expect(pipelines.stageBudget(0)).toHaveValue("");
     await shot(app.page, "proposal-pipeline-form");
     await pipelines.save();
 
