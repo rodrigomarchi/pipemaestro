@@ -33,8 +33,12 @@ export class ProposalPage {
     if (request.focus) await this.page.getByTestId("proposal-request-focus").fill(request.focus);
     if (request.pipeline)
       await this.page.getByTestId("proposal-request-pipeline").selectOption({ label: request.pipeline });
+    // Petal's switch hides its input (sr-only) under the label that draws it; the click lands
+    // on the label, which toggles the input.
     if (request.autoApprove !== undefined)
-      await this.page.getByTestId("proposal-request-auto-approve").setChecked(request.autoApprove);
+      await this.page
+        .getByTestId("proposal-request-auto-approve")
+        .setChecked(request.autoApprove, { force: true });
     await this.page.getByTestId("proposal-request-submit").click();
     await this.waitForProposal();
   }
