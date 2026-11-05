@@ -63,6 +63,7 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
     assert has_element?(view, "[data-testid=decision-#{task.id}]", "Tela branca")
     assert has_element?(view, "[data-testid=decision-#{task.id}]", "Qual navegador?")
     assert has_element?(view, "[data-testid=decision-#{task.id}]", "Etapa A")
+    assert has_element?(view, "[data-testid=decision-project-#{task.id}]", "app")
 
     view
     |> form("[data-testid=decision-form-#{task.id}]", decision: %{instructions: "Safari 17"})

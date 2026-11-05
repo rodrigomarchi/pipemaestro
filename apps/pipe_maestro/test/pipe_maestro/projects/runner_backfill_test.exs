@@ -4,10 +4,13 @@ defmodule PipeMaestro.Projects.RunnerBackfillTest do
   import Ecto.Query
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Projects, Repo, Runners, Tasks}
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
+  alias PipeMaestro.Repo
+  alias PipeMaestro.Runners
   alias PipeMaestro.Runners.Runner
+  alias PipeMaestro.Tasks
 
   @migration PipeMaestro.Repo.Migrations.AddRunnerToProjects
 

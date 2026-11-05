@@ -55,5 +55,6 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
     assert has_element?(view, "[data-testid=pull-request-#{task.id}]", "Corrigir login")
     assert has_element?(view, "[data-testid=pull-request-#{task.id}]", "pull/7")
     assert has_element?(view, "[data-testid=pull-request-cost-#{task.id}]", "US$ 0.75")
+    assert has_element?(view, "[data-testid=pull-request-project-#{task.id}]", "app")
   end
 end
