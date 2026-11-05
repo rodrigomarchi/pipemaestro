@@ -57,7 +57,7 @@ test.describe("Agent proposals", () => {
     await pipelines.createDefaults();
     const projects = new ProjectsPage(app.page);
     await projects.open(workspace.slug);
-    await projects.create({ name: "App", directory: "app" });
+    await projects.create({ name: "App", runner: runnerName, directory: "app" });
 
     const proposal = new ProposalPage(app.page);
     const tasks = new TasksPage(app.page);
@@ -68,7 +68,7 @@ test.describe("Agent proposals", () => {
     await app.page.getByTestId("proposal-request-text").fill("O login trava quando muita gente entra junto.");
     await expect(app.page.getByTestId("proposal-request-auto-approve")).toBeChecked();
     await shot(app.page, "task-proposal-request");
-    await proposal.submitRequest({ runner: runnerName, directory: "app", autoApprove: false });
+    await proposal.submitRequest({ project: "App", autoApprove: false });
     await proposal.waitForAnswer();
     await expect(app.page.getByTestId("proposal-task-title")).toHaveText("Destravar o login sob carga");
     await expect(app.page.getByTestId("proposal-task-prompt")).toContainText("Critérios de aceite");
@@ -85,7 +85,7 @@ test.describe("Agent proposals", () => {
     await tasks.open(workspace.slug);
     await app.page.getByTestId("task-generate").click();
     await app.page.getByTestId("proposal-request-text").fill("O login trava de novo.");
-    await proposal.submitRequest({ runner: runnerName, directory: "app", pipeline: "Correção de bug" });
+    await proposal.submitRequest({ project: "App", pipeline: "Correção de bug" });
     // The agent names "Prompt único", but the chosen pipeline holds. Watching the proposal, the
     // person is taken to the task; had it been created before the page connected, the link leads there.
     const taskUrl = /\/tasks\/[0-9a-f-]+$/;
@@ -108,7 +108,7 @@ test.describe("Agent proposals", () => {
     await tasks.open(workspace.slug);
     await app.page.getByTestId("task-generate").click();
     await app.page.getByTestId("proposal-request-text").fill("Melhorar o login [nao-pronta]");
-    await proposal.submitRequest({ runner: runnerName, directory: "app" });
+    await proposal.submitRequest({ project: "App" });
     await proposal.waitForAnswer();
     await expect(proposal.autoApproveSkipped).toContainText("Qual o limite de logins simultâneos?");
     await expect(app.page.getByTestId("proposal-create-task")).toBeVisible();
@@ -120,8 +120,7 @@ test.describe("Agent proposals", () => {
       title: "Botão que não responde",
       prompt: "[bloqueio] O botão de salvar não responde.",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "app",
+      project: "App",
     });
     await expect(tasks.status).toHaveText("Aguardando decisão", { timeout: 60_000 });
     // A block with nothing to ask is analysed; "Sugerir com IA" sits in the manual decision.
@@ -138,7 +137,7 @@ test.describe("Agent proposals", () => {
     // Flow C: the pipeline improved from how its tasks went.
     await pipelines.open(workspace.slug);
     await app.page.getByTestId("pipeline-improve-Prompt único").click();
-    await proposal.submitRequest({ runner: runnerName, directory: "app", focus: "Verificar os testes." });
+    await proposal.submitRequest({ project: "App", focus: "Verificar os testes." });
     await proposal.waitForAnswer();
     await expect(app.page.getByTestId("proposal-changes")).toContainText("Nenhuma tarefa verificou os testes");
     await shot(app.page, "improve-proposal-review");

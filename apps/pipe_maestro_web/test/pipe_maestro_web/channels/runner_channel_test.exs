@@ -173,7 +173,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       join_runner(ctx.socket, ctx.runner)
 
       {:ok, job} =
-        Jobs.create_job(
+        Jobs.create_runner_job(
           ctx.user,
           ctx.workspace,
           %{prompt: "analise", runner_id: ctx.runner.id},
@@ -310,8 +310,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
           "title" => "Tarefa",
           "prompt" => "faça",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => project_on(ctx.runner, "app").id
         })
 
       assert_push "job:assign", %{
@@ -332,8 +331,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
           "title" => "Tarefa",
           "prompt" => "faça",
           "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-          "runner_id" => runner.id,
-          "directory" => "app"
+          "project_id" => project_on(runner, "app").id
         })
 
       task =

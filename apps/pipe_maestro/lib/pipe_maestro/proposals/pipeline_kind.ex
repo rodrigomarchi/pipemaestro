@@ -1,8 +1,10 @@
 defmodule PipeMaestro.Proposals.PipelineKind do
   @moduledoc """
-  A pipeline and the project of a directory, proposed by the agent after
-  studying it (`PipeMaestro.Proposals`). The person reviews the project, saves
-  it, and opens the pipeline form filled with the proposal.
+  A pipeline for an existing project (`project_id`), proposed by the agent
+  after studying the project's directory (`PipeMaestro.Proposals`). The
+  person opens the pipeline form filled with the proposal. A project itself
+  is proposed by `PipeMaestro.Proposals.ProjectKind`; an answer from before
+  that still carries one is read without it.
   """
   @behaviour PipeMaestro.Proposals.Kind
 
@@ -11,13 +13,19 @@ defmodule PipeMaestro.Proposals.PipelineKind do
   alias PipeMaestro.Proposals
   alias PipeMaestro.Proposals.Instructions
 
-  @types %{runner_id: :binary_id, directory: :string, request: :string, feedback: :string}
+  @types %{
+    project_id: :binary_id,
+    runner_id: :binary_id,
+    directory: :string,
+    request: :string,
+    feedback: :string
+  }
 
   @impl true
   def name, do: "pipeline"
 
   @impl true
-  def label, do: "Pipeline e projeto"
+  def label, do: "Pipeline"
 
   @impl true
   def icon, do: "hero-squares-2x2"
@@ -25,9 +33,8 @@ defmodule PipeMaestro.Proposals.PipelineKind do
   @impl true
   def changeset(attrs, _workspace) do
     {%{}, @types}
-    |> Changeset.cast(attrs, Map.keys(@types))
-    |> Changeset.validate_required([:runner_id], message: "escolha um runner online")
-    |> Changeset.validate_required([:directory], message: "escolha o diretório do projeto")
+    |> Changeset.cast(attrs, [:project_id, :request, :feedback])
+    |> Changeset.validate_required([:project_id], message: "escolha um projeto")
     |> Changeset.validate_required([:request], message: "conte o que o pipeline deve fazer")
     |> Changeset.validate_length(:request, max: 8_000)
     |> Changeset.validate_length(:feedback, max: 4_000)
@@ -38,8 +45,8 @@ defmodule PipeMaestro.Proposals.PipelineKind do
     %{
       title: input.request,
       prompt: """
-      Analise o projeto do diretório `#{input.directory}` e proponha a configuração do projeto
-      e um pipeline do PipeMaestro para o pedido abaixo.
+      Analise o projeto do diretório `#{input.directory}` e proponha um pipeline do
+      PipeMaestro para o pedido abaixo.
 
       #{input.request}
 
@@ -66,7 +73,7 @@ defmodule PipeMaestro.Proposals.PipelineKind do
     ## Sua resposta
 
     Responda no formato pedido: `analise` (Markdown: o que o projeto é e como funciona),
-    `verificacoes`, `projeto` e `pipeline`. Escreva em português.
+    `verificacoes` e `pipeline`. Escreva em português.
     """
   end
 
@@ -76,52 +83,15 @@ defmodule PipeMaestro.Proposals.PipelineKind do
     %{
       "type" => "object",
       "$comment" => "pipemaestro-kind:pipeline",
-      "required" => ["analise", "verificacoes", "projeto", "pipeline"],
+      "required" => ["analise", "verificacoes", "pipeline"],
       "properties" => %{
         "analise" => %{
           "type" => "string",
           "description" =>
             "Markdown: o que o projeto é, a stack, como instala, roda, testa, faz lint e entrega."
         },
-        "verificacoes" => %{
-          "type" => "array",
-          "description" => "Cada comando que você rodou para conferir o que propõe.",
-          "items" => %{
-            "type" => "object",
-            "required" => ["comando", "passou"],
-            "properties" => %{
-              "comando" => %{"type" => "string"},
-              "passou" => %{"type" => "boolean"},
-              "observacao" => %{"type" => "string"}
-            }
-          }
-        },
-        "projeto" => project_schema(),
+        "verificacoes" => Proposals.checks_schema(),
         "pipeline" => pipeline_schema()
-      }
-    }
-  end
-
-  @doc "The schema of a project's configuration in an answer."
-  @spec project_schema() :: map()
-  def project_schema do
-    %{
-      "type" => "object",
-      "required" => ["nome"],
-      "properties" => %{
-        "nome" => %{"type" => "string"},
-        "setup" => %{"type" => "string", "description" => "Comando que prepara um checkout novo."},
-        "teste" => %{"type" => "string", "description" => "Comando que roda os testes."},
-        "lint" => %{"type" => "string", "description" => "Comando de lint/formatação/tipos."},
-        "copy_paths" => %{
-          "type" => "array",
-          "items" => %{"type" => "string"},
-          "description" => "Pastas de dependências e build a copiar para cada worktree."
-        },
-        "notas" => %{
-          "type" => "string",
-          "description" => "Markdown com o que o agente de cada etapa precisa saber do projeto."
-        }
       }
     }
   end
@@ -162,44 +132,18 @@ defmodule PipeMaestro.Proposals.PipelineKind do
   end
 
   @impl true
-  def result(output, job) do
-    with %{} = project <- output["projeto"],
-         %{"stages" => [_ | _]} = pipeline <- output["pipeline"] do
-      {:ok,
-       %{
-         analysis: Proposals.text(output["analise"]),
-         checks: checks(output["verificacoes"]),
-         project: project_attrs(project, Proposals.input(job)["directory"]),
-         pipeline: pipeline |> Yaml.from_map() |> Yaml.without_caps()
-       }}
-    else
-      _incomplete -> {:error, "O agente não devolveu um projeto e um pipeline com etapas."}
+  def result(output, _job) do
+    case output["pipeline"] do
+      %{"stages" => [_ | _]} = pipeline ->
+        {:ok,
+         %{
+           analysis: Proposals.text(output["analise"]),
+           checks: Proposals.checks(output["verificacoes"]),
+           pipeline: pipeline |> Yaml.from_map() |> Yaml.without_caps()
+         }}
+
+      _incomplete ->
+        {:error, "O agente não devolveu um pipeline com etapas."}
     end
   end
-
-  @doc "A project in an answer as the project form's attributes, for `directory`."
-  @spec project_attrs(map(), String.t()) :: map()
-  def project_attrs(project, directory) do
-    %{
-      "name" => Proposals.text(project["nome"]),
-      "directory" => directory,
-      "setup_command" => Proposals.text(project["setup"]),
-      "test_command" => Proposals.text(project["teste"]),
-      "lint_command" => Proposals.text(project["lint"]),
-      "copy_paths_text" => project["copy_paths"] |> List.wrap() |> Enum.join("\n"),
-      "notes" => Proposals.text(project["notas"])
-    }
-  end
-
-  defp checks(list) when is_list(list) do
-    for %{"comando" => command} = check <- list, is_binary(command) do
-      %{
-        command: command,
-        passed: check["passou"] == true,
-        note: Proposals.text(check["observacao"])
-      }
-    end
-  end
-
-  defp checks(_other), do: []
 end

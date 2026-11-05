@@ -52,11 +52,13 @@ defmodule PipeMaestro.ProposalsTest do
         hello_fixture(%{directories: @directories, capabilities: ["scratch"]})
       )
 
-    %{workspace: workspace, user: user, runner: runner}
+    %{workspace: workspace, user: user, runner: runner, projects: projects_fixture(runner)}
   end
 
+  # `"directory"` names the project of the runner's directory.
   defp ask(ctx, kind, attrs, previous \\ nil) do
-    base = %{"runner_id" => ctx.runner.id, "directory" => "app"}
+    {directory, attrs} = Map.pop(attrs, "directory", "app")
+    base = %{"project_id" => ctx.projects[directory].id}
     Proposals.request(kind, ctx.user, ctx.workspace, Map.merge(base, attrs), previous)
   end
 
@@ -108,7 +110,13 @@ defmodule PipeMaestro.ProposalsTest do
       assert {:ok, job} = ask(ctx, "pipeline", %{"request" => "PRs"})
       assert %WireJob{scratch: true, directory: "app"} = wire!(job)
       assert Proposals.kind(job) == "pipeline"
-      assert Proposals.input(job) == %{"directory" => "app", "request" => "PRs"}
+
+      assert Proposals.input(job) == %{
+               "project_id" => ctx.projects["app"].id,
+               "directory" => "app",
+               "request" => "PRs"
+             }
+
       assert Proposals.title(job) == "PRs"
       assert [listed] = Proposals.list_recent(ctx.workspace)
       assert listed.id == job.id
@@ -125,9 +133,12 @@ defmodule PipeMaestro.ProposalsTest do
       assert "atualize este runner para gerar propostas" in errors_on(changeset).runner_id
 
       assert {:error, changeset} =
-               ask(ctx, "pipeline", %{"runner_id" => Ecto.UUID.generate(), "request" => "x"})
+               Proposals.request("pipeline", ctx.user, ctx.workspace, %{
+                 "project_id" => Ecto.UUID.generate(),
+                 "request" => "x"
+               })
 
-      assert errors_on(changeset).runner_id != []
+      assert errors_on(changeset).project_id == ["o projeto não existe mais"]
     end
 
     test "a failed or empty proposal says why", ctx do
@@ -142,7 +153,10 @@ defmodule PipeMaestro.ProposalsTest do
 
     test "a job that is not a proposal is not found as one", ctx do
       {:ok, job} =
-        Jobs.create_job(ctx.user, ctx.workspace, %{prompt: "x", runner_id: ctx.runner.id})
+        Jobs.create_job(ctx.user, ctx.workspace, %{
+          prompt: "x",
+          project_id: ctx.projects["app"].id
+        })
 
       refute Proposals.proposal?(job)
       assert_raise Ecto.NoResultsError, fn -> Proposals.get_proposal!(ctx.workspace, job.id) end
@@ -163,9 +177,7 @@ defmodule PipeMaestro.ProposalsTest do
       assert [%{command: "mix test", passed: true}, %{passed: false, note: "2 avisos"}] =
                result.checks
 
-      assert result.project["copy_paths_text"] == "deps\n_build"
-      assert {:ok, project} = Projects.create_project(ctx.workspace, result.project, ctx.user)
-      assert project.test_command == "mix test"
+      refute Map.has_key?(result, :project)
       assert {:ok, pipeline} = Pipelines.create_pipeline(ctx.workspace, result.pipeline)
       assert length(pipeline.stages) == 2
     end
@@ -242,8 +254,7 @@ defmodule PipeMaestro.ProposalsTest do
                "title" => "Destravar o login sob carga",
                "prompt" => output["descricao"],
                "pipeline_id" => pipeline.id,
-               "runner_id" => ctx.runner.id,
-               "directory" => "app",
+               "project_id" => ctx.projects["app"].id,
                "issue_url" => "https://github.com/acme/app/issues/7"
              }
 
@@ -271,11 +282,10 @@ defmodule PipeMaestro.ProposalsTest do
       pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})
 
       {:ok, project} =
-        Projects.create_project(
-          ctx.workspace,
+        Projects.update_project(
+          ctx.projects["app"],
           %{
             "name" => "App",
-            "directory" => "app",
             "copy_paths_text" => "deps\nvendor",
             "github_repo" => "acme/app",
             "trigger_label" => "ia",
@@ -291,14 +301,14 @@ defmodule PipeMaestro.ProposalsTest do
         "html_url" => "https://github.com/acme/app/issues/5"
       }
 
-      assert {:ok, job} = Proposals.triage_issue(ctx.workspace, project, issue, ctx.runner.id)
+      assert {:ok, job} = Proposals.triage_issue(ctx.workspace, project, issue)
       assert job.created_by_user_id == ctx.user.id
       assert job.prompt =~ "prefira-o"
       assert byte_size(job.prompt) < 20_000
       # The project's own dependency paths go to the disposable worktree.
       assert job.context["setup"] == %{"copy" => ["deps", "vendor"]}
 
-      assert Proposals.triage_issue(ctx.workspace, project, issue, ctx.runner.id) ==
+      assert Proposals.triage_issue(ctx.workspace, project, issue) ==
                {:error, :already_triaging}
     end
 
@@ -321,8 +331,7 @@ defmodule PipeMaestro.ProposalsTest do
 
       changeset =
         Proposals.change_request("task", ctx.workspace, %{
-          "runner_id" => ctx.runner.id,
-          "directory" => "app",
+          "project_id" => ctx.projects["app"].id,
           "request" => "x",
           "pipeline_id" => other.id
         })
@@ -331,8 +340,7 @@ defmodule PipeMaestro.ProposalsTest do
 
       changeset =
         Proposals.change_request("task", ctx.workspace, %{
-          "runner_id" => ctx.runner.id,
-          "directory" => "app",
+          "project_id" => ctx.projects["app"].id,
           "request" => "x",
           "pipeline_id" => Ecto.UUID.generate()
         })
@@ -433,8 +441,7 @@ defmodule PipeMaestro.ProposalsTest do
           "title" => "Outra",
           "prompt" => "x",
           "pipeline_id" => ctx.pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.projects["app"].id
         })
 
       job = ask_auto(ctx)
@@ -546,8 +553,7 @@ defmodule PipeMaestro.ProposalsTest do
           "title" => "Corrigir o login",
           "prompt" => "O botão não responde",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.projects["app"].id
         })
 
       task = Tasks.get_task!(ctx.workspace, task.id)
@@ -654,8 +660,7 @@ defmodule PipeMaestro.ProposalsTest do
           "title" => "Corrigir o login",
           "prompt" => "O botão não responde",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.projects["app"].id
         })
 
       stage_job = hd(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
@@ -764,8 +769,7 @@ defmodule PipeMaestro.ProposalsTest do
           "title" => "Corrigir o login",
           "prompt" => "x",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.projects["app"].id
         })
 
       task = Tasks.get_task!(ctx.workspace, task.id)
@@ -792,11 +796,7 @@ defmodule PipeMaestro.ProposalsTest do
 
     test "reads the pipeline's history and proposes a revision with notes", ctx do
       {:ok, _project} =
-        Projects.create_project(
-          ctx.workspace,
-          %{"name" => "App", "directory" => "app", "notes" => "Notas velhas"},
-          ctx.user
-        )
+        Projects.update_project(ctx.projects["app"], %{"name" => "App", "notes" => "Notas velhas"})
 
       assert {:ok, job} =
                ask(ctx, "improve", %{"pipeline_id" => ctx.pipeline.id, "focus" => "Custo"})
@@ -817,6 +817,7 @@ defmodule PipeMaestro.ProposalsTest do
 
       assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
       assert result.pipeline_id == ctx.pipeline.id
+      assert result.project_id == ctx.projects["app"].id
       assert result.notes == "Notas novas"
       assert [%{where: "Etapa A", what: "gate", why: "falhou"}] = result.changes
       assert {:ok, revised} = Pipelines.update_pipeline(ctx.pipeline, result.pipeline)

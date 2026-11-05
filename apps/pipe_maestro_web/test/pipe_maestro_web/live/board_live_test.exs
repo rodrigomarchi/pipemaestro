@@ -20,7 +20,10 @@ defmodule PipeMaestroWeb.BoardLiveTest do
     %{runner: runner, pipeline: pipeline_fixture(workspace, %{"name" => "Duas etapas"})}
   end
 
+  # `"directory"` names the project of the runner's directory.
   defp create_task(ctx, title, attrs \\ %{}) do
+    {directory, attrs} = Map.pop(attrs, "directory", "app")
+
     {:ok, task} =
       Tasks.create_task(
         ctx.user,
@@ -29,8 +32,7 @@ defmodule PipeMaestroWeb.BoardLiveTest do
           "title" => title,
           "prompt" => "faça",
           "pipeline_id" => ctx.pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => project_on(ctx.runner, directory).id
         })
       )
 
@@ -69,7 +71,12 @@ defmodule PipeMaestroWeb.BoardLiveTest do
              )
 
       assert has_element?(view, "[data-testid=board-task-#{running.id}]", "1/2 · Etapa A")
-      assert has_element?(view, "[data-testid=board-task-#{running.id}]", "mac:app")
+
+      assert has_element?(
+               view,
+               "[data-testid=board-task-#{running.id}] [data-testid=board-card-project]",
+               "app"
+             )
 
       finish_current(ctx, blocked, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
 
@@ -179,7 +186,7 @@ defmodule PipeMaestroWeb.BoardLiveTest do
              )
     end
 
-    test "filters by pipeline, runner, directory and person", ctx do
+    test "filters by pipeline, runner, project and person", ctx do
       other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
       a = create_task(ctx, "Na app")
       b = create_task(ctx, "Nas notas", %{"directory" => "notas", "pipeline_id" => other.id})
@@ -193,7 +200,9 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       assert has_element?(view, "[data-testid=board-task-#{b.id}]")
 
       view
-      |> form("#board-filters", filters: %{pipeline: "", directory: "app"})
+      |> form("#board-filters",
+        filters: %{pipeline: "", project_id: project_on(ctx.runner, "app").id}
+      )
       |> render_change()
 
       assert has_element?(view, "[data-testid=board-task-#{a.id}]")
@@ -201,7 +210,7 @@ defmodule PipeMaestroWeb.BoardLiveTest do
 
       view
       |> form("#board-filters",
-        filters: %{directory: "", user_id: ctx.user.id, runner_id: ctx.runner.id}
+        filters: %{project_id: "", user_id: ctx.user.id, runner_id: ctx.runner.id}
       )
       |> render_change()
 

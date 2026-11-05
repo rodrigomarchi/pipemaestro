@@ -201,8 +201,7 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
           "title" => "Corrigir login",
           "prompt" => "O botão não responde",
           "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-          "runner_id" => runner.id,
-          "directory" => "app"
+          "project_id" => project_on(runner, "app").id
         })
 
       [%{job: job}] = task.stage_runs

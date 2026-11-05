@@ -1,7 +1,7 @@
 defmodule PipeMaestro.Proposals do
   @moduledoc """
-  Something the agent proposes for a person to review: a pipeline and its
-  project, a task written from an idea, the decision a paused task waits for,
+  Something the agent proposes for a person to review: a project of a
+  runner's directory, a pipeline for a project, a task written from an idea, the decision a paused task waits for,
   the analysis of a task's failure (asked by the platform itself), or
   improvements to a pipeline from its history. Each kind
   (`PipeMaestro.Proposals.Kind`) says what is asked, how the agent is asked
@@ -9,7 +9,10 @@ defmodule PipeMaestro.Proposals do
 
   A proposal is a job (`PipeMaestro.Jobs`) whose context carries
   `"proposal" => %{"kind", "input", "title"}`, a key of the control plane's
-  own that never reaches the runner. A job with a directory runs in a
+  own that never reaches the runner. Every kind but `project` (whose project
+  does not exist yet) is about a project (`project_id`), which decides the
+  runner and the directory; the kinds about a task take the task's. A job
+  with a directory runs in a
   disposable worktree of it (`scratch`, `PipeMaestroProtocol.Job`): the agent
   reads, builds and runs the project's commands, and nothing it does reaches
   the directory. Only runners that announce the `"scratch"` capability take
@@ -40,6 +43,7 @@ defmodule PipeMaestro.Proposals do
     ImproveKind,
     Instructions,
     PipelineKind,
+    ProjectKind,
     TaskKind
   }
 
@@ -56,6 +60,7 @@ defmodule PipeMaestro.Proposals do
   # What of an issue's body a triage reads; the request takes up to 16 000.
   @issue_body_bytes 12_000
   @kinds %{
+    "project" => ProjectKind,
     "pipeline" => PipelineKind,
     "task" => TaskKind,
     "decision" => DecisionKind,
@@ -65,7 +70,7 @@ defmodule PipeMaestro.Proposals do
 
   @doc "The kinds of proposal, by name."
   @spec kinds() :: [String.t()]
-  def kinds, do: ~w(pipeline task decision analysis improve)
+  def kinds, do: ~w(project pipeline task decision analysis improve)
 
   @doc "The module of kind `name` (`PipeMaestro.Proposals.Kind`)."
   @spec kind_module(String.t()) :: module()
@@ -81,8 +86,8 @@ defmodule PipeMaestro.Proposals do
 
   @doc "Whether `runner` offers `directory` as a git repository."
   @spec git_directory?(Runner.t(), String.t()) :: boolean()
-  def git_directory?(%Runner{directories: directories}, directory),
-    do: Enum.any?(directories || [], &(&1["name"] == directory and &1["git"] == true))
+  def git_directory?(%Runner{} = runner, directory),
+    do: match?(%{"git" => true}, Runner.directory(runner, directory))
 
   @doc "A changeset for the form that asks for a proposal of `kind`."
   @spec change_request(String.t(), Workspace.t(), map()) :: Changeset.t()
@@ -98,11 +103,15 @@ defmodule PipeMaestro.Proposals do
           {:ok, Job.t()} | {:error, Changeset.t()}
   def request(kind, %User{} = user, %Workspace{} = workspace, attrs, previous \\ nil) do
     module = kind_module(kind)
-    changeset = attrs |> module.changeset(workspace) |> validate_runner(workspace)
+
+    changeset =
+      attrs
+      |> module.changeset(workspace)
+      |> resolve_project(workspace)
+      |> validate_runner(workspace)
 
     with {:ok, data} <- Changeset.apply_action(changeset, :insert) do
       spec = module.job(data, workspace, previous)
-      directory = data[:directory]
 
       context =
         %{
@@ -111,30 +120,60 @@ defmodule PipeMaestro.Proposals do
           "timeout_ms" => spec.timeout_ms,
           "proposal" => %{"kind" => kind, "input" => stored_input(data), "title" => spec.title}
         }
-        |> Map.merge(scratch_context(workspace, directory))
+        |> Map.merge(scratch_context(workspace, data))
 
       job_attrs = %{
         prompt: Instructions.cut(spec.prompt, @prompt_bytes),
-        runner_id: data[:runner_id]
+        runner_id: data[:runner_id],
+        project_id: data[:project_id]
       }
 
-      case Jobs.create_job(user, workspace, job_attrs, context) do
+      case Jobs.create_runner_job(user, workspace, job_attrs, context) do
         {:ok, job} -> {:ok, job}
         {:error, job_changeset} -> {:error, %{changeset | errors: job_changeset.errors}}
       end
     end
   end
 
-  # A directory is studied in a disposable worktree, which gets the project's
-  # own dependency paths when it names them (else the runner finds the usual).
-  defp scratch_context(_workspace, nil), do: %{}
+  # A request about a project runs on the project's runner, in its directory.
+  # A kind about a task already took the task's runner and directory: its
+  # project only names what the proposal is about, while it still exists.
+  defp resolve_project(changeset, workspace) do
+    case {Changeset.get_field(changeset, :project_id), Changeset.get_field(changeset, :runner_id)} do
+      {nil, _runner_id} ->
+        changeset
 
-  defp scratch_context(workspace, directory) do
-    base = %{"directory" => directory, "scratch" => true}
+      {project_id, nil} ->
+        put_project(changeset, Projects.get_project(workspace, project_id))
 
-    case Projects.for_directory(workspace, directory) do
-      %Project{copy_paths: [_ | _] = paths} -> Map.put(base, "setup", %{"copy" => paths})
-      _none -> base
+      {project_id, _task_runner_id} ->
+        if Projects.get_project(workspace, project_id),
+          do: changeset,
+          else: Changeset.put_change(changeset, :project_id, nil)
+    end
+  end
+
+  defp put_project(changeset, nil),
+    do: Changeset.add_error(changeset, :project_id, "o projeto não existe mais")
+
+  defp put_project(changeset, %Project{runner: %Runner{revoked_at: nil}} = project) do
+    changeset
+    |> Changeset.put_change(:runner_id, project.runner_id)
+    |> Changeset.put_change(:directory, project.directory)
+  end
+
+  defp put_project(changeset, %Project{}),
+    do: Changeset.add_error(changeset, :project_id, "o projeto precisa de um runner")
+
+  # A directory is studied in a disposable worktree, set up as its project
+  # says when there is one (else the runner finds the usual paths to clone).
+  defp scratch_context(workspace, data) do
+    project = data[:project_id] && Projects.get_project(workspace, data[:project_id])
+
+    case {data[:directory], project} do
+      {nil, _project} -> %{}
+      {directory, %Project{directory: directory}} -> Projects.scratch_context(project)
+      {directory, _other} -> %{"directory" => directory, "scratch" => true}
     end
   end
 
@@ -179,6 +218,38 @@ defmodule PipeMaestro.Proposals do
     end
   end
 
+  @doc "The JSON Schema of the commands an answer says the agent ran to check what it proposes."
+  @spec checks_schema() :: map()
+  def checks_schema do
+    %{
+      "type" => "array",
+      "description" => "Cada comando que você rodou para conferir o que propõe.",
+      "items" => %{
+        "type" => "object",
+        "required" => ["comando", "passou"],
+        "properties" => %{
+          "comando" => %{"type" => "string"},
+          "passou" => %{"type" => "boolean"},
+          "observacao" => %{"type" => "string"}
+        }
+      }
+    }
+  end
+
+  @doc "The commands an answer says the agent ran (`checks_schema/0`), read defensively."
+  @spec checks(term()) :: [%{command: String.t(), passed: boolean(), note: String.t()}]
+  def checks(list) when is_list(list) do
+    for %{"comando" => command} = check <- list, is_binary(command) do
+      %{
+        command: command,
+        passed: check["passou"] == true,
+        note: text(check["observacao"])
+      }
+    end
+  end
+
+  def checks(_other), do: []
+
   @doc "The workspace's latest proposals (of `kinds`, or all), newest first."
   @spec list_recent(Workspace.t(), [String.t()] | :all, pos_integer()) :: [Job.t()]
   def list_recent(%Workspace{id: workspace_id}, kinds \\ :all, limit \\ 50) do
@@ -206,21 +277,22 @@ defmodule PipeMaestro.Proposals do
   @doc """
   Has the agent write the task for a GitHub issue (`"title"`, `"body"`,
   `"html_url"`) of `project`, whose trigger triages (`trigger_mode`
-  `"triage"`), on `runner_id`, on behalf of whoever set the trigger up. The
-  trigger's pipeline is suggested to the agent.
+  `"triage"`), on the project's runner (waiting for it when offline), on
+  behalf of whoever set the trigger up. The trigger's pipeline is suggested
+  to the agent.
   """
-  @spec triage_issue(Workspace.t(), Project.t(), map(), Ecto.UUID.t()) ::
+  @spec triage_issue(Workspace.t(), Project.t(), map()) ::
           {:ok, Job.t()} | {:error, Changeset.t() | :no_trigger_user | :already_triaging}
-  def triage_issue(%Workspace{} = workspace, %Project{} = project, issue, runner_id) do
+  def triage_issue(%Workspace{} = workspace, %Project{} = project, issue) do
     case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
-      %User{} = user -> triage(workspace, project, issue, runner_id, user)
+      %User{} = user -> triage(workspace, project, issue, user)
       _nobody -> {:error, :no_trigger_user}
     end
   end
 
   # One triage per issue at a time: GitHub may deliver the same label twice,
   # so the check and the insert run under a lock on the issue.
-  defp triage(workspace, project, issue, runner_id, user) do
+  defp triage(workspace, project, issue, user) do
     url = issue["html_url"]
 
     Repo.transaction(fn ->
@@ -228,8 +300,7 @@ defmodule PipeMaestro.Proposals do
       if triaging?(workspace, url), do: Repo.rollback(:already_triaging)
 
       attrs = %{
-        "runner_id" => runner_id,
-        "directory" => project.directory,
+        "project_id" => project.id,
         "request" => triage_request(workspace, project, issue),
         "issue_url" => url
       }
@@ -261,7 +332,7 @@ defmodule PipeMaestro.Proposals do
   @doc """
   The workspace's proposals, newest first, narrowed by `filters` (blank
   values ignored): `"kind"`, `"status"` (`"active"` for queued or running, or
-  a job status), `"directory"` and `"user_id"` (who asked).
+  a job status), `"project_id"` and `"user_id"` (who asked).
   """
   @spec list(Workspace.t(), map(), pos_integer()) :: [Job.t()]
   def list(%Workspace{id: workspace_id}, filters \\ %{}, limit \\ 100) do
@@ -270,7 +341,7 @@ defmodule PipeMaestro.Proposals do
       where: fragment("(?->'proposal') IS NOT NULL", j.context),
       order_by: [desc: j.inserted_at],
       limit: ^limit,
-      preload: [:runner, :created_by_user]
+      preload: [:runner, :created_by_user, :project]
     )
     |> filter_by(filters)
     |> Repo.all()
@@ -294,12 +365,11 @@ defmodule PipeMaestro.Proposals do
       {"status", status}, query when status in ~w(succeeded failed canceled) ->
         where(query, [j], j.status == ^String.to_existing_atom(status))
 
-      {"directory", directory}, query ->
-        where(
-          query,
-          [j],
-          fragment("?->'proposal'->'input'->>'directory'", j.context) == ^directory
-        )
+      {"project_id", project_id}, query ->
+        case Ecto.UUID.cast(project_id) do
+          {:ok, id} -> where(query, [j], j.project_id == ^id)
+          :error -> where(query, false)
+        end
 
       {"user_id", user_id}, query ->
         case Ecto.UUID.cast(user_id) do

@@ -493,7 +493,7 @@ defmodule PipeMaestro.Insights do
 
   @doc """
   The query of a workspace's jobs that ended since `since`, optionally only
-  a `"pipeline"`'s (its name, in `filters`).
+  a `"pipeline"`'s (its name, in `filters`) or a project's (`"project_id"`).
   """
   @spec jobs_query(Workspace.t(), DateTime.t(), map()) :: Ecto.Query.t()
   def jobs_query(%Workspace{id: workspace_id}, since, filters \\ %{}) do
@@ -501,19 +501,30 @@ defmodule PipeMaestro.Insights do
       from j in Job,
         where: j.workspace_id == ^workspace_id and j.finished_at >= ^since
 
-    case filters["pipeline"] do
-      name when is_binary(name) and name != "" ->
-        from j in query,
-          join: r in StageRun,
-          on: r.id == j.stage_run_id,
-          join: t in Task,
-          on: t.id == r.task_id,
-          where: t.pipeline_name == ^name
+    query
+    |> by_pipeline(filters["pipeline"])
+    |> by_project(filters["project_id"])
+  end
 
-      _all ->
-        query
+  defp by_pipeline(query, name) when is_binary(name) and name != "" do
+    from j in query,
+      join: r in StageRun,
+      on: r.id == j.stage_run_id,
+      join: t in Task,
+      on: t.id == r.task_id,
+      where: t.pipeline_name == ^name
+  end
+
+  defp by_pipeline(query, _all), do: query
+
+  defp by_project(query, id) when is_binary(id) and id != "" do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> where(query, [j], j.project_id == ^id)
+      :error -> where(query, false)
     end
   end
+
+  defp by_project(query, _all), do: query
 
   # The kept summaries' counts, added up.
   defp summed(jobs) do

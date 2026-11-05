@@ -2,7 +2,7 @@ defmodule PipeMaestroWeb.BoardLive do
   @moduledoc """
   The workspace's board: the week in numbers, the tasks by state (running,
   waiting for a decision, done, failed), filterable by pipeline, runner,
-  directory and person, the decisions waiting, recent activity and the
+  project and person, the decisions waiting, recent activity and the
   runners. Everything updates live: the alerts follow the runners' presence
   and limits, and an alert on a runner's limit ends by itself when the limit
   resets (`PipeMaestro.Tasks.alerts_change_at/2`).
@@ -14,7 +14,7 @@ defmodule PipeMaestroWeb.BoardLive do
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
 
   alias Phoenix.Socket.Broadcast
-  alias PipeMaestro.{Jobs, Pipelines, Runners, Tasks, Workspaces}
+  alias PipeMaestro.{Jobs, Pipelines, Projects, Runners, Tasks, Workspaces}
   alias PipeMaestro.Tasks.Task
   alias PipeMaestroWeb.RunnerStatus
 
@@ -96,7 +96,7 @@ defmodule PipeMaestroWeb.BoardLive do
       tasks: Tasks.list_tasks(workspace, socket.assigns.filters),
       awaiting: Tasks.list_awaiting(workspace),
       recent: all |> Enum.sort_by(& &1.updated_at, {:desc, DateTime}) |> Enum.take(8),
-      directories: all |> Enum.map(& &1.directory) |> Enum.uniq() |> Enum.sort()
+      projects: Projects.list_projects(workspace)
     )
     |> load_alerts()
     |> load_stats()
@@ -244,12 +244,12 @@ defmodule PipeMaestroWeb.BoardLive do
                 data-testid="board-filter-runner"
               />
               <.icon_field
-                field={to_form(@filters, as: "filters")[:directory]}
+                field={to_form(@filters, as: "filters")[:project_id]}
                 icon="hero-folder-open"
                 type="select"
-                label="Diretório"
-                options={options(@directories, "Todos")}
-                data-testid="board-filter-directory"
+                label="Projeto"
+                options={options(Enum.map(@projects, &{&1.name, &1.id}), "Todos")}
+                data-testid="board-filter-project"
               />
               <.icon_field
                 field={to_form(@filters, as: "filters")[:user_id]}
@@ -548,10 +548,14 @@ defmodule PipeMaestroWeb.BoardLive do
             {task.pipeline_name} · {stage_label(task)}
           </p>
           <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            <span class="flex min-w-0 items-center gap-1 font-mono">
-              <.icon name="hero-server-micro" class="size-3.5 shrink-0" />
-              <span class="truncate">
-                {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
+            <span class="flex min-w-0 items-center gap-1">
+              <.icon name="hero-folder-micro" class="size-3.5 shrink-0" />
+              <span
+                class="truncate"
+                title={"#{if task.runner, do: task.runner.name, else: "—"}:#{task.directory}"}
+                data-testid="board-card-project"
+              >
+                {(task.project || %{})["name"] || task.directory}
               </span>
             </span>
             <span class="shrink-0">{time_ago(task.updated_at, @now)}</span>

@@ -596,8 +596,25 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 </dd>
               </div>
               <div>
-                <dt class="text-gray-500 dark:text-gray-400">Runner · diretório</dt>
-                <dd class="font-mono text-xs text-gray-900 dark:text-white" data-testid="task-where">
+                <dt class="text-gray-500 dark:text-gray-400">Projeto</dt>
+                <dd class="text-gray-900 dark:text-white" data-testid="task-project">
+                  <.link
+                    :if={@task.project_id}
+                    navigate={
+                      ~p"/w/#{@current_scope.workspace.slug}/projects/#{@task.project_id}/edit"
+                    }
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                  >
+                    {(@task.project || %{})["name"] || @task.directory}
+                  </.link>
+                  <span :if={!@task.project_id}>
+                    {(@task.project || %{})["name"] || "sem projeto"}
+                  </span>
+                </dd>
+                <dd
+                  class="font-mono text-xs text-gray-500 dark:text-gray-400"
+                  data-testid="task-where"
+                >
                   {if @task.runner, do: @task.runner.name, else: "—"}:{@task.directory}
                 </dd>
               </div>
@@ -646,8 +663,46 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 </dd>
               </div>
             </dl>
+            <details
+              :if={@task.project}
+              id="task-project-snapshot"
+              class="mt-4 text-sm"
+              data-testid="task-project-snapshot"
+              phx-mounted={JS.ignore_attributes(["open"])}
+            >
+              <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
+                Retrato do projeto quando a tarefa começou
+              </summary>
+              <dl class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                <div :for={
+                  {label, value} <- [
+                    {"Setup", @task.project["setup_command"]},
+                    {"Testes", @task.project["test_command"]},
+                    {"Lint", @task.project["lint_command"]},
+                    {"Copiar para o worktree", Enum.join(@task.project["copy_paths"] || [], ", ")}
+                  ]
+                }>
+                  <dt class="text-gray-500 dark:text-gray-400">{label}</dt>
+                  <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
+                    {if value in [nil, ""], do: "—", else: value}
+                  </dd>
+                </div>
+              </dl>
+            </details>
             <.alert
-              :if={Tasks.runner_offline?(@task, @online)}
+              :if={Tasks.waiting_for_runner?(@task, @online)}
+              color="info"
+              with_icon
+              class="mt-4"
+              data-testid="task-waiting-runner"
+            >
+              Aguardando o runner {if @task.runner, do: @task.runner.name, else: "—"} ficar online: a etapa começa assim que ele conectar.
+            </.alert>
+            <.alert
+              :if={
+                Tasks.runner_offline?(@task, @online) and
+                  not Tasks.waiting_for_runner?(@task, @online)
+              }
               color="danger"
               with_icon
               class="mt-4"

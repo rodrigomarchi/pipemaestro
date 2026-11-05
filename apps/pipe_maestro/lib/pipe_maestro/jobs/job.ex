@@ -4,8 +4,10 @@ defmodule PipeMaestro.Jobs.Job do
   its run went: `queued` until the runner starts it, `running`, then
   `succeeded`, `failed` or `canceled`.
 
-  A job is either sent on its own or runs one attempt of a task's stage
-  (`stage_run`). `context` holds what the runner needs besides the prompt, in
+  A job is either sent on its own, in a disposable worktree of its project's
+  directory, or runs one attempt of a task's stage (`stage_run`), or asks
+  the agent for a proposal. `project` is the project it ran for, when there
+  is one. `context` holds what the runner needs besides the prompt, in
   the wire form of `PipeMaestroProtocol.Job` (directory, worktree,
   output schema, model, budget, artifact path); `structured_output`,
   `artifact`, `workdir`, `setup` (how it prepared a new worktree) and
@@ -33,6 +35,7 @@ defmodule PipeMaestro.Jobs.Job do
 
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Jobs.Event
+  alias PipeMaestro.Projects.Project
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.Job, as: WireJob
@@ -85,6 +88,8 @@ defmodule PipeMaestro.Jobs.Job do
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
           runner_id: Ecto.UUID.t() | nil,
           runner: Runner.t() | Ecto.Association.NotLoaded.t() | nil,
+          project_id: Ecto.UUID.t() | nil,
+          project: Project.t() | Ecto.Association.NotLoaded.t() | nil,
           created_by_user_id: Ecto.UUID.t() | nil,
           created_by_user: User.t() | Ecto.Association.NotLoaded.t() | nil,
           inserted_at: DateTime.t() | nil,
@@ -136,6 +141,7 @@ defmodule PipeMaestro.Jobs.Job do
 
     belongs_to :workspace, Workspace
     belongs_to :runner, Runner
+    belongs_to :project, Project
     belongs_to :created_by_user, User
     belongs_to :stage_run, PipeMaestro.Tasks.StageRun
     has_many :events, Event
@@ -174,11 +180,24 @@ defmodule PipeMaestro.Jobs.Job do
     if total > 0, do: Float.round((cache_read || 0) / total, 2)
   end
 
-  @doc "Changeset for a new job: the prompt and the runner chosen for it."
+  @doc "Changeset for a new job a person sends: the prompt and the project it runs for."
   @spec create_changeset(t(), map()) :: Ecto.Changeset.t()
   def create_changeset(job, attrs) do
     job
-    |> cast(attrs, [:prompt, :runner_id])
+    |> cast(attrs, [:prompt, :project_id])
+    |> validate_required([:prompt], message: "escreva o que o agente deve fazer")
+    |> validate_required([:project_id], message: "escolha um projeto")
+    |> validate_length(:prompt, max: WireJob.max_prompt_bytes(), count: :bytes)
+  end
+
+  @doc """
+  Changeset for a job the control plane builds itself (a proposal): the
+  prompt, the runner and the project it is about, if any.
+  """
+  @spec runner_changeset(t(), map()) :: Ecto.Changeset.t()
+  def runner_changeset(job, attrs) do
+    job
+    |> cast(attrs, [:prompt, :runner_id, :project_id])
     |> validate_required([:prompt], message: "escreva o que o agente deve fazer")
     |> validate_required([:runner_id], message: "escolha um runner online")
     |> validate_length(:prompt, max: WireJob.max_prompt_bytes(), count: :bytes)

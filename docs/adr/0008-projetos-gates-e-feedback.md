@@ -1,6 +1,7 @@
 # 0008 — Projetos, gates por comando, regras e retentativa com feedback
 
 - **Status:** aceita
+- **Complementada por:** [ADR 0034](0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md) (o projeto passa a ser runner + pasta, não só um nome de pasta)
 - **Data:** 03/11/2026
 - **Roadmap:** Marco 3, itens 1 a 4, de [`03-roadmap-orquestrador.md`](../plano/03-roadmap-orquestrador.md)
 

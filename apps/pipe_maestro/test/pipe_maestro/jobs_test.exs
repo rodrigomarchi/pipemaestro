@@ -19,10 +19,19 @@ defmodule PipeMaestro.JobsTest do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
       :ok = Jobs.subscribe({:workspace, ctx.workspace.id})
 
+      {:ok, runner} =
+        Runners.record_hello(
+          ctx.runner,
+          hello_fixture(%{
+            directories: [%{"name" => "app", "git" => true}],
+            capabilities: ["scratch"]
+          })
+        )
+
       assert {:ok, %Job{status: :queued} = job} =
                Jobs.create_job(ctx.user, ctx.workspace, %{
                  "prompt" => "diga oi",
-                 "runner_id" => ctx.runner.id
+                 "project_id" => project_fixture(runner, "app").id
                })
 
       assert job.runner.id == ctx.runner.id
@@ -33,17 +42,18 @@ defmodule PipeMaestro.JobsTest do
       assert Jobs.get_job!(ctx.workspace, id).prompt == "diga oi"
     end
 
-    test "requires a prompt and a runner", ctx do
+    test "requires a prompt and a project", ctx do
       assert {:error, changeset} = Jobs.create_job(ctx.user, ctx.workspace, %{})
-      assert %{prompt: [_], runner_id: [_]} = errors_on(changeset)
+      assert %{prompt: [_], project_id: [_]} = errors_on(changeset)
     end
 
-    test "refuses a runner of another workspace or a revoked one", ctx do
+    test "a job of the control plane's own refuses a runner of another workspace or a revoked one",
+         ctx do
       other = workspace_fixture()
       {foreign, _token} = runner_fixture(other, member_fixture(other))
 
       assert {:error, changeset} =
-               Jobs.create_job(ctx.user, ctx.workspace, %{
+               Jobs.create_runner_job(ctx.user, ctx.workspace, %{
                  "prompt" => "x",
                  "runner_id" => foreign.id
                })
@@ -53,7 +63,7 @@ defmodule PipeMaestro.JobsTest do
       {:ok, revoked} = Runners.revoke_runner(ctx.runner)
 
       assert {:error, _changeset} =
-               Jobs.create_job(ctx.user, ctx.workspace, %{
+               Jobs.create_runner_job(ctx.user, ctx.workspace, %{
                  "prompt" => "x",
                  "runner_id" => revoked.id
                })
@@ -136,7 +146,10 @@ defmodule PipeMaestro.JobsTest do
   describe "what a run reports for auditing" do
     setup ctx do
       {:ok, job} =
-        Jobs.create_job(ctx.user, ctx.workspace, %{"prompt" => "oi", "runner_id" => ctx.runner.id})
+        Jobs.create_runner_job(ctx.user, ctx.workspace, %{
+          "prompt" => "oi",
+          "runner_id" => ctx.runner.id
+        })
 
       {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
       %{job: job}
@@ -413,8 +426,7 @@ defmodule PipeMaestro.JobsTest do
           "title" => "Corrigir o login",
           "prompt" => "O botão de login não responde",
           "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-          "runner_id" => runner.id,
-          "directory" => "app"
+          "project_id" => project_fixture(runner, "app").id
         })
 
       [stage_run] = task.stage_runs

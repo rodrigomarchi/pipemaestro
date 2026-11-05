@@ -1,13 +1,13 @@
 /**
  * @section Execuções
- * @flow A [done] A member sends a prompt to an online runner: the runner runs the agent CLI in its workdir and the run shows live, ending with the result, cost and duration
+ * @flow A [done] A member sends a prompt to a project (a runner and a directory): the runner runs the agent CLI in a disposable worktree of the project's directory and the run shows live, ending with the result, cost and duration
  * @flow B [done] A member cancels a running job: the runner stops the agent and the job ends canceled
  * @flow C [done] A job whose agent fails ends failed with the CLI's error; the list shows every job's status
  * @flow D [done] The timeline shows the events without text as icons in a strip, each opening its panel below it; an open panel stays open while the strip grows live
  * @flow E [done] The audit shows where the run's time went and what else the CLI's telemetry reported (MCP connections, permission decisions, subagents, API origins, active time); a running job shows what it spent so far
  * @flow F [done] A run that reports its account near the usage limits marks its runner: bars per window on the runner, a badge in the list, and a card in Usage
  */
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
@@ -16,6 +16,7 @@ import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { JobsPage } from "../pages/JobsPage";
+import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 
 test.describe("Job execution", () => {
@@ -43,27 +44,33 @@ test.describe("Job execution", () => {
     await app.expectBoard(workspace.name);
 
     runner = new RunnerProcess();
+    const root = runner.createCodeRoot();
     runner.start("runner.login", ["--url", app.page.url().replace(/\/w\/.*$/, "")]);
     const [, code] = await runner.waitFor(/digite o código:\s+([A-Z]{4}-[A-Z]{4})/);
     await new RunnersPage(app.page).approve(code, runnerName);
     expect(await runner.waitForExit()).toBe(0);
 
-    runner.start("runner.start");
+    runner.start("runner.start", ["--root", root]);
     await runner.waitFor(/Online como/);
+
+    const projects = new ProjectsPage(app.page);
+    await projects.open(workspace.slug);
+    await projects.create({ name: "App", runner: runnerName, directory: "app" });
 
     const jobs = new JobsPage(app.page);
     await jobs.open(workspace.slug);
     await expect(app.page.getByTestId("no-jobs")).toBeVisible();
 
     // Flow A: a job runs to the end.
-    const prompt = `Grave este prompt no workdir (${suffix})`;
-    const doneId = await jobs.create(runnerName, prompt);
+    const prompt = `Grave este prompt (${suffix})`;
+    const doneId = await jobs.create("App", prompt);
     await expect(jobs.status).toHaveText("Concluído");
     await expect(jobs.result).toContainText("fake-claude.txt");
     await expect(app.page.getByTestId("job-cost")).toHaveText("US$ 0.0042");
     await expect(app.page.getByTestId("job-duration")).toHaveText("1 s");
     await runner.waitFor(new RegExp(`Job ${doneId} concluído`));
-    expect(readFileSync(join(runner.workdir, "fake-claude.txt"), "utf8")).toBe(`${prompt}\n`);
+    // The agent ran in a disposable worktree: its file never reached the directory.
+    expect(existsSync(join(root, "app", "fake-claude.txt"))).toBe(false);
 
     // The session, thinking, the Write and its result are icons in one strip;
     // the answer and the result are blocks of text.
@@ -126,7 +133,7 @@ test.describe("Job execution", () => {
 
     // Flow D: an open panel stays open while its strip grows live.
     await jobs.backToList();
-    await jobs.create(runnerName, "Use mais uma ferramenta [gotejando]");
+    await jobs.create("App", "Use mais uma ferramenta [gotejando]");
     await expect(jobs.timeline.icon(4)).toBeVisible();
     await jobs.timeline.toggle(2);
     await expect(jobs.timeline.panel(2)).toBeVisible();
@@ -139,7 +146,7 @@ test.describe("Job execution", () => {
 
     // Flow B: a long job is canceled while it runs.
     await jobs.backToList();
-    const slowId = await jobs.create(runnerName, "Demore bastante [lento]");
+    const slowId = await jobs.create("App", "Demore bastante [lento]");
     await expect(jobs.status).toHaveText("Executando");
     await expect(jobs.timeline.icons()).toHaveCount(4);
     // Flow E: what the running job spent so far follows its telemetry.
@@ -153,7 +160,7 @@ test.describe("Job execution", () => {
 
     // Flow C: the agent fails.
     await jobs.backToList();
-    const failedId = await jobs.create(runnerName, "Quebre de propósito [falha]");
+    const failedId = await jobs.create("App", "Quebre de propósito [falha]");
     await expect(jobs.status).toHaveText("Falhou");
     await expect(jobs.error).toContainText("falha simulada");
     await shot(app.page, "job-failed");
@@ -165,7 +172,7 @@ test.describe("Job execution", () => {
     await shot(app.page, "jobs-list");
 
     // Flow F: a run near the account's limits marks its runner.
-    await jobs.create(runnerName, "Gaste a conta [limite]");
+    await jobs.create("App", "Gaste a conta [limite]");
     await expect(jobs.status).toHaveText("Concluído");
     await new RunnersPage(app.page).open(workspace.slug);
     await expect(app.page.getByTestId(`runner-near-limit-${runnerName}`)).toBeVisible();

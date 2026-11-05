@@ -19,8 +19,7 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
         "title" => title,
         "prompt" => "faça",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_on(ctx.runner, "app").id
       })
 
     job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
@@ -64,6 +63,7 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
     assert has_element?(view, "[data-testid=decision-#{task.id}]", "Tela branca")
     assert has_element?(view, "[data-testid=decision-#{task.id}]", "Qual navegador?")
     assert has_element?(view, "[data-testid=decision-#{task.id}]", "Etapa A")
+    assert has_element?(view, "[data-testid=decision-project-#{task.id}]", "app")
 
     view
     |> form("[data-testid=decision-form-#{task.id}]", decision: %{instructions: "Safari 17"})
@@ -127,8 +127,7 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
         "title" => title,
         "prompt" => "faça",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_on(ctx.runner, "app").id
       })
 
     job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job

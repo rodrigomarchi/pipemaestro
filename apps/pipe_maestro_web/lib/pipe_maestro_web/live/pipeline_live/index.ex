@@ -11,7 +11,6 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
 
   alias PipeMaestro.Audit
   alias PipeMaestro.Pipelines
-  alias PipeMaestro.Projects
   alias PipeMaestroWeb.ProposalRequest
 
   @impl true
@@ -82,16 +81,14 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   defp admin_event("open_generate", _params, socket),
     do: {:noreply, ProposalRequest.open(socket, "pipeline")}
 
-  # The pipeline's project is the directory a task of it last ran in, if any.
+  # The pipeline's project is the one its last finished task ran in, if any.
   defp admin_event("open_improve", %{"id" => id}, socket) do
-    workspace = socket.assigns.current_scope.workspace
-    pipeline = Pipelines.get_pipeline!(workspace, id)
-    directory = pipeline_directory(workspace, pipeline)
+    pipeline = Pipelines.get_pipeline!(socket.assigns.current_scope.workspace, id)
 
     {:noreply,
      ProposalRequest.open(socket, "improve",
        fixed: %{"pipeline_id" => pipeline.id},
-       directory: directory
+       project_id: pipeline_project_id(pipeline)
      )}
   end
 
@@ -136,10 +133,10 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
     slug <> ".yaml"
   end
 
-  defp pipeline_directory(workspace, pipeline) do
+  defp pipeline_project_id(pipeline) do
     case PipeMaestro.Tasks.history(pipeline, 1) do
-      [task | _] -> task.directory
-      [] -> workspace |> Projects.list_projects() |> Enum.map(& &1.directory) |> List.first()
+      [task | _] -> task.project_id
+      [] -> nil
     end
   end
 

@@ -195,8 +195,11 @@ defmodule PipeMaestroWeb.DecisionsLive do
                 </.link>
                 <p class="text-sm text-gray-500 dark:text-gray-400">
                   {task.pipeline_name} · {stage_name(task)} ·
+                  <span data-testid={"decision-project-#{task.id}"}>
+                    {(task.project || %{})["name"] || task.directory}
+                  </span>
                   <span class="font-mono text-xs">
-                    {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
+                    ({if task.runner, do: task.runner.name, else: "—"}:{task.directory})
                   </span>
                 </p>
               </div>

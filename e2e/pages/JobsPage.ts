@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
+import { selectProject } from "../helpers/projectSelect";
 
 /**
  * A run's timeline, inside `scope` (the job's `job-events`, a task's
@@ -68,12 +69,13 @@ export class JobsPage {
   }
 
   /**
-   * Sends `prompt` to the runner named `runnerName`, waits on the job's page
-   * and returns the job's id.
+   * Sends `prompt` to the project named `project` (it runs in a disposable
+   * worktree of the project's directory), waits on the job's page and returns
+   * the job's id.
    */
-  async create(runnerName: string, prompt: string): Promise<string> {
+  async create(project: string, prompt: string): Promise<string> {
     await this.page.getByTestId("new-job").click();
-    await this.page.getByTestId("job-runner").selectOption({ label: runnerName });
+    await selectProject(this.page.getByTestId("job-project"), project);
     await this.page.getByTestId("job-prompt").fill(prompt);
     await this.page.getByTestId("job-submit").click();
     await expect(this.page.getByTestId("job-prompt-text")).toHaveText(prompt);

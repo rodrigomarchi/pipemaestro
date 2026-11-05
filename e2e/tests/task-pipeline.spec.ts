@@ -69,6 +69,11 @@ test.describe("Task pipeline", () => {
     runner.start("runner.start", ["--root", root]);
     await runner.waitFor(/Online como/);
 
+    const projects = new ProjectsPage(app.page);
+    await projects.open(workspace.slug);
+    await projects.create({ name: "App", runner: runnerName, directory: "app" });
+    await projects.create({ name: "Notas", runner: runnerName, directory: "notas" });
+
     // Flow A: ready-made pipelines, one edited.
     const pipelines = new PipelinesPage(app.page);
     await pipelines.open(workspace.slug);
@@ -110,8 +115,7 @@ test.describe("Task pipeline", () => {
       title: "Botão de login não responde",
       prompt: "Ao clicar em Entrar nada acontece.",
       pipeline: "Correção de bug",
-      runner: runnerName,
-      directory: "app",
+      project: "App",
       shot: "task-form",
     });
 
@@ -183,8 +187,7 @@ test.describe("Task pipeline", () => {
       title: "Erro intermitente",
       prompt: "Às vezes a tela fica branca. [bloqueio]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "notas",
+      project: "Notas",
     });
 
     await expect(tasks.status).toHaveText("Aguardando decisão");
@@ -221,8 +224,7 @@ test.describe("Task pipeline", () => {
       title: "Demorada",
       prompt: "Leva tempo. [lento]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "notas",
+      project: "Notas",
     });
     await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Executando");
     await tasks.interrupt();
@@ -234,11 +236,8 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("task-correct")).toBeVisible();
 
     // Flow G: a project for `app`, its setup and its test command as a gate.
-    const projects = new ProjectsPage(app.page);
     await projects.open(workspace.slug);
-    await projects.create({
-      name: "App",
-      directory: "app",
+    await projects.configure("app", {
       setup: "echo pronto > setup.txt",
       test: "test -f fake-claude.txt",
       shot: "project-form",
@@ -250,8 +249,7 @@ test.describe("Task pipeline", () => {
       title: "Com gate",
       prompt: "Faça e registre.",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "app",
+      project: "App",
     });
     await expect(tasks.status).toHaveText("Concluída");
     await expect(app.page.getByTestId("stage-run-gate-executar-1-0")).toHaveAttribute("data-passed", "true");
@@ -273,8 +271,7 @@ test.describe("Task pipeline", () => {
       title: "Esqueceu um arquivo",
       prompt: "Faça e registre. [sujo]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "app",
+      project: "App",
     });
     // One attempt in this pipeline: the failed check waits for a decision.
     await expect(tasks.status).toHaveText("Aguardando decisão");

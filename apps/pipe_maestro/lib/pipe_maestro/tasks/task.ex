@@ -157,7 +157,7 @@ defmodule PipeMaestro.Tasks.Task do
   @spec create_changeset(t(), map()) :: Ecto.Changeset.t()
   def create_changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :prompt, :pipeline_id, :runner_id, :directory, :issue_url])
+    |> cast(attrs, [:title, :prompt, :pipeline_id, :project_id, :issue_url])
     |> validate_format(:issue_url, ~r{^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$},
       message: "use o link de uma issue do GitHub (https://github.com/dono/repo/issues/N)"
     )
@@ -165,8 +165,7 @@ defmodule PipeMaestro.Tasks.Task do
     |> validate_required([:title], message: "dê um título à tarefa")
     |> validate_required([:prompt], message: "descreva o que deve ser feito")
     |> validate_required([:pipeline_id], message: "escolha um pipeline")
-    |> validate_required([:runner_id], message: "escolha um runner online")
-    |> validate_required([:directory], message: "escolha um diretório do runner")
+    |> validate_required([:project_id], message: "escolha um projeto")
     |> validate_length(:title, max: 120)
     |> validate_length(:prompt, max: 16_000, count: :bytes)
     |> unique_constraint(:proposal_job_id, message: "esta proposta já virou uma tarefa")

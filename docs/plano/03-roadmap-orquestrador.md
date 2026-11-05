@@ -34,7 +34,7 @@ O meio da cadeia da Fase 0 já existe:
 |---|---|---|---|
 | Segurança da execução | Container efêmero, rede restrita | Permissões totais na máquina do dev | Marco 1 (perfis de permissão); containers ficam para o runner de cliente |
 | Credencial do agente | API key do cliente no executor | Login de quem roda o `claude` | Marco 1 (modo de autenticação visível e configurável) |
-| Projeto | Entidade "Projeto (repositório)" com configuração | Só "runner + diretório" | Marco 3 (Projetos) |
+| Projeto | Entidade "Projeto (repositório)" com configuração | Só "runner + diretório" | Marco 3 (Projetos); runner + pasta e escolha única de quem dispara trabalho: ADR 0034 |
 | Gates | Testes, lint, reprodução falha → passa | Só o contrato de saída | Marco 3 (gates por comando) |
 | Decisões | Entidade com contexto, responsável, prazo | Pausa com motivo | Marco 2 (página de Decisões) e Marco 3 (entidade) |
 | Board | Board em tempo real | Mock | Marco 2 |
@@ -133,7 +133,7 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
    - Cada intervenção aparece na linha da tarefa como uma mensagem.
 6. **✓ Board real** (ADR 0007).
    - Tarefas por estado e por etapa atual, ao vivo, no lugar do mock.
-   - Filtros por pipeline, runner, diretório e pessoa.
+   - Filtros por pipeline, runner, projeto (antes diretório; ADR 0034) e pessoa.
 7. **✓ Página de Decisões** (ADR 0007).
    - O que espera alguém, em todo o workspace, com o motivo e a ação direta.
    - Contador no menu, que já existe e hoje é fixo.

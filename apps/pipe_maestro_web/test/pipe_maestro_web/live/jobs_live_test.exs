@@ -24,41 +24,53 @@ defmodule PipeMaestroWeb.JobsLiveTest do
     pid
   end
 
-  test "is empty at first and offers only online runners", %{
+  # A runner with a git directory, able to run a disposable worktree.
+  defp scratch_runner(workspace, user, name) do
+    {runner, _token} = runner_fixture(workspace, user, %{name: name})
+
+    {:ok, runner} =
+      PipeMaestro.Runners.record_hello(
+        runner,
+        hello_fixture(%{
+          directories: [%{"name" => "app", "git" => true}],
+          capabilities: ["scratch"]
+        })
+      )
+
+    runner
+  end
+
+  test "is empty at first and offers the projects", %{
     conn: conn,
     workspace: workspace,
     user: user
   } do
-    {online, _token} = runner_fixture(workspace, user, %{name: "ligado"})
-    runner_fixture(workspace, user, %{name: "desligado"})
-    bring_online(online)
+    project_fixture(scratch_runner(workspace, user, "ligado"), "app", %{"name" => "App"})
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs")
     assert has_element?(view, "[data-testid=no-jobs]")
 
     view |> element("[data-testid=new-job]") |> render_click()
-    refute has_element?(view, "[data-testid=no-online-runners]")
-
-    options = view |> element("[data-testid=job-runner]") |> render()
-    assert options =~ "ligado"
-    refute options =~ "desligado"
+    refute has_element?(view, "[data-testid=job-no-projects]")
+    assert view |> element("[data-testid=job-project]") |> render() =~ "App · ligado:app"
 
     render_click(view, "close_new")
     refute has_element?(view, "#new-job-form")
   end
 
-  test "warns when no runner is online", %{conn: conn, workspace: workspace} do
+  test "points to the projects when there are none", %{conn: conn, workspace: workspace} do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs")
     view |> element("[data-testid=new-job]") |> render_click()
-    assert has_element?(view, "[data-testid=no-online-runners]")
+    assert has_element?(view, "[data-testid=job-no-projects]")
   end
 
-  test "sends a prompt to a runner and opens the job", %{
+  test "sends a prompt to a project and opens the job", %{
     conn: conn,
     workspace: workspace,
     user: user
   } do
-    {runner, _token} = runner_fixture(workspace, user, %{name: "ligado"})
+    runner = scratch_runner(workspace, user, "ligado")
+    project = project_fixture(runner, "app")
     bring_online(runner)
     Jobs.subscribe({:runner, runner.id})
 
@@ -73,7 +85,7 @@ defmodule PipeMaestroWeb.JobsLiveTest do
 
     {:error, {:live_redirect, %{to: "/w/" <> _ = path}}} =
       view
-      |> form("#new-job-form", job: %{prompt: "diga oi", runner_id: runner.id})
+      |> form("#new-job-form", job: %{prompt: "diga oi", project_id: project.id})
       |> render_submit()
 
     assert_receive {:job_assign, job}

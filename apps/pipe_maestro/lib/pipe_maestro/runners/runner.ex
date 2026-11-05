@@ -61,6 +61,15 @@ defmodule PipeMaestro.Runners.Runner do
     timestamps()
   end
 
+  @doc "The directory named `name` among those the runner announced, or `nil`."
+  @spec directory(t(), String.t() | nil) :: map() | nil
+  def directory(%__MODULE__{directories: directories}, name),
+    do: Enum.find(directories || [], &(&1["name"] == name))
+
+  @doc "Whether the runner announced the directory named `name`."
+  @spec offers?(t(), String.t() | nil) :: boolean()
+  def offers?(%__MODULE__{} = runner, name), do: directory(runner, name) != nil
+
   @doc "Changeset for the runner's display name."
   @spec name_changeset(t(), map()) :: Ecto.Changeset.t()
   def name_changeset(runner, attrs) do

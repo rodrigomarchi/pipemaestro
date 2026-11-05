@@ -2,8 +2,8 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
   @moduledoc """
   The workspace's proposals (`PipeMaestro.Proposals`), newest first, with
   their status live: pipelines, tasks written from an idea or triaged from an
-  issue, decisions and improvements. Filtered by kind, status, directory and
-  who asked.
+  issue, decisions and improvements, each with its project. Filtered by
+  kind, status, project and who asked.
   """
   use PipeMaestroWeb, :live_view
 
@@ -11,7 +11,7 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
   import PipeMaestroWeb.ProposalComponents
 
-  alias PipeMaestro.{Jobs, Proposals, Workspaces}
+  alias PipeMaestro.{Jobs, Projects, Proposals, Workspaces}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -39,13 +39,7 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
 
     assign(socket,
       proposals: Proposals.list(workspace, socket.assigns.filters),
-      directories:
-        workspace
-        |> Proposals.list()
-        |> Enum.map(&Proposals.input(&1)["directory"])
-        |> Enum.reject(&is_nil/1)
-        |> Enum.uniq()
-        |> Enum.sort()
+      projects: Projects.list_projects(workspace)
     )
   end
 
@@ -111,13 +105,13 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
               data-testid="proposals-status"
             />
             <.icon_field
-              field={@filter_form[:directory]}
+              field={@filter_form[:project_id]}
               icon="hero-folder-open"
               type="select"
-              label="Diretório"
+              label="Projeto"
               hide_label
-              options={[{"Qualquer diretório", ""} | Enum.map(@directories, &{&1, &1})]}
-              data-testid="proposals-directory"
+              options={[{"Qualquer projeto", ""} | Enum.map(@projects, &{&1.name, &1.id})]}
+              data-testid="proposals-project"
             />
             <.icon_field
               field={@filter_form[:user_id]}
@@ -159,7 +153,9 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
                   {Proposals.title(job)}
                 </.link>
                 <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-                  {Proposals.input(job)["directory"]}
+                  <span data-testid={"proposal-project-#{job.id}"}>
+                    {if job.project, do: job.project.name, else: Proposals.input(job)["directory"]}
+                  </span>
                   {if job.created_by_user, do: " · #{job.created_by_user.name}"}
                   {" · #{time_ago(job.inserted_at, DateTime.utc_now())}"}
                 </p>

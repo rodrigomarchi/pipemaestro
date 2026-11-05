@@ -21,6 +21,13 @@ succeeded / canceled ──(correct: nova etapa "Correção N")──► running
 qualquer estado menos running ──(redo_from)──► running
 ```
 
+A tarefa nasce de um projeto ([ADR 0034](../adr/0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md)):
+`create_task` recebe `project_id`, e o runner, a pasta, `git` e o retrato saem dele. Um
+projeto sem runner, ou cujo runner não oferece mais a pasta, recusa a tarefa. Com o runner
+offline a tarefa é criada em `running` e o job da primeira etapa fica `queued` até o runner
+conectar (`Tasks.waiting_for_runner?/2`); a tela diz que ela espera o runner, em vez do
+alerta de tarefa parada (`runner_offline?/2`), que vale quando um job já começou.
+
 Nenhum estado é uma rua sem saída ([ADR 0032](../adr/0032-sem-ruas-sem-saida.md)): uma
 tarefa parada ou encerrada sempre aceita um novo prompt.
 
