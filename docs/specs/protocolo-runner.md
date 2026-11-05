@@ -25,7 +25,7 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 ```json
 {
   "hello": {
-    "protocol_version": 3, "runner_version": "2026-11-04.01",
+    "protocol_version": 4, "runner_version": "2026-11-04.01",
     "hostname": "build-01", "os": "linux", "arch": "x86_64",
     "labels": ["linux", "docker"], "capacity": 4
   },
@@ -103,7 +103,7 @@ O token (`cpr_…`) é emitido uma única vez, na primeira consulta depois da ap
 ## 2. Conexão
 
 O runner abre um WebSocket Phoenix (serializador v2) em
-`ws(s)://<plataforma>/runner/socket/websocket?token=<runner_token>&protocol_version=3`.
+`ws(s)://<plataforma>/runner/socket/websocket?token=<runner_token>&protocol_version=4`.
 
 Token inválido, runner revogado ou versão não suportada fazem a plataforma recusar
 o upgrade com **HTTP 403**. Uma nova tentativa não resolve: o runner encerra e
@@ -242,7 +242,10 @@ plane antigo ainda mande.
 | `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB). Sem o campo, o runner tira `CP_ARTIFACT_PATH` do ambiente do agente, para que um valor herdado não vaze para o job |
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
-| `delivery` | `{"commit_message", "push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou (ADR 0013): commit, push do branch, PR em rascunho (`{"title", "body", "ready"}`) e comentário na issue (`{"url", "body"}`). O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}` |
+| `delivery` | `{"push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou nas verificações e nos gates ([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). O runner **não faz commit**: faz o push do `HEAD` (já verificado), abre ou adota o PR da branch e escreve só o bloco da plataforma na descrição (`{"title", "block", "ready"}`: o título só na criação; `ready` tira o prefixo de rascunho) e comenta na issue (`{"url", "body"}`). O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}`, `commit` sendo o commit entregue |
+| `checks` | `[{"id", ...}]`: as verificações da plataforma, rodadas depois do agente e antes dos gates (ADR 0033): `branch` (`branch`), `no_operation`, `contains_origin` (`branch`), `clean` (`artifacts`: a pasta dos artefatos, que fica de fora, como o que o setup copiou ou criou), `artifact_committed` (`path`), `no_artifacts` (`path`) e `no_secrets` (os valores de `env`, nunca escritos no resultado). Cada resultado vem em `gates`, com `"platform": true`, `"id"` e `"message"` (o motivo, escrito para o agente). Com alguma falhando, os gates não rodam e não há entrega |
+| `sync` | `true` numa etapa de tarefa com git: antes do agente, o runner faz o `fetch` da branch, o fast-forward quando ele é seguro (na branch, limpo, nada em andamento, só atrás) e, fora isso, anexa ao prompt a seção "Estado do repositório" com o que achou |
+| `artifacts` | `[{"path", "content"}]`: os artefatos das etapas anteriores, como o control plane os guardou. Antes do agente, o runner grava os que faltam no disco |
 | `scratch` | `true` numa análise (ADR 0021): roda num worktree descartável do `directory`, em `<workdir>/scratch/<job_id>`, destacado no `HEAD` (`git worktree add --detach`) e removido quando o job termina. Recebe só a cópia de dependências do `setup`, sem comando, e não reporta `changes`. Exige `directory` e não aceita `worktree` nem `delivery`. O control plane só manda `scratch` a um runner que anunciou a capacidade `"scratch"` no `Hello`: um runner antigo descartaria o campo e rodaria no próprio diretório |
 | `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |

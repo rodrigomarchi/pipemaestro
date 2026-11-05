@@ -16,11 +16,28 @@ defmodule PipeMaestroProtocol.Job do
   `system_prompt` is appended to the agent's system prompt, `mcp_config`
   (`%{"mcpServers" => ...}`) adds MCP servers, `agents` defines subagents
   (the CLI's `--agents` object) and `agent` names the agent that runs the job.
-  `delivery` asks the runner to deliver a task's stage once it passes: commit
-  what changed in the worktree (`"commit_message"`), push the task's branch
-  (`"push"`), open or update its draft pull request (`"pr"`: `"title"`,
-  `"body"`, `"ready"` to mark it ready) and comment on its issue
+  `delivery` asks the runner to deliver a task's stage once it passes: push
+  the task's branch as the agent left it (`"push"`; the runner never commits),
+  open or adopt its pull request and write its own part of it (`"pr"`:
+  `"title"`, used only when the runner opens it, `"block"`, the text kept
+  between the platform's markers in the description, and `"ready"`, which
+  takes the draft prefix off the title) and comment on its issue
   (`"issue_comment"`: `"url"`, `"body"`).
+  `checks` are the platform's own verifications of a task's worktree, run
+  with the gates (`%{"id" => id}` plus its parameters): `"branch"`
+  (`"branch"`: HEAD is on it), `"no_operation"` (no merge, rebase or
+  cherry-pick under way), `"contains_origin"` (`"branch"`: the branch holds
+  what origin has of it), `"clean"` (nothing left uncommitted but the paths the
+  setup copied, nor the task's artifacts folder `"artifacts"`),
+  `"artifact_committed"` (`"path"`: the stage's artifact committed as it is
+  on disk), `"no_artifacts"` (`"path"`: the artifacts folder not in HEAD) and
+  `"no_secrets"` (no value of `env` in what the branch changed). Each result is reported with
+  the gates, with `"platform" => true` and a `"message"` written for the agent.
+  `sync` asks the runner, before the agent, to fetch the task's branch,
+  fast-forward the worktree when that is safe, and tell the agent, in its
+  prompt, what it finds otherwise (a divergence, an operation under way).
+  `artifacts` are the earlier stages' artifacts (`%{"path", "content"}`): the
+  runner writes the ones missing on disk before the agent starts.
   `parallel` marks a stage of a group that runs at once with its siblings, in
   the same worktree: the runner does not make it wait for them.
   `env` holds the workspace's secrets as environment variables for the
@@ -105,7 +122,10 @@ defmodule PipeMaestroProtocol.Job do
                 env: nil,
                 parallel: nil,
                 delivery: nil,
-                scratch: nil
+                scratch: nil,
+                checks: nil,
+                sync: nil,
+                artifacts: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -130,7 +150,10 @@ defmodule PipeMaestroProtocol.Job do
           env: %{String.t() => String.t()} | nil,
           parallel: boolean() | nil,
           delivery: map() | nil,
-          scratch: boolean() | nil
+          scratch: boolean() | nil,
+          checks: [map()] | nil,
+          sync: boolean() | nil,
+          artifacts: [%{String.t() => String.t()}] | nil
         }
 
   @optional [
@@ -150,8 +173,15 @@ defmodule PipeMaestroProtocol.Job do
     :env,
     :parallel,
     :delivery,
-    :scratch
+    :scratch,
+    :checks,
+    :sync,
+    :artifacts
   ]
+
+  @check_ids ~w(branch no_operation contains_origin clean artifact_committed no_artifacts no_secrets)
+  @max_artifacts 40
+  @max_artifact_bytes 65_536
 
   @env_name ~r/^[A-Z][A-Z0-9_]{0,63}$/
   # What a secret may not override: the process would break or escape.
@@ -301,15 +331,34 @@ defmodule PipeMaestroProtocol.Job do
   defp check(:agents, value) when is_map(value) and map_size(value) <= 20, do: :ok
   defp check(:agents, _value), do: {:error, "must be an object of agents by name"}
 
-  defp check(:delivery, %{"commit_message" => message} = delivery)
-       when is_binary(message) and byte_size(message) in 1..4_000 do
+  defp check(:delivery, %{} = delivery) do
     if pr?(delivery["pr"]) and issue_comment?(delivery["issue_comment"]) and
          delivery["push"] in [nil, true, false],
        do: :ok,
-       else: {:error, "must have a commit message, a titled pr and a comment with url and body"}
+       else: {:error, "must have a titled pr and a comment with url and body"}
   end
 
-  defp check(:delivery, _value), do: {:error, "must have a commit message"}
+  defp check(:delivery, _value), do: {:error, "must be an object"}
+
+  defp check(:checks, checks) when is_list(checks) and length(checks) <= 10 do
+    if Enum.all?(checks, &platform_check?/1),
+      do: :ok,
+      else: {:error, "must be known checks (#{Enum.join(@check_ids, ", ")})"}
+  end
+
+  defp check(:checks, _value), do: {:error, "must be a list of checks"}
+
+  defp check(:sync, value) when is_boolean(value), do: :ok
+  defp check(:sync, _value), do: {:error, "must be true or false"}
+
+  defp check(:artifacts, artifacts)
+       when is_list(artifacts) and length(artifacts) <= @max_artifacts do
+    if Enum.all?(artifacts, &artifact?/1),
+      do: :ok,
+      else: {:error, "must be paths inside the directory, each with its content"}
+  end
+
+  defp check(:artifacts, _value), do: {:error, "must be a list of up to #{@max_artifacts}"}
 
   defp check(:env, env) when is_map(env) and map_size(env) <= 50 do
     if Enum.all?(env, fn {name, value} ->
@@ -352,8 +401,23 @@ defmodule PipeMaestroProtocol.Job do
     do: is_binary(name) and name =~ @env_name and name not in @reserved_env
 
   defp pr?(nil), do: true
-  defp pr?(%{"title" => title} = pr), do: text?(title, 300) and text?(pr["body"] || "x", 60_000)
+
+  defp pr?(%{"title" => title} = pr),
+    do:
+      text?(title, 300) and text?(pr["block"] || "x", 60_000) and
+        pr["ready"] in [nil, true, false]
+
   defp pr?(_pr), do: false
+
+  defp platform_check?(%{"id" => id} = check) when id in @check_ids,
+    do: Enum.all?(Map.delete(check, "id"), fn {_key, value} -> text?(value, 255) end)
+
+  defp platform_check?(_check), do: false
+
+  defp artifact?(%{"path" => path, "content" => content}),
+    do: inner_path?(path) and is_binary(content) and byte_size(content) <= @max_artifact_bytes
+
+  defp artifact?(_artifact), do: false
 
   defp issue_comment?(nil), do: true
 

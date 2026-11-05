@@ -51,6 +51,11 @@ Uma pausa por orçamento ou a pedido (`pause_requested`) também não tem questi
 Um job perdido porque o runner reiniciou (reconciliação no join, protocolo §4.6) conta
 como `failed`.
 
+**Verificações da plataforma.** Numa etapa que entrega (git, entrega `commit` ou `pr`,
+fora de grupo), o runner roda antes dos gates as verificações do contrato
+([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). Elas voltam como gates com
+`"platform": true`: uma que falha é um erro da tentativa, com a mensagem como feedback.
+
 **Gates e regras.** Os gates são comandos que o runner roda depois do agente, cada um
 devendo passar ou falhar. Um gate não atendido é um erro da tentativa. As regras
 (`campo == valor` ou `campo != valor`) leem a saída estruturada de uma etapa que

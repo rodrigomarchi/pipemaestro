@@ -160,6 +160,6 @@ defmodule PipeMaestroWeb.ProposalComponents do
   defp lines(text), do: String.split(text, "\n", trim: true)
 
   defp delivery_label("pr"), do: "Pull request"
-  defp delivery_label("commit"), do: "Commit por etapa"
+  defp delivery_label("commit"), do: "Commits conferidos"
   defp delivery_label(_none), do: "Sem entrega"
 end

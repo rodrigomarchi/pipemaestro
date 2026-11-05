@@ -16,6 +16,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   alias PipeMaestro.Pipelines
   alias PipeMaestro.Pipelines.{Json, Pipeline, Prompt, Stage}
   alias PipeMaestro.Proposals
+  alias PipeMaestro.Tasks.Contract
 
   @impl true
   def mount(params, session, socket) do
@@ -222,11 +223,11 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
 
   @deliveries [
     {"none", "Nenhuma: os prompts decidem", "hero-no-symbol",
-     "O runner não faz commit; o que acontece com o código fica a cargo dos prompts."},
-    {"commit", "Um commit por etapa", "hero-check-badge",
-     "Cada etapa que passa vira um commit no branch da tarefa."},
-    {"pr", "Commit, push e PR em rascunho (pronto na última etapa)", "hero-rocket-launch",
-     "Cada etapa faz commit e push; o PR abre em rascunho e fica pronto na última etapa. Usa o gh de quem roda o runner."}
+     "A plataforma não confere nem entrega nada; o que acontece com o código fica a cargo dos prompts."},
+    {"commit", "Commits conferidos, sem push", "hero-check-badge",
+     "O agente faz os commits na branch da tarefa; a plataforma confere cada etapa (abaixo) e não faz push."},
+    {"pr", "Commits conferidos, push e PR", "hero-rocket-launch",
+     "O agente faz os commits; a plataforma confere cada etapa (abaixo), faz o push e mantém o seu bloco no PR, que abre em rascunho e fica pronto na última etapa."}
   ]
 
   defp delivery_options, do: Enum.map(@deliveries, fn {value, label, _, _} -> {label, value} end)
@@ -368,6 +369,22 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
                 />
                 {elem(delivery(@form[:delivery].value), 3)}
               </p>
+              <div
+                :if={Contract.labels(@form[:delivery].value) != []}
+                class="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-950"
+                data-testid="pipeline-platform-checks"
+              >
+                <p class="mb-1 font-medium text-gray-700 dark:text-gray-200">
+                  Verificações da plataforma, em toda etapa que entrega
+                </p>
+                <ul class="list-inside list-disc space-y-0.5 text-gray-600 dark:text-gray-300">
+                  <li :for={label <- Contract.labels(@form[:delivery].value)}>{label}</li>
+                </ul>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Fixas, como gates que vêm antes dos seus: uma que falha volta ao agente com o motivo.
+                  Etapas em grupo (paralelas) ficam de fora.
+                </p>
+              </div>
             </.card_content>
           </.card>
         </div>

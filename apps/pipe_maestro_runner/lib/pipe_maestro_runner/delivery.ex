@@ -1,16 +1,20 @@
 defmodule PipeMaestroRunner.Delivery do
   @moduledoc """
   Delivers a task's stage that passed (`PipeMaestroProtocol.Job`
-  `delivery`), always the same way, whatever the agent did:
+  `delivery`), after the platform's checks (`PipeMaestroRunner.Checks`) and
+  the gates. The runner never commits: what the stage did is in the commits
+  the agent made, and the checks made sure nothing was left out. Then:
 
-    1. commits what changed in the worktree, leaving out the paths the setup
-       cloned (no commit when nothing changed);
-    2. pushes the task's branch to `origin`;
-    3. opens the task's draft pull request, or updates its title and body,
-       and marks it ready when asked (the last stage);
-    4. comments on the task's issue.
+    1. pushes the task's branch to `origin` (HEAD, which the checks found on
+       the task's branch and holding what origin has: a fast-forward, or
+       nothing to do when the agent already pushed);
+    2. opens the task's draft pull request, or adopts the open one, writing
+       only the platform's block of its description
+       (`PipeMaestroRunner.Delivery.PrText`), and marks it ready when asked
+       (the last stage);
+    3. comments on the task's issue.
 
-  Steps 3 and 4 go where the repository lives:
+  Steps 2 and 3 go where the repository lives:
 
   - **Forgejo or Gitea** (the `origin` host answers its API): through the API,
     signed in as `git push` is (`PipeMaestroRunner.Delivery.Forgejo`). A
@@ -22,18 +26,17 @@ defmodule PipeMaestroRunner.Delivery do
   skipped; nothing raises.
   """
 
-  alias PipeMaestroRunner.Changes
-  alias PipeMaestroRunner.Delivery.Forgejo
+  alias PipeMaestroRunner.Delivery.{Forgejo, PrText}
 
   @doc """
-  Delivers in the worktree `dir`, leaving `exclude` out of the commit.
-  Options: `:gh` (the GitHub CLI's path), `:env` (extra environment for git,
-  gh and the Forgejo credentials) and `:forgejo_api_base` (the Forgejo API's
-  base URL instead of `https://<host>`, for tests). Returns
-  `%{"commit", "pushed", "pr_url", "commented", "error"}`.
+  Delivers in the worktree `dir`. Options: `:gh` (the GitHub CLI's path),
+  `:env` (extra environment for git, gh and the Forgejo credentials) and
+  `:forgejo_api_base` (the Forgejo API's base URL instead of
+  `https://<host>`, for tests). Returns `%{"commit", "pushed", "pr_url",
+  "commented", "error"}`, `"commit"` being the commit delivered.
   """
-  @spec deliver(Path.t(), map(), [String.t()], keyword()) :: map()
-  def deliver(dir, delivery, exclude, opts \\ []) do
+  @spec deliver(Path.t(), map(), keyword()) :: map()
+  def deliver(dir, delivery, opts \\ []) do
     ctx = %{
       dir: dir,
       gh: Keyword.get_lazy(opts, :gh, &gh/0),
@@ -41,8 +44,7 @@ defmodule PipeMaestroRunner.Delivery do
       forgejo_api_base: opts[:forgejo_api_base]
     }
 
-    %{"commit" => nil, "pushed" => false, "pr_url" => nil, "commented" => false}
-    |> step(fn report -> commit(ctx, delivery["commit_message"], exclude, report) end)
+    %{"commit" => head(ctx), "pushed" => false, "pr_url" => nil, "commented" => false}
     |> step(fn report -> if delivery["push"], do: push(ctx, report), else: {:ok, report} end)
     |> step(fn report -> pull_request(ctx, delivery["pr"], report) end)
     |> step(fn report -> comment(ctx, delivery["issue_comment"], report) end)
@@ -58,29 +60,10 @@ defmodule PipeMaestroRunner.Delivery do
     end
   end
 
-  defp commit(ctx, message, exclude, report) do
-    pathspec = Changes.pathspec(ctx.dir, exclude, ctx.env)
-
-    with {:ok, _} <- git(ctx, ["add", "--all" | pathspec]),
-         false <- match?({:ok, _}, git(ctx, ["diff", "--cached", "--quiet"])),
-         {:ok, _} <- git(ctx, identity(ctx) ++ ["commit", "--quiet", "-m", message]),
-         {:ok, sha} <- git(ctx, ["rev-parse", "HEAD"]) do
-      {:ok, %{report | "commit" => String.trim(sha)}}
-    else
-      # Nothing staged: nothing to commit.
-      true -> {:ok, report}
-      {:error, output} -> {:error, "commit: #{output}"}
-    end
-  end
-
-  # A machine without a git identity still commits, as the control plane.
-  defp identity(ctx) do
-    case git(ctx, ["config", "user.email"]) do
-      {:ok, _email} ->
-        []
-
-      {:error, _none} ->
-        ["-c", "user.name=PipeMaestro", "-c", "user.email=control-plane@localhost"]
+  defp head(ctx) do
+    case git(ctx, ["rev-parse", "HEAD"]) do
+      {:ok, sha} -> String.trim(sha)
+      {:error, _none} -> nil
     end
   end
 
@@ -107,7 +90,7 @@ defmodule PipeMaestroRunner.Delivery do
              repo,
              String.trim(branch),
              pr["title"],
-             pr["body"] || "",
+             pr["block"] || "",
              pr["ready"] == true
            ) do
       {:ok, %{report | "pr_url" => url}}
@@ -120,19 +103,12 @@ defmodule PipeMaestroRunner.Delivery do
     do: {:error, "pr: o GitHub CLI (gh) não está instalado neste runner"}
 
   defp github_pull_request(ctx, pr, report) do
-    title = pr["title"]
-    body = pr["body"] || ""
+    block = pr["block"] || ""
 
     result =
       case run(ctx, ctx.gh, ["pr", "view", "--json", "url", "-q", ".url"]) do
-        {:ok, url} ->
-          with {:ok, _} <- run(ctx, ctx.gh, ["pr", "edit", "--title", title, "--body", body]),
-               do: {:ok, String.trim(url)}
-
-        {:error, _none} ->
-          with {:ok, output} <-
-                 run(ctx, ctx.gh, ["pr", "create", "--draft", "--title", title, "--body", body]),
-               do: {:ok, output |> String.split() |> List.last()}
+        {:ok, url} -> update_github_pr(ctx, String.trim(url), block)
+        {:error, _none} -> create_github_pr(ctx, pr["title"], block)
       end
 
     with {:ok, url} <- result,
@@ -141,6 +117,28 @@ defmodule PipeMaestroRunner.Delivery do
     else
       {:error, output} -> {:error, "pr: #{output}"}
     end
+  end
+
+  # The branch's open pull request, whoever opened it: only the platform's
+  # block of its description changes.
+  defp update_github_pr(ctx, url, block) do
+    with {:ok, body} <- run(ctx, ctx.gh, ["pr", "view", "--json", "body", "-q", ".body"]),
+         {:ok, _} <- edit_github_body(ctx, String.trim_trailing(body, "\n"), block),
+         do: {:ok, url}
+  end
+
+  defp edit_github_body(ctx, body, block) do
+    case PrText.body(body, block) do
+      ^body -> {:ok, nil}
+      new_body -> run(ctx, ctx.gh, ["pr", "edit", "--body", new_body])
+    end
+  end
+
+  defp create_github_pr(ctx, title, block) do
+    args = ["pr", "create", "--draft", "--title", title, "--body", PrText.wrap(block)]
+
+    with {:ok, output} <- run(ctx, ctx.gh, args),
+         do: {:ok, output |> String.split() |> List.last()}
   end
 
   defp comment(_ctx, nil, report), do: {:ok, report}

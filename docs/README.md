@@ -55,6 +55,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0030 | [Screenshots reais da landing](adr/0030-screenshots-reais-da-landing.md) | Aceita |
 | 0031 | [Auto-aprovação da tarefa escrita com IA](adr/0031-auto-aprovacao-da-tarefa-escrita-com-ia.md) | Aceita |
 | 0032 | [Sem ruas sem saída](adr/0032-sem-ruas-sem-saida.md) | Aceita |
+| 0033 | [Contrato entre o harness e o agente](adr/0033-contrato-entre-harness-e-agente.md) | Aceita |
 
 ## Specs
 

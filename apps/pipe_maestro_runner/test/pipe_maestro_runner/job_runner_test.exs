@@ -376,32 +376,93 @@ defmodule PipeMaestroRunner.JobRunnerTest do
       assert is_integer(hd(finished["gates"])["duration_ms"])
     end
 
-    test "delivers a stage that passed: a commit on the task's branch", ctx do
+    test "delivers a stage that passed: the agent's commit, after the platform's checks", ctx do
       runner = start_runner(ctx.workdir, root: ctx.root)
       worktree = Path.join([ctx.workdir, "worktrees", "t1"])
 
       stage = %{
         stage("j1", "t1", nil)
         | output_schema: %{"type" => "object"},
-          delivery: %{"commit_message" => "Etapa A: feito"}
+          delivery: %{},
+          checks: [%{"id" => "branch", "branch" => "cp/t1"}, %{"id" => "clean"}],
+          gates: [%{"command" => "true", "expect" => "pass"}]
       }
 
       JobRunner.enqueue(runner, stage)
       {_messages, finished} = collect_until_finished("j1")
 
+      {head, 0} = System.cmd("git", ["-C", worktree, "rev-parse", "HEAD"])
       assert %{"commit" => sha, "pushed" => false} = finished["delivery"]
-      assert sha =~ ~r/^[0-9a-f]{40}$/
+      assert sha == String.trim(head)
       {subject, 0} = System.cmd("git", ["-C", worktree, "log", "-1", "--format=%s"])
-      assert String.trim(subject) == "Etapa A: feito"
-      # The cloned dependencies stay out of it.
-      {files, 0} = System.cmd("git", ["-C", worktree, "show", "--name-only", "--format=", "HEAD"])
-      refute files =~ "deps/"
+      assert String.trim(subject) == "fake_claude: etapa"
 
-      # A stage the agent blocked is not delivered.
-      blocked = %{stage | id: "j2", prompt: "x [bloqueio]"}
-      JobRunner.enqueue(runner, blocked)
+      assert [
+               %{"id" => "branch", "platform" => true, "passed" => true},
+               %{"id" => "clean", "passed" => true},
+               %{"command" => "true", "passed" => true}
+             ] = finished["gates"]
+
+      # Something left uncommitted: the check fails, the gates do not run and
+      # nothing is delivered.
+      dirty = %{stage | id: "j2", prompt: "x [sujo]"}
+      JobRunner.enqueue(runner, dirty)
       {_messages, finished} = collect_until_finished("j2")
       refute Map.has_key?(finished, "delivery")
+
+      assert [
+               %{"id" => "branch", "passed" => true},
+               %{"id" => "clean", "passed" => false} = clean
+             ] =
+               finished["gates"]
+
+      assert clean["message"] =~ "`sujo.txt`"
+
+      # A stage the agent blocked is not delivered.
+      blocked = %{stage | id: "j3", prompt: "x [bloqueio]"}
+      JobRunner.enqueue(runner, blocked)
+      {_messages, finished} = collect_until_finished("j3")
+      refute Map.has_key?(finished, "delivery")
+    end
+
+    test "what the setup command created is the platform's, not left by the agent", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+
+      stage = %{
+        stage("j1", "t1", %{"command" => "echo pronto > setup.txt"})
+        | checks: [%{"id" => "clean"}]
+      }
+
+      JobRunner.enqueue(runner, stage)
+      {_messages, finished} = collect_until_finished("j1")
+      assert [%{"id" => "clean", "passed" => true}] = finished["gates"]
+
+      # And in the stages after, which read it from the task's base.
+      JobRunner.enqueue(runner, %{stage | id: "j2", setup: nil})
+      {_messages, finished} = collect_until_finished("j2")
+      assert [%{"id" => "clean", "passed" => true}] = finished["gates"]
+    end
+
+    test "before the agent: the earlier artifacts come back and the sync is told", ctx do
+      runner = start_runner(ctx.workdir, root: ctx.root)
+      worktree = Path.join([ctx.workdir, "worktrees", "t1"])
+
+      stage = %{
+        stage("j1", "t1", nil)
+        | sync: true,
+          artifacts: [%{"path" => ".control-plane/t1/01-plano.md", "content" => "# Plano"}]
+      }
+
+      JobRunner.enqueue(runner, stage)
+      {_messages, _finished} = collect_until_finished("j1")
+      assert File.read!(Path.join(worktree, ".control-plane/t1/01-plano.md")) == "# Plano"
+
+      # On another branch, the agent is told so in its prompt.
+      {_, 0} = System.cmd("git", ["-C", worktree, "checkout", "-q", "-b", "outra"])
+      JobRunner.enqueue(runner, %{stage | id: "j2"})
+      {_messages, _finished} = collect_until_finished("j2")
+      assert File.read!(Path.join(worktree, "fake-claude.txt")) =~ "Estado do repositório"
+      assert File.read!(Path.join(worktree, "fake-claude.txt")) =~ "na branch `outra`"
     end
 
     test "a stage the agent blocks with questions reports them", ctx do

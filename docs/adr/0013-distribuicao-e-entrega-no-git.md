@@ -1,6 +1,8 @@
 # 0013 — Distribuição e entrega no git e no GitHub
 
-- **Status:** aceita
+- **Status:** aceita; o commit pela plataforma foi substituído pela
+  [ADR 0033](0033-contrato-entre-harness-e-agente.md) (o agente faz o commit, a plataforma
+  verifica)
 - **Data:** 03/11/2026
 - **Roadmap:** Marcos 5 e 6 de [`03-roadmap-orquestrador.md`](../plano/03-roadmap-orquestrador.md)
 

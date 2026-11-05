@@ -44,7 +44,19 @@ defmodule PipeMaestroRunner.JobRunner do
   use GenServer
 
   alias PipeMaestroProtocol.{Job, JobEvent, Telemetry, Text, Worktree}
-  alias PipeMaestroRunner.{Changes, Claude, Delivery, Gates, Setup, Shell, Workspace}
+
+  alias PipeMaestroRunner.{
+    Changes,
+    Checks,
+    Claude,
+    Delivery,
+    Gates,
+    RepoState,
+    Setup,
+    Shell,
+    Workspace
+  }
+
   alias PipeMaestroRunner.Telemetry.Receiver
 
   @line_bytes 1_048_576
@@ -224,17 +236,25 @@ defmodule PipeMaestroRunner.JobRunner do
     end
   end
 
-  # What follows the agent's exit: the job ends now, or once the gates, the
-  # delivery and the changes are measured.
+  # What follows the agent's exit: the job ends now, or once the checks, the
+  # gates, the delivery and the changes are measured.
   defp after_exit(state, run, code) do
     run = %{run | wall_ms: wall_ms(run)}
-    succeeded = agent_succeeded?(run, code)
-    gates = if succeeded, do: run.job.gates || [], else: []
-    delivery = if succeeded and stage_ok?(run), do: run.job.delivery
+    {checks, gates, delivery} = after_steps(run, code)
 
-    if run.tracking == nil and gates == [] and delivery == nil,
+    if run.tracking == nil and gates == [] and checks == [] and delivery == nil,
       do: finish(state, run, code, %{}),
-      else: put_run(state, after_agent(run, code, gates, delivery))
+      else: put_run(state, after_agent(run, code, {checks, gates}, delivery))
+  end
+
+  # The gates follow an agent that ended well; the checks and the delivery,
+  # one that also did not block.
+  defp after_steps(run, code) do
+    cond do
+      not agent_succeeded?(run, code) -> {[], [], nil}
+      not stage_ok?(run) -> {[], run.job.gates || [], nil}
+      true -> {run.job.checks || [], run.job.gates || [], run.job.delivery}
+    end
   end
 
   # Of the job's secrets, only the one the delivery signs in to a Forgejo
@@ -243,28 +263,42 @@ defmodule PipeMaestroRunner.JobRunner do
     for {"FORGEJO_TOKEN" = name, value} <- job.env || %{}, do: {name, value}
   end
 
-  # After the agent, off this process (they take a while): the gates, the
-  # delivery when every gate passed, then what the stage changed.
-  defp after_agent(run, code, gates, delivery) do
+  # After the agent, off this process (they take a while): the platform's
+  # checks, the gates, the delivery when all passed, then what the stage
+  # changed.
+  defp after_agent(run, code, steps, delivery) do
     runner = self()
     %{dir: dir, tracking: tracking, job: job} = run
 
     task =
       Task.async(fn ->
         on_os_pid = &send(runner, {:child_os_pid, job.id, &1})
-        results = if gates == [], do: nil, else: Gates.run(dir, gates, on_os_pid)
-        gates_passed = Enum.all?(results || [], & &1["passed"])
-        exclude = (tracking && tracking.exclude) || []
+        results = verify(dir, job, tracking, steps, on_os_pid)
 
         delivered =
-          if delivery && gates_passed,
-            do: Delivery.deliver(dir, delivery, exclude, env: delivery_env(job))
+          if delivery && Enum.all?(results || [], & &1["passed"]),
+            do: Delivery.deliver(dir, delivery, env: delivery_env(job))
 
         changes = if tracking, do: Changes.report(dir, tracking)
         %{"gates" => results, "changes" => changes, "delivery" => delivered}
       end)
 
     %{run | port: nil, os_pid: nil, finishing: {task.ref, code}}
+  end
+
+  # The checks, then the gates when the checks hold (a gate run on a worktree
+  # the checks refused would be time spent for nothing); `nil` when there were
+  # none.
+  defp verify(dir, job, tracking, {checks, gates}, on_os_pid) do
+    exclude = (tracking && tracking[:exclude]) || []
+    checked = Checks.run(dir, checks, env: Map.to_list(job.env || %{}), exclude: exclude)
+
+    gated =
+      if gates == [] or not Enum.all?(checked, & &1["passed"]),
+        do: [],
+        else: Gates.run(dir, gates, on_os_pid)
+
+    if checked ++ gated == [], do: nil, else: checked ++ gated
   end
 
   # A stage the agent did not block (when it was asked for structured output).
@@ -388,16 +422,37 @@ defmodule PipeMaestroRunner.JobRunner do
         message = "O setup do worktree falhou (código #{setup["exit_code"]}).\n#{setup["output"]}"
         {:error, String.trim(message), setup}
       else
-        {:ok, path, dir, setup, track(job, workdir, dir, setup)}
+        notes = before_agent(job, dir)
+        {:ok, path, dir, setup, track(job, workdir, dir, setup), notes}
       end
     else
       {:error, message} -> {:error, message, nil}
     end
   end
 
+  # A task's stage: the earlier artifacts missing on disk are written back
+  # (from the control plane), then the worktree is synced with origin. What
+  # the agent should know about it goes at the end of its prompt.
+  defp before_agent(%Job{worktree: %{"branch" => branch}} = job, dir) do
+    for %{"path" => path, "content" => content} <- job.artifacts || [],
+        file = Path.join(dir, path),
+        not File.exists?(file) do
+      File.mkdir_p!(Path.dirname(file))
+      File.write!(file, content)
+    end
+
+    if job.sync, do: RepoState.sync(dir, branch)
+  end
+
+  defp before_agent(_job, _dir), do: nil
+
   # A task's worktree is compared before and after each stage.
+  # What the setup put in a new worktree (the paths it copied and what its
+  # command created outside git) is the platform's, not the task's: it stays
+  # out of the snapshots and of the "clean" check.
   defp track(%Job{worktree: %{"task_id" => task_id}}, workdir, dir, setup) do
-    Changes.start(workdir, task_id, dir, setup != nil, (setup && setup["copied"]) || [])
+    exclude = if setup, do: Enum.uniq((setup["copied"] || []) ++ Changes.untracked(dir)), else: []
+    Changes.start(workdir, task_id, dir, setup != nil, exclude)
   end
 
   # An analysis's worktree is thrown away: what it changed there does not matter.
@@ -420,8 +475,8 @@ defmodule PipeMaestroRunner.JobRunner do
     done(state, run, %{"status" => "failed", "error" => message, "setup" => setup})
   end
 
-  defp launch(state, run, {:ok, path, dir, setup, tracking}) do
-    job = run.job
+  defp launch(state, run, {:ok, path, dir, setup, tracking, notes}) do
+    job = if notes, do: %{run.job | prompt: run.job.prompt <> "\n\n" <> notes}, else: run.job
 
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
@@ -445,7 +500,8 @@ defmodule PipeMaestroRunner.JobRunner do
 
     put_run(state, %{
       run
-      | dir: dir,
+      | job: job,
+        dir: dir,
         setup: setup,
         tracking: tracking,
         port: port,
@@ -457,7 +513,7 @@ defmodule PipeMaestroRunner.JobRunner do
   defp wall_ms(%{launched_at: nil}), do: nil
   defp wall_ms(%{launched_at: at}), do: System.monotonic_time(:millisecond) - at
 
-  defp setup_of({:ok, _path, _dir, setup, _tracking}), do: setup
+  defp setup_of({:ok, _path, _dir, setup, _tracking, _notes}), do: setup
   defp setup_of({:error, _message, setup}), do: setup
 
   # A job that ended before its agent ran.

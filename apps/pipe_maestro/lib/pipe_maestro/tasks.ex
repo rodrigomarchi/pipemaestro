@@ -46,7 +46,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Proposals.AnalysisKind
   alias PipeMaestro.{Repo, Runners}
   alias PipeMaestro.Runners.Runner
-  alias PipeMaestro.Tasks.{Decision, Engine, Questionnaire, StageRun, Task}
+  alias PipeMaestro.Tasks.{Contract, Decision, Engine, Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces
   alias PipeMaestro.Workspaces.Workspace
 
@@ -432,7 +432,8 @@ defmodule PipeMaestro.Tasks do
         previous: Enum.take(task.stages, step_first(task, index)),
         instructions: stage_run.instructions,
         feedback: stage_run.feedback,
-        answers: stage_run.answers
+        answers: stage_run.answers,
+        contract: if(place = contract_place(task, index), do: Contract.prompt(place))
       })
 
     Jobs.create_stage_job(%{
@@ -504,39 +505,92 @@ defmodule PipeMaestro.Tasks do
       "agents" => context(task, "agents"),
       "agent" => stage.agent,
       "parallel" => if(grouped?(task, index), do: true),
-      "delivery" => if(not grouped?(task, index), do: delivery(task, stage, index))
+      "delivery" => if(not grouped?(task, index), do: delivery(task, index)),
+      "checks" => if(place = contract_place(task, index), do: Contract.checks(stage, place)),
+      "sync" => if(task.git, do: true),
+      "artifacts" => earlier_artifacts(task, index)
     }
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
 
-  # What the runner delivers once the stage passes.
-  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => mode}} = task, stage, index)
+  # Where a stage held to the platform's contract (`Contract`) is in its task:
+  # a stage that delivers, not one of a group.
+  defp contract_place(
+         %Task{git: true, pipeline_context: %{"delivery" => mode}} = task,
+         index
+       )
        when mode in ["commit", "pr"] do
-    base = %{"commit_message" => "#{stage.name}: #{task.title}"}
+    if not grouped?(task, index) do
+      %{
+        task_id: task.id,
+        branch: task.branch,
+        index: index,
+        last?: index == length(task.stages) - 1,
+        pr?: mode == "pr"
+      }
+    end
+  end
 
+  defp contract_place(_task, _index), do: nil
+
+  # The earlier stages' artifacts, as the control plane kept them: the runner
+  # writes back the ones missing on disk (a worktree made again, another
+  # runner, or the folder the last stage took out of the branch).
+  defp earlier_artifacts(%Task{git: true} = task, index) do
+    first = step_first(task, index)
+
+    artifacts =
+      Repo.all(
+        from r in StageRun,
+          where:
+            r.task_id == ^task.id and r.index < ^first and r.status == :passed and
+              not is_nil(r.artifact),
+          order_by: [asc: r.index, desc: r.attempt],
+          distinct: r.index,
+          select: {r.index, r.key, r.artifact}
+      )
+
+    case artifacts do
+      [] ->
+        nil
+
+      artifacts ->
+        for {i, key, content} <- artifacts,
+            do: %{"path" => Prompt.artifact_path(task.id, i, key), "content" => content}
+    end
+  end
+
+  defp earlier_artifacts(_task, _index), do: nil
+
+  # What the runner delivers once the stage passed its checks and gates: the
+  # push and the platform's block of the pull request (the agent committed).
+  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => mode}} = task, index)
+       when mode in ["commit", "pr"] do
     base =
       if mode == "pr",
+        do: %{
+          "push" => true,
+          "pr" => %{
+            "title" => task.title,
+            "block" => pr_body(task, index),
+            "ready" => index == length(task.stages) - 1
+          }
+        },
+        else: %{}
+
+    base =
+      if task.issue_url && task.pending_issue_comment,
         do:
-          Map.merge(base, %{
-            "push" => true,
-            "pr" => %{
-              "title" => task.title,
-              "body" => pr_body(task, index),
-              "ready" => index == length(task.stages) - 1
-            }
+          Map.put(base, "issue_comment", %{
+            "url" => task.issue_url,
+            "body" => task.pending_issue_comment
           }),
         else: base
 
-    if task.issue_url && task.pending_issue_comment,
-      do:
-        Map.put(base, "issue_comment", %{
-          "url" => task.issue_url,
-          "body" => task.pending_issue_comment
-        }),
-      else: base
+    if base == %{}, do: nil, else: base
   end
 
-  defp delivery(_task, _stage, _index), do: nil
+  defp delivery(_task, _index), do: nil
 
   # The stages before this one are done; the last one's delivery marks the PR
   # ready, so then every stage is.
@@ -559,7 +613,7 @@ defmodule PipeMaestro.Tasks do
 
     #{stages}
 
-    _Aberto e atualizado pelo PipeMaestro; os artefatos de cada etapa estão em `.control-plane/#{task.id}/`._
+    _Bloco mantido pelo PipeMaestro; o resto da descrição é livre. Os artefatos de cada etapa ficam em `#{Contract.artifacts_dir(task.id)}/` enquanto a tarefa roda e saem da branch na última etapa; a plataforma guarda todos._
     """
   end
 
@@ -1347,7 +1401,6 @@ defmodule PipeMaestro.Tasks do
   3. Valide como o pipeline valida: rode os testes e o lint do projeto, se houver ({{projeto.teste}} {{projeto.lint}}), e corrija até passar.
   4. No artefato, diga o que mudou e como validou.
 
-  A plataforma faz o commit, o push e o PR depois desta etapa: não faça push nem abra PR.
   """
 
   @doc """

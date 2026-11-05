@@ -12,8 +12,10 @@
  * @flow J [done] A task that ended takes a prompt: the correction runs as a new stage in its worktree, made again after it was removed
  * @flow K [done] A stage is redone from its modal with instructions, which reach the agent
  * @flow L [done] A running stage is interrupted: the task waits for a decision instead of ending
+ * @flow M [done] With a delivery, the platform checks each stage after the agent (it commits; the last stage takes the artifacts out of the branch), and a check that fails goes back to the agent with the reason
  */
 import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
@@ -27,6 +29,11 @@ import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
+
+/** A git command in `dir`, its output trimmed. */
+function git(dir: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
+}
 
 test.describe("Task pipeline", () => {
   // Real CLI processes: the first one may compile the runner app.
@@ -89,6 +96,9 @@ test.describe("Task pipeline", () => {
 
     await pipelines.stagePrompt(0).fill("{{tarefa.descricao}}\n\nRegistre no artefato o que foi feito.");
     await pipelines.stageGates(0).fill("{{projeto.teste}}");
+    // Flow M: commits by the agent, checked by the platform, as the form says.
+    await app.page.getByTestId("pipeline-delivery").selectOption("commit");
+    await expect(app.page.getByTestId("pipeline-platform-checks")).toContainText("Nada ficou sem commit");
     await shot(app.page, "pipeline-form");
     await pipelines.save();
     await expect(pipelines.version("Prompt único")).toHaveText("v2");
@@ -248,7 +258,34 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("stage-run-gates-executar-1")).toContainText("test -f fake-claude.txt");
     await expect(app.page.getByTestId("stage-run-setup-executar-1")).toContainText("echo pronto > setup.txt");
     expect(readFileSync(join(runner.workdir, "worktrees", gatedId, "setup.txt"), "utf8")).toBe("pronto\n");
+    // Flow M: the platform's checks ran before the gate, and the last stage
+    // took the artifacts out of the branch, keeping them on disk.
+    await expect(app.page.getByTestId("stage-run-gate-platform-executar-1-0")).toHaveText("plataforma");
+    const gatedTree = join(runner.workdir, "worktrees", gatedId);
+    expect(git(gatedTree, "log", "-1", "--format=%s")).toBe("fake_claude: etapa");
+    expect(git(gatedTree, "ls-tree", "-r", "--name-only", "HEAD", "--", ".control-plane")).toBe("");
+    expect(existsSync(join(gatedTree, ".control-plane", gatedId, "01-executar.md"))).toBe(true);
     await shot(app.page, "task-gated");
+
+    // Flow M: something left uncommitted fails the check; the agent fixes it.
+    await tasks.backToList();
+    await tasks.create({
+      title: "Esqueceu um arquivo",
+      prompt: "Faça e registre. [sujo]",
+      pipeline: "Prompt único",
+      runner: runnerName,
+      directory: "app",
+    });
+    // One attempt in this pipeline: the failed check waits for a decision.
+    await expect(tasks.status).toHaveText("Aguardando decisão");
+    await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Falhou");
+    await expect(tasks.decisionReason).toContainText("sujo.txt");
+    await expect(app.page.getByTestId("stage-run-gates-executar-1")).toContainText("sujo.txt");
+    await shot(app.page, "task-check-failed");
+    await waitForLiveView(app.page);
+    await tasks.retryWith("Corrija o que a plataforma apontou.");
+    await expect(tasks.status).toHaveText("Concluída");
+    await expect(tasks.stageRunStatus("executar", 2)).toHaveText("Aprovada no gate");
 
     await tasks.backToList();
     await expect(tasks.listStatus(bugId)).toHaveText("Concluída");
@@ -258,7 +295,7 @@ test.describe("Task pipeline", () => {
     await app.page.getByTestId("sidebar-board").click();
     await expect(app.page.getByTestId(`board-task-${bugId}`)).toBeVisible();
     await expect(app.page.getByTestId("board-column-done")).toContainText("Erro intermitente");
-    await expect(app.page.getByTestId("board-stat-succeeded")).toHaveText("3");
+    await expect(app.page.getByTestId("board-stat-succeeded")).toHaveText("4");
     await shot(app.page, "board");
 
     await app.page.getByTestId("sidebar-usage").click();

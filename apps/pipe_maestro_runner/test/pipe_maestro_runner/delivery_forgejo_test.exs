@@ -50,40 +50,46 @@ defmodule PipeMaestroRunner.DeliveryForgejoTest do
   end
 
   defp deliver(ctx, delivery, env \\ []) do
-    Delivery.deliver(ctx.repo, delivery, [],
+    Delivery.deliver(ctx.repo, delivery,
       gh: nil,
       env: @isolated ++ env,
       forgejo_api_base: ctx.server.url
     )
   end
 
-  defp stage(name, ready),
-    do: %{
-      "commit_message" => name,
+  # The stage's work, committed as the agent does, and its delivery.
+  defp stage(ctx, name, file, ready) do
+    File.write!(Path.join(ctx.repo, file), name)
+    git!(ctx.repo, ["add", file])
+    git!(ctx.repo, ["commit", "-q", "-m", name])
+
+    %{
       "push" => true,
-      "pr" => %{"title" => "Corrigir login", "body" => "Etapa: #{name}", "ready" => ready}
+      "pr" => %{"title" => "Corrigir login", "block" => "Etapa: #{name}", "ready" => ready}
     }
+  end
 
   test "opens a draft pull request on the first stage and marks it ready on the last", ctx do
     with_credential(ctx)
-    File.write!(Path.join(ctx.repo, "plano.md"), "plano")
 
-    report = deliver(ctx, stage("Plano", false))
+    report = deliver(ctx, stage(ctx, "Plano", "plano.md", false))
     assert report["pushed"]
     assert report["pr_url"] == "https://forge.test/acme/app/pulls/1"
     refute report["error"]
     assert git!(ctx.origin, ["log", "-1", "--format=%s", "cp/tarefa-1"]) == "Plano"
 
-    assert [%{title: "WIP: Corrigir login", head: "cp/tarefa-1", base: "main"}] =
+    assert [%{title: "WIP: Corrigir login", head: "cp/tarefa-1", base: "main", body: body}] =
              ForgejoServer.pulls(ctx.server)
 
-    File.write!(Path.join(ctx.repo, "lib.ex"), "codigo")
-    report = deliver(ctx, stage("Implementação", false))
-    assert report["pr_url"] == "https://forge.test/acme/app/pulls/1"
-    assert [%{body: "Etapa: Implementação"}] = ForgejoServer.pulls(ctx.server)
+    assert body =~ "<!-- pipemaestro:inicio -->\nEtapa: Plano\n<!-- pipemaestro:fim -->"
 
-    File.write!(Path.join(ctx.repo, "docs.md"), "docs")
-    report = deliver(ctx, stage("Entrega", true))
+    report = deliver(ctx, stage(ctx, "Implementação", "lib.ex", false))
+    assert report["pr_url"] == "https://forge.test/acme/app/pulls/1"
+    assert [%{body: body}] = ForgejoServer.pulls(ctx.server)
+    assert body =~ "Etapa: Implementação"
+    refute body =~ "Etapa: Plano"
+
+    report = deliver(ctx, stage(ctx, "Entrega", "docs.md", true))
     assert report["pr_url"] == "https://forge.test/acme/app/pulls/1"
     assert [%{title: "Corrigir login", state: "open"}] = ForgejoServer.pulls(ctx.server)
 
@@ -97,8 +103,7 @@ defmodule PipeMaestroRunner.DeliveryForgejoTest do
   end
 
   test "without a git credential, the FORGEJO_TOKEN secret signs in", ctx do
-    File.write!(Path.join(ctx.repo, "a.ex"), "a")
-    report = deliver(ctx, stage("Plano", false), [{"FORGEJO_TOKEN", "tok123"}])
+    report = deliver(ctx, stage(ctx, "Plano", "a.ex", false), [{"FORGEJO_TOKEN", "tok123"}])
     assert report["pr_url"]
 
     assert {"POST", _path, "token tok123"} =
@@ -107,15 +112,39 @@ defmodule PipeMaestroRunner.DeliveryForgejoTest do
              |> Enum.find(fn {method, _path, _auth} -> method == "POST" end)
   end
 
+  test "adopts a pull request the agent opened, keeping its title and text", ctx do
+    with_credential(ctx)
+    delivery = stage(ctx, "Plano", "plano.md", false)
+    git!(ctx.repo, ["push", "-q", "origin", "HEAD"])
+
+    # The agent opened its own pull request, with its own words.
+    {:ok, repo} =
+      Forgejo.repo("https://forge.test/acme/app.git",
+        api_base: ctx.server.url,
+        auth: fn _host -> {:basic, "ana", "segredo"} end
+      )
+
+    {:ok, _url} = Forgejo.pull_request(repo, "cp/tarefa-1", "Do agente", "x", true)
+    [pr] = ForgejoServer.pulls(ctx.server)
+
+    ForgejoServer.edit_pull(ctx.server, pr.number,
+      title: "Login do agente",
+      body: "Texto do agente."
+    )
+
+    report = deliver(ctx, delivery)
+    assert report["pr_url"] == "https://forge.test/acme/app/pulls/1"
+    assert [%{title: "WIP: Login do agente", body: body}] = ForgejoServer.pulls(ctx.server)
+    assert body =~ "Texto do agente."
+    assert body =~ "Etapa: Plano"
+  end
+
   test "comments on a Forgejo issue", ctx do
     with_credential(ctx)
     url = "https://forge.test/acme/app/issues/7"
 
     report =
-      deliver(ctx, %{
-        "commit_message" => "nada",
-        "issue_comment" => %{"url" => url, "body" => "Decisão: x"}
-      })
+      deliver(ctx, %{"issue_comment" => %{"url" => url, "body" => "Decisão: x"}})
 
     assert report["commented"]
     assert ForgejoServer.comments(ctx.server) == [{"7", "Decisão: x"}]
@@ -125,9 +154,7 @@ defmodule PipeMaestroRunner.DeliveryForgejoTest do
     with_credential(ctx)
     git!(ctx.repo, ["remote", "set-url", "origin", "https://forge.test/acme/outro.git"])
     git!(ctx.repo, ["config", "url.#{ctx.origin}.insteadOf", "https://forge.test/acme/outro.git"])
-    File.write!(Path.join(ctx.repo, "a.ex"), "a")
-
-    report = deliver(ctx, stage("Plano", false))
+    report = deliver(ctx, stage(ctx, "Plano", "a.ex", false))
     assert report["pushed"]
     assert report["error"] =~ "pr: HTTP 404"
     refute report["pr_url"]

@@ -116,6 +116,21 @@ defmodule PipeMaestroRunner.WorkspaceTest do
       assert git!(path, ["branch", "--show-current"]) == "cp/nova"
     end
 
+    test "a new task starts from origin's main, not from a stale local checkout", ctx do
+      %{root: root, workdir: workdir, repo: repo, origin: origin, tmp_dir: dir} = ctx
+      elsewhere = Path.join(dir, "elsewhere")
+      {_, 0} = System.cmd("git", ["clone", "-q", origin, elsewhere], stderr_to_stdout: true)
+      File.write!(Path.join(elsewhere, "merged.ex"), "um PR mesclado")
+      git!(elsewhere, ["add", "."])
+      git!(elsewhere, ["commit", "-q", "-m", "merge"])
+      git!(elsewhere, ["push", "-q", "origin", "HEAD:main"])
+      newest = git!(elsewhere, ["rev-parse", "HEAD"])
+
+      assert {:ok, path, ^repo} = Workspace.prepare(job("t4", "cp/fresca"), root, workdir)
+      assert git!(path, ["rev-parse", "HEAD"]) == newest
+      refute git!(repo, ["rev-parse", "HEAD"]) == newest
+    end
+
     test "a branch that is only on origin is checked out from there", ctx do
       %{root: root, workdir: workdir, repo: repo} = ctx
       git!(repo, ["checkout", "-q", "-b", "cp/feita"])

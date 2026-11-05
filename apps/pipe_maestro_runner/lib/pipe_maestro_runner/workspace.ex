@@ -137,22 +137,48 @@ defmodule PipeMaestroRunner.Workspace do
     end
   end
 
+  # The task's branch on origin, if it was pushed; otherwise origin's default
+  # branch as origin has it now, not as the local checkout last saw it; HEAD
+  # when there is no origin to ask.
   defp start_point(source, branch) do
-    fetch = [
-      "fetch",
-      "--quiet",
-      "origin",
-      "refs/heads/#{branch}:refs/remotes/origin/#{branch}"
-    ]
+    cond do
+      remote_ok?(source, [
+        "fetch",
+        "--quiet",
+        "origin",
+        "refs/heads/#{branch}:refs/remotes/origin/#{branch}"
+      ]) ->
+        "origin/" <> branch
 
-    # Never a prompt for credentials: without them, the branch is not there.
-    case System.cmd("git", ["-C", source | fetch],
-           stderr_to_stdout: true,
-           env: [{"GIT_TERMINAL_PROMPT", "0"}]
-         ) do
-      {_output, 0} -> "origin/" <> branch
-      {_output, _status} -> "HEAD"
+      remote_ok?(source, ["fetch", "--quiet", "origin"]) and default_branch(source) ->
+        default_branch(source)
+
+      true ->
+        "HEAD"
     end
+  end
+
+  # origin/HEAD, learnt from origin when the clone never recorded it.
+  defp default_branch(source) do
+    with {:error, _unknown} <- git(source, ["rev-parse", "--abbrev-ref", "origin/HEAD"]),
+         true <- remote_ok?(source, ["remote", "set-head", "origin", "--auto"]),
+         {:ok, ref} <- git(source, ["rev-parse", "--abbrev-ref", "origin/HEAD"]) do
+      String.trim(ref)
+    else
+      {:ok, ref} -> String.trim(ref)
+      _none -> nil
+    end
+  end
+
+  # Never a prompt for credentials: without them, origin is not there.
+  defp remote_ok?(source, args) do
+    match?(
+      {_output, 0},
+      System.cmd("git", ["-C", source | args],
+        stderr_to_stdout: true,
+        env: [{"GIT_TERMINAL_PROMPT", "0"}]
+      )
+    )
   end
 
   defp ok?({:ok, _output}), do: true

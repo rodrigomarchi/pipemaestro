@@ -30,69 +30,69 @@ defmodule PipeMaestroRunner.DeliveryTest do
     %{repo: repo, origin: origin, log: log, env: [{"FAKE_GH_LOG", log}]}
   end
 
-  defp deliver(ctx, delivery, exclude \\ []),
-    do: Delivery.deliver(ctx.repo, delivery, exclude, gh: @fake_gh, env: ctx.env)
+  defp deliver(ctx, delivery),
+    do: Delivery.deliver(ctx.repo, delivery, gh: @fake_gh, env: ctx.env)
 
-  test "commits what changed, leaving out the copied paths", ctx do
-    File.write!(Path.join(ctx.repo, "lib.ex"), "novo")
-    File.mkdir_p!(Path.join(ctx.repo, "deps"))
-    File.write!(Path.join(ctx.repo, "deps/x"), "copiado")
-
-    report = deliver(ctx, %{"commit_message" => "Triagem: feito"}, ["deps"])
-    assert report["commit"] =~ ~r/^[0-9a-f]{40}$/
-    refute report["pushed"]
-    assert git!(ctx.repo, ["log", "-1", "--format=%s"]) == "Triagem: feito"
-    assert git!(ctx.repo, ["show", "--name-only", "--format=", "HEAD"]) == "lib.ex"
-
-    # Nothing new: no empty commit.
-    assert deliver(ctx, %{"commit_message" => "de novo"}, ["deps"])["commit"] == nil
+  # The agent's own commit, as the stage leaves it.
+  defp commit!(ctx, file, message) do
+    File.write!(Path.join(ctx.repo, file), message)
+    git!(ctx.repo, ["add", file])
+    git!(ctx.repo, ["commit", "-q", "-m", message])
   end
 
-  test "commits when a copied path is one the .gitignore already ignores", ctx do
-    File.write!(Path.join(ctx.repo, ".gitignore"), "/deps/\nnode_modules/\n")
-    git!(ctx.repo, ["add", ".gitignore"])
-    git!(ctx.repo, ["commit", "-q", "-m", "ignore"])
-    File.mkdir_p!(Path.join(ctx.repo, "deps"))
-    File.write!(Path.join(ctx.repo, "deps/x"), "copiado")
-    File.mkdir_p!(Path.join(ctx.repo, "e2e/node_modules"))
-    File.write!(Path.join(ctx.repo, "e2e/node_modules/y"), "copiado")
-    File.mkdir_p!(Path.join(ctx.repo, "_build"))
-    File.write!(Path.join(ctx.repo, "_build/z"), "copiado, não ignorado")
-    File.write!(Path.join(ctx.repo, "lib.ex"), "novo")
+  test "never commits: delivers the commits the agent made", ctx do
+    commit!(ctx, "lib.ex", "Implementação")
+    File.write!(Path.join(ctx.repo, "solto.txt"), "não é do harness commitar")
 
-    report =
-      deliver(ctx, %{"commit_message" => "Plano: feito"}, ["deps", "e2e/node_modules", "_build"])
-
+    report = deliver(ctx, %{"push" => true})
     refute report["error"]
-    assert report["commit"] =~ ~r/^[0-9a-f]{40}$/
-    assert git!(ctx.repo, ["show", "--name-only", "--format=", "HEAD"]) == "lib.ex"
+    assert report["commit"] == git!(ctx.repo, ["rev-parse", "HEAD"])
+    assert git!(ctx.origin, ["log", "-1", "--format=%s", "cp/tarefa"]) == "Implementação"
+    assert git!(ctx.repo, ["status", "--porcelain"]) == "?? solto.txt"
   end
 
-  test "pushes the branch, opens the draft PR, then updates it and marks it ready", ctx do
-    File.write!(Path.join(ctx.repo, "a.ex"), "a")
-    pr = %{"title" => "Corrigir login", "body" => "Closes #1", "ready" => false}
+  test "a branch the agent already pushed is pushed again as a no-op", ctx do
+    commit!(ctx, "a.ex", "a")
+    git!(ctx.repo, ["push", "-q", "origin", "HEAD"])
 
-    report = deliver(ctx, %{"commit_message" => "a", "push" => true, "pr" => pr})
+    report = deliver(ctx, %{"push" => true})
+    assert report["pushed"]
+    refute report["error"]
+  end
+
+  test "opens the draft PR with its block, keeps what others wrote, then marks it ready", ctx do
+    commit!(ctx, "a.ex", "a")
+    pr = %{"title" => "Corrigir login", "block" => "- [ ] Plano", "ready" => false}
+
+    report = deliver(ctx, %{"push" => true, "pr" => pr})
     assert report["pushed"]
     assert report["pr_url"] == "https://github.com/acme/app/pull/01"
-    assert git!(ctx.origin, ["log", "-1", "--format=%s", "cp/tarefa"]) == "a"
+    body_file = ctx.log <> ".body.01"
 
-    File.write!(Path.join(ctx.repo, "b.ex"), "b")
+    assert File.read!(body_file) =~
+             "<!-- pipemaestro:inicio -->\n- [ ] Plano\n<!-- pipemaestro:fim -->"
 
-    report =
-      deliver(ctx, %{"commit_message" => "b", "push" => true, "pr" => %{pr | "ready" => true}})
+    # A reviewer writes in the description, around the platform's block.
+    File.write!(body_file, "Nota da revisão.\n\n" <> File.read!(body_file) <> "\n\nP.S.")
 
-    assert report["pr_url"] == "https://github.com/acme/app/pull/01"
+    commit!(ctx, "b.ex", "b")
+    ready = %{pr | "block" => "- [x] Plano", "ready" => true}
+    assert deliver(ctx, %{"push" => true, "pr" => ready})["pr_url"] =~ "/pull/01"
+
+    body = File.read!(body_file)
+    assert body =~ "Nota da revisão."
+    assert body =~ "- [x] Plano"
+    refute body =~ "- [ ] Plano"
+    assert body =~ "P.S."
 
     calls = ctx.log |> File.read!() |> String.split("\n", trim: true)
     assert Enum.count(calls, &String.starts_with?(&1, "pr create --draft")) == 1
-    assert Enum.any?(calls, &String.starts_with?(&1, "pr edit"))
     assert List.last(calls) =~ "pr ready"
   end
 
   test "comments on the issue", ctx do
     comment = %{"url" => "https://github.com/acme/app/issues/1", "body" => "Decisão: x"}
-    report = deliver(ctx, %{"commit_message" => "nada", "issue_comment" => comment})
+    report = deliver(ctx, %{"issue_comment" => comment})
     assert report["commented"]
 
     assert File.read!(ctx.log) =~
@@ -100,11 +100,10 @@ defmodule PipeMaestroRunner.DeliveryTest do
   end
 
   test "a failure is reported, not raised", ctx do
-    File.write!(Path.join(ctx.repo, "a.ex"), "a")
-    pr = %{"title" => "Quebra [gh-falha]", "body" => "b", "ready" => false}
+    commit!(ctx, "a.ex", "a")
+    pr = %{"title" => "Quebra [gh-falha]", "block" => "b", "ready" => false}
 
-    report = deliver(ctx, %{"commit_message" => "a", "push" => true, "pr" => pr})
-    assert report["commit"]
+    report = deliver(ctx, %{"push" => true, "pr" => pr})
     assert report["pushed"]
     assert report["error"] =~ "falha simulada"
     refute report["pr_url"]

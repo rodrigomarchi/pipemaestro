@@ -62,6 +62,10 @@ defmodule PipeMaestro.Tasks.Engine do
 
   defp check(%Job{} = job), do: {:error, job.error || "A execução da etapa falhou."}
 
+  # A check of the platform says, in its own words, what to do.
+  defp gate_error(%{"platform" => true, "message" => message}) when is_binary(message),
+    do: "Verificação da plataforma: #{message}"
+
   defp gate_error(%{"command" => command, "expect" => "pass", "exit_code" => code}),
     do: "O gate `#{command}` não foi atendido: esperava passar e saiu com código #{code}."
 
@@ -108,7 +112,10 @@ defmodule PipeMaestro.Tasks.Engine do
   def feedback(error, summary, gates) do
     failed =
       for %{"passed" => false} = gate <- gates || [] do
-        "Saída de `#{gate["command"]}` (código #{gate["exit_code"]}):\n#{tail(gate["output"])}"
+        if gate["platform"],
+          do: "#{gate["command"]}: #{gate["message"]}",
+          else:
+            "Saída de `#{gate["command"]}` (código #{gate["exit_code"]}):\n#{tail(gate["output"])}"
       end
 
     [

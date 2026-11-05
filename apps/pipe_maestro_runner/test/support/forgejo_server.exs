@@ -31,6 +31,19 @@ defmodule PipeMaestroRunner.Test.ForgejoServer do
   def comments(%{state: state}), do: Agent.get(state, &Enum.reverse(&1.comments))
   def requests(%{state: state}), do: Agent.get(state, &Enum.reverse(&1.requests))
 
+  # A person (or the agent) edits the pull request outside the platform.
+  def edit_pull(%{state: state}, number, changes) do
+    Agent.update(state, fn s ->
+      pulls =
+        Enum.map(s.pulls, fn
+          %{number: ^number} = pr -> Map.merge(pr, Map.new(changes))
+          pr -> pr
+        end)
+
+      %{s | pulls: pulls}
+    end)
+  end
+
   @impl Plug
   def init(opts), do: opts
 
