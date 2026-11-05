@@ -118,25 +118,45 @@ defmodule PipeMaestroRunner.Workspace do
     git(source, ["rev-parse", "--show-prefix"]) == {:ok, "\n"}
   end
 
-  # A new branch from HEAD; if the branch is already there (a worktree that was
-  # removed by hand), the worktree checks it out again.
+  # The task's branch, checked out again if it is here (a worktree removed);
+  # otherwise a new branch, from the task's branch on origin if it was
+  # pushed (another runner worked on it, or the branch was deleted here), or
+  # from HEAD for a task that starts.
   defp add_worktree(source, path, branch) do
-    result =
-      case git(source, ["worktree", "add", "-b", branch, path, "HEAD"]) do
-        {:error, output} ->
-          if output =~ "already exists",
-            do: git(source, ["worktree", "add", path, branch]),
-            else: {:error, output}
+    # A worktree deleted by hand leaves an entry that would refuse the branch.
+    _pruned = git(source, ["worktree", "prune"])
 
-        ok ->
-          ok
-      end
+    result =
+      if git(source, ["rev-parse", "--verify", "--quiet", "refs/heads/" <> branch]) |> ok?(),
+        do: git(source, ["worktree", "add", path, branch]),
+        else: git(source, ["worktree", "add", "-b", branch, path, start_point(source, branch)])
 
     case result do
       {:ok, _output} -> {:ok, path, source}
       {:error, output} -> {:error, "Não foi possível criar o worktree: #{output}"}
     end
   end
+
+  defp start_point(source, branch) do
+    fetch = [
+      "fetch",
+      "--quiet",
+      "origin",
+      "refs/heads/#{branch}:refs/remotes/origin/#{branch}"
+    ]
+
+    # Never a prompt for credentials: without them, the branch is not there.
+    case System.cmd("git", ["-C", source | fetch],
+           stderr_to_stdout: true,
+           env: [{"GIT_TERMINAL_PROMPT", "0"}]
+         ) do
+      {_output, 0} -> "origin/" <> branch
+      {_output, _status} -> "HEAD"
+    end
+  end
+
+  defp ok?({:ok, _output}), do: true
+  defp ok?({:error, _output}), do: false
 
   @doc """
   Removes the worktree of task `task_id`, made from `directory` under `root`.

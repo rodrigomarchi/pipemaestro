@@ -14,8 +14,15 @@ create_task ──► running ──(gate: bloqueada, esgotada, regra)──► 
                   │                                                  │
                   ├──(gate: última etapa aprovada)──► succeeded      │
                   ├──(job cancelado)────────────────► canceled ◄─────┘ cancel_task
-                  └──(cancel_task: cancela o job; o runner confirma)
+                  ├──(cancel_task: cancela o job; o runner confirma)
+                  └──(interrupt: job cancelado com pausa)──► awaiting_decision
+
+succeeded / canceled ──(correct: nova etapa "Correção N")──► running
+qualquer estado menos running ──(redo_from)──► running
 ```
+
+Nenhum estado é uma rua sem saída ([ADR 0032](../adr/0032-sem-ruas-sem-saida.md)): uma
+tarefa parada ou encerrada sempre aceita um novo prompt.
 
 | Estado | Significado |
 |---|---|
@@ -37,7 +44,7 @@ Cada tentativa é um `StageRun` com um job. Quando o job termina, o gate decide:
 | `succeeded`, saída `status: bloqueado` sem nada a perguntar | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) | da análise |
 | `failed`, sem saída estruturada, sem artefato ou com um gate não atendido, com tentativas sobrando | `{:retry, erro}` | `failed` | nova tentativa da mesma etapa, com feedback | — |
 | o mesmo, sem tentativas sobrando | `{:exhausted, erro}` | `failed` | `awaiting_decision` | da análise |
-| `canceled` | `:canceled` | `canceled` | `canceled` | — |
+| `canceled` | `:canceled` | `canceled` | `canceled`; `awaiting_decision` se foi uma interrupção (`pause_requested`) | — |
 
 Uma pausa por orçamento ou a pedido (`pause_requested`) também não tem questionário.
 
@@ -88,6 +95,26 @@ Valem só em `awaiting_decision`:
   recebe no prompt ("Respostas da pessoa às suas perguntas").
 - `advance` aceita respostas parciais (`answers:`), entregues à etapa seguinte.
 - `cancel_task(task)`: `canceled`.
+
+## Fora de uma pausa
+
+- `redo_from(task, índice, instruções, runner_id:)`: em qualquer estado menos
+  `running`, roda de novo a etapa `índice` (com as instruções) e as seguintes.
+- `correct(task, prompt, runner_id:)`: numa tarefa encerrada, acrescenta a etapa
+  "Correção N" ao fim de `task.stages`, com o template de correção, o prompt da pessoa
+  nas instruções e os gates, tentativas, modelo e timeout da última etapa. Ela roda e
+  entrega como qualquer etapa. O `Decision` tem `action: :correct`.
+- `interrupt(task)`: numa tarefa `running`, marca `pause_requested` e cancela o job. O
+  `:canceled` que volta leva a `awaiting_decision` ("foi interrompida"). Um
+  `cancel_task` depois zera a pausa e encerra.
+- **Runner offline** (`runner_online?: false`): `interrupt` e `cancel_task` encerram o
+  job na hora (`Jobs.abandon/2`). Quando o runner volta, ele recebe `job:cancel` para
+  esse job (`Jobs.ended_among/2`), e o resultado que mandar é ignorado.
+- **Worktree removido:** `redo_from` e `correct` o esquecem, e o runner o monta de novo
+  da branch. Durante uma remoção ainda não confirmada, os dois esperam (`:removing`).
+- **Outro runner** (`runner_id:`): só quando a branch já foi enviada ao origin por uma
+  entrega (`Tasks.switchable?/1`). O novo runner monta o worktree a partir de
+  `origin/<branch>`.
 
 Uma decisão reivindica a pausa num `UPDATE` condicional: de duas ao mesmo tempo, a
 segunda recebe `:not_awaiting`.

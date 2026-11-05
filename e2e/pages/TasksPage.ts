@@ -165,6 +165,17 @@ export class TasksPage {
     await this.page.getByTestId("task-remove-worktree").click();
   }
 
+  /** "Corrigir com um prompt": runs `prompt` as a new stage of a task that ended. */
+  async correct(prompt: string) {
+    await this.page.getByTestId("task-correct-text").fill(prompt);
+    await this.page.getByTestId("task-correct-submit").click();
+  }
+
+  /** Stops the running stage (the confirmation is accepted by `acceptConfirms`). */
+  async interrupt() {
+    await this.page.getByTestId("task-interrupt").click();
+  }
+
   get worktreeState(): Locator {
     return this.page.getByTestId("task-worktree-state");
   }

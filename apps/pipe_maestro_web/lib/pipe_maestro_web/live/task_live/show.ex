@@ -64,6 +64,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
      |> load_online()
      |> load_decisions()
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
+     |> assign(redo: nil)
+     |> load_rerun()
      |> follow_running_job()}
   end
 
@@ -77,7 +79,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         do: put_flash(socket, :info, "Outra pessoa respondeu esta decisão."),
         else: socket
 
-    {:noreply, socket |> assign(task: task) |> load_decisions() |> follow_running_job()}
+    {:noreply,
+     socket |> assign(task: task) |> load_decisions() |> load_rerun() |> follow_running_job()}
   end
 
   # The running job's telemetry comes in bursts: what it spent so far is read
@@ -222,20 +225,33 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     end
   end
 
-  def handle_event("redo", %{"index" => index}, socket) do
-    case Tasks.redo_from(socket.assigns.task, String.to_integer(index), nil) do
+  def handle_event("open_redo", %{"index" => index}, socket),
+    do: {:noreply, assign(socket, redo: String.to_integer(index))}
+
+  def handle_event("close_redo", _params, socket), do: {:noreply, assign(socket, redo: nil)}
+
+  def handle_event("redo", %{"redo" => params}, socket) do
+    socket.assigns.task
+    |> Tasks.redo_from(socket.assigns.redo, params["instructions"], rerun_opts(socket, params))
+    |> rerun_result(socket, "A etapa vai rodar de novo.")
+  end
+
+  def handle_event("correct", %{"correct" => params}, socket) do
+    socket.assigns.task
+    |> Tasks.correct(params["prompt"], rerun_opts(socket, params))
+    |> rerun_result(socket, "A correção vai rodar como uma nova etapa.")
+  end
+
+  def handle_event("interrupt", _params, socket) do
+    case Tasks.interrupt(socket.assigns.task, stop_opts(socket)) do
       {:ok, task} ->
-        {:noreply, socket |> assign(task: task) |> follow_running_job()}
+        {:noreply,
+         socket
+         |> assign(task: task)
+         |> put_flash(:info, "Interrupção pedida: a tarefa vai aguardar uma decisão.")}
 
-      {:error, reason} ->
-        message =
-          case reason do
-            :running -> "A tarefa está rodando."
-            :no_worktree -> "O worktree desta tarefa foi removido."
-            :no_stage -> "Essa etapa não existe."
-          end
-
-        {:noreply, put_flash(socket, :error, message)}
+      {:error, :not_running} ->
+        {:noreply, put_flash(socket, :error, "A tarefa não está rodando.")}
     end
   end
 
@@ -287,12 +303,72 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   defp instructions(params), do: get_in(params, ["decision", "instructions"])
 
   defp cancel(socket) do
-    case Tasks.cancel_task(socket.assigns.task, by: socket.assigns.current_scope.user) do
+    case Tasks.cancel_task(socket.assigns.task, stop_opts(socket)) do
       {:ok, task} ->
         {:noreply, socket |> assign(task: task) |> put_flash(:info, "Cancelamento pedido.")}
 
       {:error, :finished} ->
         {:noreply, put_flash(socket, :error, "A tarefa já terminou.")}
+    end
+  end
+
+  # A runner offline cannot confirm a stop: the job ends without it.
+  defp stop_opts(socket) do
+    [
+      by: socket.assigns.current_scope.user,
+      runner_online?: not Tasks.runner_offline?(socket.assigns.task, socket.assigns.online)
+    ]
+  end
+
+  defp rerun_opts(socket, params),
+    do: [by: socket.assigns.current_scope.user, runner_id: params["runner_id"]]
+
+  defp rerun_result({:ok, task}, socket, message) do
+    {:noreply,
+     socket
+     |> assign(task: task, redo: nil)
+     |> load_decisions()
+     |> load_rerun()
+     |> put_flash(:info, message)
+     |> follow_running_job()}
+  end
+
+  defp rerun_result({:error, reason}, socket, _message),
+    do: {:noreply, put_flash(socket, :error, rerun_error(reason))}
+
+  defp rerun_error(:running), do: "A tarefa está rodando."
+  defp rerun_error(:active), do: "A tarefa ainda não terminou: decida a pausa ou cancele antes."
+  defp rerun_error(:no_stage), do: "Essa etapa não existe."
+  defp rerun_error(:blank), do: "Escreva o que a correção deve fazer."
+  defp rerun_error(:removing), do: "O worktree está sendo removido: aguarde o runner terminar."
+
+  defp rerun_error(:runner),
+    do: "Esse runner não pode continuar a tarefa: a branch dela não está no origin."
+
+  # Where a stage can run again by hand, and the runners offered for it.
+  defp load_rerun(socket) do
+    task = socket.assigns.task
+
+    choices = if task.status == :running, do: [], else: Tasks.runner_choices(task)
+    prompt = if no_pr?(task), do: "Abra o PR desta branch.", else: ""
+
+    assign(socket,
+      runner_choices: choices,
+      correct_form: to_form(%{"prompt" => prompt, "runner_id" => task.runner_id}, as: "correct"),
+      redo_form: to_form(%{"instructions" => "", "runner_id" => task.runner_id}, as: "redo")
+    )
+  end
+
+  # A task that delivers pull requests ended without one.
+  defp no_pr?(%Task{} = task) do
+    task.status == :succeeded and task.git and is_nil(task.pr_url) and
+      match?(%{"delivery" => "pr"}, task.pipeline_context)
+  end
+
+  defp runner_options(runners, online) do
+    for runner <- runners do
+      {if(MapSet.member?(online, runner.id), do: runner.name, else: "#{runner.name} (offline)"),
+       runner.id}
     end
   end
 
@@ -373,6 +449,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   defp decision_label(:retry), do: "Refazer"
   defp decision_label(:advance), do: "Seguir"
   defp decision_label(:cancel), do: "Cancelar"
+  defp decision_label(:correct), do: "Corrigir"
 
   defp stage_name(%Task{stages: stages}, index) do
     case Enum.at(stages, index) do
@@ -381,8 +458,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     end
   end
 
-  defp redoable?(%Task{} = task),
-    do: task.status != :running and is_nil(task.worktree_removed_at)
+  defp redoable?(%Task{} = task), do: task.status != :running
 
   defp removable_worktree?(%Task{} = task) do
     not Task.active?(task) and not is_nil(task.worktree) and is_nil(task.worktree_removed_at) and
@@ -577,7 +653,22 @@ defmodule PipeMaestroWeb.TaskLive.Show do
               class="mt-4"
               data-testid="task-runner-offline"
             >
-              A tarefa está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  A tarefa está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
+                  Interrompa a etapa para decidir: refazer em outro runner, seguir ou cancelar.
+                </span>
+                <.button
+                  size="xs"
+                  color="danger"
+                  variant="outline"
+                  icon="hero-hand-raised"
+                  phx-click="interrupt"
+                  data-testid="task-runner-offline-interrupt"
+                >
+                  Interromper a etapa
+                </.button>
+              </div>
             </.alert>
             <div :if={task_files(@task) != []} class="mt-4 text-sm">
               <p class="mb-1 text-gray-500 dark:text-gray-400">Arquivos alterados na tarefa</p>
@@ -626,9 +717,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                   variant="ghost"
                   color="gray"
                   icon="hero-arrow-uturn-left"
-                  phx-click="redo"
+                  phx-click="open_redo"
                   phx-value-index={row.index}
-                  data-confirm={"Refazer a partir de \"#{row.stage.name}\"? As etapas seguintes rodam de novo."}
                   class="ml-auto"
                   data-testid={"stage-redo-#{row.stage.key}"}
                 >
@@ -756,6 +846,82 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           </li>
         </ol>
 
+        <.card :if={!Task.active?(@task)} variant="outline" data-testid="task-correct">
+          <.card_content>
+            <.section_heading
+              icon="hero-wrench-screwdriver"
+              title="Corrigir com um prompt"
+              description="Roda no worktree e na branch desta tarefa como uma nova etapa, com os gates e a entrega de sempre (commit, push e PR)."
+            />
+            <.alert
+              :if={no_pr?(@task)}
+              color="warning"
+              with_icon
+              class="mb-3"
+              data-testid="task-no-pr-warning"
+            >
+              A tarefa terminou sem PR: a entrega não chegou a abri-lo. Peça a correção abaixo.
+            </.alert>
+            <.form for={@correct_form} id="correct-form" phx-submit="correct">
+              <.markdown_editor
+                id="task-correct-text"
+                field={@correct_form[:prompt]}
+                label="O que fazer"
+                icon="hero-chat-bubble-bottom-center-text"
+                rows={3}
+                placeholder="Ex.: resolva o conflito com a main; o PR acusou erro no CI; ajuste o que a revisão pediu."
+                testid="task-correct-text"
+              />
+              <.rerun_runner
+                form={@correct_form}
+                runners={@runner_choices}
+                online={@online}
+                testid="task-correct-runner"
+              />
+              <div class="flex justify-end">
+                <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
+              </div>
+            </.form>
+          </.card_content>
+        </.card>
+
+        <.modal
+          :if={@redo}
+          id="redo-modal"
+          title={"Refazer a partir de \"#{stage_name(@task, @redo)}\""}
+          max_width="lg"
+          on_cancel={JS.push("close_redo")}
+        >
+          <.form for={@redo_form} id="redo-form" phx-submit="redo" data-testid="stage-redo-modal">
+            <p class="mb-3 text-sm text-gray-600 dark:text-gray-300">
+              Esta etapa roda de novo, e as seguintes também.
+            </p>
+            <.markdown_editor
+              id="stage-redo-text"
+              field={@redo_form[:instructions]}
+              label="Instruções (opcional)"
+              icon="hero-chat-bubble-bottom-center-text"
+              rows={3}
+              placeholder="Ex.: desta vez, escreva os testes antes."
+              testid="stage-redo-text"
+            />
+            <.rerun_runner
+              form={@redo_form}
+              runners={@runner_choices}
+              online={@online}
+              testid="stage-redo-runner"
+            />
+            <div class="flex justify-end gap-2">
+              <.button type="button" variant="ghost" color="gray" phx-click="close_redo">
+                Cancelar
+              </.button>
+              <.button type="submit" icon="hero-arrow-uturn-left" data-testid="stage-redo-submit">
+                Refazer
+              </.button>
+            </div>
+          </.form>
+        </.modal>
+
         <.card :if={@decisions != []} variant="outline">
           <.card_header title="Decisões tomadas" />
           <.card_content>
@@ -837,6 +1003,18 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 >
                   Pausar depois desta etapa
                 </.button>
+                <.button
+                  :if={@task.status == :running}
+                  type="button"
+                  variant="outline"
+                  color="warning"
+                  icon="hero-hand-raised"
+                  phx-click="interrupt"
+                  data-confirm="Interromper a etapa em execução? A tarefa vai aguardar uma decisão: refazer com instruções, seguir ou cancelar."
+                  data-testid="task-interrupt"
+                >
+                  Interromper agora
+                </.button>
                 <.button icon="hero-paper-airplane" data-testid="task-instruct">Enviar</.button>
               </div>
             </.form>
@@ -844,6 +1022,27 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         </.card>
       </div>
     </Layouts.app>
+    """
+  end
+
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :runners, :list, required: true
+  attr :online, :any, required: true
+  attr :testid, :string, required: true
+
+  # Which runner runs it: offered only when there is more than one choice.
+  defp rerun_runner(assigns) do
+    ~H"""
+    <.icon_field
+      :if={length(@runners) > 1}
+      field={@form[:runner_id]}
+      icon="hero-server-stack"
+      type="select"
+      label="Runner"
+      options={runner_options(@runners, @online)}
+      help_text="Outro runner monta o worktree a partir da branch da tarefa no origin."
+      data-testid={@testid}
+    />
     """
   end
 
