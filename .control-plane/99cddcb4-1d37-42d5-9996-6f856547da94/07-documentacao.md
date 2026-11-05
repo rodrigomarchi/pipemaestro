@@ -25,7 +25,7 @@ Em **Tarefas → Escrever com IA**, a pessoa agora pode escolher o pipeline no p
 - **Idempotência:** o índice único parcial e a migração (`priv/repo/migrations/*_add_proposal_job_to_tasks.exs`, `on_delete: :nilify_all`).
 - **Padrão ligado:** o padrão "ligado" vem só do formulário. Pedidos sem o campo continuam sem auto-aprovar.
 - Teste e2e: o `setChecked` do page object usa `force: true` por causa do switch do Petal; ele continua conferindo o estado final.
-- O `make ci` completo não rodou de uma vez; rodaram `ci.quick` e `dialyzer` separados, ambos verdes.
+- `make ci` completo rodou sem erros na etapa de CI (exit 0, ver `05-ci.md`); depois dele só mudaram documentação e o spec e2e, fora do `make ci`.
 
 ## Como verificar
 ```sh
