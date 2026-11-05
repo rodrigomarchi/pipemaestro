@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
 
-/** Projects: what the platform knows about each code directory. */
+/** Projects: a runner, one of its directories, and how to work in it. */
 export class ProjectsPage {
   readonly page: Page;
 
@@ -19,6 +19,8 @@ export class ProjectsPage {
   /** Creates a project from the form and waits for it in the list. */
   async create(project: {
     name: string;
+    /** The runner the project lives on; its directories fill the next select. */
+    runner?: string;
     directory: string;
     setup?: string;
     test?: string;
@@ -29,6 +31,7 @@ export class ProjectsPage {
     await this.page.getByTestId("new-project").click();
     await waitForLiveView(this.page);
     await this.page.getByTestId("project-name").fill(project.name);
+    if (project.runner) await this.pickRunner(project.runner);
     await this.page.getByTestId("project-directory").selectOption(project.directory);
     if (project.setup) await this.page.getByTestId("project-setup").fill(project.setup);
     if (project.test) await this.page.getByTestId("project-test").fill(project.test);
@@ -38,7 +41,44 @@ export class ProjectsPage {
     await expect(this.project(project.directory)).toContainText(project.name);
   }
 
+  /** Picks the runner in the open form and waits for its directories. */
+  async pickRunner(runner: string) {
+    await this.page.getByTestId("project-runner").selectOption({ label: runner });
+    await expect(this.page.getByTestId("project-directory").locator("option").nth(1)).toBeAttached();
+  }
+
+  /**
+   * Opens the new-project form, picks the runner and the directory, and asks
+   * the agent to study it; waits on the proposal.
+   */
+  async analyze(runner: string, directory: string) {
+    await this.page.getByTestId("new-project").click();
+    await waitForLiveView(this.page);
+    await this.pickRunner(runner);
+    await this.page.getByTestId("project-directory").selectOption(directory);
+    await this.page.getByTestId("project-analyze").click();
+    await this.page.waitForURL(/\/proposals\/[0-9a-f-]+$/);
+    await waitForLiveView(this.page);
+  }
+
   project(directory: string): Locator {
     return this.page.getByTestId(`project-${directory}`);
+  }
+
+  /** The project's runner, by name. */
+  runner(directory: string): Locator {
+    return this.page.getByTestId(`project-runner-${directory}`);
+  }
+
+  /** Whether the project's runner is online. */
+  status(directory: string): Locator {
+    return this.page.getByTestId(`project-status-${directory}`);
+  }
+
+  /** Opens the new-task form with the project already chosen. */
+  async newTask(directory: string) {
+    await this.page.getByTestId(`project-new-task-${directory}`).click();
+    await this.page.waitForURL(/\/tasks\?project_id=/);
+    await waitForLiveView(this.page);
   }
 }

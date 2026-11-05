@@ -86,6 +86,13 @@ export class ProposalPage {
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
   }
 
+  /** Project: saves the project as reviewed and lands on the list of projects. */
+  async saveProposedProject() {
+    await this.page.getByTestId("proposal-save-project").click();
+    await this.page.waitForURL(/\/projects$/);
+    await waitForLiveView(this.page);
+  }
+
   /** Task: opens the new-task form filled with the task the agent wrote. */
   async createTask() {
     await this.page.getByTestId("proposal-create-task").click();
