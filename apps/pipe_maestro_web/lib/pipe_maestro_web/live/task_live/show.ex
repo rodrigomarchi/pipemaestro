@@ -496,7 +496,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           <.card_content>
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0 flex-1">
-                <p class="text-sm text-gray-500 dark:text-gray-400">
+                <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="task-pipeline-name">
                   {@task.pipeline_name} · v{@task.pipeline_version} · {stage_progress(@task)}
                 </p>
                 <pre
