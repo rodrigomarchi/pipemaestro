@@ -48,6 +48,26 @@ defmodule PipeMaestroRunner.DeliveryTest do
     assert deliver(ctx, %{"commit_message" => "de novo"}, ["deps"])["commit"] == nil
   end
 
+  test "commits when a copied path is one the .gitignore already ignores", ctx do
+    File.write!(Path.join(ctx.repo, ".gitignore"), "/deps/\nnode_modules/\n")
+    git!(ctx.repo, ["add", ".gitignore"])
+    git!(ctx.repo, ["commit", "-q", "-m", "ignore"])
+    File.mkdir_p!(Path.join(ctx.repo, "deps"))
+    File.write!(Path.join(ctx.repo, "deps/x"), "copiado")
+    File.mkdir_p!(Path.join(ctx.repo, "e2e/node_modules"))
+    File.write!(Path.join(ctx.repo, "e2e/node_modules/y"), "copiado")
+    File.mkdir_p!(Path.join(ctx.repo, "_build"))
+    File.write!(Path.join(ctx.repo, "_build/z"), "copiado, não ignorado")
+    File.write!(Path.join(ctx.repo, "lib.ex"), "novo")
+
+    report =
+      deliver(ctx, %{"commit_message" => "Plano: feito"}, ["deps", "e2e/node_modules", "_build"])
+
+    refute report["error"]
+    assert report["commit"] =~ ~r/^[0-9a-f]{40}$/
+    assert git!(ctx.repo, ["show", "--name-only", "--format=", "HEAD"]) == "lib.ex"
+  end
+
   test "pushes the branch, opens the draft PR, then updates it and marks it ready", ctx do
     File.write!(Path.join(ctx.repo, "a.ex"), "a")
     pr = %{"title" => "Corrigir login", "body" => "Closes #1", "ready" => false}

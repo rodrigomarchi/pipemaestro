@@ -907,6 +907,29 @@ defmodule PipeMaestro.TasksTest do
       assert second.context["delivery"]["pr"]["body"] =~ "- [x] Etapa A"
     end
 
+    test "a delivery that failed pauses the task instead of going on", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx)
+      assert_receive {:job_assign, _first}
+
+      task =
+        run_current(ctx, task, %{
+          "delivery" => %{
+            "commit" => nil,
+            "pushed" => false,
+            "pr_url" => nil,
+            "error" => "commit: The following paths are ignored:\ndeps\n_build"
+          }
+        })
+
+      assert task.status == :awaiting_decision
+      assert task.pr_url == nil
+      assert task.decision_reason =~ "Etapa A"
+      assert task.decision_reason =~ "a entrega da plataforma falhou"
+      assert task.decision_reason =~ "ignored: deps _build"
+      refute_receive {:job_assign, _second}
+    end
+
     test "a decision is commented on the issue with the next stage", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
       task = create_task(ctx, %{"issue_url" => "https://github.com/acme/app/issues/42"})

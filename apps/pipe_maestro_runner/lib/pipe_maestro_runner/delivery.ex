@@ -22,6 +22,7 @@ defmodule PipeMaestroRunner.Delivery do
   skipped; nothing raises.
   """
 
+  alias PipeMaestroRunner.Changes
   alias PipeMaestroRunner.Delivery.Forgejo
 
   @doc """
@@ -58,7 +59,7 @@ defmodule PipeMaestroRunner.Delivery do
   end
 
   defp commit(ctx, message, exclude, report) do
-    pathspec = ["--", "." | Enum.map(exclude, &":(exclude)#{&1}")]
+    pathspec = Changes.pathspec(ctx.dir, exclude, ctx.env)
 
     with {:ok, _} <- git(ctx, ["add", "--all" | pathspec]),
          false <- match?({:ok, _}, git(ctx, ["diff", "--cached", "--quiet"])),

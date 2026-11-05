@@ -85,12 +85,7 @@ defmodule PipeMaestroRunner.Changes do
         # Starting from the real index lets git skip hashing unchanged files.
         _copied = File.cp(Path.expand(String.trim(real_index), dir), index)
         env = [{"GIT_INDEX_FILE", index}]
-        # A path git already ignores stays out by itself; naming it in an
-        # exclude pathspec makes `git add` refuse it and fail.
-        pathspec = [
-          "--",
-          "." | for(path <- exclude, not ignored?(dir, path), do: ":(exclude)#{path}")
-        ]
+        pathspec = pathspec(dir, exclude)
 
         with {:ok, _added} <- git(dir, ["add", "--all" | pathspec], env),
              {:ok, tree} <- git(dir, ["write-tree"], env) do
@@ -228,7 +223,19 @@ defmodule PipeMaestroRunner.Changes do
     end
   end
 
-  defp ignored?(dir, path), do: match?({:ok, _}, git(dir, ["check-ignore", "-q", "--", path]))
+  @doc """
+  The pathspec that adds every file of `dir` but the `exclude` paths, for
+  `git add --all`. A path git already ignores stays out by itself, and naming
+  it in an exclude pathspec makes `git add` refuse it and fail, so it is left
+  out of the pathspec. `env` is the environment git runs with.
+  """
+  @spec pathspec(Path.t(), [String.t()], [{String.t(), String.t()}]) :: [String.t()]
+  def pathspec(dir, exclude, env \\ []) do
+    ["--", "." | for(path <- exclude, not ignored?(dir, path, env), do: ":(exclude)#{path}")]
+  end
+
+  defp ignored?(dir, path, env),
+    do: match?({:ok, _}, git(dir, ["check-ignore", "-q", "--", path], env))
 
   defp git(dir, args, env \\ []) do
     case System.cmd("git", ["-C", dir | args], stderr_to_stdout: true, env: env) do
