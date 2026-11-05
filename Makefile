@@ -4,7 +4,7 @@
 	deploy deploy.skip-ci \
 	runner.status runner.logout runner.binary runner.rel runner.version \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck \
-	landing.shots
+	landing.shots favicon
 
 # Burrito's single binary sets __BURRITO, and the runner app boots as the CLI when it
 # sees it. Commands started by the binary (the agent's shell in a job) inherit it, so
@@ -227,3 +227,8 @@ landing.shots: e2e.db.reset e2e.assets ## Regenerate the landing's screenshots (
 
 e2e.typecheck: ## Typecheck the specs, page objects and helpers
 	cd e2e && npx tsc --noEmit
+
+# The .ico is rasterized from images/favicon.svg by the Chromium Playwright
+# installs (e2e/scripts/favicon.mts); run it after changing the favicon.
+favicon: ## Regenerate priv/static/favicon.ico (16/32/48 px) from favicon.svg
+	cd e2e && node scripts/favicon.mts
