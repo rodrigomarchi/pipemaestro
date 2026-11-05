@@ -11,7 +11,9 @@ defmodule PipeMaestro.Tasks.Task do
   `running` while a stage runs, `awaiting_decision` when a person must say
   how to go on, and ends `succeeded`, `failed` or `canceled`.
 
-  It may come from a GitHub issue (`issue_url`); with a pipeline that delivers
+  It may come from a GitHub issue (`issue_url`), and from a task proposal
+  (`proposal_job`, `PipeMaestro.Proposals.TaskKind`): one proposal becomes
+  one task at most. With a pipeline that delivers
   (`PipeMaestro.Pipelines.Pipeline` `delivery`), its draft pull request
   is `pr_url`, and a decision waits in `pending_issue_comment` to be commented
   on the issue with the next stage.
@@ -69,6 +71,8 @@ defmodule PipeMaestro.Tasks.Task do
           decision_questionnaire: map() | nil,
           decision_analysis_job_id: Ecto.UUID.t() | nil,
           decision_analysis_job: Job.t() | Ecto.Association.NotLoaded.t() | nil,
+          proposal_job_id: Ecto.UUID.t() | nil,
+          proposal_job: Job.t() | Ecto.Association.NotLoaded.t() | nil,
           finished_at: DateTime.t() | nil,
           pipeline_name: String.t() | nil,
           pipeline_version: pos_integer() | nil,
@@ -128,6 +132,7 @@ defmodule PipeMaestro.Tasks.Task do
     belongs_to :created_by_user, User
     belongs_to :decision_owner, User
     belongs_to :decision_analysis_job, Job
+    belongs_to :proposal_job, Job
     has_many :stage_runs, StageRun
     has_many :decisions, Decision
 
@@ -164,5 +169,6 @@ defmodule PipeMaestro.Tasks.Task do
     |> validate_required([:directory], message: "escolha um diretório do runner")
     |> validate_length(:title, max: 120)
     |> validate_length(:prompt, max: 16_000, count: :bytes)
+    |> unique_constraint(:proposal_job_id, message: "esta proposta já virou uma tarefa")
   end
 end

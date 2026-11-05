@@ -15,6 +15,12 @@ defmodule PipeMaestro.Proposals do
   the directory. Only runners that announce the `"scratch"` capability take
   one, and only a git directory can be studied. The agent answers in the
   kind's JSON Schema, and `result/1` reads the answer for the review.
+
+  A task proposal becomes one task at most (`create_task/4`, the task's
+  `proposal_job_id`), and its id is kept with the proposal
+  (`created_task_id/1`). Asked with `auto_approve`, the task is created as
+  the job ends (`job_finished/1`), on behalf of who asked; when it cannot be,
+  the proposal waits for review and says why (`auto_approve/1`).
   """
 
   import Ecto.Query
@@ -40,6 +46,8 @@ defmodule PipeMaestro.Proposals do
   alias PipeMaestro.Repo
   alias PipeMaestro.Runners
   alias PipeMaestro.Runners.Runner
+  alias PipeMaestro.Tasks
+  alias PipeMaestro.Tasks.Task
   alias PipeMaestro.Workspaces.Workspace
 
   @capability "scratch"
@@ -354,6 +362,125 @@ defmodule PipeMaestro.Proposals do
 
   def result(%Job{error: error}) when is_binary(error), do: {:error, error}
   def result(%Job{}), do: {:error, "A proposta não terminou bem."}
+
+  @doc """
+  Creates the task a task proposal `job` became, with `params` (its
+  `result/1`'s `task_params`, as the person left them). A proposal becomes
+  one task at most: a second gives an error on `proposal_job_id`.
+  """
+  @spec create_task(User.t(), Workspace.t(), Job.t(), map()) ::
+          {:ok, Task.t()} | {:error, Changeset.t()}
+  def create_task(%User{} = user, %Workspace{} = workspace, %Job{} = job, params) do
+    with {:ok, task} <- Tasks.create_task(user, workspace, params, proposal: job) do
+      Jobs.update_proposal(job, %{"created_task_id" => task.id})
+      {:ok, task}
+    end
+  end
+
+  @doc "The id of the task a task proposal became, or `nil`."
+  @spec created_task_id(Job.t()) :: Ecto.UUID.t() | nil
+  def created_task_id(%Job{id: id} = job) do
+    case job.context["proposal"]["created_task_id"] do
+      nil -> Repo.one(from t in Task, where: t.proposal_job_id == ^id, select: t.id)
+      task_id -> task_id
+    end
+  end
+
+  @doc """
+  How the auto-approval of a task proposal went: `nil` (not asked, or not
+  ended yet), `%{"status" => "created"}`, or `%{"status" => "skipped",
+  "reason" => text}`.
+  """
+  @spec auto_approve(Job.t()) :: map() | nil
+  def auto_approve(%Job{context: context}), do: context["proposal"]["auto_approve"]
+
+  @doc """
+  What happens as a proposal's job ends: a task proposal asked with
+  `auto_approve`, if ready and with a pipeline, becomes its task, created and
+  started (or queued) on behalf of who asked. Else it waits for review, and
+  the reason is kept with it. Other proposals are left alone.
+  """
+  @spec job_finished(Job.t()) :: :ok
+  def job_finished(%Job{status: :succeeded, context: %{"proposal" => %{"kind" => "task"}}} = job) do
+    if input(job)["auto_approve"] == true and is_nil(created_task_id(job)),
+      do: auto_create(job),
+      else: :ok
+  end
+
+  def job_finished(%Job{}), do: :ok
+
+  defp auto_create(job) do
+    with {:ok, result} <- auto_result(job),
+         {:ok, user} <- requester(job),
+         workspace = Repo.get!(Workspace, job.workspace_id),
+         {:ok, task} <- auto_task(user, workspace, job, result.task_params) do
+      Audit.record(workspace, user, "task.auto_created", task, %{"proposal_id" => job.id})
+      Jobs.update_proposal(job, %{"auto_approve" => %{"status" => "created"}})
+      :ok
+    else
+      :already_created ->
+        :ok
+
+      {:skip, reason} ->
+        Jobs.update_proposal(job, %{
+          "auto_approve" => %{"status" => "skipped", "reason" => reason}
+        })
+
+        :ok
+    end
+  end
+
+  defp auto_result(job) do
+    case result(job) do
+      {:error, reason} ->
+        {:skip, reason}
+
+      {:ok, %{ready: false, questions: questions}} ->
+        {:skip,
+         Enum.join(
+           ["O agente não considerou a tarefa pronta." | Enum.map(questions, &("- " <> &1))],
+           "\n"
+         )}
+
+      {:ok, %{pipeline: nil, pipeline_name: name}} ->
+        {:skip, "Nenhum pipeline do workspace corresponde ao sugerido pelo agente (\"#{name}\")."}
+
+      {:ok, result} ->
+        {:ok, result}
+    end
+  end
+
+  defp requester(job) do
+    case job.created_by_user_id && Repo.get(User, job.created_by_user_id) do
+      %User{} = user -> {:ok, user}
+      _nobody -> {:skip, "Quem pediu a proposta não está mais no workspace."}
+    end
+  end
+
+  # A task already made from the proposal (by hand, at the same time) is not
+  # an error of the auto-approval.
+  defp auto_task(user, workspace, job, params) do
+    case create_task(user, workspace, job, params) do
+      {:ok, task} ->
+        {:ok, task}
+
+      {:error, changeset} ->
+        if Keyword.has_key?(changeset.errors, :proposal_job_id),
+          do: :already_created,
+          else: {:skip, "Não foi possível criar a tarefa: " <> errors_text(changeset)}
+    end
+  end
+
+  defp errors_text(changeset) do
+    changeset
+    |> Changeset.traverse_errors(fn {message, opts} ->
+      Enum.reduce(opts, message, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+    |> Enum.flat_map(fn {_field, messages} -> messages end)
+    |> Enum.join("; ")
+  end
 
   @doc "`value` when it is text, else `\"\"`: the agent's answer, read defensively."
   @spec text(term()) :: String.t()
