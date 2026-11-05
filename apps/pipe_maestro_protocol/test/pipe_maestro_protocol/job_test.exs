@@ -30,9 +30,12 @@ defmodule PipeMaestroProtocol.JobTest do
                  "parallel" => true,
                  "env" => %{"GRAFANA_TOKEN" => "segredo"},
                  "delivery" => %{
-                   "commit_message" => "Triagem: o botão não responde",
                    "push" => true,
-                   "pr" => %{"title" => "Corrigir login", "body" => "Closes #1", "ready" => false},
+                   "pr" => %{
+                     "title" => "Corrigir login",
+                     "block" => "Closes #1",
+                     "ready" => false
+                   },
                    "issue_comment" => %{
                      "url" => "https://github.com/a/b/issues/1",
                      "body" => "Decisão: x"
@@ -82,7 +85,7 @@ defmodule PipeMaestroProtocol.JobTest do
                )
 
       assert {:error, "scratch takes no worktree nor delivery"} =
-               Job.new(Map.merge(base, %{scratch: true, delivery: %{"commit_message" => "m"}}))
+               Job.new(Map.merge(base, %{scratch: true, delivery: %{"push" => true}}))
 
       assert {:error, "scratch" <> _} = Job.new(Map.put(base, :scratch, "yes"))
     end
@@ -109,15 +112,17 @@ defmodule PipeMaestroProtocol.JobTest do
       assert {:error, "agents" <> _} = Job.new(Map.put(base, :agents, ["revisor"]))
       assert {:error, "agent" <> _} = Job.new(Map.put(base, :agent, ""))
       assert {:error, "parallel" <> _} = Job.new(Map.put(base, :parallel, "sim"))
-      assert {:error, "delivery" <> _} = Job.new(Map.put(base, :delivery, %{}))
+      assert {:error, "delivery" <> _} = Job.new(Map.put(base, :delivery, "push"))
 
       assert {:error, "delivery" <> _} =
-               Job.new(Map.put(base, :delivery, %{"commit_message" => ""}))
+               Job.new(Map.put(base, :delivery, %{"push" => true, "pr" => %{"title" => ""}}))
 
-      assert {:error, "delivery" <> _} =
-               Job.new(
-                 Map.put(base, :delivery, %{"commit_message" => "x", "pr" => %{"title" => ""}})
-               )
+      assert {:error, "checks" <> _} = Job.new(Map.put(base, :checks, [%{"id" => "rm -rf"}]))
+      assert {:error, "checks" <> _} = Job.new(Map.put(base, :checks, %{"id" => "clean"}))
+      assert {:error, "sync" <> _} = Job.new(Map.put(base, :sync, "sim"))
+
+      assert {:error, "artifacts" <> _} =
+               Job.new(Map.put(base, :artifacts, [%{"path" => "../x", "content" => "a"}]))
 
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"lower" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"PATH" => "x"}))
@@ -130,6 +135,23 @@ defmodule PipeMaestroProtocol.JobTest do
 
       assert {:error, "gates" <> _} =
                Job.new(Map.put(base, :gates, [%{"command" => "x", "expect" => "maybe"}]))
+    end
+
+    test "carries the platform's checks, the sync and the earlier artifacts" do
+      assert {:ok, job} =
+               Job.new(%{
+                 id: "j",
+                 prompt: "p",
+                 checks: [%{"id" => "branch", "branch" => "cp/t"}, %{"id" => "clean"}],
+                 sync: true,
+                 artifacts: [%{"path" => ".control-plane/t/01-plano.md", "content" => "# Plano"}],
+                 delivery: %{
+                   "push" => true,
+                   "pr" => %{"title" => "T", "block" => "b", "ready" => false}
+                 }
+               })
+
+      assert %{"checks" => [_, _], "sync" => true, "artifacts" => [_]} = Job.to_map(job)
     end
 
     test "rejects a missing id, an empty or oversized prompt and non-maps" do

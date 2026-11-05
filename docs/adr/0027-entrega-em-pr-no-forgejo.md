@@ -25,7 +25,9 @@ etapa e uma pessoa abria o PR.
 - **Credencial:** a mesma do `git push` para o host (`git credential fill`, sem nunca
   perguntar nada). Sem ela, vale um `FORGEJO_TOKEN` nos segredos do workspace, ou no
   ambiente do runner. Dos segredos do job, só esse chega à entrega.
-- **Rascunho é o prefixo `WIP: ` no título**, a convenção do Forgejo. Marcar como pronto
+- **Rascunho é o prefixo `WIP: ` no título**, a convenção do Forgejo. Desde a
+  [ADR 0033](0033-contrato-entre-harness-e-agente.md), o PR aberto da branch é adotado, o
+  título só é escrito na criação e a plataforma mantém só o seu bloco na descrição. Marcar como pronto
   é tirar o prefixo. O PR da branch é achado entre os abertos pela `head`, porque um nome
   de branch com barra (`cp/...`) não cabe na rota `/pulls/{base}/{head}`. A base é a
   branch padrão do repositório.
@@ -35,7 +37,9 @@ etapa e uma pessoa abria o PR.
 - **Uma entrega que falha pausa a tarefa.** Se o commit, o push ou o PR de uma etapa
   falham, a tarefa para em `awaiting_decision` com o erro no motivo, em vez de seguir e
   terminar sem nada entregue.
-- **O commit deixa de fora o que o setup copiou** (`deps`, `_build`...). Um caminho que
+- **O commit deixa de fora o que o setup copiou** (`deps`, `_build`...). Desde a
+  [ADR 0033](0033-contrato-entre-harness-e-agente.md), quem faz o commit é o agente, e a
+  regra vale para a verificação "nada sem commit". Um caminho que
   o `.gitignore` já ignora fica de fora sozinho e não entra no pathspec de exclusão,
   porque o `git add` recusa um pathspec que nomeia um caminho ignorado
   (`PipeMaestroRunner.Changes.pathspec/3`, usado no snapshot e no commit).

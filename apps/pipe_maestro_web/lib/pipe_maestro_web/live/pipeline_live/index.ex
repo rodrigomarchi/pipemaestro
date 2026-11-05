@@ -152,7 +152,7 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   defp delivery_icon(_none), do: "hero-no-symbol"
 
   defp delivery_label("pr"), do: "Pull request"
-  defp delivery_label("commit"), do: "Commit por etapa"
+  defp delivery_label("commit"), do: "Commits conferidos"
   defp delivery_label(_none), do: "Sem entrega"
 
   defp budget_label(nil), do: "Sem limite de custo"

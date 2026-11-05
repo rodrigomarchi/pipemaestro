@@ -41,7 +41,8 @@
 #
 # It writes the prompt to fake-claude.txt in the working directory, so a test
 # can tell where it ran, and, like a pipeline stage, writes its artifact to
-# $CP_ARTIFACT_PATH when that is set.
+# $CP_ARTIFACT_PATH when that is set. In a task's worktree it commits them
+# (see below), and a prompt with "[sujo]" leaves sujo.txt uncommitted.
 
 if [ "$1" = "--version" ]; then
   echo "0.0.0-fake (Claude Code)"
@@ -119,6 +120,28 @@ if [ -n "$CP_ARTIFACT_PATH" ] && [ "$status" = "ok" ]; then
   mkdir -p "$(dirname "$CP_ARTIFACT_PATH")"
   printf '# Artefato do fake_claude\n\n%s\n\n```elixir\ndef pronto?, do: true\n```\n' "$summary" > "$CP_ARTIFACT_PATH"
 fi
+
+# In a task's worktree it commits what it wrote, by exact paths, as an agent
+# following the platform's contract does. With "[sujo]" it also leaves a file
+# uncommitted, until a retry's feedback says so; told that it is the task's
+# last stage, it takes the task's artifacts out of the branch (keeping them on
+# disk).
+case "$PWD" in
+  */worktrees/*)
+    if [ "$status" = "ok" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git add -- fake-claude.txt ${CP_ARTIFACT_PATH:+"$CP_ARTIFACT_PATH"}
+      case "$prompt" in
+        *"Ficaram mudanças sem commit"*) rm -f sujo.txt ;;
+        *"[sujo]"*) echo "esquecido" > sujo.txt ;;
+      esac
+      case "$prompt" in
+        *"Esta é a última etapa da tarefa"*)
+          [ -n "$CP_ARTIFACT_PATH" ] && git rm -r -q --cached --ignore-unmatch -- "$(dirname "$CP_ARTIFACT_PATH")" ;;
+      esac
+      git -c user.name=fake_claude -c user.email=fake@localhost commit -q -m "fake_claude: etapa" >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
 
 case "$prompt" in
   *"[digitando]"*)

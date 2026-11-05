@@ -8,7 +8,7 @@ defmodule PipeMaestroProtocol do
   The written spec is `docs/specs/protocolo-runner.md`.
   """
 
-  @version 3
+  @version 4
 
   @device_errors ~w(authorization_pending slow_down expired_token access_denied invalid_request)
 

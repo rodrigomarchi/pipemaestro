@@ -224,6 +224,22 @@ defmodule PipeMaestroRunner.Changes do
   end
 
   @doc """
+  What is in `dir` that git does not track nor ignore, a folder named once
+  (as `git status` shows it), without its trailing slash.
+  """
+  @spec untracked(Path.t()) :: [String.t()]
+  def untracked(dir) do
+    case git(dir, ["status", "--porcelain", "--untracked-files=normal"]) do
+      {:ok, out} ->
+        for "?? " <> path <- String.split(out, "\n", trim: true),
+            do: path |> String.trim("\"") |> String.trim_trailing("/")
+
+      {:error, _} ->
+        []
+    end
+  end
+
+  @doc """
   The pathspec that adds every file of `dir` but the `exclude` paths, for
   `git add --all`. A path git already ignores stays out by itself, and naming
   it in an exclude pathspec makes `git add` refuse it and fail, so it is left

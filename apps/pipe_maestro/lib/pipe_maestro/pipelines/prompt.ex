@@ -110,6 +110,7 @@ defmodule PipeMaestro.Pipelines.Prompt do
           optional(:feedback) => String.t() | nil,
           required(:previous) => [Stage.t()],
           optional(:instructions) => String.t() | nil,
+          optional(:contract) => String.t() | nil,
           optional(:answers) => map() | nil
         }
 
@@ -173,6 +174,7 @@ defmodule PipeMaestro.Pipelines.Prompt do
       render(stage.prompt, context, artifacts),
       feedback(context[:feedback]),
       answers(context[:answers]),
+      context[:contract] || "",
       instructions(context[:instructions])
     ]
     |> Enum.reject(&(&1 == ""))

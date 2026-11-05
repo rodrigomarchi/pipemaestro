@@ -54,7 +54,7 @@ defmodule PipeMaestroWeb.PullRequestsLive do
             class="text-sm text-gray-500 dark:text-gray-400"
             data-testid="no-pull-requests"
           >
-            Nenhum PR ainda. Escolha "Commit, push e PR" na entrega de um pipeline.
+            Nenhum PR ainda. Escolha "Commits conferidos, push e PR" na entrega de um pipeline.
           </p>
           <ul class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
             <li

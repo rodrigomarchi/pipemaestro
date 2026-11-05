@@ -851,7 +851,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
             <.section_heading
               icon="hero-wrench-screwdriver"
               title="Corrigir com um prompt"
-              description="Roda no worktree e na branch desta tarefa como uma nova etapa, com os gates e a entrega de sempre (commit, push e PR)."
+              description="Roda no worktree e na branch desta tarefa como uma nova etapa, com as verificações, os gates e a entrega de sempre."
             />
             <.alert
               :if={no_pr?(@task)}
@@ -1341,8 +1341,19 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                   )
                 ]}
               />
-              <code class="break-all text-xs text-gray-800 dark:text-gray-200">{gate["command"]}</code>
-              <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+              <code
+                :if={!gate["platform"]}
+                class="break-all text-xs text-gray-800 dark:text-gray-200"
+              >
+                {gate["command"]}
+              </code>
+              <span :if={gate["platform"]} class="text-xs text-gray-800 dark:text-gray-200">
+                <.badge color="info" size="sm" data-testid={"stage-run-gate-platform-#{@id}-#{index}"}>
+                  plataforma
+                </.badge>
+                {String.replace_prefix(gate["command"] || "", "plataforma: ", "")}
+              </span>
+              <span :if={!gate["platform"]} class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                 {if gate["expect"] == "fail", do: "deve falhar", else: "deve passar"} · código {gate[
                   "exit_code"
                 ]}

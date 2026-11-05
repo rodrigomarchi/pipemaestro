@@ -896,7 +896,7 @@ defmodule PipeMaestro.TasksTest do
       %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Com PR", "delivery" => "pr"})}
     end
 
-    test "each stage commits and updates the draft PR; the last one marks it ready", ctx do
+    test "each stage pushes and updates the PR's block; the last one marks it ready", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
       issue = "https://github.com/acme/app/issues/42"
       task = create_task(ctx, %{"issue_url" => issue})
@@ -905,10 +905,11 @@ defmodule PipeMaestro.TasksTest do
       assert_receive {:job_assign, first}
 
       assert %{
-               "commit_message" => "Etapa A: Corrigir o login",
                "push" => true,
-               "pr" => %{"title" => "Corrigir o login", "body" => body, "ready" => false}
+               "pr" => %{"title" => "Corrigir o login", "block" => body, "ready" => false}
              } = first.context["delivery"]
+
+      refute Map.has_key?(first.context["delivery"], "commit_message")
 
       assert body =~ "Closes #{issue}"
       assert body =~ "O botão de login não responde"
@@ -931,8 +932,78 @@ defmodule PipeMaestro.TasksTest do
       assert_receive {:job_assign, second}
       assert second.context["delivery"]["pr"]["ready"] == true
       # The last stage's delivery marks the PR ready: every stage is checked.
-      refute second.context["delivery"]["pr"]["body"] =~ "- [ ]"
-      assert second.context["delivery"]["pr"]["body"] =~ "- [x] Etapa A"
+      refute second.context["delivery"]["pr"]["block"] =~ "- [ ]"
+      assert second.context["delivery"]["pr"]["block"] =~ "- [x] Etapa A"
+    end
+
+    test "the platform's contract: checks, sync, earlier artifacts and the prompt", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx)
+      assert_receive {:job_assign, first}
+      artifacts = ".control-plane/#{task.id}"
+
+      assert first.context["sync"] == true
+      refute Map.has_key?(first.context, "artifacts")
+
+      assert [
+               %{"id" => "branch", "branch" => branch},
+               %{"id" => "no_operation"},
+               %{"id" => "contains_origin", "branch" => branch},
+               %{"id" => "clean", "artifacts" => ^artifacts},
+               %{"id" => "no_secrets"},
+               %{"id" => "artifact_committed", "path" => path}
+             ] = first.context["checks"]
+
+      assert branch == task.branch
+      assert path == first.context["artifact_path"]
+      assert first.prompt =~ "# Contrato com a plataforma"
+      assert first.prompt =~ "A plataforma não faz commit"
+      refute first.prompt =~ "Esta é a última etapa da tarefa"
+
+      task = run_current(ctx, task, %{"artifact" => "# Plano da etapa A"})
+      assert_receive {:job_assign, last}
+
+      assert List.last(last.context["checks"]) == %{"id" => "no_artifacts", "path" => artifacts}
+      assert last.prompt =~ "Esta é a última etapa da tarefa"
+      assert last.prompt =~ "git rm -r --cached #{artifacts}"
+
+      assert [%{"path" => ^path, "content" => "# Plano da etapa A"}] = last.context["artifacts"]
+      assert task.current_stage == 1
+    end
+
+    test "a failed platform check goes back to the agent in its words", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = create_task(ctx)
+      assert_receive {:job_assign, _first}
+
+      task =
+        run_current(ctx, task, %{
+          "gates" => [
+            %{
+              "id" => "clean",
+              "platform" => true,
+              "command" => "plataforma: nada ficou sem commit",
+              "expect" => "pass",
+              "exit_code" => 1,
+              "passed" => false,
+              "output" => "Ficaram mudanças sem commit: `sujo.txt`.",
+              "message" => "Ficaram mudanças sem commit: `sujo.txt`."
+            }
+          ]
+        })
+
+      assert_receive {:job_assign, retry}
+      assert task.status == :running
+      assert retry.prompt =~ "Verificação da plataforma: Ficaram mudanças sem commit: `sujo.txt`."
+    end
+
+    test "no contract outside a delivering git task", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      create_task(ctx, %{"directory" => "notas"})
+      assert_receive {:job_assign, job}
+      refute Map.has_key?(job.context, "checks")
+      refute Map.has_key?(job.context, "sync")
+      refute job.prompt =~ "Contrato com a plataforma"
     end
 
     test "a delivery that failed pauses the task instead of going on", ctx do
@@ -1444,7 +1515,7 @@ defmodule PipeMaestro.TasksTest do
       assert_receive {:job_assign, job}
       assert job.prompt =~ "Abra o PR desta branch"
       assert job.prompt =~ "Uma pessoa pediu uma correção"
-      assert %{"pr" => %{"ready" => true, "body" => body}} = job.context["delivery"]
+      assert %{"pr" => %{"ready" => true, "block" => body}} = job.context["delivery"]
       assert body =~ "- [x] Correção 1"
 
       assert [%{action: :correct, instructions: "Abra o PR desta branch", stage_index: 2}] =

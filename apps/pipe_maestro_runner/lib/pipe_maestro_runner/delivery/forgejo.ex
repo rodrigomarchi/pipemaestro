@@ -5,10 +5,15 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
 
   - **Draft:** a draft is a title starting with `"WIP: "`, Forgejo's own
     convention. Marking it ready is dropping the prefix.
+  - **Text:** an open pull request of the branch is adopted, whoever opened
+    it; only the platform's block of its description and the draft prefix
+    change (`PipeMaestroRunner.Delivery.PrText`).
   - **Credentials:** the same ones `git push` uses for the host
     (`git credential fill`, never prompting), or a `FORGEJO_TOKEN` in the
     environment (a workspace secret).
   """
+
+  alias PipeMaestroRunner.Delivery.PrText
 
   @draft_prefix "WIP: "
   @page_size 50
@@ -116,22 +121,28 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
   end
 
   @doc """
-  Opens the draft pull request of `branch`, or updates its title and body;
-  with `ready`, without the draft prefix. Returns its URL.
+  Opens the pull request of `branch` (a draft, titled `title`, with `block`
+  as its description), or adopts the open one and writes `block` in its
+  description; with `ready`, without the draft prefix. Returns its URL.
   """
   @spec pull_request(repo(), String.t(), String.t(), String.t(), boolean()) ::
           {:ok, String.t()} | {:error, String.t()}
-  def pull_request(repo, branch, title, body, ready) do
-    title = if ready, do: title, else: @draft_prefix <> title
-
+  def pull_request(repo, branch, title, block, ready) do
     with {:ok, %{"default_branch" => base}} <- request(repo, :get, ""),
-         {:ok, pr} <- find_or_create(repo, base, branch, title, body),
-         {:ok, pr} <- update(repo, pr, title, body) do
+         {:ok, pr} <-
+           find_or_create(
+             repo,
+             base,
+             branch,
+             PrText.title(title, not ready, @draft_prefix),
+             block
+           ),
+         {:ok, pr} <- update(repo, pr, block, ready) do
       {:ok, pr["html_url"]}
     end
   end
 
-  defp find_or_create(repo, base, branch, title, body) do
+  defp find_or_create(repo, base, branch, title, block) do
     case open_pull_request(repo, branch, 1) do
       {:ok, %{} = pr} ->
         {:ok, pr}
@@ -140,7 +151,7 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
         with {:ok, pr} <-
                request(repo, :post, "/pulls", %{
                  title: title,
-                 body: body,
+                 body: PrText.wrap(block),
                  head: branch,
                  base: base
                }),
@@ -171,12 +182,18 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
     end
   end
 
-  defp update(_repo, %{"created" => true} = pr, _title, _body), do: {:ok, pr}
+  # An open pull request (the platform's, or one the agent opened) keeps its
+  # title and the text outside the platform's block.
+  defp update(_repo, %{"created" => true} = pr, _block, _ready), do: {:ok, pr}
 
-  defp update(_repo, %{"title" => title, "body" => body} = pr, title, body), do: {:ok, pr}
+  defp update(repo, pr, block, ready) do
+    title = PrText.title(pr["title"] || "", not ready, @draft_prefix)
+    body = PrText.body(pr["body"], block)
 
-  defp update(repo, pr, title, body),
-    do: request(repo, :patch, "/pulls/#{pr["number"]}", %{title: title, body: body})
+    if title == pr["title"] and body == pr["body"],
+      do: {:ok, pr},
+      else: request(repo, :patch, "/pulls/#{pr["number"]}", %{title: title, body: body})
+  end
 
   @doc "Comments on the issue at `url` (`https://host/owner/name/issues/N`)."
   @spec comment(repo(), String.t(), String.t()) :: :ok | {:error, String.t()}

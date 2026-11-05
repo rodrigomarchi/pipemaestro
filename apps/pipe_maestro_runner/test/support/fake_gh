@@ -1,10 +1,13 @@
 #!/bin/sh
 # Stands in for the GitHub CLI in tests: appends each call to $FAKE_GH_LOG and
-# keeps one pull request per branch in $FAKE_GH_LOG.prs.
+# keeps one pull request per branch in $FAKE_GH_LOG.prs, its description in
+# $FAKE_GH_LOG.body.<n>.
 #
-#   gh pr view --json url -q .url   -> the branch's PR URL, or exit 1
-#   gh pr create ...                -> creates it, prints its URL
-#   gh pr edit | gh pr ready | gh issue comment -> succeed
+#   gh pr view --json url -q .url    -> the branch's PR URL, or exit 1
+#   gh pr view --json body -q .body  -> its description
+#   gh pr create ... --body B        -> creates it with B, prints its URL
+#   gh pr edit --body B              -> keeps B as its description
+#   gh pr ready | gh issue comment   -> succeed
 #
 # A title with "[gh-falha]" makes `pr create` fail.
 
@@ -12,18 +15,34 @@ echo "$*" >> "$FAKE_GH_LOG"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 prs="$FAKE_GH_LOG.prs"
 touch "$prs"
+url="$(grep "^$branch " "$prs" | cut -d' ' -f2)"
+body_file="$FAKE_GH_LOG.body.$(echo "$url" | sed 's|.*/||')"
+
+# The value after --body, if any.
+body_arg() {
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--body" ]; then printf '%s' "$2"; return; fi
+    shift
+  done
+}
 
 case "$1 $2" in
   "pr view")
-    url="$(grep "^$branch " "$prs" | cut -d' ' -f2)"
     [ -n "$url" ] || exit 1
-    echo "$url"
+    case "$*" in
+      *"body"*) cat "$body_file" ;;
+      *) echo "$url" ;;
+    esac
     ;;
   "pr create")
     case "$*" in *"[gh-falha]"*) echo "gh: falha simulada" >&2; exit 1 ;; esac
     url="https://github.com/acme/app/pull/$(wc -l < "$prs" | tr -d ' ')1"
     echo "$branch $url" >> "$prs"
+    body_arg "$@" > "$FAKE_GH_LOG.body.$(echo "$url" | sed 's|.*/||')"
     echo "$url"
+    ;;
+  "pr edit")
+    body_arg "$@" > "$body_file"
     ;;
 esac
 exit 0
