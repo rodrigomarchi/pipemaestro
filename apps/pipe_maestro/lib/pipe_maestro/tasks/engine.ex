@@ -6,7 +6,8 @@ defmodule PipeMaestro.Tasks.Engine do
     * `:passed` — the job succeeded, answered `status: "ok"`, wrote its
       artifact and met its gates.
     * `{:paused, reason}` — the same, but one of the stage's rules matched the
-      structured output: a person decides how to go on.
+      structured output, or the runner's delivery (commit, push, pull request)
+      failed: a person decides how to go on.
     * `{:blocked, reason}` — the agent answered `status: "bloqueado"`: it needs
       a person, so there is no retry.
     * `{:retry, error}` — something went wrong (the CLI failed, no structured
@@ -32,7 +33,7 @@ defmodule PipeMaestro.Tasks.Engine do
 
   def gate(%Job{} = job, %Stage{} = stage, attempt) do
     case check(job) do
-      :passed -> rules(job.structured_output, stage.rules)
+      :passed -> delivered(job) || rules(job.structured_output, stage.rules)
       {:blocked, reason} -> {:blocked, reason}
       {:error, error} when attempt < stage.max_attempts -> {:retry, error}
       {:error, error} -> {:exhausted, error}
@@ -66,6 +67,15 @@ defmodule PipeMaestro.Tasks.Engine do
 
   defp gate_error(%{"command" => command}),
     do: "O gate `#{command}` não foi atendido: esperava falhar e passou."
+
+  # The stage met everything, but the runner could not commit, push or open
+  # the pull request: going on would end the task with nothing delivered.
+  defp delivered(%Job{delivery: %{"error" => error}}) when is_binary(error) do
+    error = error |> String.split() |> Enum.join(" ") |> String.slice(0, 300)
+    {:paused, "a entrega da plataforma falhou (#{error})"}
+  end
+
+  defp delivered(_job), do: nil
 
   defp rules(output, rules) do
     case rule_pause(output, rules) do

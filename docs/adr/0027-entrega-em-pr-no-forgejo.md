@@ -32,6 +32,13 @@ etapa e uma pessoa abria o PR.
 - **O PR existe desde a primeira etapa.** A entrega da primeira etapa que passa abre o
   rascunho, as seguintes atualizam título e descrição, e a última o deixa pronto. O
   agente não faz push nem abre PR: a entrega é da plataforma.
+- **Uma entrega que falha pausa a tarefa.** Se o commit, o push ou o PR de uma etapa
+  falham, a tarefa para em `awaiting_decision` com o erro no motivo, em vez de seguir e
+  terminar sem nada entregue.
+- **O commit deixa de fora o que o setup copiou** (`deps`, `_build`...). Um caminho que
+  o `.gitignore` já ignora fica de fora sozinho e não entra no pathspec de exclusão,
+  porque o `git add` recusa um pathspec que nomeia um caminho ignorado
+  (`PipeMaestroRunner.Changes.pathspec/3`, usado no snapshot e no commit).
 
 ## Consequências
 
