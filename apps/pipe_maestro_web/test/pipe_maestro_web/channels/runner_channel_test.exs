@@ -147,6 +147,17 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       assert Jobs.get_job!(ctx.workspace, alive.id).status == :running
     end
 
+    test "a job abandoned while the runner was offline is canceled when it rejoins", ctx do
+      abandoned = job_fixture(ctx.runner, ctx.user)
+      {:ok, abandoned} = Jobs.mark_started(ctx.runner, abandoned.id)
+      {:ok, _job} = Jobs.abandon(abandoned, "Interrompido com o runner offline.")
+
+      join_runner(ctx.socket, ctx.runner, %{running_job_ids: [abandoned.id]})
+
+      job_id = abandoned.id
+      assert_push "job:cancel", %{"job_id" => ^job_id}
+    end
+
     test "the workspace's secrets go with each job, and are not stored with it", ctx do
       {:ok, _} = PipeMaestro.Secrets.put(ctx.workspace, "GRAFANA_TOKEN", "glsa_1")
       join_runner(ctx.socket, ctx.runner)

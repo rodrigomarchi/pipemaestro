@@ -1413,18 +1413,147 @@ defmodule PipeMaestro.TasksTest do
              ]
     end
 
-    test "only a task that is not running can be redone, and not without its worktree", ctx do
+    test "only a task that is not running can be redone", ctx do
       task = create_task(ctx)
       assert Tasks.redo_from(task, 0, nil) == {:error, :running}
+    end
+  end
 
+  describe "no dead ends: a task that stopped takes a new prompt" do
+    setup ctx do
+      %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Com PR", "delivery" => "pr"})}
+    end
+
+    defp succeeded(ctx, report \\ %{}) do
+      task = create_task(ctx)
+      task = run_current(ctx, task, report)
+      task = run_current(ctx, task, report)
+      assert task.status == :succeeded
+      task
+    end
+
+    test "a correction runs as a new last stage, delivered like the others", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      task = succeeded(ctx)
+      for _stage <- 1..2, do: assert_receive({:job_assign, _job})
+
+      assert {:ok, %Task{status: :running, current_stage: 2} = task} =
+               Tasks.correct(task, " Abra o PR desta branch ", by: ctx.user)
+
+      assert %{key: "correcao-1", name: "Correção 1", rules: []} = List.last(task.stages)
+      assert_receive {:job_assign, job}
+      assert job.prompt =~ "Abra o PR desta branch"
+      assert job.prompt =~ "Uma pessoa pediu uma correção"
+      assert %{"pr" => %{"ready" => true, "body" => body}} = job.context["delivery"]
+      assert body =~ "- [x] Correção 1"
+
+      assert [%{action: :correct, instructions: "Abra o PR desta branch", stage_index: 2}] =
+               Tasks.list_decisions(task)
+
+      task = run_current(ctx, task, %{})
+      assert task.status == :succeeded
+
+      assert {:ok, task} = Tasks.correct(task, "E o changelog")
+      assert List.last(task.stages).name == "Correção 2"
+    end
+
+    test "a correction needs a prompt and a task that ended", ctx do
+      task = create_task(ctx)
+      assert Tasks.correct(task, "x") == {:error, :active}
       {:ok, task} = Tasks.cancel_task(task)
+      assert Tasks.correct(task, "  ") == {:error, :blank}
+      assert {:ok, %Task{status: :running}} = Tasks.correct(task, "continue daqui")
+    end
 
-      task =
-        task
-        |> Ecto.Changeset.change(worktree_removed_at: DateTime.utc_now(:second))
-        |> PipeMaestro.Repo.update!()
+    test "a removed worktree is made again; one being removed is waited for", ctx do
+      task = succeeded(ctx)
 
-      assert Tasks.redo_from(task, 0, nil) == {:error, :no_worktree}
+      task
+      |> Ecto.Changeset.change(worktree_removal_requested_at: DateTime.utc_now(:second))
+      |> PipeMaestro.Repo.update!()
+
+      assert Tasks.redo_from(task, 0, nil) == {:error, :removing}
+      assert Tasks.correct(task, "x") == {:error, :removing}
+
+      {:ok, _task} = Tasks.worktree_removed(ctx.runner, task.id, nil)
+
+      assert {:ok, task} = Tasks.redo_from(task, 1, "de novo")
+
+      assert %Task{
+               status: :running,
+               worktree: nil,
+               worktree_removed_at: nil,
+               worktree_removal_requested_at: nil
+             } = task
+    end
+
+    test "interrupting a stage pauses the task instead of ending it", ctx do
+      task = create_task(ctx)
+      job = current_job(task)
+      {:ok, _job} = Jobs.mark_started(ctx.runner, job.id)
+
+      assert {:ok, %Task{status: :running}} = Tasks.interrupt(task)
+      assert Jobs.get_job!(ctx.workspace, job.id).cancel_requested_at
+
+      {:ok, _job} = Jobs.finish_job(ctx.runner, job.id, %{"status" => "canceled"})
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      assert %Task{status: :awaiting_decision, decision_reason: reason} = task
+      assert reason =~ "foi interrompida"
+
+      assert {:ok, %Task{status: :running}} = Tasks.retry_stage(task, "tente de outro jeito")
+      assert Tasks.interrupt(Tasks.get_task!(ctx.workspace, task.id)) |> elem(0) == :ok
+    end
+
+    test "with the runner offline, interrupt and cancel do not wait for it", ctx do
+      task = create_task(ctx)
+      job = current_job(task)
+      {:ok, _job} = Jobs.mark_started(ctx.runner, job.id)
+
+      assert {:ok, %Task{status: :awaiting_decision}} =
+               Tasks.interrupt(task, runner_online?: false)
+
+      assert %{status: :canceled, error: "Interrompido com o runner offline."} =
+               Jobs.get_job!(ctx.workspace, job.id)
+
+      # Back online, the runner is told to stop the job it still runs, and
+      # what it reports for it is ignored.
+      assert Jobs.ended_among(ctx.runner, [job.id]) == [job.id]
+
+      assert Jobs.finish_job(ctx.runner, job.id, %{"status" => "succeeded"}) ==
+               {:error, :finished}
+
+      {:ok, task} = Tasks.retry_stage(task, nil)
+      job = current_job(task)
+      {:ok, _job} = Jobs.mark_started(ctx.runner, job.id)
+      assert {:ok, %Task{status: :canceled}} = Tasks.cancel_task(task, runner_online?: false)
+    end
+
+    test "a pause asked for before a cancel does not keep the task", ctx do
+      task = create_task(ctx)
+      job = current_job(task)
+      {:ok, _job} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, task} = Tasks.request_pause(task)
+      {:ok, _task} = Tasks.cancel_task(task)
+      {:ok, _job} = Jobs.finish_job(ctx.runner, job.id, %{"status" => "canceled"})
+      assert %Task{status: :canceled} = Tasks.get_task!(ctx.workspace, task.id)
+    end
+
+    test "another runner is offered only once the branch is on origin", ctx do
+      {other, _token} = runner_fixture(ctx.workspace, ctx.user)
+      other = with_directories(other, [%{"name" => "app", "git" => true}])
+
+      task = succeeded(ctx)
+      assert Enum.map(Tasks.runner_choices(task), & &1.id) == [ctx.runner.id]
+      assert Tasks.correct(task, "x", runner_id: other.id) == {:error, :runner}
+
+      pushed = %{"delivery" => %{"commit" => "abc", "pushed" => true, "pr_url" => nil}}
+      task = succeeded(ctx, pushed)
+      assert other.id in Enum.map(Tasks.runner_choices(task), & &1.id)
+
+      :ok = Jobs.subscribe({:runner, other.id})
+      assert {:ok, %Task{runner_id: runner_id}} = Tasks.correct(task, "x", runner_id: other.id)
+      assert runner_id == other.id
+      assert_receive {:job_assign, _job}
     end
   end
 

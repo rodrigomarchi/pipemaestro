@@ -1,7 +1,8 @@
 defmodule PipeMaestro.Tasks.Decision do
   @moduledoc """
   A decision a person took on a task waiting for one: the question (why it
-  paused), what was done (`action`: retry the stage, move on, cancel), the
+  paused), what was done (`action`: retry the stage, move on, cancel, or `correct`: a
+  prompt run as a new stage of a task that ended), the
   instructions given, who decided and when.
 
   When the pause had a questionnaire (`PipeMaestro.Tasks.Questionnaire`),
@@ -15,7 +16,7 @@ defmodule PipeMaestro.Tasks.Decision do
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Tasks.Task
 
-  @type action :: :retry | :advance | :cancel
+  @type action :: :retry | :advance | :cancel | :correct
 
   @type t :: %__MODULE__{
           id: Ecto.UUID.t() | nil,
@@ -38,7 +39,7 @@ defmodule PipeMaestro.Tasks.Decision do
     field :stage_index, :integer
     field :question, :string
     field :options, {:array, :string}, default: []
-    field :action, Ecto.Enum, values: [:retry, :advance, :cancel]
+    field :action, Ecto.Enum, values: [:retry, :advance, :cancel, :correct]
     field :choice, :string
     field :instructions, :string
     field :questions, :map

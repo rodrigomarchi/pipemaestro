@@ -39,7 +39,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Audit
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
-  alias PipeMaestro.Pipelines.{Pipeline, Prompt}
+  alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage}
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals
@@ -677,6 +677,10 @@ defmodule PipeMaestro.Tasks do
       {:paused, reason} ->
         await(task, "A etapa \"#{stage.name}\" terminou, mas #{reason}.")
 
+      # Interrupted (`interrupt/2`): the task waits for a person, not ends.
+      :canceled when task.pause_requested ->
+        await(task, "A etapa \"#{stage.name}\" foi interrompida.")
+
       :canceled ->
         finish(task, :canceled)
 
@@ -779,7 +783,7 @@ defmodule PipeMaestro.Tasks do
     first = step_first(task, stage_run.index)
 
     case outcome do
-      :canceled ->
+      :canceled when not task.pause_requested ->
         finish(task, :canceled)
 
       {:retry, _error} ->
@@ -818,6 +822,7 @@ defmodule PipeMaestro.Tasks do
     cond do
       problems != [] -> await(task, Enum.join(problems, " "), group_asking(runs))
       pauses != [] -> await(task, Enum.join(pauses, " "))
+      Enum.any?(runs, &(&1.status == :canceled)) -> await(task, "O passo foi interrompido.")
       task.pause_requested -> await(task, "Alguém pediu uma pausa depois deste passo.")
       true -> next_or_finish(task, step_last(task, first) + 1, nil)
     end
@@ -1290,35 +1295,243 @@ defmodule PipeMaestro.Tasks do
     end
   end
 
+  @typedoc """
+  How a stage is run again by hand: who asked (`:by`), on which runner
+  (`:runner_id`, the task's own when absent) and whether that runner is
+  online (`:runner_online?`, for stopping a job it cannot confirm).
+  """
+  @type rerun_opts :: [by: User.t() | nil, runner_id: String.t() | nil, runner_online?: boolean()]
+
+  @typedoc "Why a task's stage could not be run again."
+  @type rerun_error :: :running | :active | :no_stage | :blank | :removing | :runner
+
   @doc """
   Runs a task again from stage `index`: a new attempt of that stage, with
   `instructions`, then the stages after it as usual. For a task that is not
-  running and still has its worktree.
+  running. A worktree removed is made again by the runner, from the task's
+  branch. With `:runner_id`, the task goes on in that runner
+  (`switch_runner/2`).
   """
-  @spec redo_from(Task.t(), non_neg_integer(), String.t() | nil) ::
-          {:ok, Task.t()} | {:error, :running | :no_worktree | :no_stage}
-  def redo_from(%Task{} = task, index, instructions) do
+  @spec redo_from(Task.t(), non_neg_integer(), String.t() | nil, rerun_opts()) ::
+          {:ok, Task.t()} | {:error, rerun_error()}
+  def redo_from(%Task{} = task, index, instructions, opts \\ []) do
     task = Repo.get!(Task, task.id)
 
     cond do
       task.status == :running ->
         {:error, :running}
 
-      task.worktree_removed_at != nil ->
-        {:error, :no_worktree}
-
       index not in 0..(length(task.stages) - 1)//1 ->
         {:error, :no_stage}
 
       true ->
-        analysis = task.decision_analysis_job_id
+        with {:ok, task} <- reopen(task, opts[:runner_id]) do
+          analysis = task.decision_analysis_job_id
 
-        task =
-          task |> start_step(step_first(task, index), instructions) |> preload()
+          task =
+            task |> start_step(step_first(task, index), instructions) |> preload()
 
-        cancel_analysis(analysis)
+          cancel_analysis(analysis)
+          notify(task)
+          {:ok, task}
+        end
+    end
+  end
+
+  @correction_prompt """
+  Esta tarefa já passou pelas etapas do pipeline. Uma pessoa pediu uma correção: ela está nas instruções abaixo e é o objetivo desta etapa.
+
+  # O que fazer
+  1. Entenda onde a tarefa está: leia os artefatos das etapas anteriores e veja a branch (`git status`, `git fetch origin` e `git log --oneline origin/main..HEAD`).
+  2. Faça o que foi pedido, e só isso. Se o pedido não for possível ou faltar informação, termine como "bloqueado" e pergunte.
+  3. Valide como o pipeline valida: rode os testes e o lint do projeto, se houver ({{projeto.teste}} {{projeto.lint}}), e corrija até passar.
+  4. No artefato, diga o que mudou e como validou.
+
+  A plataforma faz o commit, o push e o PR depois desta etapa: não faça push nem abra PR.
+  """
+
+  @doc """
+  Runs a person's `prompt` in a task that ended (succeeded, failed or
+  canceled), in its worktree and branch: a stage "Correção N" is added at the
+  end of the task, with the gates, attempts, model and timeout of its last
+  stage, and runs like any stage (gates, delivery, decisions). Options as in
+  `redo_from/4`.
+  """
+  @spec correct(Task.t(), String.t() | nil, rerun_opts()) ::
+          {:ok, Task.t()} | {:error, rerun_error()}
+  def correct(%Task{} = task, prompt, opts \\ []) do
+    task = Repo.get!(Task, task.id)
+
+    cond do
+      blank_to_nil(prompt) == nil ->
+        {:error, :blank}
+
+      Task.active?(task) ->
+        {:error, :active}
+
+      true ->
+        with {:ok, task} <- reopen(task, opts[:runner_id]) do
+          index = length(task.stages)
+          stage = correction_stage(task)
+
+          task =
+            task
+            |> Ecto.Changeset.change()
+            |> Ecto.Changeset.put_embed(:stages, task.stages ++ [stage])
+            |> Repo.update!()
+
+          Repo.insert!(%Decision{
+            task_id: task.id,
+            stage_index: index,
+            action: :correct,
+            instructions: String.trim(prompt),
+            decided_by_user_id: opts[:by] && opts[:by].id
+          })
+
+          Audit.record(task.workspace_id, opts[:by], "task.corrected", task, %{
+            "stage" => stage.name
+          })
+
+          task = task |> start_step(index, prompt) |> preload()
+          notify(task)
+          {:ok, task}
+        end
+    end
+  end
+
+  defp correction_stage(task) do
+    last = List.last(task.stages)
+    n = Enum.count(task.stages, &String.starts_with?(&1.key, "correcao-")) + 1
+
+    %Stage{
+      key: "correcao-#{n}",
+      name: "Correção #{n}",
+      prompt: @correction_prompt,
+      max_attempts: last.max_attempts,
+      model: last.model,
+      max_budget_usd: last.max_budget_usd,
+      timeout_minutes: last.timeout_minutes,
+      gates: last.gates,
+      rules: []
+    }
+  end
+
+  @doc """
+  Stops the stage a task is running and has it wait for a person, who
+  decides as after any pause (run it again with instructions, move on,
+  cancel). With `runner_online?: false` the job ends at once
+  (`PipeMaestro.Jobs.abandon/2`).
+  """
+  @spec interrupt(Task.t(), rerun_opts()) :: {:ok, Task.t()} | {:error, :not_running}
+  def interrupt(%Task{} = task, opts \\ []) do
+    case Repo.get!(Task, task.id) do
+      %Task{status: :running} = task ->
+        Audit.record(task.workspace_id, opts[:by], "task.interrupted", task)
+        task = task |> Ecto.Changeset.change(pause_requested: true) |> Repo.update!()
+        stop_jobs(task, opts)
+        task = Repo.get!(Task, task.id) |> preload()
         notify(task)
         {:ok, task}
+
+      _other ->
+        {:error, :not_running}
+    end
+  end
+
+  defp stop_jobs(task, opts) do
+    for job <- running_jobs(task) do
+      if opts[:runner_online?] == false,
+        do: Jobs.abandon(job, "Interrompido com o runner offline."),
+        else: Jobs.request_cancel(job)
+    end
+  end
+
+  @doc """
+  The runners a task may go on in: the workspace's active runners that offer
+  its directory. Another runner than the task's own is only offered when the
+  task's branch is on `origin` (`switchable?/1`), where the new runner gets
+  it from.
+  """
+  @spec runner_choices(Task.t()) :: [Runner.t()]
+  def runner_choices(%Task{} = task) do
+    switchable? = switchable?(task)
+
+    Repo.all(
+      from r in Runner,
+        where: r.workspace_id == ^task.workspace_id and is_nil(r.revoked_at),
+        order_by: r.name
+    )
+    |> Enum.filter(fn runner ->
+      runner.id == task.runner_id or
+        (switchable? and Enum.any?(runner.directories, &(&1["name"] == task.directory)))
+    end)
+  end
+
+  @doc """
+  Whether a task can go on in another runner: it works in a git worktree and
+  its branch was pushed by a delivery, so a new worktree can start from it.
+  """
+  @spec switchable?(Task.t()) :: boolean()
+  def switchable?(%Task{git: true} = task) do
+    Repo.exists?(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: r.task_id == ^task.id and fragment("(?->>'pushed')::boolean", j.delivery)
+    )
+  end
+
+  def switchable?(%Task{}), do: false
+
+  # Before a stage runs again by hand: the task moves to another runner if
+  # asked, and a worktree removed is forgotten (the runner makes it again).
+  # A removal asked for and not done yet could remove the worktree under the
+  # new stage, so it is waited for.
+  defp reopen(task, runner_id) do
+    cond do
+      task.worktree_removal_requested_at && is_nil(task.worktree_removed_at) ->
+        {:error, :removing}
+
+      runner_id in [nil, "", task.runner_id] ->
+        {:ok, forget_removed_worktree(task)}
+
+      true ->
+        switch_runner(task, runner_id)
+    end
+  end
+
+  defp forget_removed_worktree(%Task{worktree_removed_at: nil} = task), do: task
+
+  defp forget_removed_worktree(task) do
+    task
+    |> Ecto.Changeset.change(
+      worktree: nil,
+      worktree_removed_at: nil,
+      worktree_removal_requested_at: nil,
+      worktree_error: nil
+    )
+    |> Repo.update!()
+  end
+
+  defp switch_runner(task, runner_id) do
+    if Enum.any?(runner_choices(task), &(&1.id == runner_id)) do
+      Audit.record(task.workspace_id, nil, "task.runner_switched", task, %{
+        "from" => task.runner_id,
+        "to" => runner_id
+      })
+
+      {:ok,
+       task
+       |> Ecto.Changeset.change(
+         runner_id: runner_id,
+         worktree: nil,
+         worktree_removed_at: nil,
+         worktree_removal_requested_at: nil,
+         worktree_error: nil
+       )
+       |> Repo.update!()}
+    else
+      {:error, :runner}
     end
   end
 
@@ -1443,7 +1656,8 @@ defmodule PipeMaestro.Tasks do
 
   @doc """
   Cancels a task. A task waiting for a decision ends at once; a running one
-  has its job canceled and ends when the runner confirms.
+  has its job canceled and ends when the runner confirms, or at once when
+  `runner_online?: false` (the runner is not there to confirm).
   """
   @spec cancel_task(Task.t(), decision_opts()) :: {:ok, Task.t()} | {:error, :finished}
   def cancel_task(%Task{} = task, opts \\ []) do
@@ -1467,7 +1681,9 @@ defmodule PipeMaestro.Tasks do
 
       :running ->
         Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
-        for job <- running_jobs(task), do: Jobs.request_cancel(job)
+        # A pause asked for earlier would turn the cancel into an interruption.
+        task |> Ecto.Changeset.change(pause_requested: false) |> Repo.update!()
+        stop_jobs(task, opts)
         {:ok, get_task!(%Workspace{id: task.workspace_id}, task.id)}
 
       _finished ->

@@ -9,6 +9,9 @@
  * @flow D [done] The runner prepares a new worktree with the directory's dependencies, and removes it when the member asks, keeping the branch
  * @flow H [done] A finished stage's steps are strips of icons that open their panels, filtered by kind (thinking shows only the model's thoughts)
  * @flow I [done] Usage breaks the cost down by origin and by stage (with the average wait and gate time), narrows to one pipeline, and goes back 90 days
+ * @flow J [done] A task that ended takes a prompt: the correction runs as a new stage in its worktree, made again after it was removed
+ * @flow K [done] A stage is redone from its modal with instructions, which reach the agent
+ * @flow L [done] A running stage is interrupted: the task waits for a decision instead of ending
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -154,6 +157,16 @@ test.describe("Task pipeline", () => {
     expect(existsSync(worktree)).toBe(false);
     await shot(app.page, "task-worktree-removed");
 
+    // Flow J: a correction after the task ended, in a worktree made again.
+    await expect(app.page.getByTestId("task-correct")).toBeVisible();
+    await tasks.correct("Registre também a correção pedida.");
+    await expect(tasks.status).toHaveText("Concluída");
+    await expect(tasks.stageRunStatus("correcao-1", 1)).toHaveText("Aprovada no gate");
+    await expect(tasks.stageRun("correcao-1", 1)).toContainText("Registre também a correção pedida.");
+    await expect(app.page.getByTestId("task-decisions")).toContainText("Corrigir");
+    expect(existsSync(join(worktree, ".control-plane", bugId, "07-correcao-1.md"))).toBe(true);
+    await shot(app.page, "task-corrected");
+
     // Flow C: a blocked stage, retried with instructions.
     await tasks.backToList();
     const blockedId = await tasks.create({
@@ -182,6 +195,33 @@ test.describe("Task pipeline", () => {
     await expect(tasks.stageRun("executar", 2)).toContainText("Acontece no Safari 17.");
     expect(readFileSync(join(root, "notas", "fake-claude.txt"), "utf8")).toContain("Safari 17");
     await shot(app.page, "task-decided");
+
+    // Flow K: redo with instructions, from the stage's modal.
+    await app.page.getByTestId("stage-redo-executar").click();
+    await expect(app.page.getByTestId("stage-redo-modal")).toBeVisible();
+    await shot(app.page, "task-redo-modal");
+    await app.page.getByTestId("stage-redo-text").fill("[desbloqueio] Agora no Firefox.");
+    await app.page.getByTestId("stage-redo-submit").click();
+    await expect(tasks.status).toHaveText("Concluída");
+    await expect(tasks.stageRun("executar", 3)).toContainText("Agora no Firefox.");
+
+    // Flow L: a slow stage interrupted waits for a decision; canceled after.
+    await tasks.backToList();
+    await tasks.create({
+      title: "Demorada",
+      prompt: "Leva tempo. [lento]",
+      pipeline: "Prompt único",
+      runner: runnerName,
+      directory: "notas",
+    });
+    await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Executando");
+    await tasks.interrupt();
+    await expect(tasks.status).toHaveText("Aguardando decisão");
+    await expect(tasks.decisionReason).toContainText("foi interrompida");
+    await shot(app.page, "task-interrupted");
+    await app.page.getByTestId("task-cancel").click();
+    await expect(tasks.status).toHaveText("Cancelada");
+    await expect(app.page.getByTestId("task-correct")).toBeVisible();
 
     // Flow G: a project for `app`, its setup and its test command as a gate.
     const projects = new ProjectsPage(app.page);

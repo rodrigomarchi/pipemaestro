@@ -505,9 +505,49 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       refute has_element?(view, "#instruct-form")
 
       view |> element("[data-testid=stage-redo-a]") |> render_click()
+      assert has_element?(view, "[data-testid=stage-redo-modal]")
+
+      view
+      |> form("#redo-form", redo: %{instructions: "desta vez com testes"})
+      |> render_submit()
+
       assert has_element?(view, "[data-testid=task-status]", "Executando")
       assert has_element?(view, "[data-testid=stage-run-status-a-2]", "Executando")
       refute has_element?(view, "[data-testid=stage-redo-a]")
+      refute has_element?(view, "[data-testid=stage-redo-modal]")
+      assert Enum.any?(Jobs.list_jobs(ctx.workspace), &(&1.prompt =~ "desta vez com testes"))
+    end
+
+    test "corrects a finished task with a prompt, as a new stage", ctx do
+      task = create_task(ctx)
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=task-correct]")
+
+      assert view |> form("#correct-form", correct: %{prompt: " "}) |> render_submit() =~
+               "Escreva o que a correção deve fazer"
+
+      view |> form("#correct-form", correct: %{prompt: "Resolva o conflito"}) |> render_submit()
+
+      assert has_element?(view, "[data-testid=task-status]", "Executando")
+      assert has_element?(view, "[data-testid=stage-correcao-1]", "Correção 1")
+      assert has_element?(view, "[data-testid=task-decisions]", "Resolva o conflito")
+      refute has_element?(view, "[data-testid=task-correct]")
+    end
+
+    test "interrupts the running stage: the task waits for a decision", ctx do
+      task = create_task(ctx)
+      job = hd(Jobs.list_jobs(ctx.workspace))
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      view |> element("[data-testid=task-interrupt]") |> render_click()
+
+      # The runner is offline here: the stage stops without waiting for it.
+      assert has_element?(view, "[data-testid=task-status]", "Aguardando decisão")
+      assert render(view) =~ "foi interrompida"
     end
   end
 

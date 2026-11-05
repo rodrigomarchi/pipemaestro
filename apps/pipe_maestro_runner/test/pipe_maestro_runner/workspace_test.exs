@@ -78,4 +78,72 @@ defmodule PipeMaestroRunner.WorkspaceTest do
     assert Workspace.remove_task_worktree(root, workdir, "t1", "notas") == :ok
     refute File.exists?(path)
   end
+
+  describe "a task's worktree" do
+    defp git!(dir, args) do
+      {out, 0} =
+        System.cmd("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t" | args],
+          stderr_to_stdout: true
+        )
+
+      String.trim(out)
+    end
+
+    # `src/repo`, a clone of a bare `origin.git` with one commit on main.
+    setup %{tmp_dir: dir, root: root} do
+      origin = Path.join(dir, "origin.git")
+      {_, 0} = System.cmd("git", ["init", "-q", "--bare", "-b", "main", origin])
+      repo = Path.join(root, "repo")
+      {_, 0} = System.cmd("git", ["clone", "-q", origin, repo], stderr_to_stdout: true)
+      File.write!(Path.join(repo, "README.md"), "app")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-q", "-m", "init"])
+      git!(repo, ["push", "-q", "origin", "HEAD:main"])
+      %{repo: repo, origin: origin}
+    end
+
+    defp job(task_id, branch),
+      do: %Job{
+        id: "j-#{task_id}",
+        prompt: "x",
+        directory: "repo",
+        worktree: %{"task_id" => task_id, "branch" => branch}
+      }
+
+    test "a new task's branch starts from HEAD", %{root: root, workdir: workdir, repo: repo} do
+      assert {:ok, path, ^repo} = Workspace.prepare(job("t1", "cp/nova"), root, workdir)
+      assert git!(path, ["rev-parse", "HEAD"]) == git!(repo, ["rev-parse", "HEAD"])
+      assert git!(path, ["branch", "--show-current"]) == "cp/nova"
+    end
+
+    test "a branch that is only on origin is checked out from there", ctx do
+      %{root: root, workdir: workdir, repo: repo} = ctx
+      git!(repo, ["checkout", "-q", "-b", "cp/feita"])
+      File.write!(Path.join(repo, "lib.ex"), "trabalho")
+      git!(repo, ["add", "."])
+      git!(repo, ["commit", "-q", "-m", "trabalho"])
+      git!(repo, ["push", "-q", "origin", "cp/feita"])
+      pushed = git!(repo, ["rev-parse", "HEAD"])
+      git!(repo, ["checkout", "-q", "main"])
+      git!(repo, ["branch", "-q", "-D", "cp/feita"])
+      git!(repo, ["update-ref", "-d", "refs/remotes/origin/cp/feita"])
+
+      assert {:ok, path, ^repo} = Workspace.prepare(job("t2", "cp/feita"), root, workdir)
+      assert git!(path, ["rev-parse", "HEAD"]) == pushed
+      assert File.read!(Path.join(path, "lib.ex")) == "trabalho"
+    end
+
+    test "a worktree removed is made again on its branch", ctx do
+      %{root: root, workdir: workdir, repo: repo} = ctx
+      {:ok, path, _} = Workspace.prepare(job("t3", "cp/de-volta"), root, workdir)
+      File.write!(Path.join(path, "a.ex"), "a")
+      git!(path, ["add", "."])
+      git!(path, ["commit", "-q", "-m", "a"])
+      commit = git!(path, ["rev-parse", "HEAD"])
+      assert Workspace.remove_task_worktree(root, workdir, "t3", "repo") == :ok
+
+      assert {:ok, ^path, ^repo} = Workspace.prepare(job("t3", "cp/de-volta"), root, workdir)
+      assert git!(path, ["rev-parse", "HEAD"]) == commit
+    end
+  end
 end

@@ -182,6 +182,43 @@ defmodule PipeMaestro.Jobs do
 
   def request_cancel(%Job{}), do: {:error, :finished}
 
+  @doc """
+  Ends a job without waiting for its runner, which is offline: it is
+  canceled now, with `error` saying why, and what depends on it moves on. If
+  the runner comes back still running it, `ended_among/2` tells it to stop;
+  a result it sends later is ignored.
+  """
+  @spec abandon(Job.t(), String.t()) :: {:ok, Job.t()} | {:error, :finished}
+  def abandon(%Job{status: :queued} = job, _error), do: request_cancel(job)
+
+  def abandon(%Job{status: :running} = job, error) do
+    job =
+      job
+      |> update!(status: :canceled, error: error, finished_at: now(), cancel_requested_at: now())
+      |> summarize()
+
+    notify(job)
+    finished(job)
+    {:ok, job}
+  end
+
+  def abandon(%Job{}, _error), do: {:error, :finished}
+
+  @doc """
+  Of the jobs a runner says it is running, the ones that already ended here
+  (abandoned while it was offline): it is told to cancel them.
+  """
+  @spec ended_among(Runner.t(), [String.t()]) :: [String.t()]
+  def ended_among(%Runner{id: runner_id}, running_job_ids) do
+    Repo.all(
+      from j in Job,
+        where:
+          j.runner_id == ^runner_id and j.id in ^valid_ids(running_job_ids) and
+            j.status not in [:running, :queued],
+        select: j.id
+    )
+  end
+
   # ── Runners ───────────────────────────────────────────────────────────────
 
   @doc """

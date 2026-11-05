@@ -60,6 +60,9 @@ defmodule PipeMaestroWeb.RunnerChannel do
     :ok = Jobs.subscribe({:runner, runner.id})
     for job <- Jobs.reconcile(runner, hello.running_job_ids), do: push_assign(socket, job)
 
+    for job_id <- Jobs.ended_among(runner, hello.running_job_ids),
+        do: push(socket, Job.cancel_event(), %{"job_id" => job_id})
+
     for task <- Tasks.pending_worktree_removals(runner),
         do: push(socket, Worktree.remove_event(), Tasks.removal(task))
 
