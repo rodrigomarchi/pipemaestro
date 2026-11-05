@@ -94,6 +94,9 @@ defmodule PipeMaestroWeb.ProjectLiveRunnerTest do
     test "analyse with AI asks the agent about the directory and opens the proposal", ctx do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/projects/new")
 
+      # The directories come from the runner: it is chosen first.
+      view |> form("#project-form", project: %{runner_id: ctx.mac.id}) |> render_change()
+
       view
       |> form("#project-form", project: %{runner_id: ctx.mac.id, directory: "app"})
       |> render_change()

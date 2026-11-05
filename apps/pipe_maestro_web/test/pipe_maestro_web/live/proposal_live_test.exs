@@ -45,7 +45,15 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       )
 
     {old, _token} = runner_fixture(workspace, user, %{name: "antigo"})
-    %{runner: runner, old: with_directories(old, @directories)}
+    old = with_directories(old, @directories)
+
+    %{
+      runner: runner,
+      old: old,
+      app: project_fixture(runner, "app", %{"name" => "App"}),
+      notes: project_fixture(runner, "notas", %{"name" => "Notas"}),
+      old_app: project_fixture(old, "app", %{"name" => "App antigo"})
+    }
   end
 
   defp bring_online(runner) do
@@ -61,7 +69,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
   end
 
   defp ask(ctx, kind, attrs) do
-    base = %{"runner_id" => ctx.runner.id, "directory" => "app"}
+    base = %{"project_id" => ctx.app.id}
     {:ok, job} = Proposals.request(kind, ctx.user, ctx.workspace, Map.merge(base, attrs))
     job
   end
@@ -78,43 +86,39 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
   defp proposal_path(ctx, job), do: ~p"/w/#{ctx.workspace.slug}/proposals/#{job.id}"
 
   describe "asking" do
-    test "pipelines: a capable runner studies one of its git directories", ctx do
+    test "pipelines: a project whose runner can study its git directory", ctx do
       bring_online(ctx.runner)
       bring_online(ctx.old)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
 
       view |> element("[data-testid=generate-pipeline]") |> render_click()
-      runners = view |> element("[data-testid=proposal-request-runner]") |> render()
-      assert runners =~ "mac"
-      assert runners =~ ~r/<option disabled[^>]*>antigo \(atualize o runner\)/
+      projects = view |> element("[data-testid=proposal-request-project]") |> render()
+      assert projects =~ "App · mac:app"
+      assert projects =~ ~r/<option disabled[^>]*>App antigo \(o runner precisa ser atualizado\)/
 
-      view
-      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
-      |> render_change()
-
-      directories = view |> element("[data-testid=proposal-request-directory]") |> render()
-      assert directories =~ "app"
-      refute directories =~ "notas"
+      assert projects =~
+               ~r/<option disabled[^>]*>Notas \(a pasta do projeto não é um repositório git\)/
 
       {:error, {:live_redirect, %{to: path}}} =
         view
         |> form("#proposal-request-form",
-          proposal: %{runner_id: ctx.runner.id, directory: "app", request: "Entregar com PR"}
+          proposal: %{project_id: ctx.app.id, request: "Entregar com PR"}
         )
         |> render_submit()
 
       [job] = Proposals.list_recent(ctx.workspace)
       assert path == proposal_path(ctx, job)
       assert Proposals.kind(job) == "pipeline"
+      assert job.project_id == ctx.app.id
     end
 
-    test "a request without a runner or text shows what is missing", ctx do
+    test "a request without a project or text shows what is missing", ctx do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
       view |> element("[data-testid=generate-pipeline]") |> render_click()
-      assert has_element?(view, "[data-testid=proposal-request-no-runners]")
+      refute has_element?(view, "[data-testid=proposal-request-no-projects]")
 
       html = view |> form("#proposal-request-form", proposal: %{request: ""}) |> render_submit()
-      assert html =~ "escolha um runner online"
+      assert html =~ "escolha um projeto"
       assert html =~ "conte o que o pipeline deve fazer"
     end
 
@@ -124,16 +128,11 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       view |> element("[data-testid=task-generate]") |> render_click()
       assert has_element?(view, "[data-testid=proposal-request-issue-url]")
 
-      view
-      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
-      |> render_change()
-
       {:error, {:live_redirect, _}} =
         view
         |> form("#proposal-request-form",
           proposal: %{
-            runner_id: ctx.runner.id,
-            directory: "app",
+            project_id: ctx.app.id,
             request: "O login trava",
             issue_url: "https://github.com/acme/app/issues/3"
           }
@@ -166,16 +165,11 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
       assert has_element?(view, "input[data-testid=proposal-request-auto-approve][checked]")
 
-      view
-      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
-      |> render_change()
-
       {:error, {:live_redirect, _}} =
         view
         |> form("#proposal-request-form",
           proposal: %{
-            runner_id: ctx.runner.id,
-            directory: "app",
+            project_id: ctx.app.id,
             request: "Exportar CSV",
             pipeline_id: pipeline.id
           }
@@ -192,16 +186,11 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
       view |> element("[data-testid=task-generate]") |> render_click()
 
-      view
-      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
-      |> render_change()
-
       {:error, {:live_redirect, _}} =
         view
         |> form("#proposal-request-form",
           proposal: %{
-            runner_id: ctx.runner.id,
-            directory: "app",
+            project_id: ctx.app.id,
             request: "Exportar CSV",
             auto_approve: "false"
           }
@@ -213,7 +202,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       refute Map.has_key?(Proposals.input(job), "pipeline_id")
     end
 
-    test "improvements: a pipeline, from the directory its tasks ran in", ctx do
+    test "improvements: a pipeline, in a project", ctx do
       bring_online(ctx.runner)
       pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines")
@@ -222,14 +211,10 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-request-focus]")
       refute has_element?(view, "[data-testid=proposal-request-text]")
 
-      view
-      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
-      |> render_change()
-
       {:error, {:live_redirect, _}} =
         view
         |> form("#proposal-request-form",
-          proposal: %{runner_id: ctx.runner.id, directory: "app", focus: "Custo"}
+          proposal: %{project_id: ctx.app.id, focus: "Custo"}
         )
         |> render_submit()
 
@@ -260,10 +245,10 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
   end
 
   describe "pipeline" do
-    test "follows the analysis live, then saves the project and fills the pipeline form", ctx do
+    test "follows the analysis live, then fills the pipeline form", ctx do
       job = ask(ctx, "pipeline", %{"request" => "Entregar *issues* com PR"})
       {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
-      assert has_element?(view, "[data-testid=proposal-kind]", "Pipeline e projeto")
+      assert has_element?(view, "[data-testid=proposal-kind]", "Pipeline")
       assert has_element?(view, "[data-testid=proposal-request] em", "issues")
       assert has_element?(view, "[data-testid=proposal-waiting]")
 
@@ -272,15 +257,12 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-checks]", "2 avisos")
       assert has_element?(view, "[data-testid=proposal-stage-1]", "{{projeto.teste}}")
 
+      refute has_element?(view, "#proposal-project-form")
+
       {:error, {:live_redirect, %{to: path}}} =
-        view
-        |> form("#proposal-project-form", project: %{lint_command: "mix credo"})
-        |> render_submit()
+        view |> element("[data-testid=proposal-open-pipeline]") |> render_click()
 
       assert path == ~p"/w/#{ctx.workspace.slug}/pipelines/new?proposta=#{job.id}"
-
-      assert %{name: "App", lint_command: "mix credo"} =
-               Projects.for_directory(ctx.workspace, "app")
 
       {:ok, form, _html} = live(ctx.conn, path)
       assert has_element?(form, "[data-testid=pipeline-from-proposal]")
@@ -467,8 +449,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
           "title" => "Corrigir o login",
           "prompt" => "O botão não responde",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.app.id
         })
 
       job = hd(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
@@ -542,8 +523,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
           "title" => "Corrigir o login",
           "prompt" => "O botão não responde",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.app.id
         })
 
       stage_job = hd(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
@@ -590,8 +570,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
           "title" => "Corrigir o login",
           "prompt" => "x",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.app.id
         })
 
       block!(ctx, task)
@@ -656,14 +635,13 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
   end
 
   describe "the proposals page filters" do
-    test "by status, directory and who asked", ctx do
+    test "by status, project and who asked", ctx do
       other = member_fixture(ctx.workspace, %{name: "Bruno"})
       mine = ask(ctx, "pipeline", %{"request" => "Meu"})
 
       {:ok, theirs} =
         Proposals.request("task", other, ctx.workspace, %{
-          "runner_id" => ctx.runner.id,
-          "directory" => "app",
+          "project_id" => ctx.app.id,
           "request" => "Deles"
         })
 
@@ -682,7 +660,9 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-link-#{theirs.id}]")
 
       view
-      |> form("#proposals-filter", filter: %{user_id: "", directory: "app", status: "canceled"})
+      |> form("#proposals-filter",
+        filter: %{user_id: "", project_id: ctx.app.id, status: "canceled"}
+      )
       |> render_change()
 
       assert has_element?(
@@ -696,9 +676,6 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
   describe "improve" do
     test "saves the notes and opens the pipeline's form with the revision", ctx do
       pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
-
-      {:ok, _project} =
-        Projects.create_project(ctx.workspace, %{"name" => "App", "directory" => "app"}, ctx.user)
 
       job = ask(ctx, "improve", %{"pipeline_id" => pipeline.id})
 
@@ -715,7 +692,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
       assert has_element?(view, "[data-testid=proposal-changes]", "falhou 3x")
       view |> form("#proposal-notes-form", notes: %{notes: "Rode mix test."}) |> render_submit()
-      assert Projects.for_directory(ctx.workspace, "app").notes == "Rode mix test."
+      assert Projects.get_project!(ctx.workspace, ctx.app.id).notes == "Rode mix test."
 
       {:error, {:live_redirect, %{to: path}}} =
         view |> element("[data-testid=proposal-review-pipeline]") |> render_click()

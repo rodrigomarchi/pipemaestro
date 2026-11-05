@@ -2,8 +2,10 @@ defmodule PipeMaestroWeb.GithubWebhookController do
   @moduledoc """
   The GitHub webhook of a workspace (`POST /api/github/webhook/<workspace>`):
   when an issue gets a project's trigger label
-  (`PipeMaestro.Projects.Project`), it starts a task from the issue on
-  an online runner that offers the project's directory.
+  (`PipeMaestro.Projects.Project`), it starts a task from the issue on the
+  project's runner (or has the agent write it first, with the trigger mode
+  `"triage"`). With the runner offline, the work waits for it; a project
+  without a runner refuses the issue.
 
   Every delivery is signed with the workspace's secret
   `GITHUB_WEBHOOK_SECRET` (`PipeMaestro.Secrets`); an unsigned or
@@ -12,8 +14,9 @@ defmodule PipeMaestroWeb.GithubWebhookController do
   """
   use PipeMaestroWeb, :controller
 
-  alias PipeMaestro.{Projects, Proposals, Runners, Secrets, Tasks, Workspaces}
-  alias PipeMaestroWeb.RunnerStatus
+  alias PipeMaestro.{Projects, Proposals, Secrets, Tasks, Workspaces}
+
+  @no_runner "o projeto precisa de um runner"
 
   @doc "Takes one delivery."
   @spec receive_event(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -61,59 +64,36 @@ defmodule PipeMaestroWeb.GithubWebhookController do
 
   defp handle(conn, _workspace, _event, _params), do: json(conn, %{ignored: "evento sem uso"})
 
-  # Triage needs a runner that can study the directory in a disposable worktree.
-  defp start_task(conn, workspace, %{trigger_mode: "triage"} = project, issue) do
-    runner =
-      online_runner(workspace, project, fn runner ->
-        Proposals.capable?(runner) and Proposals.git_directory?(runner, project.directory)
-      end)
+  defp start_task(conn, _workspace, %{runner_id: nil}, _issue), do: refuse(conn, @no_runner)
 
-    with %{} <- runner,
-         {:ok, job} <- Proposals.triage_issue(workspace, project, issue, runner.id) do
-      conn |> put_status(201) |> json(%{proposal_id: job.id})
-    else
-      nil ->
-        conn
-        |> put_status(422)
-        |> json(%{
-          error: "nenhum runner online e atualizado oferece o diretório #{project.directory}"
-        })
+  defp start_task(conn, workspace, %{trigger_mode: "triage"} = project, issue) do
+    case Proposals.triage_issue(workspace, project, issue) do
+      {:ok, job} ->
+        conn |> put_status(201) |> json(%{proposal_id: job.id})
 
       {:error, :already_triaging} ->
         json(conn, %{ignored: "a issue já está em triagem"})
 
       {:error, reason} ->
-        conn
-        |> put_status(422)
-        |> json(%{error: "a triagem não pôde começar: #{inspect(reason)}"})
+        refuse(conn, "a triagem não pôde começar: " <> reason_text(reason))
     end
   end
 
   defp start_task(conn, workspace, project, issue) do
-    runner = online_runner(workspace, project, fn _runner -> true end)
-
-    with %{} <- runner,
-         {:ok, task} <- Tasks.create_from_issue(workspace, project, issue, runner.id) do
-      conn |> put_status(201) |> json(%{task_id: task.id})
-    else
-      nil ->
-        conn
-        |> put_status(422)
-        |> json(%{error: "nenhum runner online oferece o diretório #{project.directory}"})
-
-      {:error, reason} ->
-        conn |> put_status(422) |> json(%{error: "a tarefa não pôde começar: #{inspect(reason)}"})
+    case Tasks.create_from_issue(workspace, project, issue) do
+      {:ok, task} -> conn |> put_status(201) |> json(%{task_id: task.id})
+      {:error, reason} -> refuse(conn, "a tarefa não pôde começar: " <> reason_text(reason))
     end
   end
 
-  defp online_runner(workspace, project, suitable?) do
-    online = RunnerStatus.online_ids(workspace.id)
+  defp refuse(conn, message), do: conn |> put_status(422) |> json(%{error: message})
 
-    workspace
-    |> Runners.list_runners()
-    |> Enum.find(fn runner ->
-      MapSet.member?(online, runner.id) and suitable?.(runner) and
-        Enum.any?(runner.directories, &(&1["name"] == project.directory))
-    end)
+  defp reason_text(%Ecto.Changeset{} = changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Enum.flat_map(fn {field, messages} -> Enum.map(messages, &"#{field}: #{&1}") end)
+    |> Enum.join("; ")
   end
+
+  defp reason_text(reason), do: inspect(reason)
 end

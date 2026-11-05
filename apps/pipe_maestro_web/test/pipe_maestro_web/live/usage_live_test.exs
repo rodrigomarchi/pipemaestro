@@ -90,8 +90,7 @@ defmodule PipeMaestroWeb.UsageLiveTest do
         "title" => "T",
         "prompt" => "p",
         "pipeline_id" => pipeline.id,
-        "runner_id" => runner.id,
-        "directory" => "app"
+        "project_id" => project_on(runner, "app").id
       })
 
     stage_job = hd(PipeMaestro.Tasks.get_task!(workspace, task.id).stage_runs).job

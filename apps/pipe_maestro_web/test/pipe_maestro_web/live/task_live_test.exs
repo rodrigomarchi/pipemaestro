@@ -38,8 +38,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
         "title" => "Corrigir login",
         "prompt" => "O botão não responde",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_on(ctx.runner, "app").id
       })
 
     task
@@ -75,39 +74,23 @@ defmodule PipeMaestroWeb.TaskLiveTest do
   end
 
   describe "index" do
-    test "the runner choice shows how busy each runner is, live", ctx do
-      bring_online(ctx.runner)
+    test "the project choice names each project's runner and directory", ctx do
+      project_on(ctx.runner, "app")
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
       view |> element("[data-testid=new-task]") |> render_click()
 
-      runners = view |> element("[data-testid=task-runner]") |> render()
-      assert runners =~ "mac (livre, capacidade 4)"
-
-      job = job_fixture(ctx.runner, ctx.user)
-      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
-      _waiting = job_fixture(ctx.runner, ctx.user)
-
-      runners = view |> element("[data-testid=task-runner]") |> render()
-      assert runners =~ "mac (1/4 em execução, 1 na fila)"
+      assert view |> element("[data-testid=task-project]") |> render() =~ "app · mac:app"
     end
 
-    test "starts a task with an online runner's directory", ctx do
+    test "starts a task in a project", ctx do
       bring_online(ctx.runner)
+      project = project_on(ctx.runner, "app")
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
       assert has_element?(view, "[data-testid=no-tasks]")
 
       view |> element("[data-testid=new-task]") |> render_click()
-      refute has_element?(view, "[data-testid=no-online-runners]")
-      refute view |> element("[data-testid=task-directory]") |> render() =~ "app"
-
-      view
-      |> form("#new-task-form", task: %{runner_id: ctx.runner.id})
-      |> render_change()
-
+      refute has_element?(view, "[data-testid=task-no-projects]")
       assert has_element?(view, "[data-testid=task-issue-url]")
-      directories = view |> element("[data-testid=task-directory]") |> render()
-      assert directories =~ "app"
-      assert directories =~ "notas (sem git: roda na pasta)"
 
       {:error, {:live_redirect, %{to: path}}} =
         view
@@ -116,35 +99,33 @@ defmodule PipeMaestroWeb.TaskLiveTest do
             title: "Corrigir login",
             prompt: "O botão não responde",
             pipeline_id: ctx.pipeline.id,
-            runner_id: ctx.runner.id,
-            directory: "app"
+            project_id: project.id
           }
         )
         |> render_submit()
 
       [task] = Tasks.list_tasks(ctx.workspace)
       assert path == "/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+      assert {task.runner_id, task.directory} == {ctx.runner.id, "app"}
     end
 
-    test "explains when the chosen runner offers no directories", ctx do
-      {bare, _token} = runner_fixture(ctx.workspace, ctx.user, %{name: "sem-raiz"})
-      bring_online(bare)
-      bring_online(ctx.runner)
+    test "a project that needs a runner is offered disabled, with the reason", ctx do
+      {gone, _token} = runner_fixture(ctx.workspace, ctx.user, %{name: "antigo"})
+      gone = with_directories(gone, [%{"name" => "site", "git" => true}])
+      project_fixture(gone, "site", %{"name" => "Site"})
+      PipeMaestro.Repo.delete!(gone)
 
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
       view |> element("[data-testid=new-task]") |> render_click()
 
-      view |> form("#new-task-form", task: %{runner_id: bare.id}) |> render_change()
-      assert has_element?(view, "[data-testid=runner-without-directories]", "ROOT=~/src")
-
-      view |> form("#new-task-form", task: %{runner_id: ctx.runner.id}) |> render_change()
-      refute has_element?(view, "[data-testid=runner-without-directories]")
+      assert view |> element("[data-testid=task-project]") |> render() =~
+               ~r/<option disabled[^>]*>Site \(precisa de um runner\)/
     end
 
     test "shows form errors and the missing prerequisites", ctx do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
       view |> element("[data-testid=new-task]") |> render_click()
-      assert has_element?(view, "[data-testid=no-online-runners]")
+      assert has_element?(view, "[data-testid=task-no-projects]")
 
       html = view |> form("#new-task-form", task: %{title: ""}) |> render_submit()
       assert html =~ "dê um título à tarefa"
@@ -572,7 +553,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks?duplicate=#{task.id}")
       assert has_element?(view, "[data-testid=task-title][value='Corrigir login']")
 
-      assert has_element?(view, "[data-testid=task-directory] option[selected][value=app]")
+      assert has_element?(
+               view,
+               "[data-testid=task-project] option[selected][value='#{task.project_id}']"
+             )
     end
 
     test "the list searches titles and prompts", ctx do
@@ -871,6 +855,9 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       tracker = spawn(fn -> Process.sleep(:infinity) end)
       {:ok, _ref} = RunnerStatus.track(tracker, ctx.runner)
       task = create_task(ctx)
+      # The stage already started: a job still queued only waits for the runner.
+      [run | _] = Tasks.get_task!(ctx.workspace, task.id).stage_runs
+      {:ok, _job} = Jobs.mark_started(ctx.runner, run.job.id)
 
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
       refute has_element?(view, "[data-testid=task-runner-offline]")

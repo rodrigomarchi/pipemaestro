@@ -123,6 +123,19 @@ defmodule PipeMaestro.Fixtures do
   end
 
   @doc """
+  The project of `runner`'s `directory`: the one already there, or a new one
+  (`project_fixture/3`).
+  """
+  @spec project_on(PipeMaestro.Runners.Runner.t(), String.t()) ::
+          PipeMaestro.Projects.Project.t()
+  def project_on(runner, directory) do
+    PipeMaestro.Repo.get_by(PipeMaestro.Projects.Project,
+      runner_id: runner.id,
+      directory: directory
+    ) || project_fixture(runner, directory)
+  end
+
+  @doc """
   The projects of `runner` for each of the directories it offers, by
   directory name.
   """

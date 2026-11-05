@@ -1,12 +1,16 @@
 defmodule PipeMaestroWeb.ProjectLive.Form do
   @moduledoc """
-  Creates or edits a project. The directory is picked among the ones the
-  workspace's runners offer.
+  Creates or edits a project: a runner and one of the directories it offers.
+  A new project may be analysed by the agent first ("Analisar com IA", a
+  `project` proposal), whose answer fills this same form for review. An
+  existing project keeps its directory and can move to another runner that
+  offers it.
   """
   use PipeMaestroWeb, :live_view
 
-  alias PipeMaestro.{Audit, Pipelines, Projects, Runners}
+  alias PipeMaestro.{Audit, Pipelines, Projects, Proposals, Runners}
   alias PipeMaestro.Projects.Project
+  alias PipeMaestro.Runners.Runner
 
   @impl true
   def mount(params, session, socket) do
@@ -29,7 +33,7 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
           %{project | copy_paths_text: Enum.join(project.copy_paths, "\n")}
 
         _new ->
-          %Project{}
+          %Project{workspace_id: workspace.id}
       end
 
     {:ok,
@@ -37,23 +41,28 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
      |> assign(
        page_title: if(project.id, do: "Editar projeto", else: "Novo projeto"),
        project: project,
-       directories: directories(workspace, project),
+       runners: Runners.list_runners(workspace),
+       runner_choices: if(project.id, do: Projects.runner_choices(project), else: []),
        pipelines: Pipelines.list_pipelines(workspace)
      )
      |> assign_form(Projects.change_project(project))}
   end
 
-  # Every directory the runners offer, plus the project's own.
-  defp directories(workspace, project) do
-    workspace
-    |> Runners.list_runners()
-    |> Enum.flat_map(fn runner -> Enum.map(runner.directories, & &1["name"]) end)
-    |> Kernel.++(List.wrap(project.directory))
-    |> Enum.uniq()
-    |> Enum.sort()
+  defp assign_form(socket, changeset) do
+    form = to_form(changeset)
+    assign(socket, form: form, directories: directories(socket.assigns, form))
   end
 
-  defp assign_form(socket, changeset), do: assign(socket, form: to_form(changeset))
+  # The directories the chosen runner offers; an existing project keeps its own.
+  defp directories(%{project: %Project{id: id, directory: directory}}, _form) when id != nil,
+    do: [directory]
+
+  defp directories(%{runners: runners}, form) do
+    case Enum.find(runners, &(&1.id == form[:runner_id].value)) do
+      %Runner{directories: directories} -> directories |> Enum.map(& &1["name"]) |> Enum.sort()
+      nil -> []
+    end
+  end
 
   @impl true
   def handle_event("validate", %{"project" => params}, socket) do
@@ -63,12 +72,48 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
     {:noreply, assign_form(socket, changeset)}
   end
 
+  def handle_event("analyze", _params, socket) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    form = socket.assigns.form
+
+    attrs = %{"runner_id" => form[:runner_id].value, "directory" => form[:directory].value}
+
+    case Proposals.request("project", user, workspace, attrs) do
+      {:ok, job} ->
+        {:noreply, push_navigate(socket, to: ~p"/w/#{workspace.slug}/proposals/#{job.id}")}
+
+      {:error, changeset} ->
+        {:noreply, put_flash(socket, :error, "Não deu para analisar: " <> errors(changeset))}
+    end
+  end
+
+  def handle_event("switch_runner", %{"switch" => %{"runner_id" => runner_id}}, socket) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+
+    case Projects.switch_runner(socket.assigns.project, runner_id, user) do
+      {:ok, project} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Projeto #{project.name} agora roda em #{project.runner.name}.")
+         |> push_navigate(to: ~p"/w/#{workspace.slug}/projects")}
+
+      {:error, changeset} ->
+        {:noreply,
+         put_flash(socket, :error, "Não deu para trocar o runner: " <> errors(changeset))}
+    end
+  end
+
   def handle_event("save", %{"project" => params}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
 
     result =
       if socket.assigns.project.id,
-        do: Projects.update_project(socket.assigns.project, params, user),
+        do:
+          Projects.update_project(
+            socket.assigns.project,
+            Map.drop(params, ~w(runner_id directory)),
+            user
+          ),
         else: Projects.create_project(workspace, params, user)
 
     case result do
@@ -83,6 +128,13 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
       {:error, changeset} ->
         {:noreply, assign_form(socket, changeset)}
     end
+  end
+
+  defp errors(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Enum.flat_map(fn {_field, messages} -> messages end)
+    |> Enum.join("; ")
   end
 
   # A multi-line placeholder: in the template, the formatter would make it literal.
@@ -118,14 +170,24 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
             <.section_heading
               icon="hero-folder"
               title="Projeto"
-              description="Um diretório de código que recebe tarefas, em qualquer runner que o ofereça."
+              description="Um diretório de código de um runner: é onde as tarefas e execuções dele rodam."
             />
-            <div class="grid gap-4 sm:grid-cols-2">
+            <div class="grid gap-4 sm:grid-cols-3">
               <.icon_field
                 field={@form[:name]}
                 icon="hero-tag"
                 label="Nome"
                 data-testid="project-name"
+              />
+              <.icon_field
+                field={@form[:runner_id]}
+                icon="hero-server"
+                type="select"
+                label="Runner"
+                prompt="Escolha o runner"
+                options={Enum.map(@runners, &{&1.name, &1.id})}
+                disabled={@project.id != nil}
+                data-testid="project-runner"
               />
               <.icon_field
                 field={@form[:directory]}
@@ -134,9 +196,28 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
                 label="Diretório"
                 prompt="Escolha um diretório"
                 options={@directories}
-                help_text="Vale em qualquer runner que ofereça um diretório com esse nome."
+                disabled={@project.id != nil}
+                help_text="Um dos diretórios que o runner oferece."
                 data-testid="project-directory"
               />
+            </div>
+            <div :if={is_nil(@project.id)} class="flex flex-wrap items-center gap-3">
+              <.button
+                type="button"
+                size="sm"
+                variant="outline"
+                icon="hero-sparkles"
+                phx-click="analyze"
+                disabled={
+                  @form[:runner_id].value in [nil, ""] or @form[:directory].value in [nil, ""]
+                }
+                data-testid="project-analyze"
+              >
+                Analisar com IA
+              </.button>
+              <span class="text-sm text-gray-500 dark:text-gray-400">
+                O agente estuda o diretório num worktree descartável e preenche este formulário para você revisar.
+              </span>
             </div>
           </.card_content>
         </.card>
@@ -287,7 +368,7 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
                     ~p"/api/github/webhook/#{@current_scope.workspace.slug}"
                   )}</code>
                   com o segredo guardado em Segredos como <code>GITHUB_WEBHOOK_SECRET</code>. As tarefas
-                  ficam em seu nome e rodam num runner online que ofereça este diretório.
+                  ficam em seu nome e rodam no runner do projeto (esperando por ele, se estiver offline).
                 </span>
               </p>
             </details>
@@ -298,6 +379,43 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
           <.button icon="hero-check" data-testid="project-save">Salvar</.button>
         </div>
       </.form>
+
+      <.card :if={@project.id} variant="outline" class="mt-6">
+        <.card_content>
+          <.section_heading
+            icon="hero-arrows-right-left"
+            title="Trocar o runner"
+            description="Leva o projeto para outro runner que ofereça o mesmo diretório. Tarefas já começadas continuam no runner delas."
+          />
+          <.form
+            for={to_form(%{"runner_id" => @project.runner_id}, as: :switch)}
+            id="project-switch-runner-form"
+            phx-submit="switch_runner"
+            class="flex flex-wrap items-end gap-3"
+          >
+            <div class="min-w-60 flex-1">
+              <.icon_field
+                field={to_form(%{"runner_id" => @project.runner_id}, as: :switch)[:runner_id]}
+                icon="hero-server"
+                type="select"
+                label="Novo runner"
+                prompt="Escolha o runner"
+                options={Enum.map(@runner_choices, &{&1.name, &1.id})}
+                no_margin
+                data-testid="project-switch-runner"
+              />
+            </div>
+            <.button
+              size="sm"
+              variant="outline"
+              icon="hero-arrows-right-left"
+              data-testid="project-switch-runner-save"
+            >
+              Trocar
+            </.button>
+          </.form>
+        </.card_content>
+      </.card>
     </Layouts.app>
     """
   end

@@ -20,8 +20,7 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
         "title" => "Corrigir login",
         "prompt" => "p",
         "pipeline_id" => pipeline.id,
-        "runner_id" => runner.id,
-        "directory" => "app",
+        "project_id" => project_on(runner, "app").id,
         "issue_url" => "https://github.com/acme/app/issues/42"
       })
 

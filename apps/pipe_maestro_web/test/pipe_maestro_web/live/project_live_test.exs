@@ -7,23 +7,26 @@ defmodule PipeMaestroWeb.ProjectLiveTest do
 
   setup :register_and_log_in_member
 
-  test "creates, edits and deletes a project, offering the runners' directories", %{
+  test "creates, edits and deletes a project, offering the chosen runner's directories", %{
     conn: conn,
     workspace: workspace,
     user: user
   } do
     {runner, _token} = runner_fixture(workspace, user)
-    with_directories(runner, [%{"name" => "retro_hex_chat", "git" => true}])
+    runner = with_directories(runner, [%{"name" => "retro_hex_chat", "git" => true}])
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/projects")
     assert has_element?(view, "[data-testid=no-projects]")
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/projects/new")
+    view |> form("#project-form", project: %{runner_id: runner.id}) |> render_change()
     assert view |> element("[data-testid=project-directory]") |> render() =~ "retro_hex_chat"
 
     html =
       view
-      |> form("#project-form", project: %{name: "", directory: "retro_hex_chat"})
+      |> form("#project-form",
+        project: %{name: "", runner_id: runner.id, directory: "retro_hex_chat"}
+      )
       |> render_submit()
 
     assert html =~ "dê um nome ao projeto"
@@ -33,6 +36,7 @@ defmodule PipeMaestroWeb.ProjectLiveTest do
       |> form("#project-form",
         project: %{
           name: "Retro Hex Chat",
+          runner_id: runner.id,
           directory: "retro_hex_chat",
           setup_command: "mix deps.get",
           test_command: "mix test",

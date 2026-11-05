@@ -1098,14 +1098,22 @@ defmodule PipeMaestro.Tasks do
   `online_runner_ids`: the job is handed over when the runner connects.
   """
   @spec waiting_for_runner?(Task.t(), MapSet.t()) :: boolean()
-  def waiting_for_runner?(%Task{id: task_id, runner_id: runner_id}, online_runner_ids) do
-    runner_id != nil and not MapSet.member?(online_runner_ids, runner_id) and
-      Repo.exists?(
-        from j in Job,
-          join: r in StageRun,
-          on: r.id == j.stage_run_id,
-          where: r.task_id == ^task_id and j.status == :queued
-      )
+  def waiting_for_runner?(%Task{runner_id: nil}, _online_runner_ids), do: false
+
+  def waiting_for_runner?(%Task{runner_id: runner_id} = task, online_runner_ids) do
+    not MapSet.member?(online_runner_ids, runner_id) and queued_job?(task)
+  end
+
+  defp queued_job?(%Task{stage_runs: runs}) when is_list(runs),
+    do: Enum.any?(runs, &match?(%StageRun{job: %Job{status: :queued}}, &1))
+
+  defp queued_job?(%Task{id: task_id}) do
+    Repo.exists?(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: r.task_id == ^task_id and j.status == :queued
+    )
   end
 
   @doc """

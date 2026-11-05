@@ -152,9 +152,12 @@ defmodule PipeMaestro.Projects.Project do
     runner_id = get_field(changeset, :runner_id)
     changed? = changed?(changeset, :runner_id) or changed?(changeset, :directory)
 
-    if not changed? or is_nil(runner_id) or not valid?(changeset, :directory),
-      do: changeset,
-      else: check_runner(changeset, active_runner(get_field(changeset, :workspace_id), runner_id))
+    workspace_id = get_field(changeset, :workspace_id)
+
+    if not changed? or is_nil(runner_id) or is_nil(workspace_id) or
+         not valid?(changeset, :directory),
+       do: changeset,
+       else: check_runner(changeset, active_runner(workspace_id, runner_id))
   end
 
   defp check_runner(changeset, nil),

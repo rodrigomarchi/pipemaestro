@@ -2,9 +2,10 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   @moduledoc """
   The workspace's tasks, newest first, searchable and updated live, and the
   form that starts one (empty, a copy of a task: `?duplicate=<id>`, or a task
-  the agent wrote: `?proposta=<id>`, `PipeMaestro.Proposals`): what to do,
-  which pipeline, and which online runner (with how busy it is) and directory
-  to work in. "Escrever com IA" asks the agent to write one from an idea. A
+  the agent wrote: `?proposta=<id>`, `PipeMaestro.Proposals`, or one for a
+  project: `?project_id=<id>`): what to do, which pipeline, and which project
+  it runs in (the project decides the runner and the directory; with the
+  runner offline, the task waits for it). "Escrever com IA" asks the agent to write one from an idea. A
   proposal already turned into a task leads to that task instead.
   """
   use PipeMaestroWeb, :live_view
@@ -13,8 +14,8 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
 
   alias Phoenix.Socket.Broadcast
-  alias PipeMaestro.{Jobs, Pipelines, Proposals, Runners, Tasks}
-  alias PipeMaestroWeb.{ProposalRequest, RunnerStatus}
+  alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Tasks}
+  alias PipeMaestroWeb.{ProjectChoice, ProposalRequest, RunnerStatus}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -32,7 +33,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
      |> assign(proposal_request: nil, from_proposal: false, proposal_job: nil)
      |> assign(pipelines: Pipelines.list_pipelines(workspace))
      |> load_tasks()
-     |> load_online_runners()}
+     |> load_projects()}
   end
 
   @impl true
@@ -77,17 +78,30 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     end
   end
 
+  def handle_params(%{"project_id" => id}, _uri, socket) do
+    params = %{"project_id" => id}
+
+    {:noreply,
+     assign(socket,
+       creating: true,
+       from_proposal: false,
+       proposal_job: nil,
+       params: params,
+       form: to_form(Tasks.change_task(params), as: "task")
+     )}
+  end
+
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info({:task_updated, _task}, socket), do: {:noreply, load_tasks(socket)}
 
   def handle_info(%Broadcast{event: "presence_diff"}, socket),
-    do: {:noreply, load_online_runners(socket)}
+    do: {:noreply, load_projects(socket)}
 
-  def handle_info(:runners_changed, socket), do: {:noreply, load_online_runners(socket)}
+  def handle_info(:runners_changed, socket), do: {:noreply, load_projects(socket)}
 
-  def handle_info({:job_updated, _job}, socket), do: {:noreply, load_online_runners(socket)}
+  def handle_info({:job_updated, _job}, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("open_new", _params, socket) do
@@ -162,41 +176,14 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     )
   end
 
-  defp load_online_runners(socket) do
+  defp load_projects(socket) do
     workspace = socket.assigns.current_scope.workspace
-    online = RunnerStatus.online_ids(workspace.id)
 
-    runners =
-      for runner <- Runners.list_runners(workspace), MapSet.member?(online, runner.id), do: runner
-
-    assign(socket, online_runners: runners, load: Jobs.load_by_runner(workspace))
+    assign(socket,
+      projects: Projects.list_projects(workspace),
+      online: RunnerStatus.online_ids(workspace.id)
+    )
   end
-
-  defp runner_options(runners, load) do
-    Enum.map(runners, &{runner_label(&1, Map.get(load, &1.id)), &1.id})
-  end
-
-  defp runner_label(runner, nil), do: "#{runner.name} (livre, capacidade #{runner.capacity})"
-
-  defp runner_label(runner, %{running: running, queued: queued}) do
-    waiting = if queued > 0, do: ", #{queued} na fila", else: ""
-    "#{runner.name} (#{running}/#{runner.capacity} em execução#{waiting})"
-  end
-
-  # The directories of the runner picked in the form, as select options.
-  defp directory_options(runners, runner_id) do
-    case Enum.find(runners, &(&1.id == runner_id)) do
-      nil -> []
-      runner -> Enum.map(runner.directories, &directory_option/1)
-    end
-  end
-
-  defp without_directories?(runners, runner_id) do
-    match?(%{directories: []}, Enum.find(runners, &(&1.id == runner_id)))
-  end
-
-  defp directory_option(%{"name" => name, "git" => true}), do: {name, name}
-  defp directory_option(%{"name" => name}), do: {"#{name} (sem git: roda na pasta)", name}
 
   @impl true
   def render(assigns) do
@@ -268,10 +255,11 @@ defmodule PipeMaestroWeb.TaskLive.Index do
               {stage_progress(task)}
             </span>
           </:col>
-          <:col :let={task} label="Onde">
-            <span class="font-mono text-xs text-gray-600 dark:text-gray-300">
+          <:col :let={task} label="Projeto">
+            <span class="text-gray-900 dark:text-white">{(task.project || %{})["name"]}</span>
+            <p class="font-mono text-xs text-gray-500 dark:text-gray-400">
               {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
-            </span>
+            </p>
           </:col>
           <:col :let={task} label="Criada">
             <span class="text-gray-500 dark:text-gray-400">{time_ago(task.inserted_at, @now)}</span>
@@ -282,7 +270,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
           <.empty
             data-testid="no-tasks"
             title="Nenhuma tarefa ainda"
-            description="Escolha um pipeline, um runner online e um diretório dele, e descreva o que deve ser feito."
+            description="Escolha um pipeline e um projeto, e descreva o que deve ser feito."
           >
             <:icon><.icon name="hero-queue-list" /></:icon>
             <:actions>
@@ -305,13 +293,11 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             class="underline"
           >Pipelines</.link>.
         </.alert>
-        <.alert
-          :if={@online_runners == []}
-          color="warning"
-          class="mb-4"
-          data-testid="no-online-runners"
-        >
-          Nenhum runner online. Rode <code>make runner.start ROOT=~/src</code> numa máquina conectada.
+        <.alert :if={@projects == []} color="warning" class="mb-4" data-testid="task-no-projects">
+          Este workspace ainda não tem projetos. Crie um em <.link
+            navigate={~p"/w/#{@current_scope.workspace.slug}/projects/new"}
+            class="underline"
+          >Projetos</.link>: um diretório de código de um runner.
         </.alert>
 
         <.alert
@@ -358,35 +344,24 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             options={Enum.map(@pipelines, &{&1.name, &1.id})}
             data-testid="task-pipeline"
           />
-          <div class="grid gap-4 sm:grid-cols-2">
-            <.icon_field
-              field={@form[:runner_id]}
-              icon="hero-server-stack"
-              type="select"
-              label="Runner"
-              prompt="Escolha um runner online"
-              options={runner_options(@online_runners, @load)}
-              data-testid="task-runner"
-            />
-            <.icon_field
-              field={@form[:directory]}
-              icon="hero-folder-open"
-              type="select"
-              label="Diretório"
-              prompt="Escolha um diretório"
-              options={directory_options(@online_runners, @params["runner_id"])}
-              data-testid="task-directory"
-            />
-          </div>
+          <.icon_field
+            field={@form[:project_id]}
+            icon="hero-folder-open"
+            type="select"
+            label="Projeto"
+            prompt="Escolha um projeto"
+            options={ProjectChoice.options(@projects, @online, :task)}
+            help_text="O projeto decide o runner e o diretório em que a tarefa roda."
+            data-testid="task-project"
+          />
           <.alert
-            :if={without_directories?(@online_runners, @params["runner_id"])}
-            color="warning"
+            :if={ProjectChoice.offline_runner(@projects, @online, @params["project_id"])}
+            color="info"
             class="mb-4"
-            data-testid="runner-without-directories"
+            with_icon
+            data-testid="task-project-offline"
           >
-            Este runner não oferece diretórios: ele foi iniciado sem raiz. Reinicie-o apontando
-            para a pasta dos seus projetos, por exemplo <code>make runner.start ROOT=~/src</code>
-            (a raiz fica salva para as próximas vezes).
+            O runner {ProjectChoice.offline_runner(@projects, @online, @params["project_id"])} está offline: a tarefa fica na fila e começa quando ele conectar.
           </.alert>
           <div class="flex justify-end gap-2">
             <.button type="button" variant="ghost" color="gray" phx-click="close_new">

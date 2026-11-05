@@ -19,6 +19,7 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
         workspace,
         %{
           "name" => "App",
+          "runner_id" => runner.id,
           "directory" => "app",
           "github_repo" => "acme/app",
           "trigger_label" => "claude",
@@ -69,7 +70,7 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
     |> post(~p"/api/github/webhook/#{workspace.slug}", body)
   end
 
-  test "the trigger label on an issue starts a task on an online runner, once", ctx do
+  test "the trigger label on an issue starts a task on the project's runner, once", ctx do
     bring_online(ctx.runner)
 
     conn = deliver(ctx.conn, ctx.workspace, labeled("claude"))
@@ -89,7 +90,8 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
 
     # A runner that cannot study a directory cannot triage.
     conn = deliver(ctx.conn, ctx.workspace, labeled("claude"))
-    assert %{"error" => "nenhum runner online e atualizado" <> _} = json_response(conn, 422)
+    assert %{"error" => "a triagem não pôde começar: " <> error} = json_response(conn, 422)
+    assert error =~ "atualize este runner"
 
     {:ok, runner} =
       Runners.record_hello(
@@ -136,13 +138,8 @@ defmodule PipeMaestroWeb.GithubWebhookControllerTest do
              deliver(build_conn(), ctx.workspace, %{}, event: "ping") |> json_response(200)
   end
 
-  test "refuses a bad signature and says when no runner can take it", ctx do
+  test "refuses a bad signature and a workspace without the webhook", ctx do
     assert deliver(ctx.conn, ctx.workspace, labeled("claude"), secret: "outro").status == 401
-
-    assert %{"error" => error} =
-             deliver(build_conn(), ctx.workspace, labeled("claude")) |> json_response(422)
-
-    assert error =~ "runner online"
     assert deliver(build_conn(), workspace_fixture(), labeled("claude")).status == 404
   end
 end

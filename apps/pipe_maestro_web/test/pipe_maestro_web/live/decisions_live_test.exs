@@ -19,8 +19,7 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
         "title" => title,
         "prompt" => "faça",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_on(ctx.runner, "app").id
       })
 
     job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
@@ -127,8 +126,7 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
         "title" => title,
         "prompt" => "faça",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_on(ctx.runner, "app").id
       })
 
     job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job

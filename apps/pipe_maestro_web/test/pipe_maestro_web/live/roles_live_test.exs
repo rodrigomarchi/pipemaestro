@@ -51,8 +51,7 @@ defmodule PipeMaestroWeb.RolesLiveTest do
       "title" => "T",
       "prompt" => "p",
       "pipeline_id" => pipeline.id,
-      "runner_id" => runner.id,
-      "directory" => "app"
+      "project_id" => project_on(runner, "app").id
     }
 
     {:ok, mine} = Tasks.create_task(ctx.member, ctx.workspace, attrs)
