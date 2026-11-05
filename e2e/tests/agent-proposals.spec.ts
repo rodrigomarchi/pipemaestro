@@ -1,8 +1,8 @@
 /**
  * @section Tarefas e pipelines
  * @flow A [done] A member asks the agent to write a task from an idea, without auto-approval; the proposal opens the new-task form filled with it, and the task runs
- * @flow D [todo] A member asks the agent to write a task for a chosen pipeline, auto-approval on (the default); the task is created and started without review
- * @flow E [todo] A task the agent finds not ready is left for review, saying why it was not created on its own
+ * @flow D [done] A member asks the agent to write a task for a chosen pipeline, auto-approval on (the default); the task is created and started without review
+ * @flow E [done] A task the agent finds not ready is left for review, saying why it was not created on its own
  * @flow B [done] A task stops for a decision; the agent suggests one, and applying it (retry with its instructions) lets the task finish
  * @flow C [done] An admin asks the agent to improve a pipeline from how its tasks went; the notes are saved and the revised pipeline becomes its next version
  */
