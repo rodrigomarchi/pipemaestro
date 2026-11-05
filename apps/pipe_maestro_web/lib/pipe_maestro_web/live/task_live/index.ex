@@ -4,7 +4,8 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   form that starts one (empty, a copy of a task: `?duplicate=<id>`, or a task
   the agent wrote: `?proposta=<id>`, `PipeMaestro.Proposals`): what to do,
   which pipeline, and which online runner (with how busy it is) and directory
-  to work in. "Escrever com IA" asks the agent to write one from an idea.
+  to work in. "Escrever com IA" asks the agent to write one from an idea. A
+  proposal already turned into a task leads to that task instead.
   """
   use PipeMaestroWeb, :live_view
 
@@ -28,7 +29,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     {:ok,
      socket
      |> assign(page_title: "Tarefas", creating: false, form: nil, params: %{}, query: "")
-     |> assign(proposal_request: nil, from_proposal: false)
+     |> assign(proposal_request: nil, from_proposal: false, proposal_job: nil)
      |> assign(pipelines: Pipelines.list_pipelines(workspace))
      |> load_tasks()
      |> load_online_runners()}
@@ -42,6 +43,8 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     {:noreply,
      assign(socket,
        creating: true,
+       from_proposal: false,
+       proposal_job: nil,
        params: params,
        form: to_form(Tasks.change_task(params), as: "task")
      )}
@@ -53,6 +56,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     with {:ok, _uuid} <- Ecto.UUID.cast(id),
          job = Proposals.get_proposal!(workspace, id),
          "task" <- Proposals.kind(job),
+         nil <- Proposals.created_task_id(job),
          {:ok, result} <- Proposals.result(job) do
       params = Map.new(result.task_params, fn {k, v} -> {k, v || ""} end)
 
@@ -60,10 +64,14 @@ defmodule PipeMaestroWeb.TaskLive.Index do
        assign(socket,
          creating: true,
          from_proposal: true,
+         proposal_job: job,
          params: params,
          form: to_form(Tasks.change_task(params), as: "task")
        )}
     else
+      task_id when is_binary(task_id) ->
+        {:noreply, to_created_task(socket, task_id)}
+
       _no_task ->
         {:noreply, put_flash(socket, :error, "Esta proposta não tem uma tarefa pronta.")}
     end
@@ -85,7 +93,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   def handle_event("open_new", _params, socket) do
     {:noreply,
      socket
-     |> assign(creating: true, params: %{})
+     |> assign(creating: true, params: %{}, from_proposal: false, proposal_job: nil)
      |> assign(form: to_form(Tasks.change_task(), as: "task"))}
   end
 
@@ -105,7 +113,9 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     do: {:noreply, socket |> assign(query: query) |> load_tasks()}
 
   def handle_event("close_new", _params, socket),
-    do: {:noreply, assign(socket, creating: false, form: nil, from_proposal: false)}
+    do:
+      {:noreply,
+       assign(socket, creating: false, form: nil, from_proposal: false, proposal_job: nil)}
 
   def handle_event("validate", %{"task" => params}, socket) do
     form = params |> Tasks.change_task() |> Map.put(:action, :validate) |> to_form(as: "task")
@@ -115,7 +125,13 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   def handle_event("create", %{"task" => params}, socket) do
     %{user: user, workspace: workspace} = socket.assigns.current_scope
 
-    case Tasks.create_task(user, workspace, params) do
+    result =
+      case socket.assigns.proposal_job do
+        nil -> Tasks.create_task(user, workspace, params)
+        job -> Proposals.create_task(user, workspace, job, params)
+      end
+
+    case result do
       {:ok, task} ->
         {:noreply,
          socket
@@ -123,8 +139,19 @@ defmodule PipeMaestroWeb.TaskLive.Index do
          |> push_navigate(to: ~p"/w/#{workspace.slug}/tasks/#{task.id}")}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, form: to_form(changeset, as: "task"), params: params)}
+        if Keyword.has_key?(changeset.errors, :proposal_job_id),
+          do:
+            {:noreply,
+             to_created_task(socket, Proposals.created_task_id(socket.assigns.proposal_job))},
+          else: {:noreply, assign(socket, form: to_form(changeset, as: "task"), params: params)}
     end
+  end
+
+  # A proposal becomes one task at most: once it has, it leads there.
+  defp to_created_task(socket, task_id) do
+    socket
+    |> put_flash(:info, "Esta proposta já virou uma tarefa.")
+    |> push_navigate(to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/tasks/#{task_id}")
   end
 
   defp load_tasks(socket) do
