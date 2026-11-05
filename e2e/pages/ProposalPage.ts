@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { waitForLiveView } from "../helpers/liveView";
+import { selectProject } from "../helpers/projectSelect";
 
 /**
  * Asking the agent for a proposal (pipeline, task, decision, improvement) and
@@ -13,12 +14,11 @@ export class ProposalPage {
   }
 
   /**
-   * Fills the open request form (picks the runner, then one of its git
-   * directories, then the text when given) and sends it; waits on the proposal.
+   * Fills the open request form (picks the project, then the text when given)
+   * and sends it; waits on the proposal.
    */
   async submitRequest(request: {
-    runner: string;
-    directory: string;
+    project: string;
     text?: string;
     focus?: string;
     /** Task: the pipeline to write for (by default the agent picks one). */
@@ -26,9 +26,7 @@ export class ProposalPage {
     /** Task: whether to create and start the task without review (on by default). */
     autoApprove?: boolean;
   }) {
-    await this.page.getByTestId("proposal-request-runner").selectOption({ label: request.runner });
-    await expect(this.directoryOptions.filter({ hasText: request.directory })).toHaveCount(1);
-    await this.page.getByTestId("proposal-request-directory").selectOption(request.directory);
+    await selectProject(this.page.getByTestId("proposal-request-project"), request.project);
     if (request.text) await this.page.getByTestId("proposal-request-text").fill(request.text);
     if (request.focus) await this.page.getByTestId("proposal-request-focus").fill(request.focus);
     if (request.pipeline)
@@ -48,9 +46,9 @@ export class ProposalPage {
     await waitForLiveView(this.page);
   }
 
-  /** The directory options of the open request form. */
-  get directoryOptions(): Locator {
-    return this.page.getByTestId("proposal-request-directory").locator("option");
+  /** The project options of the open request form. */
+  get projectOptions(): Locator {
+    return this.page.getByTestId("proposal-request-project").locator("option");
   }
 
   get status(): Locator {
@@ -74,13 +72,14 @@ export class ProposalPage {
     return this.page.getByTestId(`proposal-stage-${index}`);
   }
 
-  projectField(name: "name" | "setup" | "test" | "lint" | "copy-paths"): Locator {
+  /** Project: a field of the project form the agent filled. */
+  projectField(name: "name" | "setup" | "test" | "lint" | "copy-paths" | "notes"): Locator {
     return this.page.getByTestId(`proposal-project-${name}`);
   }
 
-  /** Pipeline: saves the project and lands on the pipeline form filled with the proposal. */
-  async saveProject() {
-    await this.page.getByTestId("proposal-save-project").click();
+  /** Pipeline: lands on the pipeline form filled with the proposal. */
+  async openPipeline() {
+    await this.page.getByTestId("proposal-open-pipeline").click();
     await this.page.waitForURL(/\/pipelines\/new\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();

@@ -9,8 +9,8 @@ Base: `01-plano.md` (critérios 1–14, decisões 1–4) e os testes de `02-test
 | Testes novos da etapa 2 (domínio: 51, web: 22) | **todos passam**, sem enfraquecer nenhum (dois ajustes justificados abaixo) |
 | `mix test` (domínio / web / protocolo / runner) | 321 / 321 / 77 / 187, todos passam |
 | `make ci.quick` | **sai 0** (compile sem avisos, format, deps, credo strict, testes com cobertura) |
-| `mix dialyzer` | ver "Pendências" |
-| `make e2e` / `make e2e.shots` | ver "Pendências" |
+| `mix dialyzer` (raiz) | **passa**, 0 erros |
+| `make e2e.typecheck` / `make e2e` / `make e2e.shots` | **pendente**: page objects migrados em parte, specs ainda não (ver "Pendências") |
 
 ## O que mudou, por app
 
@@ -111,4 +111,23 @@ cd apps/pipe_maestro_web && mix test test/pipe_maestro_web/live/project_live_run
 
 ## Pendências
 
-(preenchidas ao fim da etapa)
+**Playwright (`e2e/`) não está pronto.** Os page objects começaram a ser migrados
+(`TasksPage`, `JobsPage`, `ProposalPage` e `ProjectsPage` escolhem o projeto; novo
+`e2e/helpers/projectSelect.ts`), mas os specs ainda usam a API antiga, e
+`make e2e.typecheck` falha (`runner`/`directory` em `tasks.create`, `submitRequest`,
+`directoryOptions`, `saveProject`, `projects.create` sem `runner`). Falta:
+
+1. em cada spec que dispara trabalho (`task-pipeline`, `decision-questionnaire`,
+   `board-alerts`, `agent-proposals`, `pipeline-proposal`, `job-execution`,
+   `runner-connection`), subir o runner com `--root` (`RunnerProcess.createCodeRoot()`),
+   criar o projeto (`ProjectsPage.create({ name, runner, directory })`) e passar
+   `project` em vez de `runner`/`directory`;
+2. `job-execution` e `runner-connection` liam `fake-claude.txt` do `workdir` do runner:
+   a execução solta agora roda num worktree descartável, então essas asserções
+   precisam olhar o que é observável na tela (o fluxo A do `@flow` também muda de texto);
+3. `pipeline-proposal`: a proposta não salva mais o projeto; usar
+   `proposal-open-pipeline` (o `ProposalPage.saveProject` virou abrir o pipeline);
+4. rodar `make e2e` e `make e2e.shots` e auditar as telas novas (lista e formulário de
+   projetos, modais de nova tarefa e de execução, tarefa, board) claro e escuro.
+
+Nenhum app mudou por causa do e2e; o `fake_claude` já responde ao tipo `project`.

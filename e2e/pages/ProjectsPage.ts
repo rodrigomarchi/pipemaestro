@@ -20,10 +20,11 @@ export class ProjectsPage {
   async create(project: {
     name: string;
     /** The runner the project lives on; its directories fill the next select. */
-    runner?: string;
+    runner: string;
     directory: string;
     setup?: string;
     test?: string;
+    lint?: string;
     copyPaths?: string;
     /** Captures the filled form under this name (E2E_SHOTS). */
     shot?: string;
@@ -31,10 +32,11 @@ export class ProjectsPage {
     await this.page.getByTestId("new-project").click();
     await waitForLiveView(this.page);
     await this.page.getByTestId("project-name").fill(project.name);
-    if (project.runner) await this.pickRunner(project.runner);
+    await this.pickRunner(project.runner);
     await this.page.getByTestId("project-directory").selectOption(project.directory);
     if (project.setup) await this.page.getByTestId("project-setup").fill(project.setup);
     if (project.test) await this.page.getByTestId("project-test").fill(project.test);
+    if (project.lint) await this.page.getByTestId("project-lint").fill(project.lint);
     if (project.copyPaths) await this.page.getByTestId("project-copy-paths").fill(project.copyPaths);
     if (project.shot) await shot(this.page, project.shot);
     await this.page.getByTestId("project-save").click();
@@ -44,7 +46,7 @@ export class ProjectsPage {
   /** Picks the runner in the open form and waits for its directories. */
   async pickRunner(runner: string) {
     await this.page.getByTestId("project-runner").selectOption({ label: runner });
-    await expect(this.page.getByTestId("project-directory").locator("option").nth(1)).toBeAttached();
+    await expect(this.page.getByTestId("project-directory").locator("option")).not.toHaveCount(1);
   }
 
   /**
@@ -73,6 +75,23 @@ export class ProjectsPage {
   /** Whether the project's runner is online. */
   status(directory: string): Locator {
     return this.page.getByTestId(`project-status-${directory}`);
+  }
+
+  /** The warning of a project whose runner no longer offers its directory. */
+  directoryGone(directory: string): Locator {
+    return this.page.getByTestId(`project-directory-gone-${directory}`);
+  }
+
+  /** The latest tasks of the project. */
+  recentTasks(directory: string): Locator {
+    return this.page.getByTestId(`project-recent-tasks-${directory}`);
+  }
+
+  /** Opens the new-job form with the project already chosen. */
+  async newJob(directory: string) {
+    await this.page.getByTestId(`project-new-job-${directory}`).click();
+    await this.page.waitForURL(/\/jobs\?project_id=/);
+    await waitForLiveView(this.page);
   }
 
   /** Opens the new-task form with the project already chosen. */
