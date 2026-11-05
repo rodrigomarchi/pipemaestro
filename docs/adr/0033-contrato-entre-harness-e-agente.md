@@ -74,3 +74,7 @@ trabalho no git e corrige; o prompt só carrega fatos e o contrato, nunca proibi
   conhecida.
 - Pipelines com entrega `commit` passam a significar "commits do agente, conferidos", sem
   push.
+- Na última etapa, os artefatos saem da branch mas ficam no disco, sem rastreio, porque o
+  runner lê o artefato da etapa depois do agente. Um gate do pipeline que exija o
+  `git status` inteiro vazio precisa deixar a pasta de fora:
+  `git status --porcelain -- . ':(exclude).control-plane'`.
