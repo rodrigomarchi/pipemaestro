@@ -12,6 +12,7 @@ defmodule PipeMaestroWeb.AuditLive do
 
   @labels %{
     "task.created" => "Tarefa criada",
+    "task.auto_created" => "Tarefa criada automaticamente da proposta",
     "task.decided" => "Decisão tomada",
     "task.canceled" => "Tarefa cancelada",
     "pipeline.saved" => "Pipeline salvo",

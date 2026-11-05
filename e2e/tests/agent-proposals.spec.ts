@@ -1,11 +1,14 @@
 /**
  * @section Tarefas e pipelines
- * @flow A [done] A member asks the agent to write a task from an idea; the proposal opens the new-task form filled with it, and the task runs
+ * @flow A [done] A member asks the agent to write a task from an idea, without auto-approval; the proposal opens the new-task form filled with it, and the task runs
+ * @flow D [done] A member asks the agent to write a task for a chosen pipeline, auto-approval on (the default); the task is created and started without review
+ * @flow E [done] A task the agent finds not ready is left for review, saying why it was not created on its own
  * @flow B [done] A task stops for a decision; the agent suggests one, and applying it (retry with its instructions) lets the task finish
  * @flow C [done] An admin asks the agent to improve a pipeline from how its tasks went; the notes are saved and the revised pipeline becomes its next version
  */
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
+import { waitForLiveView } from "../helpers/liveView";
 import { RunnerProcess } from "../helpers/runnerProcess";
 import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
@@ -63,8 +66,9 @@ test.describe("Agent proposals", () => {
     await tasks.open(workspace.slug);
     await app.page.getByTestId("task-generate").click();
     await app.page.getByTestId("proposal-request-text").fill("O login trava quando muita gente entra junto.");
+    await expect(app.page.getByTestId("proposal-request-auto-approve")).toBeChecked();
     await shot(app.page, "task-proposal-request");
-    await proposal.submitRequest({ runner: runnerName, directory: "app" });
+    await proposal.submitRequest({ runner: runnerName, directory: "app", autoApprove: false });
     await proposal.waitForAnswer();
     await expect(app.page.getByTestId("proposal-task-title")).toHaveText("Destravar o login sob carga");
     await expect(app.page.getByTestId("proposal-task-prompt")).toContainText("Critérios de aceite");
@@ -76,6 +80,39 @@ test.describe("Agent proposals", () => {
     await shot(app.page, "task-proposal-form");
     await app.page.getByTestId("task-submit").click();
     await expect(tasks.status).toHaveText("Concluída", { timeout: 60_000 });
+
+    // Flow D: a task written for a chosen pipeline, created and started without review.
+    await tasks.open(workspace.slug);
+    await app.page.getByTestId("task-generate").click();
+    await app.page.getByTestId("proposal-request-text").fill("O login trava de novo.");
+    await proposal.submitRequest({ runner: runnerName, directory: "app", pipeline: "Correção de bug" });
+    // The agent names "Prompt único", but the chosen pipeline holds. Watching the proposal, the
+    // person is taken to the task; had it been created before the page connected, the link leads there.
+    const taskUrl = /\/tasks\/[0-9a-f-]+$/;
+    await Promise.race([
+      app.page.waitForURL(taskUrl, { timeout: 60_000 }),
+      proposal.createdTaskLink.waitFor({ timeout: 60_000 }),
+    ]);
+    if (!taskUrl.test(app.page.url())) await proposal.createdTaskLink.click();
+    await app.page.waitForURL(taskUrl);
+    await waitForLiveView(app.page);
+    await expect(app.page.getByTestId("task-prompt-text")).toContainText("Critérios de aceite");
+    await expect(app.page.getByTestId("task-pipeline-name")).toContainText("Correção de bug");
+    await app.page.goBack();
+    await waitForLiveView(app.page);
+    await expect(proposal.createdTaskLink).toBeVisible();
+    await expect(app.page.getByTestId("proposal-create-task")).toHaveCount(0);
+    await shot(app.page, "task-proposal-auto-created");
+
+    // Flow E: a task the agent finds not ready stays for review.
+    await tasks.open(workspace.slug);
+    await app.page.getByTestId("task-generate").click();
+    await app.page.getByTestId("proposal-request-text").fill("Melhorar o login [nao-pronta]");
+    await proposal.submitRequest({ runner: runnerName, directory: "app" });
+    await proposal.waitForAnswer();
+    await expect(proposal.autoApproveSkipped).toContainText("Qual o limite de logins simultâneos?");
+    await expect(app.page.getByTestId("proposal-create-task")).toBeVisible();
+    await shot(app.page, "task-proposal-auto-skipped");
 
     // Flow B: a decision suggested by the agent.
     await tasks.open(workspace.slug);
@@ -113,8 +150,8 @@ test.describe("Agent proposals", () => {
 
     await projects.open(workspace.slug);
     await app.page.goto(`/w/${workspace.slug}/proposals`);
-    // The task, the decision, the improvement, and the analysis the block asked for by itself.
-    await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(4);
+    // Three tasks, the decision, the improvement, and the analysis the block asked for by itself.
+    await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(6);
     await shot(app.page, "proposals");
   });
 });

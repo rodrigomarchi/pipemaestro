@@ -65,6 +65,34 @@ defmodule PipeMaestro.TasksTest do
     Tasks.get_task!(ctx.workspace, task.id)
   end
 
+  describe "create_task/4 from a proposal" do
+    test "links the task to the proposal's job, once", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+
+      attrs = %{
+        "title" => "Da proposta",
+        "prompt" => "x",
+        "pipeline_id" => ctx.pipeline.id,
+        "runner_id" => ctx.runner.id,
+        "directory" => "app"
+      }
+
+      assert {:ok, task} = Tasks.create_task(ctx.user, ctx.workspace, attrs, proposal: job)
+      assert task.proposal_job_id == job.id
+
+      assert {:error, changeset} =
+               Tasks.create_task(ctx.user, ctx.workspace, attrs, proposal: job)
+
+      assert "esta proposta já virou uma tarefa" in errors_on(changeset).proposal_job_id
+    end
+
+    test "the form cannot forge the link", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      task = create_task(ctx, %{"proposal_job_id" => job.id})
+      assert task.proposal_job_id == nil
+    end
+  end
+
   describe "create_task/3" do
     test "snapshots the pipeline, names a branch and hands the first stage to the runner", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})

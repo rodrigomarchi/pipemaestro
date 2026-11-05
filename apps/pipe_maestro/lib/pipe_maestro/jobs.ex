@@ -434,12 +434,35 @@ defmodule PipeMaestro.Jobs do
   defp get_job(id), do: Repo.get!(Job, id)
 
   # A job that runs a task's stage moves its task along once it ends; the
-  # analysis of a paused task's failure gives it its questionnaire.
+  # analysis of a paused task's failure gives it its questionnaire; a task
+  # proposal may become its task.
   defp finished(%Job{stage_run_id: nil, context: %{"proposal" => %{"kind" => "analysis"}}} = job),
     do: PipeMaestro.Tasks.analysis_finished(job)
 
+  defp finished(%Job{stage_run_id: nil, context: %{"proposal" => %{"kind" => "task"}}} = job),
+    do: PipeMaestro.Proposals.job_finished(job)
+
   defp finished(%Job{stage_run_id: nil}), do: :ok
   defp finished(%Job{} = job), do: PipeMaestro.Tasks.job_finished(job)
+
+  @doc """
+  Merges `changes` into a proposal's own context (`"proposal"`, see
+  `PipeMaestro.Proposals`), under a lock on the job's row so no other write
+  is lost, and tells whoever watches the job.
+  """
+  @spec update_proposal(Job.t(), map()) :: Job.t()
+  def update_proposal(%Job{id: id}, changes) do
+    {:ok, job} =
+      Repo.transaction(fn ->
+        job = Repo.one!(from j in Job, where: j.id == ^id, lock: "FOR UPDATE")
+        context = Map.update(job.context, "proposal", changes, &Map.merge(&1, changes))
+        job |> Ecto.Changeset.change(context: context) |> Repo.update!()
+      end)
+
+    job = preload(job)
+    notify(job)
+    job
+  end
 
   defp fetch_for_runner(%Runner{id: runner_id}, job_id) do
     with {:ok, id} <- Ecto.UUID.cast(job_id),

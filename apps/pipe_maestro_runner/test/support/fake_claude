@@ -20,6 +20,8 @@
 #     runs one more tool (a Bash call and its result) before answering
 #   a prompt with "[limite]" reports the account near its usage limits (a
 #     five-hour window at 86%)
+#   a prompt with "[nao-pronta]" has the task proposal ("task" below) answer
+#     that the task is not ready, with one question
 #
 # A JSON Schema whose "$comment" is "pipemaestro-kind:<kind>" (a proposal,
 # PipeMaestro.Proposals)
@@ -142,6 +144,11 @@ if [ -n "$structured" ]; then
       ;;
     task)
       output='{"analise":"O README do app descreve o login; o fake_claude leu o projeto.","titulo":"Destravar o login sob carga","descricao":"## Problema\n\nO login trava com muitos acessos.\n\n## Critérios de aceite\n\n- 100 logins simultâneos terminam em menos de 2 s.","pipeline":"Prompt único","pronta":true,"perguntas":[]}'
+      case "$prompt" in
+        *"[nao-pronta]"*)
+          output='{"analise":"O pedido não diz quantos logins o app deve aguentar.","titulo":"Melhorar o login","descricao":"## Problema\n\nO login precisa melhorar.","pipeline":"Prompt único","pronta":false,"perguntas":["Qual o limite de logins simultâneos?"]}'
+          ;;
+      esac
       ;;
     decision)
       output='{"diagnostico":"A etapa parou porque **falta saber o navegador**.","acao":"retry","instrucoes":"Considere o Chrome e siga. [desbloqueio]","alternativas":[{"acao":"cancel","motivo":"Se o problema não reproduzir em nenhum navegador."}]}'

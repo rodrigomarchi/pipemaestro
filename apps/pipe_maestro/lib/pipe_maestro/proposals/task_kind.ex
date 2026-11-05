@@ -6,6 +6,13 @@ defmodule PipeMaestro.Proposals.TaskKind do
   acceptance criteria) and which of the workspace's pipelines fits, saying
   whether the request is clear enough to run on its own. The person opens the
   new-task form filled with it.
+
+  The request may name the pipeline (`pipeline_id`): the agent writes for it,
+  and the proposal uses it whatever the agent names back (its own suggestion
+  only if the pipeline is gone since). With `auto_approve`, the task is
+  created and started as the job ends, on behalf of who asked
+  (`PipeMaestro.Proposals.job_finished/1`); a request without it (an older
+  one, or a triage) waits for review.
   """
   @behaviour PipeMaestro.Proposals.Kind
 
@@ -20,7 +27,9 @@ defmodule PipeMaestro.Proposals.TaskKind do
     directory: :string,
     request: :string,
     issue_url: :string,
-    feedback: :string
+    feedback: :string,
+    pipeline_id: :binary_id,
+    auto_approve: :boolean
   }
 
   @impl true
@@ -33,7 +42,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
   def icon, do: "hero-queue-list"
 
   @impl true
-  def changeset(attrs, _workspace) do
+  def changeset(attrs, workspace) do
     {%{}, @types}
     |> Changeset.cast(attrs, Map.keys(@types))
     |> Changeset.validate_required([:runner_id], message: "escolha um runner online")
@@ -44,6 +53,19 @@ defmodule PipeMaestro.Proposals.TaskKind do
     |> Changeset.validate_format(:issue_url, ~r{^https://github\.com/[^/]+/[^/]+/issues/\d+$},
       message: "use o link de uma issue do GitHub"
     )
+    |> validate_pipeline(workspace)
+  end
+
+  defp validate_pipeline(changeset, workspace) do
+    case Changeset.get_change(changeset, :pipeline_id) do
+      nil ->
+        changeset
+
+      id ->
+        if Pipelines.get_pipeline(workspace.id, id),
+          do: changeset,
+          else: Changeset.add_error(changeset, :pipeline_id, "não é um pipeline deste workspace")
+    end
   end
 
   @impl true
@@ -61,9 +83,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
 
       #{Instructions.revision(previous && previous.structured_output, input[:feedback])}
 
-      ## Os pipelines deste workspace
-
-      #{pipelines(workspace)}
+      #{pipelines_section(workspace, input[:pipeline_id])}
       """,
       system_prompt: system_prompt(),
       output_schema: schema(),
@@ -72,16 +92,38 @@ defmodule PipeMaestro.Proposals.TaskKind do
     }
   end
 
+  defp pipelines_section(workspace, nil),
+    do: "## Os pipelines deste workspace\n\n" <> pipelines(workspace)
+
+  defp pipelines_section(workspace, pipeline_id) do
+    case Pipelines.get_pipeline(workspace.id, pipeline_id) do
+      nil ->
+        pipelines_section(workspace, nil)
+
+      pipeline ->
+        """
+        ## O pipeline desta tarefa
+
+        #{describe(pipeline)}
+
+        A pessoa escolheu este pipeline: escreva a tarefa para as etapas dele e devolva o
+        nome dele em `pipeline`.
+        """
+    end
+  end
+
+  defp describe(pipeline) do
+    stages = Enum.map_join(pipeline.stages, " → ", & &1.name)
+    "- **#{pipeline.name}**: #{pipeline.description || "sem descrição"} (#{stages})"
+  end
+
   defp pipelines(workspace) do
     case Pipelines.list_pipelines(workspace) do
       [] ->
         "Nenhum ainda: deixe `pipeline` vazio."
 
       pipelines ->
-        Enum.map_join(pipelines, "\n", fn pipeline ->
-          stages = Enum.map_join(pipeline.stages, " → ", & &1.name)
-          "- **#{pipeline.name}**: #{pipeline.description || "sem descrição"} (#{stages})"
-        end)
+        Enum.map_join(pipelines, "\n", &describe/1)
     end
   end
 
@@ -140,8 +182,9 @@ defmodule PipeMaestro.Proposals.TaskKind do
       {:error, "O agente não devolveu o título e a descrição da tarefa."}
     else
       input = Proposals.input(job)
-      pipeline_name = Proposals.text(output["pipeline"])
-      pipeline = find_pipeline(job, pipeline_name)
+      suggested = Proposals.text(output["pipeline"])
+      pipeline = chosen_pipeline(job, input["pipeline_id"]) || find_pipeline(job, suggested)
+      pipeline_name = if pipeline, do: pipeline.name, else: suggested
 
       {:ok,
        %{
@@ -151,6 +194,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
          pipeline_name: pipeline_name,
          pipeline: pipeline,
          ready: output["pronta"] == true,
+         auto_approve: input["auto_approve"] == true,
          questions: output["perguntas"] |> List.wrap() |> Enum.filter(&is_binary/1),
          task_params: %{
            "title" => String.slice(title, 0, 120),
@@ -163,6 +207,10 @@ defmodule PipeMaestro.Proposals.TaskKind do
        }}
     end
   end
+
+  defp chosen_pipeline(_job, nil), do: nil
+
+  defp chosen_pipeline(job, id), do: Pipelines.get_pipeline(job.workspace_id, id)
 
   defp find_pipeline(_job, ""), do: nil
 

@@ -71,7 +71,16 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp assign_result(%{assigns: %{job: job}} = socket) do
     socket =
-      assign(socket, result: nil, error: nil, form: nil, project: nil, task: nil, current: false)
+      assign(socket,
+        result: nil,
+        error: nil,
+        form: nil,
+        project: nil,
+        task: nil,
+        current: false,
+        created_task_id: nil,
+        auto_approve: nil
+      )
 
     if Job.active?(job) do
       socket
@@ -122,17 +131,28 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     assign(socket, task: task, current: DecisionKind.current?(socket.assigns.input, task))
   end
 
-  defp assign_review(socket, "task"), do: socket
+  # The task the proposal became (on its own or by hand), or why it was left
+  # for review.
+  defp assign_review(%{assigns: %{job: job}} = socket, "task") do
+    assign(socket,
+      created_task_id: Proposals.created_task_id(job),
+      auto_approve: Proposals.auto_approve(job)
+    )
+  end
 
   defp directory_project(socket, directory),
     do: Projects.for_directory(socket.assigns.current_scope.workspace, directory)
 
   @impl true
   def handle_info({:job_updated, %Job{} = job}, socket) do
-    {:noreply,
-     socket
-     |> assign(job: job, typing: if(Job.active?(job), do: socket.assigns.typing))
-     |> assign_result()}
+    created_before = socket.assigns.created_task_id
+
+    socket =
+      socket
+      |> assign(job: job, typing: if(Job.active?(job), do: socket.assigns.typing))
+      |> assign_result()
+
+    {:noreply, follow_created_task(socket, created_before)}
   end
 
   def handle_info({:task_updated, _task}, %{assigns: %{task: %Tasks.Task{} = task}} = socket) do
@@ -317,6 +337,23 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp blank_to_nil(_value), do: nil
 
+  # Whoever asked is taken to the task the proposal just became on its own.
+  defp follow_created_task(%{assigns: %{created_task_id: nil}} = socket, _before), do: socket
+
+  defp follow_created_task(%{assigns: %{created_task_id: id, job: job}} = socket, nil) do
+    %{user: user, workspace: workspace} = socket.assigns.current_scope
+
+    if job.created_by_user_id == user.id do
+      socket
+      |> put_flash(:info, "Tarefa criada e iniciada.")
+      |> push_navigate(to: task_link(workspace, id))
+    else
+      socket
+    end
+  end
+
+  defp follow_created_task(socket, _before), do: socket
+
   defp task_link(workspace, task_id), do: ~p"/w/#{workspace.slug}/tasks/#{task_id}"
 
   @impl true
@@ -426,6 +463,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         result={@result}
         job={@job}
         workspace={@current_scope.workspace}
+        created_task_id={@created_task_id}
+        auto_approve={@auto_approve}
       />
       <.decision_review
         :if={@result && @kind == "decision"}
@@ -611,6 +650,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   attr :result, :map, required: true
   attr :job, :any, required: true
   attr :workspace, :any, required: true
+  attr :created_task_id, :string, default: nil
+  attr :auto_approve, :map, default: nil
 
   defp task_review(assigns) do
     ~H"""
@@ -633,8 +674,27 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             >
               {Markdown.to_html(@result.prompt)}
             </div>
+            <.alert
+              :if={!@created_task_id && @auto_approve && @auto_approve["status"] == "skipped"}
+              color="warning"
+              class="mt-5"
+              data-testid="proposal-auto-approve-skipped"
+            >
+              <p class="font-medium">Não foi criada automaticamente:</p>
+              <p class="whitespace-pre-line">{@auto_approve["reason"]}</p>
+            </.alert>
             <div class="mt-5 flex justify-end">
               <.button
+                :if={@created_task_id}
+                link_type="live_redirect"
+                to={task_link(@workspace, @created_task_id)}
+                icon="hero-arrow-right-circle"
+                data-testid="proposal-created-task-link"
+              >
+                Abrir a tarefa
+              </.button>
+              <.button
+                :if={!@created_task_id}
                 link_type="live_redirect"
                 to={~p"/w/#{@workspace.slug}/tasks?proposta=#{@job.id}"}
                 icon="hero-arrow-right-circle"

@@ -233,12 +233,26 @@ defmodule PipeMaestro.Tasks do
   @doc """
   Creates a task and starts its first stage. The pipeline, the runner (active)
   and the directory (one the runner announced) must belong to the workspace.
+
+  With `proposal: job`, the task is the one the task proposal `job` became
+  (`PipeMaestro.Proposals.create_task/4`); a proposal already turned into a
+  task gives an error on `proposal_job_id`.
   """
-  @spec create_task(User.t(), Workspace.t(), map()) ::
+  @spec create_task(User.t(), Workspace.t(), map(), keyword()) ::
           {:ok, Task.t()} | {:error, Ecto.Changeset.t()}
-  def create_task(%User{} = user, %Workspace{} = workspace, attrs) do
+  def create_task(%User{} = user, %Workspace{} = workspace, attrs, opts \\ []) do
+    proposal_job_id =
+      case opts[:proposal] do
+        %Job{id: id} -> id
+        nil -> nil
+      end
+
     changeset =
-      %Task{workspace_id: workspace.id, created_by_user_id: user.id}
+      %Task{
+        workspace_id: workspace.id,
+        created_by_user_id: user.id,
+        proposal_job_id: proposal_job_id
+      }
       |> Task.create_changeset(attrs)
       |> put_pipeline(workspace)
       |> put_directory(workspace)

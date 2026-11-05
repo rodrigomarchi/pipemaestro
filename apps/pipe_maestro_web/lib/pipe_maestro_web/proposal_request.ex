@@ -6,21 +6,29 @@ defmodule PipeMaestroWeb.ProposalRequest do
   keeps it in `:proposal_request` (nil when closed) and hands its events here:
   `open/3`, `validate/2` and `submit/2` (which navigates to the proposal), and
   renders `request_modal/1`.
+
+  A task may be written for a pipeline the person picks (else the agent
+  picks one), and is created and started without review unless the person
+  turns that off (`auto_approve`, on by default here).
   """
   use PipeMaestroWeb, :html
 
   import Phoenix.LiveView, only: [push_navigate: 2]
 
-  alias PipeMaestro.{Audit, Proposals, Runners}
+  alias PipeMaestro.{Audit, Pipelines, Proposals, Runners}
   alias PipeMaestroWeb.RunnerStatus
 
-  @typedoc "The open form: its kind, fixed fields, form, typed params and online runners."
+  @typedoc """
+  The open form: its kind, fixed fields, form, typed params, online runners
+  and the workspace's pipelines (a task's).
+  """
   @type t :: %{
           kind: String.t(),
           fixed: map(),
           form: Phoenix.HTML.Form.t(),
           params: map(),
-          runners: [PipeMaestro.Runners.Runner.t()]
+          runners: [PipeMaestro.Runners.Runner.t()],
+          pipelines: [PipeMaestro.Pipelines.Pipeline.t()]
         }
 
   @doc """
@@ -33,7 +41,14 @@ defmodule PipeMaestroWeb.ProposalRequest do
     online = RunnerStatus.online_ids(workspace.id)
     runners = for r <- Runners.list_runners(workspace), MapSet.member?(online, r.id), do: r
     fixed = Keyword.get(opts, :fixed, %{})
-    params = Map.merge(default_params(runners, opts[:directory]), fixed)
+
+    params =
+      runners
+      |> default_params(opts[:directory])
+      |> Map.merge(kind_defaults(kind))
+      |> Map.merge(fixed)
+
+    pipelines = if kind == "task", do: Pipelines.list_pipelines(workspace), else: []
 
     assign(socket,
       proposal_request: %{
@@ -41,6 +56,7 @@ defmodule PipeMaestroWeb.ProposalRequest do
         fixed: fixed,
         params: params,
         runners: runners,
+        pipelines: pipelines,
         form: to_form(Proposals.change_request(kind, workspace, params), as: "proposal")
       }
     )
@@ -55,6 +71,10 @@ defmodule PipeMaestroWeb.ProposalRequest do
       runner -> %{"runner_id" => runner.id, "directory" => directory}
     end
   end
+
+  # A task is created without review unless the person says otherwise.
+  defp kind_defaults("task"), do: %{"auto_approve" => "true"}
+  defp kind_defaults(_kind), do: %{}
 
   @doc "Closes the form."
   @spec close(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
@@ -133,7 +153,7 @@ defmodule PipeMaestroWeb.ProposalRequest do
     do: %{
       title: "Escrever tarefa com IA",
       intro:
-        "Conte a ideia do seu jeito. O agente estuda o diretório (num worktree descartável) e escreve a tarefa: título, contexto, arquivos envolvidos, critérios de aceite e o pipeline que serve. Você revisa antes de criar.",
+        "Conte a ideia do seu jeito. O agente estuda o diretório (num worktree descartável) e escreve a tarefa: título, contexto, arquivos envolvidos, critérios de aceite e o pipeline que serve. Com a criação sem revisão ligada, a tarefa já nasce e começa a rodar; você só é chamado se o agente tiver dúvidas ou a tarefa não puder ser criada.",
       label: "A ideia",
       placeholder: "Ex.: o login às vezes trava quando muita gente entra ao mesmo tempo."
     }
@@ -230,6 +250,24 @@ defmodule PipeMaestroWeb.ProposalRequest do
           label="Issue do GitHub (opcional)"
           placeholder="https://github.com/dono/repo/issues/42"
           data-testid="proposal-request-issue-url"
+        />
+        <.icon_field
+          :if={@request.kind == "task"}
+          field={@request.form[:pipeline_id]}
+          icon="hero-squares-2x2"
+          type="select"
+          label="Pipeline"
+          prompt="Deixar o agente escolher"
+          options={Enum.map(@request.pipelines, &{&1.name, &1.id})}
+          data-testid="proposal-request-pipeline"
+        />
+        <.field
+          :if={@request.kind == "task"}
+          field={@request.form[:auto_approve]}
+          type="switch"
+          label="Criar e iniciar a tarefa sem revisão"
+          help_text="Se o agente tiver dúvidas ou a tarefa não puder ser criada, ela fica para você revisar."
+          data-testid="proposal-request-auto-approve"
         />
         <.markdown_editor
           :if={@request.kind == "improve"}

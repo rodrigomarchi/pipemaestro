@@ -144,6 +144,75 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert Proposals.input(job)["issue_url"] == "https://github.com/acme/app/issues/3"
     end
 
+    test "tasks: a pipeline to write for, and auto-approval on by default", ctx do
+      bring_online(ctx.runner)
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Funcionalidade"})
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
+      view |> element("[data-testid=task-generate]") |> render_click()
+
+      assert has_element?(
+               view,
+               "select[data-testid=proposal-request-pipeline] option[value='']",
+               "Deixar o agente escolher"
+             )
+
+      refute has_element?(view, "select[data-testid=proposal-request-pipeline] option[selected]")
+
+      assert has_element?(
+               view,
+               "select[data-testid=proposal-request-pipeline] option[value='#{pipeline.id}']",
+               "Funcionalidade"
+             )
+
+      assert has_element?(view, "input[data-testid=proposal-request-auto-approve][checked]")
+
+      view
+      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
+      |> render_change()
+
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#proposal-request-form",
+          proposal: %{
+            runner_id: ctx.runner.id,
+            directory: "app",
+            request: "Exportar CSV",
+            pipeline_id: pipeline.id
+          }
+        )
+        |> render_submit()
+
+      [job] = Proposals.list_recent(ctx.workspace, ["task"])
+      assert Proposals.input(job)["pipeline_id"] == pipeline.id
+      assert Proposals.input(job)["auto_approve"] == true
+    end
+
+    test "tasks: auto-approval can be turned off", ctx do
+      bring_online(ctx.runner)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
+      view |> element("[data-testid=task-generate]") |> render_click()
+
+      view
+      |> form("#proposal-request-form", proposal: %{runner_id: ctx.runner.id})
+      |> render_change()
+
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#proposal-request-form",
+          proposal: %{
+            runner_id: ctx.runner.id,
+            directory: "app",
+            request: "Exportar CSV",
+            auto_approve: "false"
+          }
+        )
+        |> render_submit()
+
+      [job] = Proposals.list_recent(ctx.workspace, ["task"])
+      assert Proposals.input(job)["auto_approve"] == false
+      refute Map.has_key?(Proposals.input(job), "pipeline_id")
+    end
+
     test "improvements: a pipeline, from the directory its tasks ran in", ctx do
       bring_online(ctx.runner)
       pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
@@ -299,6 +368,93 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
                Tasks.list_tasks(ctx.workspace)
 
       assert pipeline_id == pipeline.id
+    end
+  end
+
+  describe "task auto-approval" do
+    @task_output %{
+      "analise" => "O lock não tem timeout.",
+      "titulo" => "Destravar o login",
+      "descricao" => "## Problema\n\nO `Auth` espera sem timeout.",
+      "pipeline" => "Correção de bug",
+      "pronta" => true
+    }
+
+    setup ctx do
+      %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})}
+    end
+
+    test "a task created from the proposal is linked in place of the create button", ctx do
+      job = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "true"})
+      job = succeed(ctx, job, @task_output)
+      [task] = Tasks.list_tasks(ctx.workspace)
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      refute has_element?(view, "[data-testid=proposal-create-task]")
+      refute has_element?(view, "[data-testid=proposal-auto-approve-skipped]")
+
+      assert view |> element("[data-testid=proposal-created-task-link]") |> render() =~
+               "/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+    end
+
+    test "a proposal that could not be created on its own says why", ctx do
+      job = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "true"})
+
+      job =
+        succeed(
+          ctx,
+          job,
+          %{@task_output | "pronta" => false}
+          |> Map.put("perguntas", ["Qual o timeout?"])
+        )
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-create-task]")
+      refute has_element?(view, "[data-testid=proposal-created-task-link]")
+
+      assert has_element?(
+               view,
+               "[data-testid=proposal-auto-approve-skipped]",
+               "Qual o timeout?"
+             )
+    end
+
+    test "with the page open, the task created on its own takes the person to it", ctx do
+      job = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "true"})
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+
+      succeed(ctx, job, @task_output)
+      [task] = Tasks.list_tasks(ctx.workspace)
+
+      {path, _flash} = assert_redirect(view)
+      assert path == "/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+    end
+
+    test "the new-task form of a proposal already turned into a task goes to it", ctx do
+      job = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "true"})
+      job = succeed(ctx, job, @task_output)
+      [task] = Tasks.list_tasks(ctx.workspace)
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks?proposta=#{job.id}")
+
+      assert to == "/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+    end
+
+    test "the form links the task it creates to the proposal", ctx do
+      bring_online(ctx.runner)
+      job = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "false"})
+      job = succeed(ctx, job, @task_output)
+      assert Tasks.list_tasks(ctx.workspace) == []
+
+      {:ok, tasks, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks?proposta=#{job.id}")
+      {:error, {:live_redirect, _}} = tasks |> form("#new-task-form") |> render_submit()
+
+      assert [task] = Tasks.list_tasks(ctx.workspace)
+      assert task.proposal_job_id == job.id
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=proposal-created-task-link]")
     end
   end
 
