@@ -31,12 +31,15 @@ export class ProposalPage {
     if (request.focus) await this.page.getByTestId("proposal-request-focus").fill(request.focus);
     if (request.pipeline)
       await this.page.getByTestId("proposal-request-pipeline").selectOption({ label: request.pipeline });
-    // Petal's switch hides its input (sr-only) under the label that draws it; the click lands
-    // on the label, which toggles the input.
-    if (request.autoApprove !== undefined)
-      await this.page
-        .getByTestId("proposal-request-auto-approve")
-        .setChecked(request.autoApprove, { force: true });
+    // Petal's switch hides its input (sr-only), which a pointer cannot land on: the keyboard toggles it.
+    if (request.autoApprove !== undefined) {
+      const autoApprove = this.page.getByTestId("proposal-request-auto-approve");
+      if ((await autoApprove.isChecked()) !== request.autoApprove) {
+        await autoApprove.focus();
+        await this.page.keyboard.press("Space");
+      }
+      await expect(autoApprove).toBeChecked({ checked: request.autoApprove });
+    }
     await this.page.getByTestId("proposal-request-submit").click();
     await this.waitForProposal();
   }

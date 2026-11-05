@@ -84,13 +84,13 @@ test.describe("Landing director", () => {
 
     const projects = new ProjectsPage(page);
     await projects.open(workspace.slug);
-    await projects.create({ name: "Loja API", directory, setup: "make deps", test: "make test" });
+    await projects.create({ name: "Loja API", runner: runnerName, directory, setup: "make deps", test: "make test" });
 
     // The tasks: two that finish, one that stops with questions, two held mid-pipeline.
     const taskPage = new TasksPage(page);
     const start = async (task: ShowcaseTask) => {
       await taskPage.open(workspace.slug);
-      return taskPage.create({ title: task.title, prompt: task.prompt, pipeline, runner: runnerName, directory });
+      return taskPage.create({ title: task.title, prompt: task.prompt, pipeline, project: "Loja API" });
     };
 
     const couponId = await start(tasks.coupon);

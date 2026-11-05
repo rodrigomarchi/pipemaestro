@@ -43,6 +43,22 @@ export class ProjectsPage {
     await expect(this.project(project.directory)).toContainText(project.name);
   }
 
+  /** Edits an existing project's commands and waits for the list. */
+  async configure(
+    directory: string,
+    commands: { setup?: string; test?: string; lint?: string; copyPaths?: string; shot?: string },
+  ) {
+    await this.page.getByTestId(`project-edit-${directory}`).click();
+    await waitForLiveView(this.page);
+    if (commands.setup) await this.page.getByTestId("project-setup").fill(commands.setup);
+    if (commands.test) await this.page.getByTestId("project-test").fill(commands.test);
+    if (commands.lint) await this.page.getByTestId("project-lint").fill(commands.lint);
+    if (commands.copyPaths) await this.page.getByTestId("project-copy-paths").fill(commands.copyPaths);
+    if (commands.shot) await shot(this.page, commands.shot);
+    await this.page.getByTestId("project-save").click();
+    await expect(this.project(directory)).toBeVisible();
+  }
+
   /** Picks the runner in the open form and waits for its directories. */
   async pickRunner(runner: string) {
     await this.page.getByTestId("project-runner").selectOption({ label: runner });
