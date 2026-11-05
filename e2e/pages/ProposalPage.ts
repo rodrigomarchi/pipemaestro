@@ -16,12 +16,25 @@ export class ProposalPage {
    * Fills the open request form (picks the runner, then one of its git
    * directories, then the text when given) and sends it; waits on the proposal.
    */
-  async submitRequest(request: { runner: string; directory: string; text?: string; focus?: string }) {
+  async submitRequest(request: {
+    runner: string;
+    directory: string;
+    text?: string;
+    focus?: string;
+    /** Task: the pipeline to write for (by default the agent picks one). */
+    pipeline?: string;
+    /** Task: whether to create and start the task without review (on by default). */
+    autoApprove?: boolean;
+  }) {
     await this.page.getByTestId("proposal-request-runner").selectOption({ label: request.runner });
     await expect(this.directoryOptions.filter({ hasText: request.directory })).toHaveCount(1);
     await this.page.getByTestId("proposal-request-directory").selectOption(request.directory);
     if (request.text) await this.page.getByTestId("proposal-request-text").fill(request.text);
     if (request.focus) await this.page.getByTestId("proposal-request-focus").fill(request.focus);
+    if (request.pipeline)
+      await this.page.getByTestId("proposal-request-pipeline").selectOption({ label: request.pipeline });
+    if (request.autoApprove !== undefined)
+      await this.page.getByTestId("proposal-request-auto-approve").setChecked(request.autoApprove);
     await this.page.getByTestId("proposal-request-submit").click();
     await this.waitForProposal();
   }
@@ -75,6 +88,16 @@ export class ProposalPage {
     await this.page.waitForURL(/\/tasks\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("task-from-proposal")).toBeVisible();
+  }
+
+  /** Task: the link to the task created from the proposal without review. */
+  get createdTaskLink(): Locator {
+    return this.page.getByTestId("proposal-created-task-link");
+  }
+
+  /** Task: why the proposal was left for review instead of created on its own. */
+  get autoApproveSkipped(): Locator {
+    return this.page.getByTestId("proposal-auto-approve-skipped");
   }
 
   /** Decision: applies `action` with the instructions as they are in the form. */

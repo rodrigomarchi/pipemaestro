@@ -3,9 +3,10 @@ defmodule PipeMaestro.ProposalsTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Jobs, Pipelines, Projects, Proposals, Runners, Tasks}
+  alias PipeMaestro.{Audit, Jobs, Pipelines, Projects, Proposals, Runners, Tasks, Workspaces}
   alias PipeMaestro.Pipelines.{Prompt, Stage}
   alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind, Instructions, PipelineKind}
+  alias PipeMaestro.Tasks.Task
   alias PipeMaestroProtocol.Job, as: WireJob
 
   @directories [%{"name" => "app", "git" => true}, %{"name" => "notas", "git" => false}]
@@ -67,6 +68,17 @@ defmodule PipeMaestro.ProposalsTest do
 
   defp succeed(ctx, job, output),
     do: finish(ctx, job, %{"status" => "succeeded", "structured_output" => output})
+
+  defp task_output do
+    %{
+      "analise" => "O lock em `Auth` não tem timeout.",
+      "titulo" => "Destravar o login sob carga",
+      "descricao" => "## Problema\n\nO `Auth.login/2` espera um lock sem timeout.",
+      "pipeline" => "correção de bug",
+      "pronta" => true,
+      "perguntas" => ["Qual o timeout aceitável?"]
+    }
+  end
 
   # What reaches the runner: a valid job, without the proposal marker.
   defp wire!(job) do
@@ -300,6 +312,228 @@ defmodule PipeMaestro.ProposalsTest do
 
       assert {:error, _} =
                Proposals.result(succeed(ctx, job, %{"titulo" => "", "descricao" => "x"}))
+    end
+  end
+
+  describe "task: the chosen pipeline" do
+    test "a pipeline of another workspace is refused; auto-approval is off unless asked", ctx do
+      other = pipeline_fixture(workspace_fixture())
+
+      changeset =
+        Proposals.change_request("task", ctx.workspace, %{
+          "runner_id" => ctx.runner.id,
+          "directory" => "app",
+          "request" => "x",
+          "pipeline_id" => other.id
+        })
+
+      assert "não é um pipeline deste workspace" in errors_on(changeset).pipeline_id
+
+      changeset =
+        Proposals.change_request("task", ctx.workspace, %{
+          "runner_id" => ctx.runner.id,
+          "directory" => "app",
+          "request" => "x",
+          "pipeline_id" => Ecto.UUID.generate()
+        })
+
+      assert "não é um pipeline deste workspace" in errors_on(changeset).pipeline_id
+
+      {:ok, job} = ask(ctx, "task", %{"request" => "x"})
+      refute Map.has_key?(Proposals.input(job), "auto_approve")
+      refute Map.has_key?(Proposals.input(job), "pipeline_id")
+    end
+
+    test "the agent writes for the chosen pipeline, whatever it names back", ctx do
+      chosen = pipeline_fixture(ctx.workspace, %{"name" => "Funcionalidade"})
+      _other = pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})
+
+      {:ok, job} =
+        ask(ctx, "task", %{
+          "request" => "Exportar CSV",
+          "pipeline_id" => chosen.id,
+          "auto_approve" => "false"
+        })
+
+      assert Proposals.input(job)["pipeline_id"] == chosen.id
+      assert Proposals.input(job)["auto_approve"] == false
+      assert job.prompt =~ "**Funcionalidade**"
+      refute job.prompt =~ "Correção de bug"
+
+      output = %{task_output() | "pipeline" => "Correção de bug"}
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
+      assert result.pipeline.id == chosen.id
+      assert result.pipeline_name == "Funcionalidade"
+      assert result.task_params["pipeline_id"] == chosen.id
+    end
+
+    test "a chosen pipeline deleted since falls back to the agent's suggestion", ctx do
+      chosen = pipeline_fixture(ctx.workspace, %{"name" => "Funcionalidade"})
+      suggested = pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})
+      {:ok, job} = ask(ctx, "task", %{"request" => "x", "pipeline_id" => chosen.id})
+      {:ok, _deleted} = Pipelines.delete_pipeline(chosen)
+
+      output = %{task_output() | "pipeline" => "Correção de bug"}
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
+      assert result.pipeline.id == suggested.id
+    end
+  end
+
+  describe "task: auto-approval" do
+    setup ctx do
+      %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})}
+    end
+
+    defp ask_auto(ctx, attrs \\ %{}) do
+      {:ok, job} =
+        ask(
+          ctx,
+          "task",
+          Map.merge(%{"request" => "O login trava", "auto_approve" => "true"}, attrs)
+        )
+
+      job
+    end
+
+    defp reload(ctx, job), do: Jobs.get_job!(ctx.workspace, job.id)
+
+    defp proposal_tasks(job),
+      do: Repo.all(from t in Task, where: t.proposal_job_id == ^job.id)
+
+    test "a ready task is created and started on behalf of who asked", ctx do
+      job = ask_auto(ctx)
+      assert Proposals.input(job)["auto_approve"] == true
+
+      succeed(ctx, job, task_output())
+
+      assert [task] = proposal_tasks(job)
+      assert task.status == :running
+      assert task.title == "Destravar o login sob carga"
+      assert task.pipeline_id == ctx.pipeline.id
+      assert task.created_by_user_id == ctx.user.id
+
+      job = reload(ctx, job)
+      assert Proposals.created_task_id(job) == task.id
+      assert job.context["proposal"]["created_task_id"] == task.id
+      assert Proposals.auto_approve(job) == %{"status" => "created"}
+
+      assert Enum.any?(
+               Audit.list_events(ctx.workspace),
+               &(&1.action == "task.auto_created" and &1.subject_id == task.id and
+                   &1.actor_user_id == ctx.user.id and &1.details["proposal_id"] == job.id)
+             )
+    end
+
+    test "past the workspace's limit the created task waits in line", ctx do
+      {:ok, workspace} = Workspaces.update_workspace(ctx.workspace, %{"max_running_tasks" => 1})
+      ctx = %{ctx | workspace: workspace}
+
+      {:ok, _running} =
+        Tasks.create_task(ctx.user, workspace, %{
+          "title" => "Outra",
+          "prompt" => "x",
+          "pipeline_id" => ctx.pipeline.id,
+          "runner_id" => ctx.runner.id,
+          "directory" => "app"
+        })
+
+      job = ask_auto(ctx)
+      succeed(ctx, job, task_output())
+      assert [%Task{status: :queued}] = proposal_tasks(job)
+    end
+
+    test "a task the agent finds not ready stays for review, saying why", ctx do
+      job = ask_auto(ctx)
+      succeed(ctx, job, %{task_output() | "pronta" => false})
+
+      assert proposal_tasks(job) == []
+      job = reload(ctx, job)
+      assert Proposals.created_task_id(job) == nil
+      assert %{"status" => "skipped", "reason" => reason} = Proposals.auto_approve(job)
+      assert reason =~ "pronta"
+      assert reason =~ "Qual o timeout aceitável?"
+    end
+
+    test "no pipeline resolved: no task, and the reason names the suggestion", ctx do
+      job = ask_auto(ctx)
+      succeed(ctx, job, %{task_output() | "pipeline" => "Inexistente"})
+
+      assert proposal_tasks(job) == []
+
+      assert %{"status" => "skipped", "reason" => reason} =
+               Proposals.auto_approve(reload(ctx, job))
+
+      assert reason =~ "Inexistente"
+    end
+
+    test "a task that cannot be created stays for review with the error", ctx do
+      job = ask_auto(ctx)
+      # The runner stops offering the directory while the agent works.
+      with_directories(ctx.runner, [%{"name" => "outro", "git" => true}])
+      succeed(ctx, job, task_output())
+
+      assert proposal_tasks(job) == []
+
+      assert %{"status" => "skipped", "reason" => reason} =
+               Proposals.auto_approve(reload(ctx, job))
+
+      assert reason =~ "o runner não oferece esse diretório"
+    end
+
+    test "without auto-approval (or from before it) nothing is created nor recorded", ctx do
+      for attrs <- [%{"auto_approve" => "false"}, %{}] do
+        {:ok, job} = ask(ctx, "task", Map.merge(%{"request" => "x"}, attrs))
+        succeed(ctx, job, task_output())
+
+        assert proposal_tasks(job) == []
+        job = reload(ctx, job)
+        assert Proposals.auto_approve(job) == nil
+        assert Proposals.created_task_id(job) == nil
+      end
+    end
+
+    test "a failed proposal creates nothing", ctx do
+      job = ask_auto(ctx)
+      finish(ctx, job, %{"status" => "failed", "error" => "sem créditos"})
+      assert proposal_tasks(job) == []
+    end
+
+    test "finishing twice or creating by hand afterwards makes a single task", ctx do
+      job = ask_auto(ctx)
+      job = succeed(ctx, job, task_output())
+      assert [task] = proposal_tasks(job)
+
+      job = reload(ctx, job)
+      assert :ok = Proposals.job_finished(job)
+      assert [%Task{id: id}] = proposal_tasks(job)
+      assert id == task.id
+
+      {:ok, result} = Proposals.result(job)
+
+      assert {:error, changeset} =
+               Proposals.create_task(ctx.user, ctx.workspace, job, result.task_params)
+
+      assert "esta proposta já virou uma tarefa" in errors_on(changeset).proposal_job_id
+      assert length(proposal_tasks(job)) == 1
+    end
+
+    test "creating by hand links the task to the proposal", ctx do
+      {:ok, job} = ask(ctx, "task", %{"request" => "x", "auto_approve" => "false"})
+      job = succeed(ctx, job, task_output())
+      {:ok, result} = Proposals.result(job)
+
+      assert {:ok, task} =
+               Proposals.create_task(ctx.user, ctx.workspace, job, result.task_params)
+
+      assert task.proposal_job_id == job.id
+      assert Proposals.created_task_id(reload(ctx, job)) == task.id
+    end
+
+    test "other kinds of proposal are left alone", ctx do
+      {:ok, job} = ask(ctx, "pipeline", %{"request" => "PRs"})
+      job = succeed(ctx, job, @pipeline_output)
+      assert :ok = Proposals.job_finished(job)
+      assert Proposals.auto_approve(reload(ctx, job)) == nil
     end
   end
 
