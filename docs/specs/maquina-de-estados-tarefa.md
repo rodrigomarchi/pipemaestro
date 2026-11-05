@@ -58,6 +58,10 @@ gates não atendidos. O feedback fica no `StageRun` (`feedback`).
 - **Fila (`queued`):** com um limite de tarefas simultâneas no workspace, uma tarefa
   criada além dele entra como `queued` e começa quando outra deixa de rodar (termina
   ou pausa). Cancelar uma tarefa na fila a encerra direto.
+- **Origem numa proposta:** `create_task` também roda quando uma proposta de tarefa
+  auto-aprovada termina ([ADR 0031](../adr/0031-auto-aprovacao-da-tarefa-escrita-com-ia.md)).
+  A tarefa nasce `running` ou `queued` como qualquer outra, com `proposal_job_id`
+  apontando para a proposta; uma proposta gera uma tarefa no máximo.
 - **Passos em paralelo:** etapas seguidas com o mesmo `group` formam um passo. Elas
   começam juntas, e cada uma passa pelo gate e retenta sozinha. O passo fecha quando
   nenhuma roda mais:
