@@ -1,0 +1,367 @@
+#!/bin/sh
+# The agent CLI of the landing director: stands in for
+# `claude -p <prompt> --output-format stream-json ...` the way the runner's
+# fake_claude does, with the same stream-json lines, but plays a believable
+# engineering session, because its output is photographed for the landing page.
+#
+# Each stage of "Correção de bug" (triagem, investigacao, reproducao,
+# implementacao, auditoria, pr) reads, greps, edits real files of the worktree
+# and runs `make test`, writes a Markdown artifact to $CP_ARTIFACT_PATH and
+# reports plausible tokens and cost. Given OTEL_EXPORTER_OTLP_ENDPOINT, it posts
+# an OTLP export (API requests by origin, the time of each tool call, permission
+# decisions, an MCP connection, a subagent, lines of code and active time).
+#
+# What a task does comes from a scene map, $SHOWCASE_SCENES: one line per scene,
+# `phrase|behaviour|module`. The first stage of a task whose prompt contains the
+# phrase picks that scene; it is kept per worktree under $SHOWCASE_DIR, so the
+# later stages (whose prompts do not repeat the task) play the same one.
+#
+#   ok                 every stage succeeds
+#   perguntas          the first stage stops with two structured questions
+#   segura:<stage>     <stage> runs its first steps and then waits until the
+#                      file $SHOWCASE_DIR/release exists (at most 10 minutes)
+#
+# `module` is the path under lib/loja/ the task is about (e.g. pedidos/total).
+
+# Numbers printed with a dot, whatever the machine's locale.
+export LC_NUMERIC=C
+
+MODEL="claude-sonnet-4-5"
+VERSION="2.0.37"
+
+if [ "$1" = "--version" ]; then
+  echo "$VERSION (Claude Code)"
+  exit 0
+fi
+
+prompt="$2"
+schema=""
+next_is_schema=""
+for arg in "$@"; do
+  if [ -n "$next_is_schema" ]; then schema="$arg"; next_is_schema=""; fi
+  if [ "$arg" = "--json-schema" ]; then next_is_schema=1; fi
+done
+kind=$(printf '%s' "$schema" | sed -n 's/.*"\$comment":"pipemaestro-kind:\([a-z]*\)".*/\1/p')
+
+state_dir="${SHOWCASE_DIR:-/tmp}/scenes"
+mkdir -p "$state_dir"
+state="$state_dir/$(basename "$PWD")"
+
+if [ ! -f "$state" ]; then
+  scene="ok|pedidos/total"
+  if [ -n "$SHOWCASE_SCENES" ] && [ -f "$SHOWCASE_SCENES" ]; then
+    while IFS='|' read -r phrase behaviour module; do
+      [ -z "$phrase" ] && continue
+      case "$prompt" in
+        *"$phrase"*) scene="$behaviour|$module"; break ;;
+      esac
+    done < "$SHOWCASE_SCENES"
+  fi
+  printf '%s\n' "$scene" > "$state"
+fi
+behaviour=$(cut -d'|' -f1 < "$state")
+module=$(cut -d'|' -f2 < "$state")
+
+stage=$(basename "${CP_ARTIFACT_PATH:-00-executar.md}" .md | sed 's/^[0-9]*-//')
+lib="lib/loja/$module.ex"
+test_file="test/loja/${module}_test.exs"
+area=$(basename "$module")
+session="$stage-$(date +%H%M%S)"
+tools_log=$(mktemp)
+started=$(date +%s)
+
+# ── stream-json helpers ─────────────────────────────────────────────────────
+
+out() { printf '%s\n' "$1"; }
+
+# A JSON string's contents: backslashes, quotes and newlines escaped.
+j() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'; }
+
+msg=0
+calls=0
+usage='"usage":{"input_tokens":12,"cache_read_input_tokens":18400,"cache_creation_input_tokens":1600,"output_tokens":180}'
+
+think() {
+  msg=$((msg + 1))
+  out '{"type":"system","subtype":"thinking_tokens","estimated_tokens":'"$2"'}'
+  out '{"type":"assistant","thinking_duration_ms":'"$1"',"message":{"id":"msg_'"$msg"'","model":"'"$MODEL"'",'"$usage"',"content":[{"type":"thinking","thinking":""}]}}'
+  sleep 0.4
+}
+
+say() {
+  msg=$((msg + 1))
+  out '{"type":"assistant","message":{"id":"msg_'"$msg"'","model":"'"$MODEL"'",'"$usage"',"content":[{"type":"text","text":"'"$(j "$1")"'"}]}}'
+}
+
+# call <tool> <input JSON> <result> <duration in ms>
+call() {
+  calls=$((calls + 1))
+  msg=$((msg + 1))
+  id="toolu_$calls"
+  out '{"type":"assistant","message":{"id":"msg_'"$msg"'","model":"'"$MODEL"'",'"$usage"',"content":[{"type":"tool_use","id":"'"$id"'","name":"'"$1"'","input":'"$2"'}]}}'
+  # The call takes the time it reports, so the run's wall time adds up.
+  sleep "$(awk -v ms="$4" 'BEGIN { printf "%.2f", (ms < 300 ? 300 : ms) / 1000 }')"
+  out '{"type":"user","tool_result_meta":[{"id":"'"$id"'","permission_decision":{"decision":"accept","source":"config"}}],"message":{"content":[{"type":"tool_result","tool_use_id":"'"$id"'","content":"'"$(j "$3")"'","is_error":false}]}}'
+  printf '%s|%s|%s\n' "$1" "$id" "$4" >> "$tools_log"
+}
+
+read_file() { call Read '{"file_path":"'"$1"'"}' "$(cat "$1" 2>/dev/null || echo '(arquivo novo)')" "$2"; }
+
+grep_code() {
+  found=$(grep -rn "$1" lib test 2>/dev/null | head -5)
+  call Grep '{"pattern":"'"$(j "$1")"'","path":"lib"}' "${found:-Nenhum resultado.}" "$2"
+}
+
+bash_run() {
+  result=$(sh -c "$1" 2>&1 | tail -20)
+  call Bash '{"command":"'"$(j "$1")"'","description":"'"$(j "$2")"'"}' "$result" "$3"
+}
+
+# edit <file> <old line> <new text>: replaces the line in the worktree, and
+# reports it as an Edit call.
+edit_file() {
+  tmp=$(mktemp)
+  awk -v old="$2" -v new="$3" '$0 == old && !done { print new; done = 1; next } { print }' "$1" > "$tmp"
+  cat "$tmp" > "$1"
+  rm -f "$tmp"
+  call Edit '{"file_path":"'"$1"'","old_string":"'"$(j "$2")"'","new_string":"'"$(j "$3")"'"}' \
+    "The file $1 has been updated." "$4"
+}
+
+append_test() {
+  tmp=$(mktemp)
+  sed '$d' "$test_file" > "$tmp"
+  cat >> "$tmp" <<EOF
+
+  test "$1" do
+    assert $2
+  end
+end
+EOF
+  cat "$tmp" > "$test_file"
+  rm -f "$tmp"
+  call Edit '{"file_path":"'"$test_file"'","old_string":"end","new_string":"'"$(j "  test \"$1\" do
+    assert $2
+  end
+end")"'"}' "The file $test_file has been updated." "$3"
+}
+
+# Waits for the director's release; the API requests so far are exported
+# first, so the running stage shows what it has spent.
+hold() {
+  otlp_logs "$(api 800 590 1600 380 0.054 sdk),$(api 650 520 1200 260 0.039 sdk)"
+  waited=0
+  while [ ! -f "${SHOWCASE_DIR:-/tmp}/release" ] && [ "$waited" -lt 600 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+artifact() {
+  [ -z "$CP_ARTIFACT_PATH" ] && return
+  mkdir -p "$(dirname "$CP_ARTIFACT_PATH")"
+  printf '%s\n' "$1" > "$CP_ARTIFACT_PATH"
+}
+
+# ── OTLP telemetry ──────────────────────────────────────────────────────────
+
+job_id="${OTEL_RESOURCE_ATTRIBUTES#cp.job_id=}"
+resource='{"attributes":[{"key":"cp.job_id","value":{"stringValue":"'"$job_id"'"}}]}'
+attr() { printf '{"key":"%s","value":{"%s":%s}}' "$1" "$2" "$3"; }
+event() {
+  printf '{"body":{"stringValue":"claude_code.%s"},"attributes":[%s,%s]}' "$1" \
+    "$(attr event.timestamp stringValue "\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"")" "$2"
+}
+# api <duration ms> <ttft ms> <input> <output> <cost> <origin>
+api() {
+  event api_request "$(attr model stringValue "\"$MODEL\""),$(attr duration_ms intValue "\"$1\""),$(attr ttft_ms intValue "\"$2\""),$(attr input_tokens intValue "\"$3\""),$(attr output_tokens intValue "\"$4\""),$(attr cost_usd doubleValue "$5"),$(attr query_source stringValue "\"$6\"")"
+}
+
+# Posts the given log records plus the tool calls not exported yet.
+otlp_logs() {
+  [ -z "$OTEL_EXPORTER_OTLP_ENDPOINT" ] && return
+  records="$1"
+  while IFS='|' read -r name id ms; do
+    records="$records,$(event tool_decision "$(attr decision stringValue '"accept"'),$(attr source stringValue '"config"'),$(attr tool_name stringValue "\"$name\"")")"
+    records="$records,$(event tool_result "$(attr tool_name stringValue "\"$name\""),$(attr tool_use_id stringValue "\"$id\""),$(attr success stringValue '"true"'),$(attr duration_ms stringValue "\"$ms\"")")"
+  done < "$tools_log"
+  : > "$tools_log"
+  curl -s -o /dev/null -X POST -H 'content-type: application/json' "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs" \
+    --data '{"resourceLogs":[{"resource":'"$resource"',"scopeLogs":[{"logRecords":['"$records"']}]}]}'
+}
+
+# ── the session ─────────────────────────────────────────────────────────────
+
+out '{"type":"system","subtype":"init","cwd":"'"$PWD"'","session_id":"'"$session"'","model":"'"$MODEL"'","claude_code_version":"'"$VERSION"'","apiKeySource":"none","permissionMode":"bypassPermissions","output_style":"default","tools":["Bash","Edit","Glob","Grep","Read","Task","TodoWrite","Write"],"mcp_servers":[{"name":"github","status":"connected"}],"agents":["Explore"],"skills":[],"slash_commands":["compact","review"],"plugins":[]}'
+
+status="ok"
+questions=""
+cost="0.18"
+
+case "$stage" in
+  triagem)
+    think 2100 380
+    read_file README.md 14
+    grep_code "def $area" 96
+    read_file "$lib" 11
+    case "$behaviour" in
+      segura:triagem) hold ;;
+    esac
+    case "$behaviour" in
+      perguntas)
+        status="bloqueado"
+        summary="O pedido não diz o formato do arquivo nem quem pode exportar; preciso de duas decisões."
+        questions='[{"titulo":"Formato","pergunta":"Qual separador o arquivo exportado deve usar?","multipla":false,"opcoes":[{"rotulo":"Ponto e vírgula","descricao":"Abre direto no Excel em português, sem importar.","recomendada":true,"preview":"```csv\nnumero;cliente;total\n1042;Ana Souza;189,90\n```"},{"rotulo":"Vírgula","descricao":"O padrão do CSV; exige importar no Excel em português.","recomendada":false}]},{"titulo":"Acesso","pergunta":"Quem pode exportar os pedidos?","multipla":true,"opcoes":[{"rotulo":"Administradores","descricao":"Já veem todos os pedidos.","recomendada":true},{"rotulo":"Financeiro","descricao":"Precisa do arquivo para a conciliação.","recomendada":true},{"rotulo":"Atendimento","descricao":"Vê só os pedidos dos seus clientes.","recomendada":false}]}]'
+        say "Antes de seguir, preciso de duas decisões sobre o arquivo exportado."
+        cost="0.21"
+        ;;
+      *)
+        summary="Problema delimitado em $lib; critérios de pronto registrados."
+        artifact "# Triagem
+
+## Problema
+O comportamento de \`$area\` diverge do esperado no fluxo descrito na tarefa.
+
+## Área provável
+- \`$lib\`
+- \`$test_file\`
+
+## Critérios de pronto
+- Um teste reproduz o problema e passa depois da correção.
+- \`make test\` verde."
+        say "Triagem concluída: a área é $lib e os critérios de pronto estão no artefato."
+        ;;
+    esac
+    ;;
+  investigacao)
+    think 3400 720
+    read_file "$lib" 9
+    grep_code "Decimal" 88
+    bash_run "git log --oneline -5" "Histórico recente" 41
+    call Task '{"subagent_type":"Explore","description":"Mapear quem chama o módulo","prompt":"Liste quem chama Loja.'"$area"'"}' \
+      "Chamado por lib/loja/pedidos.ex e pelo controller de checkout." 2400
+    summary="Causa raiz encontrada em $lib, com o plano de correção."
+    artifact "# Investigação
+
+## Causa raiz
+\`$lib\` arredonda cada item antes de somar, e o desconto é aplicado sobre o valor já arredondado.
+
+## Evidências
+- \`$lib\`, função \`calcular/1\`
+- chamado pelo checkout e pela exportação
+
+## Plano
+Somar em \`Decimal\` e arredondar uma vez, no fim."
+    say "A causa raiz está no arredondamento antecipado; o plano de correção está no artefato."
+    cost="0.42"
+    ;;
+  reproducao)
+    think 1800 410
+    read_file "$test_file" 8
+    mod=$(echo "$area" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
+    append_test "soma antes de arredondar" "Loja.$mod.calcular(@pedido) == Decimal.new(\"189.90\")" 23
+    case "$behaviour" in
+      segura:reproducao) hold ;;
+    esac
+    bash_run "make test" "Roda a suíte" 1840
+    summary="Teste que reproduz o problema escrito em $test_file; falha pelo motivo certo."
+    artifact "# Reprodução
+
+- Teste: \`$test_file\`
+- Comando: \`make test\`
+
+\`\`\`
+1) test soma antes de arredondar
+   Assertion failed: expected 189.90, got 189.91
+\`\`\`"
+    say "O teste novo falha pelo motivo esperado."
+    cost="0.36"
+    ;;
+  implementacao)
+    think 2600 640
+    read_file "$lib" 10
+    edit_file "$lib" "  @arredondamento :por_item" "  @arredondamento :no_total" 19
+    case "$behaviour" in
+      segura:implementacao) hold ;;
+    esac
+    bash_run "make test" "Roda a suíte" 1910
+    bash_run "make lint" "Roda o lint" 870
+    summary="Correção aplicada em $lib; make test e make lint verdes."
+    artifact "# Implementação
+
+## Arquivos alterados
+- \`$lib\`: soma em \`Decimal\` e arredonda uma vez, no fim.
+
+## Testes
+\`\`\`
+make test
+48 tests, 0 failures
+\`\`\`"
+    say "Correção aplicada; a suíte e o lint passam."
+    cost="0.71"
+    ;;
+  auditoria)
+    think 2900 530
+    bash_run "git diff --stat" "Resumo do diff" 37
+    read_file "$lib" 7
+    bash_run "make test" "Roda a suíte" 1880
+    summary="Diff revisado; sem regressões nem desvios de escopo."
+    artifact "# Validação e auditoria
+
+- Diff restrito a \`$lib\` e ao teste novo.
+- \`make test\`: 48 testes, 0 falhas.
+- Nenhum desvio de escopo encontrado."
+    say "Revisão independente concluída, sem achados graves."
+    cost="0.29"
+    ;;
+  *)
+    think 900 160
+    bash_run "git diff --stat" "Resumo do diff" 33
+    summary="Título e descrição do pull request prontos."
+    artifact "# PR pronto
+
+**Título:** Corrige $area
+
+## Contexto
+Resumo da triagem e da investigação.
+
+## Como testar
+\`make test\`"
+    say "Descrição do pull request pronta no artefato."
+    cost="0.12"
+    ;;
+esac
+
+ended=$(date +%s)
+elapsed=$(((ended - started) * 1000 + 600))
+
+# The rest of the session's telemetry: the API requests, the tools not yet
+# exported, the MCP connection, the subagent and the metrics.
+otlp_logs "$(api 900 610 1800 640 0.061 sdk),$(api 700 540 1500 420 0.048 sdk),$(api 600 480 900 310 0.032 agent:Explore),$(api 300 220 400 90 0.006 compact),$(event mcp_server_connection "$(attr status stringValue '"connected"'),$(attr transport_type stringValue '"http"'),$(attr server_scope stringValue '"user"'),$(attr duration_ms stringValue '"240"')"),$(event subagent_completed "$(attr agent_type stringValue '"Explore"')")"
+if [ -n "$OTEL_EXPORTER_OTLP_ENDPOINT" ]; then
+  nano="$(date +%s)000000000"
+  curl -s -o /dev/null -X POST -H 'content-type: application/json' "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/metrics" \
+    --data '{"resourceMetrics":[{"resource":'"$resource"',"scopeMetrics":[{"metrics":[{"name":"claude_code.lines_of_code.count","sum":{"dataPoints":[{"timeUnixNano":"'"$nano"'","asInt":"24","attributes":[{"key":"type","value":{"stringValue":"added"}}]},{"timeUnixNano":"'"$nano"'","asInt":"6","attributes":[{"key":"type","value":{"stringValue":"removed"}}]}]}},{"name":"claude_code.active_time.total","sum":{"dataPoints":[{"timeUnixNano":"'"$nano"'","asDouble":'"$((elapsed / 1000))"'.5,"attributes":[{"key":"type","value":{"stringValue":"cli"}}]}]}}]}]}]}'
+fi
+rm -f "$tools_log"
+
+case "$kind" in
+  decision)
+    output='{"diagnostico":"A etapa parou porque **faltam duas decisões de produto**.","acao":"retry","instrucoes":"Use ponto e vírgula e libere para administradores e financeiro.","alternativas":[{"acao":"cancel","motivo":"Se a exportação não for mais necessária."}]}'
+    ;;
+  analysis)
+    output='{"diagnostico":"A etapa parou porque **faltam duas decisões de produto**.","perguntas":[{"titulo":"Seguir","pergunta":"Como a etapa deve seguir?","multipla":false,"opcoes":[{"rotulo":"Tentar de novo","descricao":"Roda a etapa outra vez.","recomendada":true},{"rotulo":"Desistir","descricao":"Deixa a tarefa como está.","recomendada":false}]}]}'
+    ;;
+  *)
+    output='{"status":"'"$status"'","resumo":"'"$(j "$summary")"'"}'
+    if [ -n "$questions" ]; then
+      output='{"status":"'"$status"'","resumo":"'"$(j "$summary")"'","perguntas":'"$questions"'}'
+    fi
+    ;;
+esac
+
+input=$((calls * 2400 + 3100))
+output_tokens=$((calls * 310 + 420))
+totals='"session_id":"'"$session"'","stop_reason":"end_turn","duration_api_ms":2500,"ttft_ms":780,"usage":{"input_tokens":'"$((calls * 40 + 60))"',"cache_read_input_tokens":'"$input"'0,"cache_creation_input_tokens":4200,"output_tokens":'"$output_tokens"'},"modelUsage":{"'"$MODEL"'":{"inputTokens":'"$((calls * 40 + 60))"',"outputTokens":'"$output_tokens"',"cacheReadInputTokens":'"$input"'0,"cacheCreationInputTokens":4200,"costUSD":'"$cost"'}},"permission_denials":[]'
+
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"'"$(j "$output")"'","structured_output":'"$output"',"total_cost_usd":'"$cost"',"duration_ms":'"$elapsed"',"num_turns":'"$((calls + 1))"','"$totals"'}'

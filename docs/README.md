@@ -52,6 +52,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0027 | [Entrega em PR no Forgejo](adr/0027-entrega-em-pr-no-forgejo.md) | Aceita |
 | 0028 | [Teto de custo só quando configurado](adr/0028-teto-de-custo-so-quando-configurado.md) | Aceita |
 | 0029 | [Questionário de decisão](adr/0029-questionario-de-decisao.md) | Aceita |
+| 0030 | [Screenshots reais da landing](adr/0030-screenshots-reais-da-landing.md) | Aceita |
 
 ## Specs
 

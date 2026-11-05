@@ -3,7 +3,8 @@
 	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
 	deploy deploy.skip-ci \
 	runner.status runner.logout runner.binary runner.rel runner.version \
-	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck
+	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck \
+	landing.shots
 
 # Burrito's single binary sets __BURRITO, and the runner app boots as the CLI when it
 # sees it. Commands started by the binary (the agent's shell in a job) inherit it, so
@@ -215,6 +216,14 @@ e2e.shots: e2e.db e2e.assets ## Run the suite capturing visual evidence, light a
 	rm -rf e2e/screenshots
 	cd e2e && $(E2E_ENV) E2E_SHOTS=1 E2E_SHOTS_DARK=$${DARK:-1} npx playwright test $(FILE)
 	@echo "Evidence: e2e/screenshots/<spec>/<test>/  (HTML report: cd e2e && npx playwright show-report)"
+
+# The director (e2e/director/) builds a realistic workspace through the UI with a
+# real runner and photographs the screens the landing page shows, light and dark,
+# into apps/pipe_maestro_web/priv/static/images/landing/. It starts from an empty
+# e2e database: the reset wipes whatever the suite left there.
+landing.shots: e2e.db.reset e2e.assets ## Regenerate the landing's screenshots (wipes the e2e database)
+	@pids=$$(lsof -ti:$(E2E_PORT) 2>/dev/null); [ -z "$$pids" ] || kill -9 $$pids
+	cd e2e && $(E2E_ENV) E2E_DIRECTOR=1 npx playwright test --project=director
 
 e2e.typecheck: ## Typecheck the specs, page objects and helpers
 	cd e2e && npx tsc --noEmit

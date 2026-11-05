@@ -28,9 +28,28 @@ export class RunnerProcess {
    */
   private version: string;
 
-  constructor(options: { version?: string } = {}) {
-    this.configDir = mkdtempSync(join(tmpdir(), "pipemaestro-e2e-"));
+  /** The agent CLI its jobs run (`CLAUDE_BIN`): the runner's fake by default. */
+  private claudeBin: string;
+
+  /** Extra environment for its commands, on top of the spec's own. */
+  private extraEnv: Record<string, string>;
+
+  /**
+   * `configPrefix` names the throwaway directory (it shows in task pages as
+   * part of each worktree's path).
+   */
+  constructor(
+    options: {
+      version?: string;
+      claudeBin?: string;
+      env?: Record<string, string>;
+      configPrefix?: string;
+    } = {},
+  ) {
+    this.configDir = mkdtempSync(join(tmpdir(), options.configPrefix ?? "pipemaestro-e2e-"));
     this.version = options.version ?? versions.controlPlane;
+    this.claudeBin = options.claudeBin ?? fakeClaude;
+    this.extraEnv = options.env ?? {};
   }
 
   /** Builds the next commands as `version`. */
@@ -45,9 +64,10 @@ export class RunnerProcess {
       cwd: runnerDir,
       env: {
         ...process.env,
+        ...this.extraEnv,
         MIX_ENV: "e2e",
         RUNNER_CONFIG_DIR: this.configDir,
-        CLAUDE_BIN: fakeClaude,
+        CLAUDE_BIN: this.claudeBin,
         CP_VERSION: this.version,
       },
     });
