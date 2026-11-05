@@ -25,7 +25,7 @@
 #
 # A JSON Schema whose "$comment" is "pipemaestro-kind:<kind>" (a proposal,
 # PipeMaestro.Proposals)
-# gets that kind's fixed answer: a project and a two-stage pipeline
+# gets that kind's fixed answer: a project ("project"), a two-stage pipeline
 # ("pipeline"), a task ("task"), a decision to retry ("decision"), a
 # diagnosis and one question whose recommended option is "Tentar sem falha"
 # ("analysis"), or a revised pipeline with notes ("improve").
@@ -162,8 +162,11 @@ if [ -n "$structured" ]; then
     output='{"status":"'"$status"'","resumo":"'"$summary"'","perguntas":'"$questions"'}'
   fi
   case "$kind" in
+    project)
+      output='{"analise":"Um app de exemplo do fake_claude. Os testes rodam com `make test`.","verificacoes":[{"comando":"make test","passou":true},{"comando":"make lint","passou":false,"observacao":"Sem alvo de lint no Makefile."}],"projeto":{"nome":"App do fake","setup":"make deps","teste":"make test","lint":"make lint","copy_paths":["deps"],"notas":"Rode `make test` antes de entregar."}}'
+      ;;
     pipeline)
-      output='{"analise":"Um app de exemplo do fake_claude. Os testes rodam com `make test`.","verificacoes":[{"comando":"make test","passou":true},{"comando":"make lint","passou":false,"observacao":"Sem alvo de lint no Makefile."}],"projeto":{"nome":"App do fake","setup":"make deps","teste":"make test","lint":"make lint","copy_paths":["deps"],"notas":"Rode `make test` antes de entregar."},"pipeline":{"name":"Entrega proposta","description":"Plano e implementação com testes.","delivery":"pr","max_task_cost_usd":40,"stages":[{"key":"plano","name":"Plano","prompt":"Planeje a mudança: {{tarefa.descricao}}","max_budget_usd":2},{"key":"implementacao","name":"Implementação","prompt":"Implemente o plano e rode {{projeto.teste}}.","gates":["{{projeto.teste}}"],"max_attempts":3}]}}'
+      output='{"analise":"Um app de exemplo do fake_claude. Os testes rodam com `make test`.","verificacoes":[{"comando":"make test","passou":true},{"comando":"make lint","passou":false,"observacao":"Sem alvo de lint no Makefile."}],"pipeline":{"name":"Entrega proposta","description":"Plano e implementação com testes.","delivery":"pr","max_task_cost_usd":40,"stages":[{"key":"plano","name":"Plano","prompt":"Planeje a mudança: {{tarefa.descricao}}","max_budget_usd":2},{"key":"implementacao","name":"Implementação","prompt":"Implemente o plano e rode {{projeto.teste}}.","gates":["{{projeto.teste}}"],"max_attempts":3}]}}'
       ;;
     task)
       output='{"analise":"O README do app descreve o login; o fake_claude leu o projeto.","titulo":"Destravar o login sob carga","descricao":"## Problema\n\nO login trava com muitos acessos.\n\n## Critérios de aceite\n\n- 100 logins simultâneos terminam em menos de 2 s.","pipeline":"Prompt único","pronta":true,"perguntas":[]}'
