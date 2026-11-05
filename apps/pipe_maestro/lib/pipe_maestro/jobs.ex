@@ -20,12 +20,15 @@ defmodule PipeMaestro.Jobs do
   alias PipeMaestro.Insights
   alias PipeMaestro.Jobs.{Event, Job}
   alias PipeMaestro.Jobs.Telemetry, as: JobTelemetry
-  alias PipeMaestro.{Repo, Runners}
+  alias PipeMaestro.{Projects, Repo, Runners}
+  alias PipeMaestro.Projects.Project
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.Telemetry
 
   @pubsub PipeMaestro.PubSub
+  # What a runner announces to run a job in a disposable worktree.
+  @scratch "scratch"
   @list_limit 100
 
   @typedoc "What a PubSub subscription is about."
@@ -55,19 +58,77 @@ defmodule PipeMaestro.Jobs do
   def change_job(attrs \\ %{}), do: Job.create_changeset(%Job{}, attrs)
 
   @doc """
-  Creates a job for one of the workspace's runners and hands it to that runner.
-  A revoked runner or one from another workspace is refused. `context` is
-  the wire form of the job's context (`PipeMaestroProtocol.Job`), plus any
-  key of the control plane's own, which never reaches the runner.
+  Creates a job a member sends on its own for one of the workspace's projects
+  (`project_id`) and hands it to the project's runner. It runs in a
+  disposable worktree of the project's directory, set up as the project says
+  (`PipeMaestro.Projects.scratch_context/1`), so the directory must be git and
+  the runner able to make one. With the runner offline, the job waits for it
+  (`queued_for_runner/1`).
   """
-  @spec create_job(User.t(), Workspace.t(), map(), map()) ::
+  @spec create_job(User.t(), Workspace.t(), map()) ::
           {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
-  def create_job(%User{} = user, %Workspace{} = workspace, attrs, context \\ %{}) do
-    changeset =
-      %Job{workspace_id: workspace.id, created_by_user_id: user.id, context: context}
-      |> Job.create_changeset(attrs)
-      |> validate_runner(workspace)
+  def create_job(%User{} = user, %Workspace{} = workspace, attrs) do
+    %Job{workspace_id: workspace.id, created_by_user_id: user.id}
+    |> Job.create_changeset(attrs)
+    |> put_project(workspace)
+    |> insert_and_assign()
+  end
 
+  @doc """
+  Why a project cannot take a job on its own now, or `:ok`: it is gone, it
+  has no runner, its runner no longer offers the directory, the directory is
+  not git or the runner cannot make a disposable worktree.
+  """
+  @spec project_ready(Project.t() | nil) :: :ok | {:error, String.t()}
+  def project_ready(nil), do: {:error, "o projeto não existe mais"}
+
+  def project_ready(%Project{runner: %Runner{revoked_at: nil} = runner} = project) do
+    case Runner.directory(runner, project.directory) do
+      nil ->
+        {:error, "o runner não oferece mais a pasta do projeto"}
+
+      %{"git" => true} ->
+        if scratch?(runner), do: :ok, else: {:error, "o runner precisa ser atualizado"}
+
+      _not_git ->
+        {:error, "a pasta do projeto não é um repositório git"}
+    end
+  end
+
+  def project_ready(%Project{}), do: {:error, "o projeto precisa de um runner"}
+
+  defp scratch?(runner), do: Runners.capable?(runner, @scratch)
+
+  defp put_project(changeset, workspace) do
+    with id when not is_nil(id) <- Ecto.Changeset.get_field(changeset, :project_id),
+         project = Projects.get_project(workspace, id),
+         :ok <- project_ready(project) do
+      changeset
+      |> Ecto.Changeset.put_change(:runner_id, project.runner_id)
+      |> Ecto.Changeset.put_change(:context, Projects.scratch_context(project))
+    else
+      nil -> changeset
+      {:error, message} -> Ecto.Changeset.add_error(changeset, :project_id, message)
+    end
+  end
+
+  @doc """
+  Creates a job the control plane builds itself (a proposal) for one of the
+  workspace's runners and hands it to that runner. A revoked runner or one
+  from another workspace is refused. `context` is the wire form of the job's
+  context (`PipeMaestroProtocol.Job`), plus any key of the control plane's
+  own, which never reaches the runner.
+  """
+  @spec create_runner_job(User.t(), Workspace.t(), map(), map()) ::
+          {:ok, Job.t()} | {:error, Ecto.Changeset.t()}
+  def create_runner_job(%User{} = user, %Workspace{} = workspace, attrs, context \\ %{}) do
+    %Job{workspace_id: workspace.id, created_by_user_id: user.id, context: context}
+    |> Job.runner_changeset(attrs)
+    |> validate_runner(workspace)
+    |> insert_and_assign()
+  end
+
+  defp insert_and_assign(changeset) do
     with {:ok, job} <- Repo.insert(changeset) do
       job = preload(job)
       broadcast({:workspace, job.workspace_id}, {:job_updated, job})
@@ -89,6 +150,7 @@ defmodule PipeMaestro.Jobs do
         Map.take(attrs, [
           :workspace_id,
           :runner_id,
+          :project_id,
           :created_by_user_id,
           :stage_run_id,
           :prompt,
@@ -123,7 +185,7 @@ defmodule PipeMaestro.Jobs do
         where: j.workspace_id == ^workspace_id,
         order_by: [desc: j.inserted_at, desc: j.id],
         limit: @list_limit,
-        preload: [:runner, :created_by_user]
+        preload: [:runner, :created_by_user, :project]
     )
   end
 
@@ -530,7 +592,7 @@ defmodule PipeMaestro.Jobs do
     broadcast({:workspace, job.workspace_id}, {:job_updated, job})
   end
 
-  defp preload(job), do: Repo.preload(job, [:runner, :created_by_user], force: true)
+  defp preload(job), do: Repo.preload(job, [:runner, :created_by_user, :project], force: true)
 
   defp now, do: DateTime.utc_now(:second)
 end

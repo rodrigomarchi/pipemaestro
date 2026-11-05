@@ -221,14 +221,20 @@ defmodule PipeMaestro.Projects.ProjectRunnerTest do
       other = project(ctx, ctx.server, %{"name" => "App no servidor"})
       pipeline = pipeline_fixture(ctx.workspace)
 
-      for {title, p} <- [{"um", project}, {"dois", project}, {"fora", other}] do
-        {:ok, _task} =
+      # Timestamps have one-second precision: each task is a second older than the next.
+      for {{title, p}, age} <-
+            Enum.with_index([{"um", project}, {"dois", project}, {"fora", other}]) do
+        {:ok, task} =
           Tasks.create_task(ctx.user, ctx.workspace, %{
             "title" => title,
             "prompt" => "p",
             "pipeline_id" => pipeline.id,
             "project_id" => p.id
           })
+
+        task
+        |> Ecto.Changeset.change(inserted_at: DateTime.add(task.inserted_at, age - 10, :second))
+        |> PipeMaestro.Repo.update!()
       end
 
       assert Enum.map(Projects.recent_tasks(project, 5), & &1.title) == ["dois", "um"]

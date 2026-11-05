@@ -100,6 +100,39 @@ defmodule PipeMaestro.Fixtures do
     runner
   end
 
+  @doc """
+  A project of `runner`'s workspace on `runner`'s `directory` (which the
+  runner must offer), named after the directory unless `attrs` says.
+  """
+  @spec project_fixture(PipeMaestro.Runners.Runner.t(), String.t(), map()) ::
+          PipeMaestro.Projects.Project.t()
+  def project_fixture(runner, directory, attrs \\ %{}) do
+    workspace = PipeMaestro.Repo.get!(Workspaces.Workspace, runner.workspace_id)
+
+    {:ok, project} =
+      PipeMaestro.Projects.create_project(
+        workspace,
+        Enum.into(attrs, %{
+          "name" => directory,
+          "runner_id" => runner.id,
+          "directory" => directory
+        })
+      )
+
+    project
+  end
+
+  @doc """
+  The projects of `runner` for each of the directories it offers, by
+  directory name.
+  """
+  @spec projects_fixture(PipeMaestro.Runners.Runner.t()) :: %{
+          String.t() => PipeMaestro.Projects.Project.t()
+        }
+  def projects_fixture(runner) do
+    Map.new(runner.directories, &{&1["name"], project_fixture(runner, &1["name"])})
+  end
+
   @doc "A pipeline of `workspace`; by default two stages, `a` and `b`."
   @spec pipeline_fixture(Workspaces.Workspace.t(), map()) ::
           PipeMaestro.Pipelines.Pipeline.t()
@@ -126,7 +159,7 @@ defmodule PipeMaestro.Fixtures do
     workspace = PipeMaestro.Repo.get!(Workspaces.Workspace, runner.workspace_id)
 
     {:ok, job} =
-      PipeMaestro.Jobs.create_job(
+      PipeMaestro.Jobs.create_runner_job(
         user,
         workspace,
         Enum.into(attrs, %{"prompt" => "diga oi", "runner_id" => runner.id})

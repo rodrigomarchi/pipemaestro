@@ -22,6 +22,7 @@ defmodule PipeMaestro.Proposals.DecisionKind do
 
   @types %{
     task_id: :binary_id,
+    project_id: :binary_id,
     runner_id: :binary_id,
     directory: :string,
     stage: :integer,
@@ -53,6 +54,7 @@ defmodule PipeMaestro.Proposals.DecisionKind do
          %Task{} = task <- find_task(workspace, task_id) do
       changeset
       |> Changeset.put_change(:runner_id, task.runner_id)
+      |> Changeset.put_change(:project_id, task.project_id)
       |> Changeset.put_change(:directory, if(task.git, do: task.directory))
       # The pause this suggestion is for: applying it later checks it is still the same.
       |> Changeset.put_change(:stage, task.current_stage)

@@ -1,7 +1,8 @@
 defmodule PipeMaestro.Proposals.TaskKind do
   @moduledoc """
   A task written by the agent from an idea or a GitHub issue
-  (`PipeMaestro.Proposals`): it studies the directory and answers with the
+  (`PipeMaestro.Proposals`) for a project: it studies the project's
+  directory and answers with the
   task's title, its prompt (context, the files involved, how to reproduce,
   acceptance criteria) and which of the workspace's pipelines fits, saying
   whether the request is clear enough to run on its own. The person opens the
@@ -23,6 +24,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
   alias PipeMaestro.Workspaces.Workspace
 
   @types %{
+    project_id: :binary_id,
     runner_id: :binary_id,
     directory: :string,
     request: :string,
@@ -44,9 +46,8 @@ defmodule PipeMaestro.Proposals.TaskKind do
   @impl true
   def changeset(attrs, workspace) do
     {%{}, @types}
-    |> Changeset.cast(attrs, Map.keys(@types))
-    |> Changeset.validate_required([:runner_id], message: "escolha um runner online")
-    |> Changeset.validate_required([:directory], message: "escolha o diretório do projeto")
+    |> Changeset.cast(attrs, Map.keys(@types) -- [:runner_id, :directory])
+    |> Changeset.validate_required([:project_id], message: "escolha um projeto")
     |> Changeset.validate_required([:request], message: "conte a ideia da tarefa")
     |> Changeset.validate_length(:request, max: 16_000)
     |> Changeset.validate_length(:feedback, max: 4_000)
@@ -196,17 +197,20 @@ defmodule PipeMaestro.Proposals.TaskKind do
          ready: output["pronta"] == true,
          auto_approve: input["auto_approve"] == true,
          questions: output["perguntas"] |> List.wrap() |> Enum.filter(&is_binary/1),
-         task_params: %{
-           "title" => String.slice(title, 0, 120),
-           "prompt" => description,
-           "pipeline_id" => pipeline && pipeline.id,
-           "runner_id" => job.runner_id,
-           "directory" => input["directory"],
-           "issue_url" => input["issue_url"]
-         }
+         task_params:
+           %{
+             "title" => String.slice(title, 0, 120),
+             "prompt" => description,
+             "pipeline_id" => pipeline && pipeline.id,
+             "project_id" => input["project_id"]
+           }
+           |> put_issue(input["issue_url"])
        }}
     end
   end
+
+  defp put_issue(params, nil), do: params
+  defp put_issue(params, url), do: Map.put(params, "issue_url", url)
 
   defp chosen_pipeline(_job, nil), do: nil
 

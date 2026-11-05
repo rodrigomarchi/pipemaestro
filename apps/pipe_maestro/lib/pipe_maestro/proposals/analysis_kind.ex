@@ -25,6 +25,7 @@ defmodule PipeMaestro.Proposals.AnalysisKind do
 
   @types %{
     task_id: :binary_id,
+    project_id: :binary_id,
     runner_id: :binary_id,
     directory: :string,
     stage: :integer,
@@ -54,6 +55,7 @@ defmodule PipeMaestro.Proposals.AnalysisKind do
          %Task{} = task <- find_task(workspace, task_id) do
       changeset
       |> Changeset.put_change(:runner_id, task.runner_id)
+      |> Changeset.put_change(:project_id, task.project_id)
       |> Changeset.put_change(:directory, directory(task))
       # The pause this analysis is for: it is dropped once the pause is over.
       |> Changeset.put_change(:stage, task.current_stage)

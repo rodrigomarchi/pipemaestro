@@ -4,7 +4,8 @@ defmodule PipeMaestro.Proposals.ImproveKind do
   agent from how the pipeline has worked (`PipeMaestro.Proposals`). It reads
   the latest finished tasks (`PipeMaestro.Tasks.history/2`): where stages
   failed, which gates did not pass, where tasks stopped for a person and what
-  was decided, and what each stage cost; and it studies the directory's code.
+  was decided, and what each stage cost; and it studies the code of the
+  project's directory (`project_id`).
   It answers with the revised pipeline and notes, and the changes it made and
   why. The person saves the notes and opens the pipeline form filled with the
   revision, which saves as the pipeline's next version.
@@ -19,6 +20,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
 
   @types %{
     pipeline_id: :binary_id,
+    project_id: :binary_id,
     runner_id: :binary_id,
     directory: :string,
     focus: :string,
@@ -40,10 +42,9 @@ defmodule PipeMaestro.Proposals.ImproveKind do
   def changeset(attrs, workspace) do
     changeset =
       {%{}, @types}
-      |> Changeset.cast(attrs, Map.keys(@types))
+      |> Changeset.cast(attrs, [:pipeline_id, :project_id, :focus, :feedback])
       |> Changeset.validate_required([:pipeline_id])
-      |> Changeset.validate_required([:runner_id], message: "escolha um runner online")
-      |> Changeset.validate_required([:directory], message: "escolha o diretório do projeto")
+      |> Changeset.validate_required([:project_id], message: "escolha um projeto")
       |> Changeset.validate_length(:focus, max: 4_000)
       |> Changeset.validate_length(:feedback, max: 4_000)
 
@@ -61,7 +62,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
   @impl true
   def job(input, workspace, previous) do
     pipeline = Pipelines.get_pipeline!(workspace, input.pipeline_id)
-    project = Projects.for_directory(workspace, input.directory)
+    project = Projects.get_project(workspace, input.project_id)
 
     %{
       title: pipeline.name,
@@ -262,7 +263,7 @@ defmodule PipeMaestro.Proposals.ImproveKind do
                }
              end,
            pipeline_id: input["pipeline_id"],
-           directory: input["directory"],
+           project_id: input["project_id"],
            pipeline: pipeline |> Yaml.from_map() |> Yaml.without_caps() |> with_caps_of(current),
            notes: Proposals.text(output["notas"])
          }}

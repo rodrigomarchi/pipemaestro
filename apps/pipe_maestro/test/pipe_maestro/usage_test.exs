@@ -49,8 +49,7 @@ defmodule PipeMaestro.UsageTest do
         "title" => "T",
         "prompt" => "p",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_fixture(ctx.runner, "app").id
       })
 
     run(ctx, task, %{"status" => "failed", "exit_code" => 1, "cost_usd" => 0.25})
@@ -86,8 +85,7 @@ defmodule PipeMaestro.UsageTest do
         "title" => "T",
         "prompt" => "p",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_fixture(ctx.runner, "app").id
       })
 
     run(ctx, task, %{})

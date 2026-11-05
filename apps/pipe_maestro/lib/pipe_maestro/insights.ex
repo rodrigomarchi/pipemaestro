@@ -501,14 +501,26 @@ defmodule PipeMaestro.Insights do
       from j in Job,
         where: j.workspace_id == ^workspace_id and j.finished_at >= ^since
 
-    case filters["pipeline"] do
-      name when is_binary(name) and name != "" ->
-        from j in query,
-          join: r in StageRun,
-          on: r.id == j.stage_run_id,
-          join: t in Task,
-          on: t.id == r.task_id,
-          where: t.pipeline_name == ^name
+    query =
+      case filters["pipeline"] do
+        name when is_binary(name) and name != "" ->
+          from j in query,
+            join: r in StageRun,
+            on: r.id == j.stage_run_id,
+            join: t in Task,
+            on: t.id == r.task_id,
+            where: t.pipeline_name == ^name
+
+        _all ->
+          query
+      end
+
+    case filters["project_id"] do
+      id when is_binary(id) and id != "" ->
+        case Ecto.UUID.cast(id) do
+          {:ok, id} -> where(query, [j], j.project_id == ^id)
+          :error -> where(query, false)
+        end
 
       _all ->
         query

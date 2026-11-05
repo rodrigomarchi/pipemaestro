@@ -17,10 +17,19 @@ defmodule PipeMaestro.TasksTest do
         %{"name" => "notas", "git" => false}
       ])
 
-    %{workspace: workspace, user: user, runner: runner, pipeline: pipeline_fixture(workspace)}
+    %{
+      workspace: workspace,
+      user: user,
+      runner: runner,
+      projects: projects_fixture(runner),
+      pipeline: pipeline_fixture(workspace)
+    }
   end
 
+  # `"directory"` names the project of the runner's directory.
   defp create_task(ctx, attrs \\ %{}) do
+    {directory, attrs} = Map.pop(Map.new(attrs), "directory", "app")
+
     {:ok, task} =
       Tasks.create_task(
         ctx.user,
@@ -29,8 +38,7 @@ defmodule PipeMaestro.TasksTest do
           "title" => "Corrigir o login",
           "prompt" => "O botão de login não responde",
           "pipeline_id" => ctx.pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.projects[directory].id
         })
       )
 
@@ -73,8 +81,7 @@ defmodule PipeMaestro.TasksTest do
         "title" => "Da proposta",
         "prompt" => "x",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => ctx.projects["app"].id
       }
 
       assert {:ok, task} = Tasks.create_task(ctx.user, ctx.workspace, attrs, proposal: job)
@@ -117,9 +124,8 @@ defmodule PipeMaestro.TasksTest do
 
     test "a directory with a project sets up the worktree and fills {{projeto.*}}", ctx do
       {:ok, project} =
-        PipeMaestro.Projects.create_project(ctx.workspace, %{
+        PipeMaestro.Projects.update_project(ctx.projects["app"], %{
           "name" => "App",
-          "directory" => "app",
           "setup_command" => "mix deps.get",
           "test_command" => "mix test",
           "copy_paths_text" => "deps"
@@ -175,7 +181,7 @@ defmodule PipeMaestro.TasksTest do
                "Nunca altere código."
     end
 
-    test "without a project, {{projeto.*}} is empty and there is no setup", ctx do
+    test "a project without commands leaves {{projeto.*}} empty and sets nothing up", ctx do
       pipeline =
         pipeline_fixture(ctx.workspace, %{
           "stages" => [%{"key" => "a", "name" => "A", "prompt" => "Teste: [{{projeto.teste}}]"}]
@@ -184,7 +190,7 @@ defmodule PipeMaestro.TasksTest do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
       task = create_task(ctx, %{"pipeline_id" => pipeline.id})
 
-      assert task.project_id == nil
+      assert task.project_id == ctx.projects["app"].id
       assert_receive {:job_assign, job}
       assert job.prompt =~ "Teste: []"
       refute Map.has_key?(job.context, "setup")
@@ -199,10 +205,10 @@ defmodule PipeMaestro.TasksTest do
       refute Map.has_key?(job.context, "worktree")
     end
 
-    test "validates the pipeline, runner and directory", ctx do
+    test "validates the pipeline and the project", ctx do
       assert {:error, changeset} = Tasks.create_task(ctx.user, ctx.workspace, %{})
 
-      assert %{title: [_], prompt: [_], pipeline_id: [_], runner_id: [_], directory: [_]} =
+      assert %{title: [_], prompt: [_], pipeline_id: [_], project_id: [_]} =
                errors_on(changeset)
 
       other = workspace_fixture()
@@ -212,15 +218,14 @@ defmodule PipeMaestro.TasksTest do
         "title" => "t",
         "prompt" => "p",
         "pipeline_id" => ctx.pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => ctx.projects["app"].id
       }
 
       for {attrs, field} <- [
             {%{"pipeline_id" => foreign_pipeline.id}, :pipeline_id},
             {%{"pipeline_id" => "nope"}, :pipeline_id},
-            {%{"runner_id" => Ecto.UUID.generate()}, :runner_id},
-            {%{"directory" => "inexistente"}, :directory}
+            {%{"project_id" => Ecto.UUID.generate()}, :project_id},
+            {%{"project_id" => "nope"}, :project_id}
           ] do
         assert {:error, changeset} =
                  Tasks.create_task(ctx.user, ctx.workspace, Map.merge(base, attrs))
@@ -350,9 +355,8 @@ defmodule PipeMaestro.TasksTest do
   describe "gates, rules and feedback" do
     setup ctx do
       {:ok, _project} =
-        PipeMaestro.Projects.create_project(ctx.workspace, %{
+        PipeMaestro.Projects.update_project(ctx.projects["app"], %{
           "name" => "App",
-          "directory" => "app",
           "test_command" => "mix test"
         })
 
@@ -1062,8 +1066,7 @@ defmodule PipeMaestro.TasksTest do
                  "title" => "T",
                  "prompt" => "p",
                  "pipeline_id" => ctx.pipeline.id,
-                 "runner_id" => ctx.runner.id,
-                 "directory" => "app",
+                 "project_id" => ctx.projects["app"].id,
                  "issue_url" => "https://exemplo.com/x"
                })
 
@@ -1075,11 +1078,10 @@ defmodule PipeMaestro.TasksTest do
     test "takes the issue's title, text and link, with the project's pipeline and directory",
          ctx do
       {:ok, project} =
-        PipeMaestro.Projects.create_project(
-          ctx.workspace,
+        PipeMaestro.Projects.update_project(
+          ctx.projects["app"],
           %{
             "name" => "App",
-            "directory" => "app",
             "github_repo" => "acme/app",
             "trigger_label" => "claude",
             "trigger_pipeline_id" => ctx.pipeline.id
@@ -1093,7 +1095,7 @@ defmodule PipeMaestro.TasksTest do
         "html_url" => "https://github.com/acme/app/issues/9"
       }
 
-      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, issue, ctx.runner.id)
+      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, issue)
       assert task.title == "Botão quebrado"
       assert task.prompt =~ "Ao clicar nada acontece."
       assert task.issue_url == "https://github.com/acme/app/issues/9"
@@ -1102,7 +1104,7 @@ defmodule PipeMaestro.TasksTest do
       assert task.created_by_user_id == ctx.user.id
 
       empty = %{issue | "body" => nil, "html_url" => "https://github.com/acme/app/issues/10"}
-      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, empty, ctx.runner.id)
+      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, empty)
       assert task.prompt =~ "Botão quebrado"
     end
   end
@@ -1636,7 +1638,7 @@ defmodule PipeMaestro.TasksTest do
   end
 
   describe "the board" do
-    test "filters by pipeline, runner, directory and person", ctx do
+    test "filters by pipeline, runner, project and person", ctx do
       other_pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
       colleague = member_fixture(ctx.workspace)
       a = create_task(ctx)
@@ -1647,8 +1649,7 @@ defmodule PipeMaestro.TasksTest do
           "title" => "De outra pessoa",
           "prompt" => "x",
           "pipeline_id" => ctx.pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => ctx.projects["app"].id
         })
 
       ids = fn filters ->
@@ -1657,10 +1658,10 @@ defmodule PipeMaestro.TasksTest do
 
       assert ids.(%{}) == Enum.sort([a.id, b.id, c.id])
       assert ids.(%{"pipeline" => "Outro"}) == [b.id]
-      assert ids.(%{"directory" => "notas"}) == [b.id]
+      assert ids.(%{"project_id" => ctx.projects["notas"].id}) == [b.id]
       assert ids.(%{"user_id" => colleague.id}) == [c.id]
 
-      assert ids.(%{"runner_id" => ctx.runner.id, "directory" => "app"}) ==
+      assert ids.(%{"runner_id" => ctx.runner.id, "project_id" => ctx.projects["app"].id}) ==
                Enum.sort([a.id, c.id])
 
       assert ids.(%{"pipeline" => "", "runner_id" => ""}) == Enum.sort([a.id, b.id, c.id])
@@ -1680,7 +1681,7 @@ defmodule PipeMaestro.TasksTest do
       assert ids.("100%_") == []
     end
 
-    test "runs a task again: same request, pipeline, runner and directory", ctx do
+    test "runs a task again: same request, pipeline and project", ctx do
       task = create_task(ctx)
       {:ok, _} = Tasks.cancel_task(task)
       colleague = member_fixture(ctx.workspace)
@@ -1700,8 +1701,7 @@ defmodule PipeMaestro.TasksTest do
                "title" => task.title,
                "prompt" => task.prompt,
                "pipeline_id" => task.pipeline_id,
-               "runner_id" => task.runner_id,
-               "directory" => task.directory
+               "project_id" => task.project_id
              }
     end
 
