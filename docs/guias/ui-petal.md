@@ -58,27 +58,37 @@ responder" no painel da tarefa).
 ## Marca
 
 O símbolo do PipeMaestro é desenho próprio e agnóstico de fornecedor
-([ADR 0019](../adr/0019-o-nome-pipemaestro.md)): três agentes (os pontos à esquerda)
+([ADR 0019](../adr/0019-o-nome-pipemaestro.md)): três agentes (os pads à esquerda)
 convergem num único pipeline, que passa por uma etapa (o anel) e termina no pull request
 (o ponto cheio). É o maestro do pipeline, não o de um agente.
 
+O estilo é de placa de circuito em neon: fundo escuro `primary-950` → `secondary-950`,
+trilhas violeta (`primary-400`) com cantos a 45°, pads vazados nos agentes, anel e ponto
+em ciano (`secondary-400`) e um halo neon feito por uma cópia mais larga e translúcida de
+cada traço, por baixo dele.
+
 - **Componentes:** `<Layouts.brand />` é a marca com nome (attrs `size` `"sm"`/`"md"` e
   `compact` para a sidebar, em que só o nome some ao recolher); `logo_mark/1`
-  (`PipeMaestroWeb.BrandComponents`) é só o símbolo, dimensionado por `class`. O fundo é
-  CSS no próprio `<svg>` e os traços seguem `currentColor`, então várias marcas na mesma
-  página não disputam ids.
+  (`PipeMaestroWeb.BrandComponents`) é só o símbolo, dimensionado por `class`. O quadrado
+  escuro, o `ring` translúcido e a sombra colorida (que o destacam da sidebar escura) são
+  CSS no próprio `<svg>`, e as cores dos traços são classes Tailwind literais nos filhos;
+  sem `id`, `<defs>` nem `<filter>`, várias marcas na mesma página não disputam ids.
 - **Test ids:** o link da marca leva `brand` e o símbolo `brand-mark`. Onde a marca
   aparece duas vezes na mesma página (nav e rodapé da landing), a segunda passa o attr
   `testid` (`footer-brand`, símbolo `footer-brand-mark`), para as specs não precisarem
   de `.first()`.
-- **Arquivos** em `apps/pipe_maestro_web/priv/static/images/`: `logo-mark.svg` (em cor),
-  `logo-mark-mono.svg` (só traços em `currentColor`, sem fundo, para qualquer cor de
-  fundo) e `favicon.svg` (desenho simplificado para 16–32 px). O `priv/static/favicon.ico`
-  (16/32/48) é rasterizado do `favicon.svg`; o `root.html.heex` declara os dois.
-- **Regras:** o gradiente é só `primary-500` → `secondary-500`; não recolorir com cores
-  de terceiros nem acrescentar símbolo, nome ou faísca de fornecedor; tamanho mínimo de
-  16 px, e abaixo de 24 px usar o desenho do favicon; deixar ao redor um respiro de pelo
-  menos um quarto do lado do símbolo; sem texto dentro do símbolo.
+- **Arquivos** em `apps/pipe_maestro_web/priv/static/images/`: `logo-mark.svg` (em cor,
+  autocontido, cores literais), `logo-mark-mono.svg` (só traços em `currentColor`, sem
+  fundo nem halo, para qualquer cor de fundo) e `favicon.svg` (desenho simplificado para
+  16–32 px: dois agentes, trilhas largas e o ponto do PR). O `priv/static/favicon.ico`
+  (16/32/48) é rasterizado do `favicon.svg` com `make favicon`
+  (`e2e/scripts/favicon.mts`, no Chromium do Playwright); o `root.html.heex` declara os
+  dois.
+- **Regras:** cores só `primary`/`secondary` sobre o fundo escuro; não recolorir com
+  cores de terceiros nem acrescentar símbolo, nome ou faísca de fornecedor; sem animação;
+  brilho só por traço duplicado translúcido, nunca `filter`; tamanho mínimo de 16 px, e
+  abaixo de 24 px usar o desenho do favicon; deixar ao redor um respiro de pelo menos um
+  quarto do lado do símbolo; sem texto dentro do símbolo.
 
 ## Screenshots da landing
 

@@ -15,7 +15,12 @@ make e2e.ui                           # modo UI do Playwright, para depurar
 make e2e.shots                        # suíte + screenshots claro/escuro (DARK=0 só claro)
 make e2e.db.reset                     # recria o banco pipe_maestro_e2e
 make e2e.typecheck                    # TypeScript das specs, Page Objects e helpers
+make favicon                          # regera o favicon.ico a partir do favicon.svg
 ```
+
+`scripts/` guarda utilitários que usam o Chromium do Playwright fora da suíte (não
+estão no `testDir`): `scripts/favicon.mts` rasteriza o `favicon.svg` em PNGs de 16, 32
+e 48 px e os empacota no `priv/static/favicon.ico`.
 
 O servidor sobe sozinho na porta `E2E_PORT` (padrão 4003), com o banco
 `pipe_maestro_e2e` no Postgres de teste. Os alvos do Makefile matam
