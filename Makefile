@@ -2,7 +2,7 @@
 	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
 	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
 	deploy deploy.skip-ci \
-	runner.status runner.logout runner.binary runner.rel runner.version \
+	runner.status runner.logout runner.binary runner.rel runner.version cp.version \
 	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck \
 	landing.shots
 
@@ -136,10 +136,15 @@ runner.install: runner.rel ## Install pipemaestro for this user (~/.local/share 
 runner.binary: ## Build the runner as one binary per platform into burrito_out/, in Docker ([TARGET=linux_x86_64] only one)
 	$(if $(TARGET),BURRITO_TARGET=$(TARGET)) scripts/build_runner_binaries.sh burrito_out
 
-# The version this checkout builds as (AAAA-MM-DD.NN, or +dev.<commit> after one).
-# Mix may print what it compiles first: the version is the last line.
-runner.version: ## Print the version this checkout builds as (runner and control plane)
+# The runner's version of this checkout (AAAA-MM-DD.NN, or +dev.<commit> after
+# one): the last commit that changed the runner, the one the control plane
+# requires. Mix may print what it compiles first: the version is the last line.
+runner.version: ## Print the runner's version this checkout builds (the one the control plane requires)
 	@cd $(RUNNER_DIR) && mix runner.version | tail -n 1
+
+cp.version: ## Print the control plane's version this checkout builds (HEAD's)
+	@cd apps/pipe_maestro_protocol && \
+		mix run --no-start -e 'IO.puts(PipeMaestroProtocol.Version.Git.current("."))' | tail -n 1
 
 # A release is an annotated tag runner-AAAA-MM-DD.NN at a clean HEAD, named
 # after today's local date and the day's next number, then the binary built
@@ -159,7 +164,8 @@ runner.release: ## Tag the next runner release (runner-AAAA-MM-DD.NN) and build 
 		echo "Release $$version pronta em burrito_out/. Para publicar: git push origin runner-$$version"
 
 image: ## Build the control plane's Docker image (pipemaestro), with this checkout's version
-	docker build --build-arg CP_VERSION=$$(cd $(RUNNER_DIR) && mix runner.version | tail -n 1) \
+	docker build --build-arg CP_VERSION=$$($(MAKE) -s cp.version) \
+		--build-arg RUNNER_VERSION=$$($(MAKE) -s runner.version) \
 		-t pipemaestro .
 
 REF ?= main
