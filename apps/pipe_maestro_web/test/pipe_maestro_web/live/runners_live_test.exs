@@ -47,7 +47,14 @@ defmodule PipeMaestroWeb.RunnersLiveTest do
                |> render() =~ ~s(href="/downloads/runner/pipemaestro_#{target}")
       end
 
+      # The binaries are the runner's version, not the control plane's.
       assert has_element?(
+               view,
+               "[data-testid=runner-download-version]",
+               PipeMaestro.Version.runner_version()
+             )
+
+      refute has_element?(
                view,
                "[data-testid=runner-download-version]",
                PipeMaestro.Version.version()
@@ -67,6 +74,12 @@ defmodule PipeMaestroWeb.RunnersLiveTest do
       # This platform is not the default one, so the login names it.
       assert view |> element("[data-testid=connect-login-command]") |> render() =~
                "pipemaestro login --url #{PipeMaestroWeb.Endpoint.url()}"
+
+      assert has_element?(
+               view,
+               "[data-testid=runners-expected-version]",
+               PipeMaestro.Version.runner_version()
+             )
     end
 
     test "on the default platform the login needs no --url" do
@@ -82,26 +95,32 @@ defmodule PipeMaestroWeb.RunnersLiveTest do
     end
   end
 
-  test "shows each runner's version and marks the ones older than the control plane", %{
+  test "shows each runner's version and marks the ones older than the runner's required", %{
     conn: conn,
     workspace: workspace,
     user: user
   } do
-    # The control plane runs as 2026-11-04.02 in tests (config/test.exs).
-    runner_fixture(workspace, user, %{name: "antigo", runner_version: "2026-11-04.01"})
-    runner_fixture(workspace, user, %{name: "atual", runner_version: "2026-11-04.02"})
-    runner_fixture(workspace, user, %{name: "dev", runner_version: "2026-11-04.01+dev.abc1234"})
+    # In tests (config/test.exs) the control plane runs as 2026-11-04.02 and
+    # requires runners on 2026-11-03.02.
+    runner_fixture(workspace, user, %{name: "antigo", runner_version: "2026-11-03.01"})
+    runner_fixture(workspace, user, %{name: "atual", runner_version: "2026-11-03.02"})
+    runner_fixture(workspace, user, %{name: "entre", runner_version: "2026-11-04.01"})
+    runner_fixture(workspace, user, %{name: "dev", runner_version: "2026-11-03.01+dev.abc1234"})
     runner_fixture(workspace, user, %{name: "legado", runner_version: "0.1.0"})
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
 
-    assert has_element?(view, "[data-testid=runner-version-antigo]", "2026-11-04.01")
+    assert has_element?(view, "[data-testid=runner-version-antigo]", "2026-11-03.01")
     assert has_element?(view, "[data-testid=runner-outdated-antigo]", "desatualizado")
 
-    assert has_element?(view, "[data-testid=runner-version-atual]", "2026-11-04.02")
+    assert has_element?(view, "[data-testid=runner-version-atual]", "2026-11-03.02")
     refute has_element?(view, "[data-testid=runner-outdated-atual]")
 
-    assert has_element?(view, "[data-testid=runner-version-dev]", "2026-11-04.01+dev.abc1234")
+    # Older than the control plane, not than the runner it requires.
+    assert has_element?(view, "[data-testid=runner-version-entre]", "2026-11-04.01")
+    refute has_element?(view, "[data-testid=runner-outdated-entre]")
+
+    assert has_element?(view, "[data-testid=runner-version-dev]", "2026-11-03.01+dev.abc1234")
     refute has_element?(view, "[data-testid=runner-outdated-dev]")
 
     assert has_element?(view, "[data-testid=runner-version-legado]", "0.1.0")

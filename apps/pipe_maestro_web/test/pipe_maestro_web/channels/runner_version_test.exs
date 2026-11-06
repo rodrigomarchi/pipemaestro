@@ -9,8 +9,10 @@ defmodule PipeMaestroWeb.RunnerVersionTest do
   alias PipeMaestroWeb.{RunnerChannel, RunnerSocket, RunnerStatus}
 
   @endpoint PipeMaestroWeb.Endpoint
-  # The control plane runs as this in tests (config/test.exs).
-  @current "2026-11-04.02"
+  # The runner's version the control plane requires in tests (config/test.exs),
+  # and the control plane's own, which differs.
+  @current "2026-11-03.02"
+  @control_plane "2026-11-04.02"
 
   setup do
     previous = Application.get_env(:pipe_maestro, :runner_version_policy)
@@ -42,13 +44,13 @@ defmodule PipeMaestroWeb.RunnerVersionTest do
                ctx.socket,
                RunnerChannel,
                "runner:" <> ctx.runner.id,
-               hello("2026-11-04.01")
+               hello("2026-11-03.01")
              )
 
     assert refusal == %{
              "reason" => "outdated",
              "version" => @current,
-             "runner_version" => "2026-11-04.01",
+             "runner_version" => "2026-11-03.01",
              "download_url" => PipeMaestroWeb.Endpoint.url()
            }
 
@@ -56,6 +58,18 @@ defmodule PipeMaestroWeb.RunnerVersionTest do
     refute MapSet.member?(RunnerStatus.online_ids(ctx.workspace.id), ctx.runner.id)
     assert Runners.get_runner!(ctx.workspace, ctx.runner.id).runner_version == @current
     assert Jobs.get_job!(ctx.workspace, job.id).status == :queued
+  end
+
+  test "a runner on the control plane's version is refused, told the runner's version", ctx do
+    assert {:error, %{"reason" => "outdated", "version" => @current} = refusal} =
+             subscribe_and_join(
+               ctx.socket,
+               RunnerChannel,
+               "runner:" <> ctx.runner.id,
+               hello(@control_plane)
+             )
+
+    assert refusal["runner_version"] == @control_plane
   end
 
   test "a runner on the current version joins", ctx do
@@ -79,10 +93,10 @@ defmodule PipeMaestroWeb.RunnerVersionTest do
   test "an outdated runner cannot even sign in" do
     body =
       build_conn()
-      |> post("/api/runner/device/code", %{hello: hello("2026-11-04.01")})
+      |> post("/api/runner/device/code", %{hello: hello(@control_plane)})
       |> json_response(409)
 
-    assert %{"error" => "outdated", "version" => @current, "runner_version" => "2026-11-04.01"} =
+    assert %{"error" => "outdated", "version" => @current, "runner_version" => @control_plane} =
              body
 
     assert body["download_url"]

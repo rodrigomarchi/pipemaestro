@@ -152,9 +152,13 @@ defmodule PipeMaestro.RunnersTest do
       refute outdated?.("2026-11-04.01", "dev+abc1234")
     end
 
-    test "by default, compared with this control plane's version", %{runner: runner} do
-      assert Runners.outdated?(%{runner | runner_version: "2026-11-04.01"})
-      refute Runners.outdated?(%{runner | runner_version: "2026-11-04.02"})
+    test "by default, compared with the runner's version this control plane requires", %{
+      runner: runner
+    } do
+      # config/test.exs: the control plane is 2026-11-04.02, the runner 2026-11-03.02.
+      assert Runners.outdated?(%{runner | runner_version: "2026-11-03.01"})
+      refute Runners.outdated?(%{runner | runner_version: "2026-11-03.02"})
+      refute Runners.outdated?(%{runner | runner_version: "2026-11-04.01"})
     end
 
     test "records its worktrees' disk usage", %{runner: runner} do

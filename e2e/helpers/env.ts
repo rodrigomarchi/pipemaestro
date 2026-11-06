@@ -17,14 +17,17 @@ export const bootstrapOperator = {
 export const userPassword = "senha-e2e-usuario";
 
 /**
- * The versions the suite pins (`CP_VERSION`): the server is built as
- * `controlPlane`, and runners by default too, since the platform refuses any
- * other version; a runner started with `outdatedRunner` is an older release,
- * refused on login and on start.
+ * The versions the suite pins: the server is built as `controlPlane`
+ * (`CP_VERSION`) and requires runners on `runner` (`RUNNER_VERSION`), which
+ * differs, as it does when a deploy leaves the runner be; runners are built as
+ * `runner` by default, since the platform refuses any other version. A runner
+ * started with `outdatedRunner` is an older release, refused on login and on
+ * start.
  */
 export const versions = {
   controlPlane: "2026-11-04.02",
-  outdatedRunner: "2026-11-04.01",
+  runner: "2026-11-03.02",
+  outdatedRunner: "2026-11-03.01",
 };
 
 /** A suffix that keeps names, e-mails and slugs unique across runs. */
