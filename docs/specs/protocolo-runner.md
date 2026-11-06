@@ -63,8 +63,10 @@ um `SHA256SUMS` no formato do `sha256sum` (`PipeMaestroProtocol.Downloads`). O b
 - o SHA-256 do binário baixado conferir com o do `SHA256SUMS`.
 
 Ele troca o executável por `rename` de um temporário no mesmo diretório, e roda o mesmo
-comando de novo. Fora disso (sob Mix, sem terminal e sem `--auto-update`, recusando a
-pergunta), mostra as duas versões e o link, e sai.
+comando de novo. Por padrão, sem perguntar; com `--no-auto-update`, pergunta no terminal
+([ADR 0038](../adr/0038-atualizacao-automatica-por-padrao.md)). Fora disso (sob Mix, ou
+com `--no-auto-update` sem terminal ou recusando a pergunta), mostra as duas versões e o
+link, e sai.
 
 A resposta é `200`:
 
