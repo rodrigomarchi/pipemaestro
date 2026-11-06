@@ -444,4 +444,64 @@ defmodule PipeMaestroProtocol.JobTest do
       assert "result" in JobEvent.types()
     end
   end
+
+  describe "git_credential" do
+    @base %{id: "j1", prompt: "oi"}
+    @credential %{
+      "host" => "git.exemplo.com",
+      "username" => "pipemaestro-bot",
+      "password" => "tok"
+    }
+
+    test "takes the host's credential, with or without an expiry" do
+      assert {:ok, %Job{git_credential: @credential}} =
+               Job.new(Map.put(@base, :git_credential, @credential))
+
+      expiring = Map.put(@credential, "expires_at", "2026-11-06T13:00:00Z")
+
+      assert {:ok, %Job{git_credential: ^expiring}} =
+               Job.new(Map.put(@base, :git_credential, expiring))
+
+      assert Job.to_map(elem(Job.new(@base), 1)) |> Map.has_key?("git_credential") == false
+    end
+
+    test "refuses a credential without the host or with a huge password" do
+      assert {:error, "git_credential " <> _} =
+               Job.new(Map.put(@base, :git_credential, Map.delete(@credential, "host")))
+
+      assert {:error, "git_credential " <> _} =
+               Job.new(
+                 Map.put(@base, :git_credential, %{
+                   @credential
+                   | "password" => String.duplicate("x", 4_097)
+                 })
+               )
+    end
+
+    test "is renewed by its own event, and its file's variable is the runner's" do
+      assert Job.credential_event() == "job:credential"
+      refute Job.env_name?("PIPEMAESTRO_GIT_CREDENTIAL_FILE")
+    end
+
+    test "a runner that does not know the field takes the job anyway" do
+      assert {:ok, %Job{}} = Job.new(Map.put(@base, "campo_novo", %{}))
+    end
+  end
+
+  describe "the delivery's status" do
+    test "takes a commit status for the stage" do
+      status = %{
+        "context" => "pipemaestro/a",
+        "state" => "success",
+        "description" => "Etapa A",
+        "target_url" => "https://pm.test/t"
+      }
+
+      assert {:ok, _} =
+               Job.new(%{id: "j", prompt: "p", delivery: %{"push" => true, "status" => status}})
+
+      assert {:error, _} =
+               Job.new(%{id: "j", prompt: "p", delivery: %{"status" => %{"state" => "talvez"}}})
+    end
+  end
 end

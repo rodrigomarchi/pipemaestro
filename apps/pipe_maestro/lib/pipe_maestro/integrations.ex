@@ -94,6 +94,34 @@ defmodule PipeMaestro.Integrations do
     )
   end
 
+  @doc """
+  The git credential a stage job takes to its runner (ADR 0035): the one of
+  the connection of the task's linked repository, when it is active; `nil`
+  for any other job.
+  """
+  @spec git_credential_for_job(PipeMaestro.Jobs.Job.t()) :: map() | nil
+  def git_credential_for_job(%{stage_run_id: stage_run_id, status: status})
+      when is_binary(stage_run_id) and status in [:queued, :running] do
+    query =
+      from c in Connection,
+        join: r in LinkedRepo,
+        on: r.connection_id == c.id,
+        join: t in PipeMaestro.Tasks.Task,
+        on: t.linked_repo_id == r.id,
+        join: s in PipeMaestro.Tasks.StageRun,
+        on: s.task_id == t.id,
+        where: s.id == ^stage_run_id and c.status == "active"
+
+    with %Connection{} = connection <- Repo.one(query),
+         {:ok, credential} <- Credentials.git_credential(connection) do
+      credential
+    else
+      _none -> nil
+    end
+  end
+
+  def git_credential_for_job(_job), do: nil
+
   @doc "The platform's address, for links it writes on a git host."
   @spec public_url() :: String.t()
   def public_url,

@@ -120,7 +120,8 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
     se não foi encontrado) e como ele se autentica: `api_key` (a chave própria do
     runner) ou `login` (o login da máquina);
   - `capabilities` (opcional): o que o runner suporta além da versão do protocolo
-    (vazio se omitido). Hoje, `"scratch"`: roda um job num worktree descartável (§4.4).
+    (vazio se omitido). Hoje, `"scratch"`: roda um job num worktree descartável (§4.4); e
+    `"git_credential"`: recebe a credencial git do job e a renovação dela (§4.4).
     O control plane só oferece uma funcionalidade a quem a anuncia, o que permite
     acrescentar campos ao job sem quebrar runners antigos.
 
@@ -155,6 +156,7 @@ canal `runner:<runner_id>`.
 |---|---|---|
 | `job:assign` | `{"id", "prompt"}` (`PipeMaestroProtocol.Job`; prompt de até 32 000 bytes) | põe o job na fila local; ignora um job que já tem na fila ou em execução |
 | `job:cancel` | `{"job_id"}` | tira da fila, ou interrompe o job em execução (SIGTERM ao grupo de processos e, depois de 5 s, SIGKILL) |
+| `job:credential` | `{"job_id", "git_credential"}` | a credencial git renovada de um job na fila ou em execução, alguns minutos antes de a anterior vencer; o runner regrava o arquivo dela (ADR 0035) |
 
 No join, o control plane reenvia `job:assign` para cada job ainda `queued` daquele
 runner.
@@ -242,10 +244,11 @@ plane antigo ainda mande.
 | `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB). Sem o campo, o runner tira `CP_ARTIFACT_PATH` do ambiente do agente, para que um valor herdado não vaze para o job |
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
-| `delivery` | `{"push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou nas verificações e nos gates ([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). O runner **não faz commit**: faz o push do `HEAD` (já verificado), abre ou adota o PR da branch e escreve só o bloco da plataforma na descrição (`{"title", "block", "ready"}`: o título só na criação; `ready` tira o prefixo de rascunho) e comenta na issue (`{"url", "body"}`). Numa tarefa de um repositório vinculado cuja conexão deixa a plataforma chamar o host ([ADR 0034](../adr/0034-integracoes-com-hosts-git.md)), a entrega é só `{"push": true}`: o PR e a issue ficam com o control plane. O bloco do PR é o de `PipeMaestroProtocol.PrText`. O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}`, `commit` sendo o commit entregue |
+| `delivery` | `{"push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou nas verificações e nos gates ([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). O runner **não faz commit**: faz o push do `HEAD` (já verificado), abre ou adota o PR da branch e escreve só o bloco da plataforma na descrição (`{"title", "block", "ready"}`: o título só na criação; `ready` tira o prefixo de rascunho) e comenta na issue (`{"url", "body"}`) e, com `"status"` (`{"context", "state", "description", "target_url"}`), põe o commit status da etapa no que empurrou, num Forgejo. Numa tarefa de um repositório vinculado cuja conexão deixa a plataforma chamar o host ([ADR 0034](../adr/0034-integracoes-com-hosts-git.md)), a entrega é só `{"push": true}`: o PR e a issue ficam com o control plane. O bloco do PR é o de `PipeMaestroProtocol.PrText`. O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}`, `commit` sendo o commit entregue |
 | `checks` | `[{"id", ...}]`: as verificações da plataforma, rodadas depois do agente e antes dos gates (ADR 0033): `branch` (`branch`), `no_operation`, `contains_origin` (`branch`), `clean` (`artifacts`: a pasta dos artefatos, que fica de fora, como o que o setup copiou ou criou), `artifact_committed` (`path`), `no_artifacts` (`path`) e `no_secrets` (os valores de `env`, nunca escritos no resultado). Cada resultado vem em `gates`, com `"platform": true`, `"id"` e `"message"` (o motivo, escrito para o agente). Com alguma falhando, os gates não rodam e não há entrega |
 | `sync` | `true` numa etapa de tarefa com git: antes do agente, o runner faz o `fetch` da branch, o fast-forward quando ele é seguro (na branch, limpo, nada em andamento, só atrás) e, fora isso, anexa ao prompt a seção "Estado do repositório" com o que achou |
 | `artifacts` | `[{"path", "content"}]`: os artefatos das etapas anteriores, como o control plane os guardou. Antes do agente, o runner grava os que faltam no disco |
+| `git_credential` | `{"host", "username", "password", "expires_at"?}`: a credencial do repositório vinculado da tarefa ([ADR 0035](../adr/0035-credencial-git-por-job.md)). O runner a grava em `<workdir>/credentials/<job_id>` (`0600`) e a entrega ao git, o seu e o do agente, por um credential helper configurado em variáveis `GIT_CONFIG_*`, nunca na URL do remoto; o arquivo sai quando o job termina. A senha entra na verificação `no_secrets`. Só vai a um runner com a capacidade `"git_credential"`, e nunca numa proposta |
 | `scratch` | `true` numa análise (ADR 0021): roda num worktree descartável do `directory`, em `<workdir>/scratch/<job_id>`, destacado no `HEAD` (`git worktree add --detach`) e removido quando o job termina. Recebe só a cópia de dependências do `setup`, sem comando, e não reporta `changes`. Exige `directory` e não aceita `worktree` nem `delivery`. O control plane só manda `scratch` a um runner que anunciou a capacidade `"scratch"` no `Hello`: um runner antigo descartaria o campo e rodaria no próprio diretório |
 | `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |

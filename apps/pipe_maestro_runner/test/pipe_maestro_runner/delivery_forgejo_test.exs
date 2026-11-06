@@ -139,6 +139,26 @@ defmodule PipeMaestroRunner.DeliveryForgejoTest do
     assert body =~ "Etapa: Plano"
   end
 
+  test "sets the stage's commit status on what it pushed", ctx do
+    with_credential(ctx)
+    File.write!(Path.join(ctx.repo, "a.txt"), "a")
+    git!(ctx.repo, ["add", "."])
+    git!(ctx.repo, ["commit", "-q", "-m", "etapa"])
+    head = git!(ctx.repo, ["rev-parse", "HEAD"])
+
+    status = %{
+      "context" => "pipemaestro/a",
+      "state" => "success",
+      "description" => "Etapa A",
+      "target_url" => "https://pm.test/t"
+    }
+
+    report = deliver(ctx, %{"push" => true, "status" => status})
+
+    refute report["error"]
+    assert [{^head, ^status}] = ForgejoServer.statuses(ctx.server)
+  end
+
   test "comments on a Forgejo issue", ctx do
     with_credential(ctx)
     url = "https://forge.test/acme/app/issues/7"

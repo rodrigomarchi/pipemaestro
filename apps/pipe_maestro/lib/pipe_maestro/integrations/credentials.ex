@@ -39,6 +39,54 @@ defmodule PipeMaestro.Integrations.Credentials do
   def client(%Connection{}), do: {:error, "provedor ainda não suportado"}
 
   @doc """
+  What git signs in to the connection's host with (ADR 0035): `"host"`,
+  `"username"`, `"password"` and, for a token that expires, `"expires_at"`.
+  """
+  @spec git_credential(Connection.t()) :: {:ok, map()} | {:error, String.t()}
+  def git_credential(%Connection{provider: "forgejo", auth_kind: "token"} = connection) do
+    case Connection.credentials(connection) do
+      %{"token" => token} ->
+        {:ok,
+         %{
+           "host" => host(connection),
+           "username" => connection.bot_login || "pipemaestro",
+           "password" => token
+         }}
+
+      _none ->
+        {:error, "informe o token do usuário-bot"}
+    end
+  end
+
+  def git_credential(%Connection{provider: "forgejo", auth_kind: "oauth"} = connection) do
+    with {:ok, token} <- access_token(connection) do
+      expires_at =
+        connection |> Repo.reload!() |> Connection.credentials() |> Map.get("expires_at")
+
+      {:ok,
+       %{
+         "host" => host(connection),
+         "username" => "oauth2",
+         "password" => token,
+         "expires_at" => expires_at
+       }}
+    end
+  end
+
+  def git_credential(%Connection{}), do: {:error, "provedor ainda não suportado"}
+
+  defp host(connection) do
+    case URI.parse(connection.base_url) do
+      %URI{host: host, port: port, scheme: scheme}
+      when {scheme, port} in [{"https", 443}, {"http", 80}] ->
+        host
+
+      %URI{host: host, port: port} ->
+        "#{host}:#{port}"
+    end
+  end
+
+  @doc """
   The OAuth connection's access token, refreshed first when it is about to
   expire.
   """

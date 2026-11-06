@@ -195,6 +195,12 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
       else: request(repo, :patch, "/pulls/#{pr["number"]}", %{title: title, body: body})
   end
 
+  @doc ~s(Sets a commit status on `sha`: `%{"context", "state", "description", "target_url"}`.)
+  @spec status(repo(), String.t(), map()) :: :ok | {:error, String.t()}
+  def status(repo, sha, status) do
+    with {:ok, _} <- request(repo, :post, "/statuses/#{sha}", status), do: :ok
+  end
+
   @doc "Comments on the issue at `url` (`https://host/owner/name/issues/N`)."
   @spec comment(repo(), String.t(), String.t()) :: :ok | {:error, String.t()}
   def comment(repo, url, body) do

@@ -34,9 +34,9 @@ defmodule PipeMaestroRunner.RepoState do
   only behind, and returns what the agent should know, in Markdown, or `nil`
   when there is nothing to tell.
   """
-  @spec sync(Path.t(), String.t()) :: String.t() | nil
-  def sync(dir, branch) do
-    fetch(dir, branch)
+  @spec sync(Path.t(), String.t(), [{String.t(), String.t()}]) :: String.t() | nil
+  def sync(dir, branch, env \\ []) do
+    fetch(dir, branch, env)
     state = state(dir, branch)
 
     {state, forwarded} =
@@ -51,17 +51,19 @@ defmodule PipeMaestroRunner.RepoState do
     end
   end
 
-  @doc "Fetches the task's `branch` from origin, never asking for credentials; `false` when it cannot."
-  @spec fetch(Path.t(), String.t()) :: boolean()
-  def fetch(dir, branch) do
+  @doc """
+  Fetches the task's `branch` from origin, never asking for credentials (but
+  with the job's, `env`); `false` when it cannot.
+  """
+  @spec fetch(Path.t(), String.t(), [{String.t(), String.t()}]) :: boolean()
+  def fetch(dir, branch, env \\ []) do
     match?(
       {:ok, _},
-      git(dir, [
-        "fetch",
-        "--quiet",
-        "origin",
-        "+refs/heads/#{branch}:refs/remotes/origin/#{branch}"
-      ])
+      git(
+        dir,
+        ["fetch", "--quiet", "origin", "+refs/heads/#{branch}:refs/remotes/origin/#{branch}"],
+        env
+      )
     )
   end
 
@@ -146,10 +148,10 @@ defmodule PipeMaestroRunner.RepoState do
     end
   end
 
-  defp git(dir, args) do
+  defp git(dir, args, env \\ []) do
     case System.cmd("git", ["-C", dir | args],
            stderr_to_stdout: true,
-           env: [{"GIT_TERMINAL_PROMPT", "0"}]
+           env: [{"GIT_TERMINAL_PROMPT", "0"} | env]
          ) do
       {output, 0} -> {:ok, output}
       {output, _status} -> {:error, String.trim(output)}

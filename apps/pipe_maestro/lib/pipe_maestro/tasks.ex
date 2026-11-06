@@ -602,10 +602,24 @@ defmodule PipeMaestro.Tasks do
        when is_binary(task.linked_repo_id) do
     if Integrations.keeps_pull_request?(task),
       do: %{"push" => true},
-      else: runner_delivery(task, index)
+      else: task |> runner_delivery(index) |> Map.put("status", stage_status(task, index))
   end
 
   defp delivery(task, index), do: runner_delivery(task, index)
+
+  # The commit status the runner sets for a stage that passed, when the
+  # connection leaves the host to it.
+  defp stage_status(task, index) do
+    stage = Enum.at(task.stages, index)
+    workspace = Repo.get!(Workspace, task.workspace_id)
+
+    %{
+      "context" => "pipemaestro/#{stage.key}",
+      "state" => "success",
+      "description" => stage.name,
+      "target_url" => "#{Integrations.public_url()}/w/#{workspace.slug}/tasks/#{task.id}"
+    }
+  end
 
   defp runner_delivery(%Task{git: true, pipeline_context: %{"delivery" => mode}} = task, index)
        when mode in ["commit", "pr"] do

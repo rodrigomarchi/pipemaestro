@@ -21,8 +21,14 @@ defmodule PipeMaestroProtocol.Job do
   open or adopt its pull request and write its own part of it (`"pr"`:
   `"title"`, used only when the runner opens it, `"block"`, the text kept
   between the platform's markers in the description, and `"ready"`, which
-  takes the draft prefix off the title) and comment on its issue
-  (`"issue_comment"`: `"url"`, `"body"`).
+  takes the draft prefix off the title), comment on its issue
+  (`"issue_comment"`: `"url"`, `"body"`) and set a commit status on what it
+  pushed (`"status"`: `"context"`, `"state"`, `"description"`,
+  `"target_url"`).
+  `git_credential` signs git in to the repository's host
+  (`"host"`, `"username"`, `"password"`, `"expires_at"`), renewed by
+  `"job:credential"`; only a runner with the capability `"git_credential"`
+  gets it (ADR 0035).
   `checks` are the platform's own verifications of a task's worktree, run
   with the gates (`%{"id" => id}` plus its parameters): `"branch"`
   (`"branch"`: HEAD is on it), `"no_operation"` (no merge, rebase or
@@ -125,7 +131,8 @@ defmodule PipeMaestroProtocol.Job do
                 scratch: nil,
                 checks: nil,
                 sync: nil,
-                artifacts: nil
+                artifacts: nil,
+                git_credential: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -153,7 +160,8 @@ defmodule PipeMaestroProtocol.Job do
           scratch: boolean() | nil,
           checks: [map()] | nil,
           sync: boolean() | nil,
-          artifacts: [%{String.t() => String.t()}] | nil
+          artifacts: [%{String.t() => String.t()}] | nil,
+          git_credential: %{String.t() => String.t()} | nil
         }
 
   @optional [
@@ -176,7 +184,8 @@ defmodule PipeMaestroProtocol.Job do
     :scratch,
     :checks,
     :sync,
-    :artifacts
+    :artifacts,
+    :git_credential
   ]
 
   @check_ids ~w(branch no_operation contains_origin clean artifact_committed no_artifacts no_secrets)
@@ -185,7 +194,8 @@ defmodule PipeMaestroProtocol.Job do
 
   @env_name ~r/^[A-Z][A-Z0-9_]{0,63}$/
   # What a secret may not override: the process would break or escape.
-  @reserved_env ~w(PATH HOME SHELL USER CLAUDECODE CLAUDE_CODE_ENTRYPOINT CP_ARTIFACT_PATH)
+  @reserved_env ~w(PATH HOME SHELL USER CLAUDECODE CLAUDE_CODE_ENTRYPOINT CP_ARTIFACT_PATH
+                   PIPEMAESTRO_GIT_CREDENTIAL_FILE)
 
   @max_gates 10
 
@@ -216,6 +226,13 @@ defmodule PipeMaestroProtocol.Job do
   @doc "The runner reports how a job ended."
   @spec finished_event() :: String.t()
   def finished_event, do: "job:finished"
+
+  @doc """
+  The control plane renews a running job's `git_credential`
+  (`%{"job_id", "git_credential"}`), before it expires.
+  """
+  @spec credential_event() :: String.t()
+  def credential_event, do: "job:credential"
 
   @doc "How a job can end, as sent on the wire."
   @spec finished_statuses() :: [String.t()]
@@ -333,10 +350,22 @@ defmodule PipeMaestroProtocol.Job do
 
   defp check(:delivery, %{} = delivery) do
     if pr?(delivery["pr"]) and issue_comment?(delivery["issue_comment"]) and
-         delivery["push"] in [nil, true, false],
+         status?(delivery["status"]) and delivery["push"] in [nil, true, false],
        do: :ok,
-       else: {:error, "must have a titled pr and a comment with url and body"}
+       else: {:error, "must have a titled pr, a comment with url and body and a valid status"}
   end
+
+  defp check(
+         :git_credential,
+         %{"host" => host, "username" => user, "password" => password} = credential
+       ) do
+    if text?(host, 255) and text?(user, 255) and text?(password, 4_096) and
+         (credential["expires_at"] == nil or text?(credential["expires_at"], 40)),
+       do: :ok,
+       else: {:error, "must have a host, a username and a password"}
+  end
+
+  defp check(:git_credential, _value), do: {:error, "must have a host, a username and a password"}
 
   defp check(:delivery, _value), do: {:error, "must be an object"}
 
@@ -399,6 +428,15 @@ defmodule PipeMaestroProtocol.Job do
   @spec env_name?(term()) :: boolean()
   def env_name?(name),
     do: is_binary(name) and name =~ @env_name and name not in @reserved_env
+
+  defp status?(nil), do: true
+
+  defp status?(%{"context" => context, "state" => state} = status),
+    do:
+      text?(context, 255) and state in ~w(pending success error failure warning) and
+        text?(status["description"] || "x", 255) and text?(status["target_url"] || "x", 2_000)
+
+  defp status?(_status), do: false
 
   defp pr?(nil), do: true
 

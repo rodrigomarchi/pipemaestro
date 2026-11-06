@@ -50,7 +50,7 @@ defmodule PipeMaestroProtocol.Hello do
 
   @doc "What a runner of this build supports (`capabilities`)."
   @spec capabilities() :: [String.t()]
-  def capabilities, do: ["scratch"]
+  def capabilities, do: ["git_credential", "scratch"]
 
   @doc """
   Builds a validated hello from a map with atom or string keys. Labels are

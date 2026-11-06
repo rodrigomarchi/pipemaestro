@@ -255,6 +255,41 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
       assert Integrations.keeps_pull_request?(ctx.task) == false
     end
 
+    test "with the runner calling the host, it also sets the stage's commit status", ctx do
+      ctx.connection |> Ecto.Changeset.change(api_mode: "runner") |> Repo.update!()
+      Repo.delete_all(PipeMaestro.Jobs.Job)
+
+      {:ok, task} =
+        Tasks.create_task(
+          Repo.get!(PipeMaestro.Accounts.User, ctx.task.created_by_user_id),
+          ctx.workspace,
+          %{
+            "title" => "Outra",
+            "prompt" => "Outra.",
+            "pipeline_id" => ctx.task.pipeline_id,
+            "runner_id" => ctx.task.runner_id,
+            "directory" => "app"
+          },
+          issue: %{linked_repo_id: ctx.repo.id, issue_number: 3}
+        )
+
+      [job] =
+        Repo.all(
+          from j in PipeMaestro.Jobs.Job,
+            where:
+              j.stage_run_id in subquery(
+                from r in Tasks.StageRun, where: r.task_id == ^task.id, select: r.id
+              )
+        )
+
+      assert %{"push" => true, "pr" => %{"title" => "Outra"}, "status" => status} =
+               job.context["delivery"]
+
+      assert status["context"] == "pipemaestro/a"
+      assert status["state"] == "success"
+      assert status["target_url"] =~ "/tasks/#{task.id}"
+    end
+
     test "keeps the pushed commit", ctx do
       [job] = Repo.all(PipeMaestro.Jobs.Job)
       runner = Repo.get!(PipeMaestro.Runners.Runner, ctx.task.runner_id)

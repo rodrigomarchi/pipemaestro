@@ -17,6 +17,7 @@ defmodule PipeMaestroRunner.Workspace do
   """
 
   alias PipeMaestroProtocol.Job
+  alias PipeMaestroRunner.GitCredential
 
   @doc """
   Prepares and returns the working directory for `job`, given the runner's
@@ -46,11 +47,11 @@ defmodule PipeMaestroRunner.Workspace do
         {:ok, source, nil}
 
       true ->
-        worktree(source, job.worktree, workdir)
+        worktree(source, job.worktree, workdir, GitCredential.git_env(job))
     end
   end
 
-  defp worktree(source, %{"task_id" => task_id, "branch" => branch}, workdir) do
+  defp worktree(source, %{"task_id" => task_id, "branch" => branch}, workdir, env) do
     path = Path.join([workdir, "worktrees", task_id])
 
     cond do
@@ -62,7 +63,7 @@ defmodule PipeMaestroRunner.Workspace do
 
       true ->
         File.mkdir_p!(Path.dirname(path))
-        add_worktree(source, path, branch)
+        add_worktree(source, path, branch, env)
     end
   end
 
@@ -122,14 +123,15 @@ defmodule PipeMaestroRunner.Workspace do
   # otherwise a new branch, from the task's branch on origin if it was
   # pushed (another runner worked on it, or the branch was deleted here), or
   # from HEAD for a task that starts.
-  defp add_worktree(source, path, branch) do
+  defp add_worktree(source, path, branch, env) do
     # A worktree deleted by hand leaves an entry that would refuse the branch.
     _pruned = git(source, ["worktree", "prune"])
 
     result =
       if git(source, ["rev-parse", "--verify", "--quiet", "refs/heads/" <> branch]) |> ok?(),
         do: git(source, ["worktree", "add", path, branch]),
-        else: git(source, ["worktree", "add", "-b", branch, path, start_point(source, branch)])
+        else:
+          git(source, ["worktree", "add", "-b", branch, path, start_point(source, branch, env)])
 
     case result do
       {:ok, _output} -> {:ok, path, source}
@@ -140,9 +142,9 @@ defmodule PipeMaestroRunner.Workspace do
   # The task's branch on origin, if it was pushed; otherwise origin's default
   # branch as origin has it now, not as the local checkout last saw it; HEAD
   # when there is no origin to ask.
-  defp start_point(source, branch) do
+  defp start_point(source, branch, env) do
     cond do
-      remote_ok?(source, [
+      remote_ok?(source, env, [
         "fetch",
         "--quiet",
         "origin",
@@ -150,8 +152,8 @@ defmodule PipeMaestroRunner.Workspace do
       ]) ->
         "origin/" <> branch
 
-      remote_ok?(source, ["fetch", "--quiet", "origin"]) and default_branch(source) ->
-        default_branch(source)
+      remote_ok?(source, env, ["fetch", "--quiet", "origin"]) and default_branch(source, env) ->
+        default_branch(source, env)
 
       true ->
         "HEAD"
@@ -159,9 +161,9 @@ defmodule PipeMaestroRunner.Workspace do
   end
 
   # origin/HEAD, learnt from origin when the clone never recorded it.
-  defp default_branch(source) do
+  defp default_branch(source, env) do
     with {:error, _unknown} <- git(source, ["rev-parse", "--abbrev-ref", "origin/HEAD"]),
-         true <- remote_ok?(source, ["remote", "set-head", "origin", "--auto"]),
+         true <- remote_ok?(source, env, ["remote", "set-head", "origin", "--auto"]),
          {:ok, ref} <- git(source, ["rev-parse", "--abbrev-ref", "origin/HEAD"]) do
       String.trim(ref)
     else
@@ -170,13 +172,14 @@ defmodule PipeMaestroRunner.Workspace do
     end
   end
 
-  # Never a prompt for credentials: without them, origin is not there.
-  defp remote_ok?(source, args) do
+  # Never a prompt for credentials: without them (the job's, `env`), origin
+  # is not there.
+  defp remote_ok?(source, env, args) do
     match?(
       {_output, 0},
       System.cmd("git", ["-C", source | args],
         stderr_to_stdout: true,
-        env: [{"GIT_TERMINAL_PROMPT", "0"}]
+        env: [{"GIT_TERMINAL_PROMPT", "0"} | env]
       )
     )
   end
