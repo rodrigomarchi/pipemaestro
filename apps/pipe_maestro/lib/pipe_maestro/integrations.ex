@@ -18,7 +18,17 @@ defmodule PipeMaestro.Integrations do
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
-  alias PipeMaestro.Integrations.{Connection, Credentials, IssueUrl, Labels, LinkedRepo, Trigger}
+
+  alias PipeMaestro.Integrations.{
+    Connection,
+    Credentials,
+    Delivery,
+    IssueUrl,
+    Labels,
+    LinkedRepo,
+    Trigger
+  }
+
   alias PipeMaestro.{Pipelines, Repo, Workspaces}
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Workspaces.Workspace
@@ -26,6 +36,47 @@ defmodule PipeMaestro.Integrations do
   @doc "The pattern of an issue's link on any host."
   @spec issue_url_regex() :: Regex.t()
   defdelegate issue_url_regex, to: IssueUrl, as: :regex
+
+  @doc "The provider of a connection (`PipeMaestro.Integrations.Provider`)."
+  @spec provider(Connection.t()) :: module()
+  def provider(%Connection{provider: "forgejo"}), do: PipeMaestro.Integrations.Forgejo
+
+  @doc "Subscribes the caller to the workspace's deliveries: `{:delivery_updated, delivery}`."
+  @spec subscribe_deliveries(Workspace.t()) :: :ok
+  def subscribe_deliveries(%Workspace{id: id}),
+    do: Phoenix.PubSub.subscribe(PipeMaestro.PubSub, "integrations:deliveries:" <> id)
+
+  @doc "Tells the workspace's screens a delivery changed."
+  @spec broadcast_delivery(Delivery.t()) :: :ok
+  def broadcast_delivery(%Delivery{workspace_id: id} = delivery),
+    do:
+      Phoenix.PubSub.broadcast(
+        PipeMaestro.PubSub,
+        "integrations:deliveries:" <> id,
+        {:delivery_updated, delivery}
+      )
+
+  @doc """
+  The connection's latest deliveries, newest first, narrowed by `status`
+  (`nil` for every one).
+  """
+  @spec list_deliveries(Connection.t(), String.t() | nil, pos_integer()) :: [Delivery.t()]
+  def list_deliveries(%Connection{id: connection_id}, status \\ nil, limit \\ 50) do
+    from(d in Delivery,
+      where: d.connection_id == ^connection_id,
+      order_by: [desc: d.inserted_at],
+      limit: ^limit
+    )
+    |> then(fn query ->
+      if status in [nil, ""], do: query, else: where(query, [d], d.status == ^status)
+    end)
+    |> Repo.all()
+  end
+
+  @doc "One of the connection's deliveries."
+  @spec get_delivery!(Connection.t(), Ecto.UUID.t()) :: Delivery.t()
+  def get_delivery!(%Connection{id: connection_id}, id),
+    do: Repo.get_by!(Delivery, id: id, connection_id: connection_id)
 
   @doc "The path of a connection's webhook, under the platform's URL."
   @spec webhook_path(Connection.t()) :: String.t()
@@ -266,7 +317,8 @@ defmodule PipeMaestro.Integrations do
            changeset
            |> Changeset.change(
              external_id: to_string(host_repo.id),
-             default_branch: host_repo.default_branch
+             default_branch: host_repo.default_branch,
+             synced_at: DateTime.utc_now(:second)
            )
            |> Repo.insert() do
       _ =

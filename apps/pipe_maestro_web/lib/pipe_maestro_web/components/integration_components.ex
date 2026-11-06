@@ -67,6 +67,15 @@ defmodule PipeMaestroWeb.IntegrationComponents do
   @spec oauth_redirect_uri() :: String.t()
   def oauth_redirect_uri, do: url(~p"/integrations/oauth/callback")
 
+  @doc "An issue's link as `owner/repo#N`, or `\"Issue\"` for any other link."
+  @spec issue_label(String.t()) :: String.t()
+  def issue_label(url) do
+    case Regex.run(~r{/([^/]+)/([^/]+)/issues/(\d+)$}, url) do
+      [_, owner, repo, number] -> "#{owner}/#{repo}##{number}"
+      nil -> "Issue"
+    end
+  end
+
   @doc "`count` and the noun, singular or plural."
   @spec plural(non_neg_integer(), String.t(), String.t()) :: String.t()
   def plural(1, singular, _plural), do: "1 #{singular}"

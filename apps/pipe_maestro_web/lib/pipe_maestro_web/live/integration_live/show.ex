@@ -9,7 +9,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
   import PipeMaestroWeb.IntegrationComponents
 
   alias PipeMaestro.{Integrations, Projects}
-  alias PipeMaestro.Integrations.Connection
+  alias PipeMaestro.Integrations.{Connection, Delivery, Ingest}
   alias PipeMaestroWeb.IntegrationOAuth
 
   @impl true
@@ -18,6 +18,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
 
     if can?(scope, :manage_integrations) do
       connection = Integrations.get_connection!(scope.workspace, id)
+      if connected?(socket), do: Integrations.subscribe_deliveries(scope.workspace)
 
       {:ok,
        socket
@@ -26,10 +27,13 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
          connection: connection,
          projects: Projects.list_projects(scope.workspace),
          show_secret: false,
-         linking: false
+         linking: false,
+         delivery_status: "",
+         open_payload: nil
        )
        |> reset_link()
-       |> load_repos()}
+       |> load_repos()
+       |> load_deliveries()}
     else
       {:ok,
        socket
@@ -40,6 +44,20 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
 
   defp load_repos(socket),
     do: assign(socket, repos: Integrations.list_repos(socket.assigns.connection))
+
+  defp load_deliveries(socket) do
+    assign(socket,
+      deliveries:
+        Integrations.list_deliveries(socket.assigns.connection, socket.assigns.delivery_status)
+    )
+  end
+
+  @impl true
+  def handle_info({:delivery_updated, %Delivery{connection_id: id}}, socket) do
+    if id == socket.assigns.connection.id,
+      do: {:noreply, load_deliveries(socket)},
+      else: {:noreply, socket}
+  end
 
   defp reset_link(socket) do
     assign(socket,
@@ -79,6 +97,24 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
      socket
      |> put_flash(:info, "Conexão #{socket.assigns.connection.name} removida.")
      |> push_navigate(to: ~p"/w/#{workspace.slug}/integrations")}
+  end
+
+  def handle_event("filter_deliveries", %{"deliveries" => %{"status" => status}}, socket),
+    do: {:noreply, socket |> assign(delivery_status: status) |> load_deliveries()}
+
+  def handle_event("toggle_payload", %{"id" => id}, socket) do
+    open = if socket.assigns.open_payload == id, do: nil, else: id
+    {:noreply, assign(socket, open_payload: open)}
+  end
+
+  def handle_event("replay", %{"id" => id}, socket) do
+    delivery = Integrations.get_delivery!(socket.assigns.connection, id)
+    {:ok, copy} = Ingest.replay(delivery, socket.assigns.current_scope.user)
+
+    {:noreply,
+     socket
+     |> load_deliveries()
+     |> put_flash(:info, "Reprocessada: #{status_name(copy.status)} (#{copy.outcome}).")}
   end
 
   def handle_event("toggle_secret", _params, socket),
@@ -161,6 +197,26 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
         assign(socket, search: query, results: [], search_error: message)
     end
   end
+
+  defp status_name("processed"), do: "processada"
+  defp status_name("ignored"), do: "ignorada"
+  defp status_name("waiting_runner"), do: "esperando runner"
+  defp status_name("failed"), do: "falhou"
+  defp status_name(_received), do: "recebida"
+
+  defp status_color("processed"), do: "success"
+  defp status_color("ignored"), do: "gray"
+  defp status_color("waiting_runner"), do: "warning"
+  defp status_color("failed"), do: "danger"
+  defp status_color(_received), do: "info"
+
+  defp kind_name("issue_opened"), do: "issue aberta"
+  defp kind_name("issue_labels_changed"), do: "labels da issue"
+  defp kind_name("issue_comment"), do: "comentário"
+  defp kind_name("issue_closed"), do: "issue fechada"
+  defp kind_name("pr_review"), do: "review do PR"
+  defp kind_name("pr_closed"), do: "PR fechado"
+  defp kind_name(_other), do: "evento"
 
   defp webhook_status(assigns) do
     {color, label} =
@@ -401,12 +457,128 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                     {repo.full_name}
                   </.link>
                   <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {length(
-                      repo.triggers
-                    )} gatilhos
+                    {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {plural(
+                      length(repo.triggers),
+                      "gatilho",
+                      "gatilhos"
+                    )}
                   </p>
                 </div>
                 <.webhook_status repo={repo} testid={"repo-webhook-#{key(repo.full_name)}"} />
+              </li>
+            </ul>
+          </.card_content>
+        </.card>
+
+        <.card variant="outline">
+          <.card_header
+            title="Entregas"
+            description="Cada evento do Forgejo que chegou (ou que a reconciliação achou) e o que a plataforma fez com ele."
+          >
+            <:action>
+              <.form
+                :let={f}
+                for={to_form(%{"status" => @delivery_status}, as: "deliveries")}
+                id="deliveries-filter"
+                phx-change="filter_deliveries"
+              >
+                <.icon_field
+                  field={f[:status]}
+                  icon="hero-funnel"
+                  type="select"
+                  label="Status"
+                  hide_label
+                  prompt="Todas"
+                  options={for status <- Delivery.statuses(), do: {status_name(status), status}}
+                  data-testid="deliveries-status"
+                />
+              </.form>
+            </:action>
+          </.card_header>
+          <.card_content>
+            <p
+              :if={@deliveries == []}
+              class="text-sm text-gray-500 dark:text-gray-400"
+              data-testid="no-deliveries"
+            >
+              Nenhuma entrega ainda.
+            </p>
+            <ul :if={@deliveries != []} class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
+              <li
+                :for={delivery <- @deliveries}
+                class="py-3"
+                data-testid={"delivery-#{key(delivery.external_id)}"}
+              >
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-gray-900 dark:text-white">
+                      <.badge
+                        size="xs"
+                        variant="soft"
+                        color={status_color(delivery.status)}
+                        label={status_name(delivery.status)}
+                        data-testid={"delivery-status-#{key(delivery.external_id)}"}
+                      />
+                      <span class="ml-1">{kind_name(delivery.kind)}</span>
+                      <span
+                        :if={delivery.repo_full_name}
+                        class="font-mono text-gray-600 dark:text-gray-300"
+                      >
+                        {delivery.repo_full_name}<span :if={delivery.issue_number}>#{delivery.issue_number}</span>
+                      </span>
+                    </p>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")} · {delivery.source}
+                      <span :if={delivery.outcome}>· {delivery.outcome}</span>
+                      <.link
+                        :if={delivery.task_id}
+                        navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{delivery.task_id}"}
+                        class="text-primary-600 hover:underline dark:text-primary-400"
+                      >
+                        · abrir a tarefa
+                      </.link>
+                      <.link
+                        :if={delivery.proposal_job_id}
+                        navigate={
+                          ~p"/w/#{@current_scope.workspace.slug}/proposals/#{delivery.proposal_job_id}"
+                        }
+                        class="text-primary-600 hover:underline dark:text-primary-400"
+                        data-testid={"delivery-proposal-#{key(delivery.external_id)}"}
+                      >
+                        · abrir a triagem
+                      </.link>
+                    </p>
+                  </div>
+                  <div class="flex gap-2">
+                    <.button
+                      size="xs"
+                      variant="ghost"
+                      color="gray"
+                      icon="hero-code-bracket"
+                      phx-click="toggle_payload"
+                      phx-value-id={delivery.id}
+                      data-testid={"delivery-payload-toggle-#{key(delivery.external_id)}"}
+                    >
+                      Payload
+                    </.button>
+                    <.button
+                      size="xs"
+                      variant="outline"
+                      color="gray"
+                      icon="hero-arrow-path"
+                      phx-click="replay"
+                      phx-value-id={delivery.id}
+                      data-testid={"delivery-replay-#{key(delivery.external_id)}"}
+                    >
+                      Reprocessar
+                    </.button>
+                  </div>
+                </div>
+                <pre
+                  :if={@open_payload == delivery.id}
+                  class="mt-2 max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"
+                  data-testid={"delivery-payload-#{key(delivery.external_id)}"}
+                >{JSON.encode!(delivery.payload)}</pre>
               </li>
             </ul>
           </.card_content>

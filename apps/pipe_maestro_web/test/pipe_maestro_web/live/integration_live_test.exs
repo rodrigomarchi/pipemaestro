@@ -4,7 +4,7 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
   import Phoenix.LiveViewTest
 
   alias PipeMaestro.{FakeForgejo, Integrations, Repo}
-  alias PipeMaestro.Integrations.Connection
+  alias PipeMaestro.Integrations.{Connection, Ingest}
 
   setup :register_and_log_in_member
 
@@ -315,6 +315,65 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
       view |> element("[data-testid=repo-unlink]") |> render_click()
       assert_redirect(view, ipath(ctx, "/#{ctx.connection.id}"))
       assert Integrations.list_repos(ctx.connection) == []
+    end
+  end
+
+  describe "deliveries" do
+    setup ctx, do: %{connection: connection_fixture(ctx.workspace)}
+
+    defp deliver(connection, id, payload) do
+      {:ok, delivery} =
+        Ingest.ingest_event(connection, id, "issues", payload)
+
+      delivery
+    end
+
+    test "show up live, filter by status, open the payload and replay", ctx do
+      {:ok, view, _html} = live(ctx.conn, ipath(ctx, "/#{ctx.connection.id}"))
+      assert has_element?(view, "[data-testid=no-deliveries]")
+
+      deliver(ctx.connection, "d-1", %{
+        "action" => "opened",
+        "repository" => %{"full_name" => "acme/nada"},
+        "issue" => %{"number" => 1, "labels" => []}
+      })
+
+      assert render(view) =~ "repositório não vinculado"
+      assert view |> element("[data-testid=delivery-status-d-1]") |> render() =~ "ignorada"
+
+      deliver(ctx.connection, "d-2", %{"action" => "milestoned"})
+      view |> form("#deliveries-filter", deliveries: %{status: "processed"}) |> render_change()
+      assert has_element?(view, "[data-testid=no-deliveries]")
+      view |> form("#deliveries-filter", deliveries: %{status: "ignored"}) |> render_change()
+      assert has_element?(view, "[data-testid=delivery-d-2]")
+
+      view |> element("[data-testid=delivery-payload-toggle-d-1]") |> render_click()
+      assert view |> element("[data-testid=delivery-payload-d-1]") |> render() =~ "acme/nada"
+
+      assert view |> element("[data-testid=delivery-replay-d-1]") |> render_click() =~
+               "Reprocessada: ignorada"
+    end
+  end
+
+  describe "repository sync" do
+    test "reads the issues on demand", ctx do
+      connection = connection_fixture(ctx.workspace)
+
+      {:ok, repo} =
+        Integrations.link_repo(connection, ctx.user, %{"full_name" => "acme/app"}, "https://x")
+
+      Integrations.save_trigger(repo, ctx.user, Integrations.new_trigger(repo, ctx.user), %{
+        "kind" => "label",
+        "label" => "pm"
+      })
+
+      FakeForgejo.put_issue(ctx.fake, "acme/app", %{
+        "number" => 1,
+        "updated_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
+      {:ok, view, _html} = live(ctx.conn, ipath(ctx, "/#{connection.id}/repos/#{repo.id}"))
+      assert view |> element("[data-testid=repo-sync]") |> render_click() =~ "1 issue lida"
     end
   end
 end

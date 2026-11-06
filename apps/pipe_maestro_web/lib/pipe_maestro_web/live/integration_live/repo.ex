@@ -9,7 +9,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
   import PipeMaestroWeb.IntegrationComponents
 
   alias PipeMaestro.{Integrations, Pipelines, Projects, Workspaces}
-  alias PipeMaestro.Integrations.Trigger
+  alias PipeMaestro.Integrations.{Reconciler, Trigger}
 
   @impl true
   def mount(%{"id" => id, "repo_id" => repo_id}, _session, socket) do
@@ -63,6 +63,13 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
       {:ok, _repo} -> {:noreply, socket |> reload() |> put_flash(:info, "Repositório salvo.")}
       {:error, changeset} -> {:noreply, assign(socket, repo_form: to_form(changeset))}
     end
+  end
+
+  def handle_event("sync", _params, socket) do
+    taken = Reconciler.sync_repo(socket.assigns.repo)
+
+    {:noreply,
+     put_flash(socket, :info, "Sincronizado: #{plural(taken, "issue lida", "issues lidas")}.")}
   end
 
   def handle_event("unlink", _params, socket) do
@@ -177,6 +184,16 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
           data-testid="repo-back"
         >
           {@connection.name}
+        </.button>
+        <.button
+          size="sm"
+          variant="outline"
+          color="gray"
+          icon="hero-arrow-path"
+          phx-click="sync"
+          data-testid="repo-sync"
+        >
+          Sincronizar agora
         </.button>
         <.button
           size="sm"

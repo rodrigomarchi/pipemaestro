@@ -37,6 +37,7 @@ defmodule PipeMaestro.Tasks do
 
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
+  alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage}
@@ -236,7 +237,9 @@ defmodule PipeMaestro.Tasks do
 
   With `proposal: job`, the task is the one the task proposal `job` became
   (`PipeMaestro.Proposals.create_task/4`); a proposal already turned into a
-  task gives an error on `proposal_job_id`.
+  task gives an error on `proposal_job_id`. A task from an issue of a linked
+  repository keeps the link: `issue: %{linked_repo_id, issue_number}`, or the
+  one in the proposal's input.
   """
   @spec create_task(User.t(), Workspace.t(), map(), keyword()) ::
           {:ok, Task.t()} | {:error, Ecto.Changeset.t()}
@@ -247,11 +250,15 @@ defmodule PipeMaestro.Tasks do
         nil -> nil
       end
 
+    {linked_repo_id, issue_number} = issue_link(opts)
+
     changeset =
       %Task{
         workspace_id: workspace.id,
         created_by_user_id: user.id,
-        proposal_job_id: proposal_job_id
+        proposal_job_id: proposal_job_id,
+        linked_repo_id: linked_repo_id,
+        issue_number: issue_number
       }
       |> Task.create_changeset(attrs)
       |> put_pipeline(workspace)
@@ -265,6 +272,21 @@ defmodule PipeMaestro.Tasks do
       Audit.record(workspace, user, "task.created", task, %{"pipeline" => task.pipeline_name})
       notify(task)
       {:ok, task}
+    end
+  end
+
+  # The issue of a linked repository the task comes from: given, or the one
+  # its proposal triaged.
+  defp issue_link(opts) do
+    case {opts[:issue], opts[:proposal]} do
+      {%{linked_repo_id: repo_id, issue_number: number}, _} ->
+        {repo_id, number}
+
+      {nil, %Job{context: %{"proposal" => %{"input" => input}}}} ->
+        {input["linked_repo_id"], input["issue_number"]}
+
+      _none ->
+        {nil, nil}
     end
   end
 
@@ -1778,6 +1800,44 @@ defmodule PipeMaestro.Tasks do
 
       _nobody ->
         {:error, :no_trigger_user}
+    end
+  end
+
+  @doc """
+  Starts a task from an issue of a linked repository (`%{"title", "body",
+  "html_url"}`, `number`) with a trigger that goes straight to the task: the
+  trigger's pipeline, the repository's project directory, on `runner_id`, on
+  behalf of the trigger's person.
+  """
+  @spec create_from_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map(), Ecto.UUID.t()) ::
+          {:ok, Task.t()} | {:error, Ecto.Changeset.t() | :no_acting_user}
+  def create_from_linked_issue(
+        %Workspace{} = workspace,
+        %LinkedRepo{} = repo,
+        %Trigger{} = trigger,
+        issue,
+        runner_id
+      ) do
+    case trigger.acting_user_id && Repo.get(User, trigger.acting_user_id) do
+      %User{} = user ->
+        body = blank_to_nil(issue["body"]) || issue["title"]
+
+        create_task(
+          user,
+          workspace,
+          %{
+            "title" => String.slice(issue["title"] || "Issue", 0, 120),
+            "prompt" => "#{body}\n\nIssue: #{issue["html_url"]}",
+            "pipeline_id" => trigger.pipeline_id,
+            "runner_id" => runner_id,
+            "directory" => repo.project.directory,
+            "issue_url" => issue["html_url"]
+          },
+          issue: %{linked_repo_id: repo.id, issue_number: issue["number"]}
+        )
+
+      _nobody ->
+        {:error, :no_acting_user}
     end
   end
 

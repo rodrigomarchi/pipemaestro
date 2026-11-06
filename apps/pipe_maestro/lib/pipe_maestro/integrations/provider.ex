@@ -21,6 +21,19 @@ defmodule PipeMaestro.Integrations.Provider do
   @doc "The delivery's id."
   @callback delivery_id(headers()) :: String.t() | nil
 
+  @doc "The event's name, as kept with a recorded delivery."
+  @callback event_name(headers()) :: String.t() | nil
+
+  @doc "The headers `parse_event/2` reads, rebuilt from a recorded delivery."
+  @callback stored_headers(event_name :: String.t() | nil, delivery_id :: String.t()) :: headers()
+
+  @doc """
+  An event the platform builds for an issue it read (the reconciliation), in
+  the provider's own form: `:labels` (the issue's labels as they are now) or
+  `:opened`. Answers the event's name and payload.
+  """
+  @callback synthetic_event(:labels | :opened, repo(), issue :: map()) :: {String.t(), map()}
+
   @doc "The normalized event, or why it is not one the platform uses."
   @callback parse_event(headers(), payload :: map()) :: {:ok, Event.t()} | {:ignore, String.t()}
 

@@ -3,6 +3,9 @@ import Config
 # Tests run the housekeeping themselves.
 config :pipe_maestro, PipeMaestro.Maintenance, false
 
+# Tests run the integrations' reconciliation themselves.
+config :pipe_maestro, PipeMaestro.Integrations.Reconciler, false
+
 # The git hosts answer from PipeMaestro.FakeForgejo, through Req.Test.
 config :pipe_maestro, PipeMaestro.Integrations,
   req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false]

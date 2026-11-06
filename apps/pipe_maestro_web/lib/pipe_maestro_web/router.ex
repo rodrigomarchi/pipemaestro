@@ -124,6 +124,7 @@ defmodule PipeMaestroWeb.Router do
     get "/healthz", HealthController, :index
     get "/version", HealthController, :version
     post "/api/github/webhook/:workspace_slug", GithubWebhookController, :receive_event
+    post "/api/integrations/:connection_id/webhook", IntegrationWebhookController, :receive_event
     post "/api/runner/device/code", RunnerDeviceController, :create_code
     post "/api/runner/device/token", RunnerDeviceController, :create_token
   end

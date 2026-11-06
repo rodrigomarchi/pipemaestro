@@ -14,6 +14,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   """
   use PipeMaestroWeb, :live_view
 
+  alias PipeMaestroWeb.IntegrationComponents
+
   import PipeMaestroWeb.JobComponents,
     only: [
       steps: 1,
@@ -625,7 +627,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     class="text-primary-600 hover:underline dark:text-primary-400"
                     data-testid="task-issue"
                   >
-                    Issue <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                    {IntegrationComponents.issue_label(@task.issue_url)}
+                    <.icon name="hero-arrow-top-right-on-square" class="size-3" />
                   </a>
                 </dd>
               </div>

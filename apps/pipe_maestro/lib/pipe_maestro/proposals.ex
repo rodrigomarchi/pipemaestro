@@ -28,6 +28,7 @@ defmodule PipeMaestro.Proposals do
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
+  alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines
@@ -213,26 +214,65 @@ defmodule PipeMaestro.Proposals do
           {:ok, Job.t()} | {:error, Changeset.t() | :no_trigger_user | :already_triaging}
   def triage_issue(%Workspace{} = workspace, %Project{} = project, issue, runner_id) do
     case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
-      %User{} = user -> triage(workspace, project, issue, runner_id, user)
-      _nobody -> {:error, :no_trigger_user}
+      %User{} = user ->
+        triage(workspace, user, issue, %{
+          "runner_id" => runner_id,
+          "directory" => project.directory,
+          "suggested_pipeline_id" => project.trigger_pipeline_id
+        })
+
+      _nobody ->
+        {:error, :no_trigger_user}
     end
   end
 
-  # One triage per issue at a time: GitHub may deliver the same label twice,
+  @doc """
+  Has the agent write the task for an issue of a linked repository
+  (`%{"title", "body", "html_url", "number"}`), on `runner_id`, on behalf of
+  the trigger's person. The trigger's pipeline, if any, is the one the task
+  uses; with `auto_approve`, the task is created as the job ends. The task
+  keeps the link to the issue.
+  """
+  @spec triage_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map(), Ecto.UUID.t()) ::
+          {:ok, Job.t()} | {:error, Changeset.t() | :no_acting_user | :already_triaging}
+  def triage_linked_issue(
+        %Workspace{} = workspace,
+        %LinkedRepo{} = repo,
+        %Trigger{} = trigger,
+        issue,
+        runner_id
+      ) do
+    case trigger.acting_user_id && Repo.get(User, trigger.acting_user_id) do
+      %User{} = user ->
+        triage(workspace, user, issue, %{
+          "runner_id" => runner_id,
+          "directory" => repo.project.directory,
+          "pipeline_id" => trigger.pipeline_id,
+          "auto_approve" => trigger.auto_approve,
+          "linked_repo_id" => repo.id,
+          "issue_number" => issue["number"]
+        })
+
+      _nobody ->
+        {:error, :no_acting_user}
+    end
+  end
+
+  # One triage per issue at a time: a host may deliver the same event twice,
   # so the check and the insert run under a lock on the issue.
-  defp triage(workspace, project, issue, runner_id, user) do
+  defp triage(workspace, user, issue, attrs) do
     url = issue["html_url"]
+    {suggested, attrs} = Map.pop(attrs, "suggested_pipeline_id")
 
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1))", ["triage:" <> url])
       if triaging?(workspace, url), do: Repo.rollback(:already_triaging)
 
-      attrs = %{
-        "runner_id" => runner_id,
-        "directory" => project.directory,
-        "request" => triage_request(workspace, project, issue),
-        "issue_url" => url
-      }
+      attrs =
+        attrs
+        |> Map.put("request", triage_request(workspace, suggested, issue))
+        |> Map.put("issue_url", url)
+        |> Map.reject(fn {_key, value} -> is_nil(value) end)
 
       case request("task", user, workspace, attrs) do
         {:ok, job} ->
@@ -245,10 +285,11 @@ defmodule PipeMaestro.Proposals do
     end)
   end
 
-  # The issue's body is cut: GitHub allows far more than a request takes.
-  defp triage_request(workspace, project, issue) do
+  # The issue's body is cut: a host allows far more than a request takes.
+  defp triage_request(workspace, suggested_pipeline_id, issue) do
     pipeline =
-      Enum.find(Pipelines.list_pipelines(workspace), &(&1.id == project.trigger_pipeline_id))
+      suggested_pipeline_id &&
+        Enum.find(Pipelines.list_pipelines(workspace), &(&1.id == suggested_pipeline_id))
 
     """
     # #{issue["title"]}

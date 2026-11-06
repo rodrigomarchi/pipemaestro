@@ -30,7 +30,9 @@ defmodule PipeMaestro.Proposals.TaskKind do
     issue_url: :string,
     feedback: :string,
     pipeline_id: :binary_id,
-    auto_approve: :boolean
+    auto_approve: :boolean,
+    linked_repo_id: :binary_id,
+    issue_number: :integer
   }
 
   @impl true

@@ -50,9 +50,37 @@ defmodule PipeMaestro.Integrations.Forgejo do
   def delivery_id(headers), do: headers["x-forgejo-delivery"]
 
   @impl true
+  def event_name(headers), do: headers["x-forgejo-event-type"] || headers["x-forgejo-event"]
+
+  @impl true
+  def stored_headers(event_name, delivery_id),
+    do: %{"x-forgejo-event-type" => event_name, "x-forgejo-delivery" => delivery_id}
+
+  @impl true
+  def synthetic_event(kind, full_name, issue) do
+    payload = %{
+      "action" => if(kind == :opened, do: "opened", else: "label_updated"),
+      "number" => issue.number,
+      "repository" => %{"full_name" => full_name},
+      "issue" => %{
+        "number" => issue.number,
+        "title" => issue.title,
+        "body" => issue.body,
+        "html_url" => issue.url,
+        "state" => issue.state,
+        "user" => %{"login" => issue.author},
+        "labels" => Enum.map(issue.labels, &%{"name" => &1}),
+        "updated_at" => issue.updated_at && DateTime.to_iso8601(issue.updated_at),
+        "pull_request" => nil
+      }
+    }
+
+    {if(kind == :opened, do: "issues", else: "issue_label"), payload}
+  end
+
+  @impl true
   def parse_event(headers, payload) do
-    type = headers["x-forgejo-event-type"] || headers["x-forgejo-event"]
-    event(type, payload["action"], payload, headers)
+    event(event_name(headers), payload["action"], payload, headers)
   end
 
   defp event("issues", "opened", payload, headers),
@@ -122,6 +150,7 @@ defmodule PipeMaestro.Integrations.Forgejo do
       author: get_in(issue, ["user", "login"]),
       labels: Enum.map(issue["labels"] || [], & &1["name"]),
       updated_at: datetime(issue["updated_at"]),
+      created_at: datetime(issue["created_at"]),
       is_pull: issue["pull_request"] != nil
     }
   end
