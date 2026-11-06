@@ -327,6 +327,47 @@ defmodule PipeMaestro.Runners do
   def capable?(%Runner{capabilities: capabilities}, capability),
     do: capability in (capabilities || [])
 
+  @typedoc """
+  Where to learn who is online: a `PipeMaestro.Runners.Presence` module, a
+  function of the workspace id, or `nil` (nobody).
+  """
+  @type presence :: module() | (Ecto.UUID.t() -> MapSet.t(String.t())) | nil
+
+  @doc """
+  Ids of the workspace's runners connected right now, from `opts[:presence]`
+  or, without it, the configured `PipeMaestro.Runners.Presence`.
+  """
+  @spec online_ids(Ecto.UUID.t(), keyword()) :: MapSet.t(String.t())
+  def online_ids(workspace_id, opts \\ []) do
+    presence =
+      Keyword.get_lazy(opts, :presence, fn ->
+        Application.get_env(:pipe_maestro, __MODULE__, [])[:presence]
+      end)
+
+    case presence do
+      nil -> MapSet.new()
+      fun when is_function(fun, 1) -> fun.(workspace_id)
+      module when is_atom(module) -> module.online_ids(workspace_id)
+    end
+  end
+
+  @doc """
+  An online runner of `workspace` that offers `directory` and passes
+  `suitable?`, or `nil`. Options as in `online_ids/2`.
+  """
+  @spec pick_online(Workspace.t(), String.t(), (Runner.t() -> boolean()), keyword()) ::
+          Runner.t() | nil
+  def pick_online(%Workspace{} = workspace, directory, suitable?, opts \\ []) do
+    online = online_ids(workspace.id, opts)
+
+    workspace
+    |> list_runners()
+    |> Enum.find(fn runner ->
+      MapSet.member?(online, runner.id) and
+        Enum.any?(runner.directories || [], &(&1["name"] == directory)) and suitable?.(runner)
+    end)
+  end
+
   @doc "Stores what a runner announced as it connected."
   @spec record_hello(Runner.t(), Hello.t()) :: {:ok, Runner.t()}
   def record_hello(%Runner{} = runner, %Hello{} = hello) do

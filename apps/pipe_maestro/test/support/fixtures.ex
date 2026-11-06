@@ -134,4 +134,40 @@ defmodule PipeMaestro.Fixtures do
 
     job
   end
+
+  @doc """
+  A connection of `workspace` to the fake Forgejo (`PipeMaestro.FakeForgejo`),
+  by token, active as its bot.
+  """
+  @spec connection_fixture(Workspaces.Workspace.t(), map()) ::
+          PipeMaestro.Integrations.Connection.t()
+  def connection_fixture(workspace, attrs \\ %{}) do
+    alias PipeMaestro.Integrations.Connection
+
+    %Connection{workspace_id: workspace.id}
+    |> Connection.changeset(
+      Enum.into(attrs, %{
+        "name" => "Forgejo #{System.unique_integer([:positive])}",
+        "provider" => "forgejo",
+        "base_url" => PipeMaestro.FakeForgejo.base_url(),
+        "auth_kind" => "token",
+        "token" => "tok"
+      })
+    )
+    |> Ecto.Changeset.change(status: "active", bot_login: "pipemaestro-bot", bot_user_id: "7")
+    |> PipeMaestro.Repo.insert!()
+  end
+
+  @doc "A project of `workspace` in `directory`."
+  @spec project_fixture(Workspaces.Workspace.t(), map()) :: PipeMaestro.Projects.Project.t()
+  def project_fixture(workspace, attrs \\ %{}) do
+    alias PipeMaestro.Projects.Project
+
+    {:ok, project} =
+      %Project{workspace_id: workspace.id}
+      |> Project.changeset(Enum.into(attrs, %{"name" => "App", "directory" => "app"}))
+      |> PipeMaestro.Repo.insert()
+
+    project
+  end
 end

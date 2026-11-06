@@ -52,6 +52,9 @@ defmodule PipeMaestro.MixProject do
       {:bcrypt_elixir, "~> 3.0"},
       # Reading pipelines exported as YAML.
       {:yaml_elixir, "~> 2.11"},
+      # The git hosts' APIs (PipeMaestro.Integrations); Plug for Req.Test.
+      {:req, "~> 0.7.5"},
+      {:plug, "~> 1.18", only: :test},
       {:pipe_maestro_protocol, in_umbrella: true}
     ]
   end

@@ -14,6 +14,9 @@ config :pipe_maestro,
   ecto_repos: [PipeMaestro.Repo],
   generators: [binary_id: true, timestamp_type: :utc_datetime]
 
+# Who is online is known by the runners' channel, in the web app.
+config :pipe_maestro, PipeMaestro.Runners, presence: PipeMaestroWeb.RunnerStatus
+
 config :pipe_maestro_web,
   ecto_repos: [PipeMaestro.Repo],
   generators: [context_app: :pipe_maestro, binary_id: true]

@@ -1,0 +1,65 @@
+{
+  "action": "created",
+  "issue": {
+    "id": 5003,
+    "number": 7,
+    "title": "Login quebra com e-mail maiúsculo",
+    "body": "Ao entrar com ANA@X.COM o login falha.",
+    "state": "open",
+    "html_url": "https://forge.test/acme/app/issues/7",
+    "user": {
+      "login": "ana",
+      "id": 11
+    },
+    "labels": [],
+    "pull_request": {
+      "merged": false
+    },
+    "updated_at": "2026-11-06T12:00:00Z",
+    "created_at": "2026-11-06T11:00:00Z"
+  },
+  "pull_request": {
+    "id": 9001,
+    "number": 7,
+    "title": "WIP: Corrige login",
+    "body": "",
+    "state": "open",
+    "merged": false,
+    "html_url": "https://forge.test/acme/app/pulls/7",
+    "head": {
+      "ref": "cp/login-1a2b3c4d",
+      "sha": "abc123"
+    },
+    "base": {
+      "ref": "main"
+    },
+    "user": {
+      "login": "pipemaestro-bot",
+      "id": 7
+    }
+  },
+  "comment": {
+    "id": 78,
+    "body": "/pipemaestro seguir",
+    "user": {
+      "login": "ana",
+      "id": 11
+    }
+  },
+  "repository": {
+    "id": 42,
+    "owner": {
+      "login": "acme",
+      "id": 2
+    },
+    "name": "app",
+    "full_name": "acme/app",
+    "default_branch": "main",
+    "html_url": "https://forge.test/acme/app"
+  },
+  "sender": {
+    "login": "ana",
+    "id": 11
+  },
+  "is_pull": true
+}

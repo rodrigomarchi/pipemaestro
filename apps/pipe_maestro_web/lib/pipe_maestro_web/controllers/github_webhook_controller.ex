@@ -13,7 +13,6 @@ defmodule PipeMaestroWeb.GithubWebhookController do
   use PipeMaestroWeb, :controller
 
   alias PipeMaestro.{Projects, Proposals, Runners, Secrets, Tasks, Workspaces}
-  alias PipeMaestroWeb.RunnerStatus
 
   @doc "Takes one delivery."
   @spec receive_event(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -106,14 +105,6 @@ defmodule PipeMaestroWeb.GithubWebhookController do
     end
   end
 
-  defp online_runner(workspace, project, suitable?) do
-    online = RunnerStatus.online_ids(workspace.id)
-
-    workspace
-    |> Runners.list_runners()
-    |> Enum.find(fn runner ->
-      MapSet.member?(online, runner.id) and suitable?.(runner) and
-        Enum.any?(runner.directories, &(&1["name"] == project.directory))
-    end)
-  end
+  defp online_runner(workspace, project, suitable?),
+    do: Runners.pick_online(workspace, project.directory, suitable?)
 end

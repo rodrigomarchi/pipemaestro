@@ -3,6 +3,10 @@ import Config
 # Tests run the housekeeping themselves.
 config :pipe_maestro, PipeMaestro.Maintenance, false
 
+# The git hosts answer from PipeMaestro.FakeForgejo, through Req.Test.
+config :pipe_maestro, PipeMaestro.Integrations,
+  req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false]
+
 # A git worktree gets its own database (config/worktree.exs);
 # MIX_TEST_PARTITION splits it further (`mix help test`).
 {worktree, _binding} = Code.eval_file("worktree.exs", __DIR__)
