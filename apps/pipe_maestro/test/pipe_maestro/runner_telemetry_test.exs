@@ -7,7 +7,7 @@ defmodule PipeMaestro.RunnerTelemetryTest do
   alias PipeMaestro.Repo
   alias PipeMaestro.RunnerTelemetry
   alias PipeMaestro.RunnerTelemetry.{Event, HealthSample, Session}
-  alias PipeMaestroProtocol.RunnerLog
+  alias PipeMaestroProtocol.{RunnerDoctor, RunnerLog}
 
   setup do
     workspace = workspace_fixture()
@@ -342,6 +342,52 @@ defmodule PipeMaestro.RunnerTelemetryTest do
 
       assert %{lines: 1, events: 1} = RunnerTelemetry.prune_logs(now)
       assert [%{message: "nova"}] = RunnerTelemetry.log_lines(runner)
+    end
+  end
+
+  describe "diagnosis" do
+    defp diagnosis(statuses, request \\ nil) do
+      checks =
+        for {key, status} <- statuses,
+            do: %{key: key, name: String.upcase(key), status: status, detail: "detalhe de #{key}"}
+
+      RunnerDoctor.to_map(checks, DateTime.utc_now(:second), request)
+    end
+
+    test "keeps the latest; an event for each check that changed", %{runner: runner} do
+      since = DateTime.add(DateTime.utc_now(), -60)
+
+      assert {:ok, runner} =
+               RunnerTelemetry.record_doctor(
+                 runner,
+                 diagnosis([{"git", :ok}, {"disk", :warning}])
+               )
+
+      assert %{"checks" => [_, _], "request_id" => nil} = runner.doctor
+
+      assert [
+               %Event{
+                 kind: "doctor_changed",
+                 level: "warning",
+                 message: "Diagnóstico: DISK atenção" <> _
+               }
+             ] =
+               RunnerTelemetry.events(runner, since)
+
+      assert {:ok, runner} =
+               RunnerTelemetry.record_doctor(
+                 runner,
+                 diagnosis([{"git", :error}, {"disk", :warning}], "r1")
+               )
+
+      assert runner.doctor["request_id"] == "r1"
+
+      assert [%Event{level: "error", attrs: %{"key" => "git", "was" => "ok"}} = event | _] =
+               RunnerTelemetry.events(runner, since)
+
+      assert event.message =~ "passou de ok a erro"
+      assert length(RunnerTelemetry.events(runner, since, "doctor")) == 2
+      assert {:error, _} = RunnerTelemetry.record_doctor(runner, %{})
     end
   end
 end

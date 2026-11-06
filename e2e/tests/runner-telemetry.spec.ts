@@ -2,6 +2,7 @@
  * @section Runners
  * @flow A [done] The runner page's "Conexões" tab shows each connection: the one live, a stop that ended it, a join refused for its version; the list shows the runner's uptime over the week
  * @flow C [done] The "Eventos e logs" tab shows the runner's own log, live, and an event for a task's setup that failed, filtered by group
+ * @flow D [done] The "Diagnóstico" tab shows the doctor the runner ran as it connected, and a member runs it again from the page
  * @flow B [done] The "Saúde" tab shows the machine's CPU, memory, load and free disk as the runner reports them, and the week's jobs; the list shows the runner's failures over the week
  */
 import { expect, test } from "@playwright/test";
@@ -113,6 +114,16 @@ test.describe("Runner telemetry", () => {
 
     await runners.filterEvents("connection");
     await expect(runners.event("setup_failed")).toHaveCount(0);
+
+    // Flow D: the diagnosis the runner ran as it connected, and one more on request.
+    await runners.openTab("diagnostico");
+    await expect(runners.doctorCheck("git")).toBeVisible({ timeout: 30_000 });
+    await expect(runners.doctorCheck("platform")).toContainText("responde");
+    await expect(runners.runDoctor).toHaveText(/Rodar agora/);
+    await runners.runDoctor.click();
+    await expect(runners.runDoctor).toHaveText(/Rodando/);
+    await expect(runners.runDoctor).toHaveText(/Rodar agora/, { timeout: 30_000 });
+    await shot(app.page, "runner-doctor");
 
     await context.close();
   });

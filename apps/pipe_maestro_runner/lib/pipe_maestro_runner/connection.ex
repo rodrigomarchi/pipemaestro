@@ -42,6 +42,14 @@ defmodule PipeMaestroRunner.Connection do
   at that interval, and sends it (`runner:health`) while joined; a sample
   taken while disconnected is dropped.
 
+  With `:doctor_every` (ms; `runner.start` passes
+  `PipeMaestroProtocol.RunnerDoctor.interval_ms/0`), it runs the runner's
+  diagnosis (`PipeMaestroRunner.Doctor`) after every join, at that interval
+  and when the platform asks (`runner:doctor`, answered with the request's
+  id), and sends it while joined. Connected, the platform is known to
+  answer, so that check is not run; `:doctor_opts` go to `Doctor.run/1`
+  (for tests).
+
   With `logs: true`, it is the sink of the runner's log
   (`PipeMaestroRunner.LogCollector`): after every join it attaches to the
   collector, sending all the lines or, when the join's reply says the
@@ -59,8 +67,18 @@ defmodule PipeMaestroRunner.Connection do
 
   require Logger
 
-  alias PipeMaestroProtocol.{Hello, Job, RunnerHealth, RunnerLog, Worktree}
-  alias PipeMaestroRunner.{Directories, Disk, Health, JobRunner, LogCollector, Outbox}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerDoctor, RunnerHealth, RunnerLog, Worktree}
+
+  alias PipeMaestroRunner.{
+    Config,
+    Directories,
+    Disk,
+    Doctor,
+    Health,
+    JobRunner,
+    LogCollector,
+    Outbox
+  }
 
   @doc "Starts the connection with the runner's credentials and hello."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -103,6 +121,12 @@ defmodule PipeMaestroRunner.Connection do
         usage_every: Keyword.get(opts, :usage_every, 300_000),
         usage: nil,
         measuring: nil,
+        config: config,
+        doctor_every: Keyword.get(opts, :doctor_every),
+        doctor_opts: Keyword.get(opts, :doctor_opts, []),
+        doctor: nil,
+        doctor_request: nil,
+        doctor_timer: nil,
         logs: Keyword.get(opts, :logs, false),
         drops_told: {0, nil},
         health_every: Keyword.get(opts, :health_every),
@@ -190,7 +214,7 @@ defmodule PipeMaestroRunner.Connection do
         send_out(acc, id, event, payload)
       end)
 
-    {:ok, socket |> measure_usage() |> sample_health()}
+    {:ok, socket |> measure_usage() |> sample_health() |> run_doctor(nil)}
   end
 
   @impl Slipstream
@@ -279,6 +303,10 @@ defmodule PipeMaestroRunner.Connection do
     {:ok, socket}
   end
 
+  def handle_message(_topic, "runner:doctor", %{"request_id" => id}, socket)
+      when is_binary(id) and is_integer(socket.assigns.doctor_every),
+      do: {:ok, run_doctor(socket, id)}
+
   def handle_message(_topic, event, _payload, socket) do
     Logger.warning("Mensagem da plataforma ignorada por este runner: #{event}")
     {:ok, socket}
@@ -303,6 +331,22 @@ defmodule PipeMaestroRunner.Connection do
 
   def handle_info(:sample_health, socket),
     do: {:noreply, sample_health(assign(socket, health_timer: nil))}
+
+  def handle_info(:run_doctor, socket),
+    do: {:noreply, run_doctor(assign(socket, doctor_timer: nil), nil)}
+
+  def handle_info({ref, checks}, %{assigns: %{doctor: ref}} = socket) do
+    Process.demonitor(ref, [:flush])
+    %{doctor_request: request, doctor_every: every} = socket.assigns
+
+    if joined?(socket, socket.assigns.topic) do
+      payload = RunnerDoctor.to_map(checks, DateTime.utc_now(:second), request)
+      _pushed = push(socket, socket.assigns.topic, RunnerDoctor.event(), payload)
+    end
+
+    timer = Process.send_after(self(), :run_doctor, every)
+    {:noreply, assign(socket, doctor: nil, doctor_request: nil, doctor_timer: timer)}
+  end
 
   def handle_info({ref, {sample, cpu}}, %{assigns: %{sampling: ref}} = socket) do
     Process.demonitor(ref, [:flush])
@@ -393,6 +437,30 @@ defmodule PipeMaestroRunner.Connection do
   defp measure_usage(socket) do
     workdir = socket.assigns.workdir
     assign(socket, measuring: Task.async(fn -> Disk.usage(workdir) end).ref)
+  end
+
+  # The diagnosis runs commands (`gh auth status` may reach the network): in a
+  # task, one at a time. A request while one runs is answered by it.
+  defp run_doctor(%{assigns: %{doctor_every: nil}} = socket, _request), do: socket
+
+  defp run_doctor(%{assigns: %{doctor: ref}} = socket, request) when is_reference(ref),
+    do: if(request, do: assign(socket, doctor_request: request), else: socket)
+
+  defp run_doctor(%{assigns: assigns} = socket, request) do
+    if assigns.doctor_timer, do: Process.cancel_timer(assigns.doctor_timer)
+
+    opts =
+      Keyword.merge(
+        [
+          config: {:ok, assigns.config},
+          workdir: assigns.workdir || Config.workdir(),
+          reach: fn _url -> :ok end
+        ],
+        assigns.doctor_opts
+      )
+
+    task = Task.async(fn -> Doctor.run(opts) end)
+    assign(socket, doctor: task.ref, doctor_request: request, doctor_timer: nil)
   end
 
   # Commands that may take a moment (`ps`, `df`): in a task, one at a time.

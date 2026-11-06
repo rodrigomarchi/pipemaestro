@@ -11,7 +11,9 @@ defmodule PipeMaestroWeb.RunnerLive do
     * **Eventos e logs** — what happened to it and its own log (`?grupo=`,
       `?nivel=`, `PipeMaestroWeb.RunnerLive.LogTab`);
     * **Conexões** — its uptime and sessions
-      (`PipeMaestroWeb.RunnerLive.ConnectionsTab`).
+      (`PipeMaestroWeb.RunnerLive.ConnectionsTab`);
+    * **Diagnóstico** — its latest doctor, and a new one on request
+      (`PipeMaestroWeb.RunnerLive.DoctorTab`).
 
   Updated live.
   """
@@ -35,16 +37,20 @@ defmodule PipeMaestroWeb.RunnerLive do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.{RunnerActions, RunnerStatus}
-  alias PipeMaestroWeb.RunnerLive.{ConnectionsTab, HealthTab, LogTab}
+  alias PipeMaestroWeb.RunnerLive.{ConnectionsTab, DoctorTab, HealthTab, LogTab}
 
   # The tabs, by their `aba` parameter, in order.
   @tabs [
     {"visao", "Visão geral", "hero-server"},
     {"saude", "Saúde", "hero-heart"},
     {"eventos", "Eventos e logs", "hero-queue-list"},
-    {"conexoes", "Conexões", "hero-signal"}
+    {"conexoes", "Conexões", "hero-signal"},
+    {"diagnostico", "Diagnóstico", "hero-wrench-screwdriver"}
   ]
   @tab_ids Enum.map(@tabs, &elem(&1, 0))
+
+  # How long a requested diagnosis may take before the screen gives up on it.
+  @doctor_wait_ms 30_000
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -64,7 +70,8 @@ defmodule PipeMaestroWeb.RunnerLive do
        tab: "visao",
        period: "24h",
        group: "tudo",
-       level: "info"
+       level: "info",
+       doctor_request: nil
      )}
   end
 
@@ -94,6 +101,13 @@ defmodule PipeMaestroWeb.RunnerLive do
     end
   end
 
+  # Any member may ask: the diagnosis only reads the runner's machine.
+  def handle_event("run_doctor", _params, socket) do
+    request_id = RunnerStatus.request_doctor(socket.assigns.runner_id)
+    Process.send_after(self(), {:doctor_timeout, request_id}, @doctor_wait_ms)
+    {:noreply, socket |> assign(doctor_request: request_id) |> load()}
+  end
+
   @impl true
   def handle_info(%Broadcast{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
   def handle_info(:runners_changed, socket), do: {:noreply, load(socket)}
@@ -105,7 +119,30 @@ defmodule PipeMaestroWeb.RunnerLive do
   def handle_info({:runner_telemetry, :log}, %{assigns: %{tab: "eventos"}} = socket),
     do: {:noreply, load(socket)}
 
+  # A diagnosis arrived: the one asked for, if it answers the request.
+  def handle_info({:runner_telemetry, :doctor}, socket) do
+    socket = load(socket)
+    answered = socket.assigns.runner.doctor["request_id"] == socket.assigns.doctor_request
+
+    if answered,
+      do: {:noreply, socket |> assign(doctor_request: nil) |> load()},
+      else: {:noreply, socket}
+  end
+
   def handle_info({:runner_telemetry, _kind}, socket), do: {:noreply, socket}
+
+  def handle_info(
+        {:doctor_timeout, request_id},
+        %{assigns: %{doctor_request: request_id}} = socket
+      ) do
+    {:noreply,
+     socket
+     |> assign(doctor_request: nil)
+     |> put_flash(:error, "O runner não respondeu ao pedido de diagnóstico.")
+     |> load()}
+  end
+
+  def handle_info({:doctor_timeout, _answered}, socket), do: {:noreply, socket}
 
   def handle_info({:job_updated, %Job{runner_id: runner_id}}, socket) do
     if runner_id == socket.assigns.runner_id,
@@ -141,6 +178,11 @@ defmodule PipeMaestroWeb.RunnerLive do
   defp load_tab(socket, "eventos", runner, now) do
     %{group: group, level: level} = socket.assigns
     assign(socket, log: LogTab.load(runner, group, level, now))
+  end
+
+  defp load_tab(socket, "diagnostico", runner, now) do
+    %{online: online, doctor_request: pending} = socket.assigns
+    assign(socket, doctor: DoctorTab.load(runner, online, pending, now))
   end
 
   defp load_tab(socket, "conexoes", runner, now),
@@ -215,6 +257,7 @@ defmodule PipeMaestroWeb.RunnerLive do
         />
         <LogTab.log :if={@tab == "eventos"} data={@log} path={log_path(@current_scope, @runner.id)} />
         <ConnectionsTab.connections :if={@tab == "conexoes"} data={@connections} />
+        <DoctorTab.doctor :if={@tab == "diagnostico"} data={@doctor} />
 
         <div :if={@tab == "visao"} class="space-y-6">
           <.card variant="outline">

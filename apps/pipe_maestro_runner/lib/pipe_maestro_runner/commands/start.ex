@@ -36,7 +36,7 @@ defmodule PipeMaestroRunner.Commands.Start do
 
   require Logger
 
-  alias PipeMaestroProtocol.RunnerHealth
+  alias PipeMaestroProtocol.{RunnerDoctor, RunnerHealth}
 
   @switches [root: :string, auto_update: :boolean]
   @spec run([String.t()]) :: no_return()
@@ -80,6 +80,7 @@ defmodule PipeMaestroRunner.Commands.Start do
         # The CLI's OpenTelemetry, received on this machine and relayed.
         telemetry: true,
         health_every: interval("RUNNER_HEALTH_EVERY_MS", RunnerHealth.interval_ms()),
+        doctor_every: interval("RUNNER_DOCTOR_EVERY_MS", RunnerDoctor.interval_ms()),
         # This runner's own log, for the control plane.
         logs: true
       )

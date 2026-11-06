@@ -31,7 +31,10 @@ defmodule PipeMaestroWeb.RunnerChannel do
   the screens following that runner; the join's reply says whether the
   workspace keeps the log lines. The events in a finished job's report (a
   setup or a delivery that failed) and a worktree that could not be removed
-  are stored as the runner's events.
+  are stored as the runner's events. The runner's diagnosis
+  (`runner:doctor`, `PipeMaestroProtocol.RunnerDoctor`) is stored as its
+  latest, and a screen asking for a new one (`RunnerStatus.request_doctor/1`)
+  reaches the runner through this channel.
 
   Each accepted join opens a session (`PipeMaestro.RunnerTelemetry`), closed
   with the reason the channel ended; a refused join is recorded as a session
@@ -41,7 +44,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   alias PipeMaestro.{Integrations, Jobs, Runners, RunnerTelemetry, Secrets, Tasks}
   alias PipeMaestro.Jobs.Event
-  alias PipeMaestroProtocol.{Hello, Job, RunnerLog, Worktree}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerDoctor, RunnerLog, Worktree}
   alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
 
   @impl true
@@ -53,6 +56,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
          :ok <- Runners.version_check(hello.runner_version) do
       {:ok, runner} = Runners.record_hello(runner, hello)
       session = RunnerTelemetry.open_session(runner)
+      :ok = RunnerStatus.subscribe_commands(runner.id)
       send(self(), {:after_join, hello})
 
       reply = %{
@@ -119,6 +123,14 @@ defmodule PipeMaestroWeb.RunnerChannel do
       push(socket, Job.credential_event(), %{"job_id" => job_id, "git_credential" => credential})
       schedule_renewal(job_id, credential)
     end
+
+    {:noreply, socket}
+  end
+
+  # Only a runner that knows the request is asked.
+  def handle_info({:doctor_request, request_id}, socket) do
+    if Runners.capable?(socket.assigns.runner, "doctor"),
+      do: push(socket, RunnerDoctor.event(), %{"request_id" => request_id})
 
     {:noreply, socket}
   end
@@ -212,6 +224,19 @@ defmodule PipeMaestroWeb.RunnerChannel do
     case RunnerTelemetry.record_health(runner, payload) do
       {:ok, _sample} ->
         RunnerStatus.notify_telemetry(runner.id, :health)
+        {:reply, :ok, socket}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("runner:doctor", payload, socket) do
+    runner = socket.assigns.runner
+
+    case RunnerTelemetry.record_doctor(runner, payload) do
+      {:ok, _runner} ->
+        RunnerStatus.notify_telemetry(runner.id, :doctor)
         {:reply, :ok, socket}
 
       {:error, _reason} ->

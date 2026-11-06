@@ -385,6 +385,69 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
       assert has_element?(view, "[data-testid=runner-log-not-kept]")
     end
 
+    test "diagnosis: the latest, and a new one on request through the connection", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+
+      {:ok, runner} =
+        Runners.record_hello(runner, hello_fixture(%{capabilities: ["doctor"]}))
+
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=diagnostico")
+
+      assert has_element?(view, "[data-testid=runner-doctor-empty]")
+      # Offline: there is no connection to ask through.
+      assert has_element?(view, "[data-testid=runner-doctor-run][disabled]")
+
+      checks = [
+        %{key: "git", name: "git", status: :ok, detail: "git version 2.47"},
+        %{key: "disk", name: "Disco", status: :warning, detail: "pouco espaço livre"}
+      ]
+
+      {:ok, _} =
+        RunnerTelemetry.record_doctor(
+          runner,
+          PipeMaestroProtocol.RunnerDoctor.to_map(checks, DateTime.utc_now(:second))
+        )
+
+      PipeMaestroWeb.RunnerStatus.notify_telemetry(runner.id, :doctor)
+      assert has_element?(view, "[data-testid=runner-doctor-detail-disk]", "pouco espaço livre")
+      assert has_element?(view, "[data-testid=runner-doctor-check-git]")
+
+      # Online, a member asks; the runner's channel gets the request.
+      Phoenix.PubSub.subscribe(
+        PipeMaestro.PubSub,
+        PipeMaestroWeb.RunnerStatus.commands_topic(runner.id)
+      )
+
+      {:ok, _} = PipeMaestroWeb.RunnerStatus.track(self(), runner)
+
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=diagnostico")
+
+      view |> element("[data-testid=runner-doctor-run]") |> render_click()
+      assert_receive {:doctor_request, request_id}
+      assert has_element?(view, "[data-testid=runner-doctor-run]", "Rodando")
+
+      {:ok, _} =
+        RunnerTelemetry.record_doctor(
+          runner,
+          PipeMaestroProtocol.RunnerDoctor.to_map(checks, DateTime.utc_now(:second), request_id)
+        )
+
+      PipeMaestroWeb.RunnerStatus.notify_telemetry(runner.id, :doctor)
+      assert has_element?(view, "[data-testid=runner-doctor-run]", "Rodar agora")
+
+      # A request nobody answers gives up.
+      view |> element("[data-testid=runner-doctor-run]") |> render_click()
+      assert_receive {:doctor_request, unanswered}
+      send(view.pid, {:doctor_timeout, unanswered})
+      assert render(view) =~ "O runner não respondeu"
+    end
+
     test "connections: uptime, drops and each session with how it ended", %{
       conn: conn,
       workspace: workspace,

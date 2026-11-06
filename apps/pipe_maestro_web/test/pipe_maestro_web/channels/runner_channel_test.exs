@@ -215,6 +215,41 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       assert reply["telemetry"] == %{"logs" => false}
     end
 
+    test "a screen asks for a diagnosis; the answer is stored", %{
+      socket: socket,
+      runner: runner,
+      workspace: workspace
+    } do
+      RunnerStatus.subscribe(workspace.id)
+
+      {:ok, _reply, channel} =
+        subscribe_and_join(
+          socket,
+          RunnerChannel,
+          "runner:" <> runner.id,
+          Hello.to_map(hello_fixture(%{capabilities: ["doctor"]}))
+        )
+
+      # The channel listens for requests once it finished joining.
+      assert_receive :runners_changed
+      RunnerStatus.subscribe_telemetry(runner.id)
+      request_id = RunnerStatus.request_doctor(runner.id)
+      assert_push "runner:doctor", %{"request_id" => ^request_id}
+
+      checks = [%{key: "git", name: "git", status: :ok, detail: "2.47"}]
+
+      answer =
+        PipeMaestroProtocol.RunnerDoctor.to_map(checks, DateTime.utc_now(:second), request_id)
+
+      ref = push(channel, "runner:doctor", answer)
+      assert_reply ref, :ok
+      assert_receive {:runner_telemetry, :doctor}
+      assert %{"request_id" => ^request_id} = Repo.reload!(runner).doctor
+
+      ref = push(channel, "runner:doctor", %{"checks" => []})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+    end
+
     test "an invalid hello is recorded as a refusal", %{socket: socket, runner: runner} do
       assert {:error, _} = subscribe_and_join(socket, RunnerChannel, "runner:" <> runner.id, %{})
       assert [%{end_reason: "invalid_hello", ended_at: %DateTime{}}] = sessions(runner)

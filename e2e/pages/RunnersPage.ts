@@ -164,6 +164,16 @@ export class RunnersPage {
     await expect(this.page).toHaveURL(new RegExp(`grupo=${group}`));
   }
 
+  /** A check of the runner's diagnosis (git, disk, claude...), in the "Diagnóstico" tab. */
+  doctorCheck(key: string): Locator {
+    return this.page.getByTestId(`runner-doctor-check-${key}`);
+  }
+
+  /** The "Rodar agora" button of the "Diagnóstico" tab. */
+  get runDoctor(): Locator {
+    return this.page.getByTestId("runner-doctor-run");
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

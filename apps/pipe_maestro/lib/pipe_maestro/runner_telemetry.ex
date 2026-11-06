@@ -13,7 +13,9 @@ defmodule PipeMaestro.RunnerTelemetry do
     * its own log (`PipeMaestro.RunnerTelemetry.LogLine`), kept for its
       workspace's `runner_log_retention_days`, and the events that happened
       to it (`PipeMaestro.RunnerTelemetry.Event`), from its log and from
-      what its jobs reported.
+      what its jobs reported;
+    * its latest diagnosis (`record_doctor/2`, kept on the runner), and an
+      event each time a check changes status.
   """
 
   import Ecto.Query
@@ -24,7 +26,7 @@ defmodule PipeMaestro.RunnerTelemetry do
   alias PipeMaestro.RunnerTelemetry.{Event, HealthSample, LogLine, Session}
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestro.Workspaces.Workspace
-  alias PipeMaestroProtocol.{RunnerHealth, RunnerLog}
+  alias PipeMaestroProtocol.{RunnerDoctor, RunnerHealth, RunnerLog}
 
   # ── Connections ───────────────────────────────────────────────────────────
 
@@ -473,6 +475,66 @@ defmodule PipeMaestro.RunnerTelemetry do
 
     %{lines: lines, events: events}
   end
+
+  # ── Diagnosis ──────────────────────────────────────────────────────────────
+
+  @doc """
+  Stores the diagnosis `runner` sent (`PipeMaestroProtocol.RunnerDoctor`)
+  as its latest, and an event (`doctor_changed`) for each check whose status
+  changed since the previous one; on the first, for each check not ok.
+  """
+  @spec record_doctor(Runner.t(), term()) :: {:ok, Runner.t()} | {:error, String.t()}
+  def record_doctor(%Runner{} = runner, payload) do
+    with {:ok, diagnosis} <- RunnerDoctor.parse(payload) do
+      previous = Repo.one(from r in Runner, where: r.id == ^runner.id, select: r.doctor)
+      before = Map.new((previous || %{})["checks"] || [], &{&1["key"], &1["status"]})
+
+      for check <- diagnosis["checks"],
+          changed?(before, check, previous == nil) do
+        record_event(
+          runner,
+          "doctor_changed",
+          event_level(check["status"]),
+          doctor_message(before, check),
+          at: diagnosis["at"],
+          attrs: %{
+            "key" => check["key"],
+            "status" => check["status"],
+            "was" => before[check["key"]]
+          }
+        )
+      end
+
+      stored = %{diagnosis | "at" => DateTime.to_iso8601(diagnosis["at"])}
+      runner |> Ecto.Changeset.change(doctor: stored) |> Repo.update()
+    end
+  end
+
+  defp changed?(_before, %{"status" => status}, true = _first), do: status != "ok"
+  defp changed?(before, %{"key" => key, "status" => status}, false), do: before[key] != status
+
+  defp event_level("ok"), do: "info"
+  defp event_level(status), do: status
+
+  defp doctor_message(before, %{
+         "key" => key,
+         "name" => name,
+         "status" => status,
+         "detail" => detail
+       }) do
+    case before[key] do
+      nil ->
+        "Diagnóstico: #{name} #{status_label(status)}: #{detail}"
+
+      was ->
+        "Diagnóstico: #{name} passou de #{status_label(was)} a #{status_label(status)}: #{detail}"
+    end
+  end
+
+  defp status_label("ok"), do: "ok"
+  defp status_label("warning"), do: "atenção"
+  defp status_label("error"), do: "erro"
+  defp status_label(other), do: other
 
   defp filter_group(query, nil), do: query
   defp filter_group(query, "errors"), do: where(query, [e], e.level == "error")

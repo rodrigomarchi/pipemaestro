@@ -71,6 +71,32 @@ defmodule PipeMaestroWeb.RunnerStatus do
         {:runner_telemetry, kind}
       )
 
+  @doc "The PubSub topic of what the screens ask of a runner's channel."
+  @spec commands_topic(Ecto.UUID.t()) :: String.t()
+  def commands_topic(runner_id), do: "runner_commands:" <> runner_id
+
+  @doc "Subscribes the caller (a runner's channel) to what the screens ask of it."
+  @spec subscribe_commands(Ecto.UUID.t()) :: :ok
+  def subscribe_commands(runner_id),
+    do: Phoenix.PubSub.subscribe(PipeMaestro.PubSub, commands_topic(runner_id))
+
+  @doc """
+  Asks the runner, through its open channel, to run its diagnosis now.
+  Returns the request's id, which the answer carries.
+  """
+  @spec request_doctor(Ecto.UUID.t()) :: String.t()
+  def request_doctor(runner_id) do
+    request_id = Ecto.UUID.generate()
+
+    Phoenix.PubSub.broadcast(
+      PipeMaestro.PubSub,
+      commands_topic(runner_id),
+      {:doctor_request, request_id}
+    )
+
+    request_id
+  end
+
   @doc "Closes the runner's open connection, if it has one."
   @spec disconnect(Runner.t()) :: :ok
   def disconnect(%Runner{id: id}) do
