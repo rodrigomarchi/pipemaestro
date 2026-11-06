@@ -46,6 +46,8 @@ config :phoenix_live_view, enable_expensive_runtime_checks: true
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
 config :pipe_maestro, PipeMaestro.Secrets, key: "e2e_only_secrets_key"
 
+config :pipe_maestro, PipeMaestro.Integrations, public_url: "http://localhost:#{e2e_http_port}"
+
 # The runner under Mix never updates itself (no single binary, no terminal).
 # Here it asks as a single binary in a terminal would (PipeMaestroRunner.Update),
 # for a binary that is only a path: the specs answer "no".

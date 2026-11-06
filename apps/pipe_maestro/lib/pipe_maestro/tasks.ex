@@ -37,6 +37,7 @@ defmodule PipeMaestro.Tasks do
 
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
+  alias PipeMaestro.Integrations
   alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
@@ -63,6 +64,7 @@ defmodule PipeMaestro.Tasks do
           | {:workspace, Ecto.UUID.t()}
           | {:decisions, Ecto.UUID.t()}
           | {:events, Ecto.UUID.t()}
+          | :linked
 
   @doc "Subscribes the calling process to a task's or a workspace's task updates."
   @spec subscribe(subject()) :: :ok | {:error, term()}
@@ -70,6 +72,10 @@ defmodule PipeMaestro.Tasks do
   def subscribe({:workspace, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:workspace:" <> id)
   def subscribe({:decisions, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:decisions:" <> id)
   def subscribe({:events, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:events:" <> id)
+
+  # Every change of a task that came from an issue of a linked repository
+  # (`{:linked_task_updated, task_id}`), for its feedback on the git host.
+  def subscribe(:linked), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:linked")
 
   defp announce(%Task{} = task, kind) do
     Phoenix.PubSub.broadcast(
@@ -83,6 +89,9 @@ defmodule PipeMaestro.Tasks do
 
   defp notify(%Task{} = task) do
     Phoenix.PubSub.broadcast(@pubsub, "tasks:task:" <> task.id, {:task_updated, task})
+
+    if task.linked_repo_id,
+      do: Phoenix.PubSub.broadcast(@pubsub, "tasks:linked", {:linked_task_updated, task.id})
 
     Phoenix.PubSub.broadcast(
       @pubsub,
@@ -586,7 +595,19 @@ defmodule PipeMaestro.Tasks do
 
   # What the runner delivers once the stage passed its checks and gates: the
   # push and the platform's block of the pull request (the agent committed).
-  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => mode}} = task, index)
+  # With a linked repository whose connection lets the platform call the
+  # host, the runner only pushes: the platform keeps the pull request
+  # (`PipeMaestro.Integrations.Feedback`).
+  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => "pr"}} = task, index)
+       when is_binary(task.linked_repo_id) do
+    if Integrations.keeps_pull_request?(task),
+      do: %{"push" => true},
+      else: runner_delivery(task, index)
+  end
+
+  defp delivery(task, index), do: runner_delivery(task, index)
+
+  defp runner_delivery(%Task{git: true, pipeline_context: %{"delivery" => mode}} = task, index)
        when mode in ["commit", "pr"] do
     base =
       if mode == "pr",
@@ -612,7 +633,15 @@ defmodule PipeMaestro.Tasks do
     if base == %{}, do: nil, else: base
   end
 
-  defp delivery(_task, _index), do: nil
+  defp runner_delivery(_task, _index), do: nil
+
+  @doc """
+  The platform's block of the task's pull request (`PipeMaestroProtocol.PrText`):
+  the request, `Closes <issue>` and the stages done so far.
+  """
+  @spec pr_block(Task.t()) :: String.t()
+  def pr_block(%Task{status: :succeeded} = task), do: pr_body(task, length(task.stages) - 1)
+  def pr_block(%Task{} = task), do: pr_body(task, task.current_stage)
 
   # The stages before this one are done; the last one's delivery marks the PR
   # ready, so then every stage is.
@@ -703,8 +732,19 @@ defmodule PipeMaestro.Tasks do
   defp run_status({:blocked, _reason}), do: {:blocked, nil}
   defp run_status({_retry_or_exhausted, error}), do: {:failed, error}
 
-  defp maybe_record_pr(task, %Job{delivery: %{"pr_url" => url}}) when is_binary(url),
-    do: task |> Ecto.Changeset.change(pr_url: url) |> Repo.update!()
+  # The pull request the runner keeps, and the last commit it pushed (where a
+  # linked repository's commit statuses go).
+  defp maybe_record_pr(task, %Job{delivery: %{} = delivery}) do
+    changes =
+      [
+        is_binary(delivery["pr_url"]) && {:pr_url, delivery["pr_url"]},
+        (delivery["pushed"] == true and is_binary(delivery["commit"])) &&
+          {:head_sha, delivery["commit"]}
+      ]
+      |> Enum.filter(& &1)
+
+    if changes == [], do: task, else: task |> Ecto.Changeset.change(changes) |> Repo.update!()
+  end
 
   defp maybe_record_pr(task, _job), do: task
 

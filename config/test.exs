@@ -8,7 +8,11 @@ config :pipe_maestro, PipeMaestro.Integrations.Reconciler, false
 
 # The git hosts answer from PipeMaestro.FakeForgejo, through Req.Test.
 config :pipe_maestro, PipeMaestro.Integrations,
-  req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false]
+  req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false],
+  public_url: "https://pm.test"
+
+# Tests reflect a task on its issue themselves (PipeMaestro.Integrations.Feedback).
+config :pipe_maestro, PipeMaestro.Integrations.FeedbackWorker, false
 
 # A git worktree gets its own database (config/worktree.exs);
 # MIX_TEST_PARTITION splits it further (`mix help test`).

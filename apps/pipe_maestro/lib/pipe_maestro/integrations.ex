@@ -78,6 +78,27 @@ defmodule PipeMaestro.Integrations do
   def get_delivery!(%Connection{id: connection_id}, id),
     do: Repo.get_by!(Delivery, id: id, connection_id: connection_id)
 
+  @doc """
+  Whether the platform keeps the pull request of `task` and writes on its
+  issue: it came from a linked repository whose connection is active and
+  lets the platform call the host.
+  """
+  @spec keeps_pull_request?(PipeMaestro.Tasks.Task.t()) :: boolean()
+  def keeps_pull_request?(%{linked_repo_id: nil}), do: false
+
+  def keeps_pull_request?(%{linked_repo_id: repo_id}) do
+    Repo.exists?(
+      from r in LinkedRepo,
+        join: c in assoc(r, :connection),
+        where: r.id == ^repo_id and c.api_mode == "control_plane" and c.status == "active"
+    )
+  end
+
+  @doc "The platform's address, for links it writes on a git host."
+  @spec public_url() :: String.t()
+  def public_url,
+    do: Application.get_env(:pipe_maestro, __MODULE__, [])[:public_url] || "http://localhost:4000"
+
   @doc "The path of a connection's webhook, under the platform's URL."
   @spec webhook_path(Connection.t()) :: String.t()
   def webhook_path(%Connection{id: id}), do: "/api/integrations/#{id}/webhook"

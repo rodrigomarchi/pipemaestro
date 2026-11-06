@@ -7,13 +7,13 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
     convention. Marking it ready is dropping the prefix.
   - **Text:** an open pull request of the branch is adopted, whoever opened
     it; only the platform's block of its description and the draft prefix
-    change (`PipeMaestroRunner.Delivery.PrText`).
+    change (`PipeMaestroProtocol.PrText`).
   - **Credentials:** the same ones `git push` uses for the host
     (`git credential fill`, never prompting), or a `FORGEJO_TOKEN` in the
     environment (a workspace secret).
   """
 
-  alias PipeMaestroRunner.Delivery.PrText
+  alias PipeMaestroProtocol.PrText
 
   @draft_prefix "WIP: "
   @page_size 50

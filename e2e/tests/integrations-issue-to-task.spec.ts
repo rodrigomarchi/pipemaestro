@@ -1,6 +1,7 @@
 /**
  * @section Integrações
  * @flow C [done] A label added to a Forgejo issue reaches the platform by webhook: the delivery is recorded, the agent triages the issue and the task is created on its own, linked to the issue, which gets a reaction and the triage label; the same delivery again is a duplicate
+ * @flow D [done] While the task runs, the issue shows it: one status comment edited in place and the state label, up to "pronto" when the task ends
  */
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
@@ -102,7 +103,22 @@ test.describe("Issue to task", () => {
     const state = await forgejoState(repoName);
     expect(state.reactions).toContainEqual({ target: "issue", id: 3, content: "eyes" });
     const labels = state.issues.find((candidate: { number: number }) => candidate.number === 3).labels.map((label: { name: string }) => label.name);
-    expect(labels).toContain("pipemaestro:triando");
+    // The triage label, or already the one of the running task.
+    expect(labels.some((name: string) => ["pipemaestro:triando", "pipemaestro:em-andamento", "pipemaestro:pronto"].includes(name))).toBe(true);
+
+    // The issue follows the task: one status comment, and the state label up to "pronto".
+    await expect
+      .poll(async () => {
+        const now = await forgejoState(repoName);
+        return now.issues.find((candidate: { number: number }) => candidate.number === 3).labels.map((label: { name: string }) => label.name);
+      }, { timeout: 120_000 })
+      .toContain("pipemaestro:pronto");
+    const done = await forgejoState(repoName);
+    const statusComments = done.comments.filter((comment: { body: string }) => comment.body.includes("<!-- pipemaestro:status -->"));
+    expect(statusComments).toHaveLength(1);
+    expect(statusComments[0].body).toContain("pull request pronto para revisão");
+    const doneLabels = done.issues.find((candidate: { number: number }) => candidate.number === 3).labels.map((label: { name: string }) => label.name);
+    expect(doneLabels).not.toContain("pipemaestro:em-andamento");
 
     // The host may deliver the same event twice.
     const again = await sendForgejoWebhook(request, delivery);

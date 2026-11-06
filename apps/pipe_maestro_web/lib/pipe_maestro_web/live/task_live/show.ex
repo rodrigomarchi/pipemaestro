@@ -631,6 +631,13 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     <.icon name="hero-arrow-top-right-on-square" class="size-3" />
                   </a>
                 </dd>
+                <dd
+                  :if={@task.issue_feedback["error"]}
+                  class="mt-1 text-xs text-warning-600 dark:text-warning-400"
+                  data-testid="task-issue-sync-error"
+                >
+                  A issue ainda não mostra o andamento: {@task.issue_feedback["error"]}. A plataforma tenta de novo.
+                </dd>
               </div>
               <div>
                 <dt class="text-gray-500 dark:text-gray-400">Diretório de trabalho</dt>

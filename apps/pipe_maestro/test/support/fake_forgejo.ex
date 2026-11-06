@@ -78,6 +78,17 @@ defmodule PipeMaestro.FakeForgejo do
     end)
   end
 
+  @doc "Changes a pull request as a person would on the host."
+  @spec edit_pull(pid(), String.t(), pos_integer(), (map() -> map())) :: :ok
+  def edit_pull(fake, name, number, fun) do
+    edit = &if(&1["number"] == number, do: fun.(&1), else: &1)
+
+    Agent.update(
+      fake,
+      &update_in(&1, [:repos, name, :pulls], fn pulls -> Enum.map(pulls, edit) end)
+    )
+  end
+
   @doc "Makes the next `times` calls to `method path` answer `status`."
   @spec fail(pid(), {String.t(), String.t()}, pos_integer(), pos_integer()) :: :ok
   def fail(fake, {method, path}, status, times \\ 1_000) do
@@ -364,6 +375,7 @@ defmodule PipeMaestro.FakeForgejo do
 
   defp repo_route(conn, fake, full, _repo, "DELETE", ["issues", number, "labels", name]) do
     number = String.to_integer(number)
+    name = URI.decode(name)
 
     update_repo(
       fake,

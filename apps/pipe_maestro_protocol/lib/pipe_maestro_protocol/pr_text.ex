@@ -1,6 +1,7 @@
-defmodule PipeMaestroRunner.Delivery.PrText do
+defmodule PipeMaestroProtocol.PrText do
   @moduledoc """
-  The platform's part of a pull request's text, and only that.
+  The platform's part of a pull request's text, and only that: the runner
+  writes it when it keeps the pull request, the control plane when it does.
 
   - **Description:** the platform writes one block, between
     `<!-- pipemaestro:inicio -->` and `<!-- pipemaestro:fim -->`. Updating

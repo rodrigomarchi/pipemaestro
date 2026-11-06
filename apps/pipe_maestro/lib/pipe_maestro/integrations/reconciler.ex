@@ -10,7 +10,8 @@ defmodule PipeMaestro.Integrations.Reconciler do
   processing as a webhook (`PipeMaestro.Integrations.Ingest`), as a
   `"reconcile"` delivery. The issue's state keeps a trigger from firing twice.
   It also processes again the deliveries that waited for a runner or failed,
-  up to `@max_attempts` times in the last day.
+  up to `@max_attempts` times in the last day, and the feedback of tasks that
+  could not be written on their issue (`PipeMaestro.Integrations.Feedback`).
 
   Comments are not read back: a command lost costs little to repeat.
 
@@ -26,6 +27,7 @@ defmodule PipeMaestro.Integrations.Reconciler do
     Connection,
     Credentials,
     Delivery,
+    Feedback,
     Ingest,
     IssueState,
     LinkedRepo
@@ -42,7 +44,11 @@ defmodule PipeMaestro.Integrations.Reconciler do
   One pass at `now`: answers how many issues it took in and how many
   deliveries it tried again. Options as in `PipeMaestro.Integrations.Ingest`.
   """
-  @spec run(DateTime.t(), keyword()) :: %{issues: non_neg_integer(), retried: non_neg_integer()}
+  @spec run(DateTime.t(), keyword()) :: %{
+          issues: non_neg_integer(),
+          retried: non_neg_integer(),
+          feedback: non_neg_integer()
+        }
   def run(now, opts \\ []) do
     issues =
       from(c in Connection, where: c.status == "active" and c.api_mode == "control_plane")
@@ -51,7 +57,8 @@ defmodule PipeMaestro.Integrations.Reconciler do
       |> Enum.map(&sync_repo(&1, now, opts))
       |> Enum.sum()
 
-    %{issues: issues, retried: retry(now, opts)}
+    feedback = Enum.count(Feedback.dirty_task_ids(), &(Feedback.sync(&1) == :ok))
+    %{issues: issues, retried: retry(now, opts), feedback: feedback}
   end
 
   @doc "Reads the repository's issues updated since its last sync; answers how many it took in."

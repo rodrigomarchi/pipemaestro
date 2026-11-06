@@ -10,7 +10,7 @@ defmodule PipeMaestroRunner.Delivery do
        nothing to do when the agent already pushed);
     2. opens the task's draft pull request, or adopts the open one, writing
        only the platform's block of its description
-       (`PipeMaestroRunner.Delivery.PrText`), and marks it ready when asked
+       (`PipeMaestroProtocol.PrText`), and marks it ready when asked
        (the last stage);
     3. comments on the task's issue.
 
@@ -26,7 +26,8 @@ defmodule PipeMaestroRunner.Delivery do
   skipped; nothing raises.
   """
 
-  alias PipeMaestroRunner.Delivery.{Forgejo, PrText}
+  alias PipeMaestroProtocol.PrText
+  alias PipeMaestroRunner.Delivery.Forgejo
 
   @doc """
   Delivers in the worktree `dir`. Options: `:gh` (the GitHub CLI's path),

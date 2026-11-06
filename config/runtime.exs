@@ -76,6 +76,9 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
+  # The platform's address in what it writes on a git host (a task's link).
+  config :pipe_maestro, PipeMaestro.Integrations, public_url: "https://#{host}"
+
   config :pipe_maestro_web, PipeMaestroWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
