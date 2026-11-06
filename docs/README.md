@@ -47,7 +47,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0022 | [Propostas do agente como mecanismo geral](adr/0022-propostas-do-agente-como-mecanismo-geral.md) | Aceita |
 | 0023 | [Runner na versão da plataforma](adr/0023-runner-na-versao-da-plataforma.md) | Aceita |
 | 0024 | [Resumo da execução e métricas do agente](adr/0024-resumo-da-execucao-e-metricas-do-agente.md) | Aceita |
-| 0025 | [Atualização automática do runner](adr/0025-atualizacao-automatica-do-runner.md) | Aceita |
+| 0025 | [Atualização automática do runner](adr/0025-atualizacao-automatica-do-runner.md) | Aceita (padrão alterado pela 0038) |
 | 0026 | [Deploy pelo Forgejo e main protegida](adr/0026-deploy-pelo-forgejo-e-main-protegida.md) | Aceita |
 | 0027 | [Entrega em PR no Forgejo](adr/0027-entrega-em-pr-no-forgejo.md) | Aceita |
 | 0028 | [Teto de custo só quando configurado](adr/0028-teto-de-custo-so-quando-configurado.md) | Aceita |
@@ -58,6 +58,9 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0033 | [Contrato entre o harness e o agente](adr/0033-contrato-entre-harness-e-agente.md) | Aceita |
 | 0034 | [O projeto é runner + pasta e a escolha única de onde o trabalho roda](adr/0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md) | Aceita |
 | 0035 | [Versão própria do runner](adr/0035-versao-propria-do-runner.md) | Aceita |
+| 0036 | [Integrações com hosts git](adr/0036-integracoes-com-hosts-git.md) | Aceita |
+| 0037 | [Credencial git por job](adr/0037-credencial-git-por-job.md) | Aceita |
+| 0038 | [Atualização automática por padrão](adr/0038-atualizacao-automatica-por-padrao.md) | Aceita |
 
 ## Specs
 
