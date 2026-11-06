@@ -14,7 +14,10 @@ defmodule PipeMaestro.Integrations.Ingest do
    3. the repository is linked;
    4. the issue's state (`PipeMaestro.Integrations.IssueState`) tells the
       labels just added;
-   5. an enabled trigger matches;
+   5. a command in a comment on a task's issue or pull request, a review
+     asking for changes or a merge go to the task
+     (`PipeMaestro.Integrations.Conversation`); otherwise an enabled
+     trigger matches;
    6. its author may fire it;
    7. the trigger has not reached its hourly limit;
    8. the issue has no task nor triage going on;
@@ -35,6 +38,7 @@ defmodule PipeMaestro.Integrations.Ingest do
 
   alias PipeMaestro.Integrations.{
     Connection,
+    Conversation,
     Credentials,
     Delivery,
     Event,
@@ -203,6 +207,7 @@ defmodule PipeMaestro.Integrations.Ingest do
   defp handle(connection, %Event{} = event, opts) do
     with :ok <- not_own(connection, event),
          {:ok, repo} <- linked_repo(connection, event),
+         :continue <- Conversation.handle(connection, repo, event),
          {:ok, added} <- observe(repo, event),
          {:ok, trigger, pipeline_id} <- match(repo, event, added),
          {:ok, client} <- client(connection),

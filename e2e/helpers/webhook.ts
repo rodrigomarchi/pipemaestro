@@ -46,3 +46,25 @@ export function issueLabelPayload(repo: string, issue: { number: number; title: 
     },
   };
 }
+
+/** An `issue_comment` payload: `author` comments `body` on an issue of `repo`. */
+export function issueCommentPayload(repo: string, issue: { number: number; title: string }, comment: { id: number; body: string; author: string }, baseUrl: string) {
+  return {
+    action: "created",
+    repository: { full_name: repo },
+    sender: { login: comment.author },
+    is_pull: false,
+    comment: { id: comment.id, body: comment.body, user: { login: comment.author } },
+    issue: {
+      number: issue.number,
+      title: issue.title,
+      body: "",
+      state: "open",
+      html_url: `${baseUrl}/${repo}/issues/${issue.number}`,
+      user: { login: comment.author },
+      labels: [],
+      updated_at: new Date().toISOString(),
+      pull_request: null,
+    },
+  };
+}

@@ -103,7 +103,7 @@ defmodule PipeMaestro.Integrations.Feedback do
 
     """
     #{@marker}
-    **PipeMaestro** · #{status_text(task.status)}
+    **PipeMaestro** · #{if task.issue_feedback["merged"], do: "integrado ✅", else: status_text(task.status)}
 
     [#{task.title}](#{task_url})#{pr} · pipeline #{task.pipeline_name}
 

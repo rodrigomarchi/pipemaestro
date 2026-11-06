@@ -142,6 +142,8 @@ export class RunnerProcess {
 
   cleanup(): void {
     this.stop();
-    rmSync(this.configDir, { recursive: true, force: true });
+    // A task may still be running when the spec ends: its agent can write a
+    // file while the directory goes, so the removal tries a few times.
+    rmSync(this.configDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 }
