@@ -6,6 +6,8 @@ defmodule PipeMaestroWeb.RunnerLive do
       offers, its task worktrees and disk, how near its account is to its
       usage limits, the jobs it is running or has waiting, and the latest
       jobs it finished, each leading to its audit;
+    * **Saúde** — its machine and how its jobs went, over the last day or
+      week (`?periodo=`, `PipeMaestroWeb.RunnerLive.HealthTab`);
     * **Conexões** — its uptime and sessions
       (`PipeMaestroWeb.RunnerLive.ConnectionsTab`).
 
@@ -31,10 +33,14 @@ defmodule PipeMaestroWeb.RunnerLive do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.{RunnerActions, RunnerStatus}
-  alias PipeMaestroWeb.RunnerLive.ConnectionsTab
+  alias PipeMaestroWeb.RunnerLive.{ConnectionsTab, HealthTab}
 
   # The tabs, by their `aba` parameter, in order.
-  @tabs [{"visao", "Visão geral", "hero-server"}, {"conexoes", "Conexões", "hero-signal"}]
+  @tabs [
+    {"visao", "Visão geral", "hero-server"},
+    {"saude", "Saúde", "hero-heart"},
+    {"conexoes", "Conexões", "hero-signal"}
+  ]
   @tab_ids Enum.map(@tabs, &elem(&1, 0))
 
   @impl true
@@ -44,16 +50,19 @@ defmodule PipeMaestroWeb.RunnerLive do
 
     if connected?(socket) do
       RunnerStatus.subscribe(workspace.id)
+      RunnerStatus.subscribe_telemetry(runner.id)
       Jobs.subscribe({:workspace, workspace.id})
     end
 
-    {:ok, assign(socket, page_title: runner.name, runner_id: runner.id, tab: "visao")}
+    {:ok,
+     assign(socket, page_title: runner.name, runner_id: runner.id, tab: "visao", period: "24h")}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
     tab = if params["aba"] in @tab_ids, do: params["aba"], else: "visao"
-    {:noreply, socket |> assign(tab: tab) |> load()}
+    period = if params["periodo"] in HealthTab.periods(), do: params["periodo"], else: "24h"
+    {:noreply, socket |> assign(tab: tab, period: period) |> load()}
   end
 
   @impl true
@@ -75,6 +84,12 @@ defmodule PipeMaestroWeb.RunnerLive do
   @impl true
   def handle_info(%Broadcast{event: "presence_diff"}, socket), do: {:noreply, load(socket)}
   def handle_info(:runners_changed, socket), do: {:noreply, load(socket)}
+
+  # A sample a minute: only the tab that shows it reloads.
+  def handle_info({:runner_telemetry, :health}, %{assigns: %{tab: "saude"}} = socket),
+    do: {:noreply, load(socket)}
+
+  def handle_info({:runner_telemetry, _kind}, socket), do: {:noreply, socket}
 
   def handle_info({:job_updated, %Job{runner_id: runner_id}}, socket) do
     if runner_id == socket.assigns.runner_id,
@@ -104,6 +119,9 @@ defmodule PipeMaestroWeb.RunnerLive do
     assign(socket, recent_jobs: Jobs.recent_for_runner(workspace, runner))
   end
 
+  defp load_tab(socket, "saude", runner, now),
+    do: assign(socket, health: HealthTab.load(runner, socket.assigns.period, now))
+
   defp load_tab(socket, "conexoes", runner, now),
     do: assign(socket, connections: ConnectionsTab.load(runner, now))
 
@@ -112,6 +130,9 @@ defmodule PipeMaestroWeb.RunnerLive do
 
   defp tab_path(scope, runner_id, tab),
     do: ~p"/w/#{scope.workspace.slug}/runners/#{runner_id}?aba=#{tab}"
+
+  defp period_path(scope, runner_id),
+    do: &~p"/w/#{scope.workspace.slug}/runners/#{runner_id}?aba=saude&periodo=#{&1}"
 
   @impl true
   def render(assigns) do
@@ -163,6 +184,11 @@ defmodule PipeMaestroWeb.RunnerLive do
           </.tab>
         </.tabs>
 
+        <HealthTab.health
+          :if={@tab == "saude"}
+          data={@health}
+          path={period_path(@current_scope, @runner.id)}
+        />
         <ConnectionsTab.connections :if={@tab == "conexoes"} data={@connections} />
 
         <div :if={@tab == "visao"} class="space-y-6">

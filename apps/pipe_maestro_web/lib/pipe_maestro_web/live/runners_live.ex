@@ -107,6 +107,7 @@ defmodule PipeMaestroWeb.RunnersLive do
       runners: runners,
       online: RunnerStatus.online_ids(workspace.id),
       uptimes: RunnerTelemetry.uptimes(runners, DateTime.add(now, -7, :day), now),
+      failure_rates: RunnerTelemetry.failure_rates(runners, DateTime.add(now, -7, :day)),
       now: now
     )
   end
@@ -191,6 +192,13 @@ defmodule PipeMaestroWeb.RunnersLive do
                 data-testid={"runner-uptime-#{runner.name}"}
               >
                 uptime 7d {format_uptime(@uptimes[runner.id])}
+              </p>
+              <p
+                class="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+                title="Jobs que falharam entre os que terminaram nos últimos 7 dias"
+                data-testid={"runner-failures-#{runner.name}"}
+              >
+                falhas 7d {format_uptime(@failure_rates[runner.id])}
               </p>
             </:col>
             <:col :let={runner} label="Labels">

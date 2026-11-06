@@ -91,6 +91,10 @@ defmodule PipeMaestroRunner.Outbox do
     for {id, {event, payload}} <- :gb_trees.to_list(outbox.entries), do: {id, event, payload}
   end
 
+  @doc "How many messages are still to confirm."
+  @spec size(t()) :: non_neg_integer()
+  def size(outbox), do: :gb_trees.size(outbox.entries)
+
   @doc "The jobs with messages still to confirm."
   @spec job_ids(t()) :: [String.t()]
   def job_ids(outbox) do

@@ -128,6 +128,26 @@ export class RunnersPage {
     return this.page.getByTestId("runner-drops-day");
   }
 
+  /** The "Saúde" tab. */
+  get health(): Locator {
+    return this.page.getByTestId("runner-health");
+  }
+
+  /** The latest value of a measure in the "Saúde" tab: cpu, memory, load or disk. */
+  healthValue(measure: "cpu" | "memory" | "load" | "disk"): Locator {
+    return this.page.getByTestId(`runner-health-${measure}-value`);
+  }
+
+  /** A number of the week's jobs in the "Saúde" tab: runs, failures, setup, queue, gates or outbox. */
+  runStat(stat: "runs" | "failures" | "setup" | "queue" | "gates" | "outbox"): Locator {
+    return this.page.getByTestId(`runner-stat-${stat}`);
+  }
+
+  /** The runner's share of failed jobs over the last 7 days, in the list. */
+  failures(name: string): Locator {
+    return this.page.getByTestId(`runner-failures-${name}`);
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

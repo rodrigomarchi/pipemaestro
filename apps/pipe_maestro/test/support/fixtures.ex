@@ -219,7 +219,7 @@ defmodule PipeMaestro.Fixtures do
       PipeMaestro.Runners.record_hello(
         runner,
         hello_fixture(%{
-          capabilities: ["git_credential", "scratch"],
+          capabilities: ["git_credential", "health", "scratch"],
           directories: [%{"name" => "app", "git" => true}]
         })
       )

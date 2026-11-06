@@ -25,6 +25,10 @@ defmodule PipeMaestroWeb.RunnerChannel do
   The runner also sends `runner:directories` when the code directories it
   offers change while it is online.
 
+  A runner that announces it reports its machine's health
+  (`runner:health`, `PipeMaestroProtocol.RunnerHealth`), stored and passed on
+  to the screens following that runner.
+
   Each accepted join opens a session (`PipeMaestro.RunnerTelemetry`), closed
   with the reason the channel ended; a refused join is recorded as a session
   that ends as it starts (ADR 0039).
@@ -173,6 +177,19 @@ defmodule PipeMaestroWeb.RunnerChannel do
       {:ok, runner} ->
         RunnerStatus.notify_changed(runner.workspace_id)
         {:reply, :ok, assign(socket, runner: runner)}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("runner:health", payload, socket) do
+    runner = socket.assigns.runner
+
+    case RunnerTelemetry.record_health(runner, payload) do
+      {:ok, _sample} ->
+        RunnerStatus.notify_telemetry(runner.id, :health)
+        {:reply, :ok, socket}
 
       {:error, _reason} ->
         {:reply, {:error, %{"reason" => "invalid"}}, socket}

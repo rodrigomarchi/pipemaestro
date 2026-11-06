@@ -48,6 +48,29 @@ defmodule PipeMaestroWeb.RunnerStatus do
     Phoenix.PubSub.broadcast(PipeMaestro.PubSub, topic(workspace_id), :runners_changed)
   end
 
+  @doc "The PubSub topic of one runner's telemetry (ADR 0039)."
+  @spec telemetry_topic(Ecto.UUID.t()) :: String.t()
+  def telemetry_topic(runner_id), do: "runner_telemetry:" <> runner_id
+
+  @doc """
+  Subscribes the caller to one runner's telemetry: it receives
+  `{:runner_telemetry, kind}` (`:health`, `:log`, `:doctor`) when the runner
+  reports something new.
+  """
+  @spec subscribe_telemetry(Ecto.UUID.t()) :: :ok
+  def subscribe_telemetry(runner_id),
+    do: Phoenix.PubSub.subscribe(PipeMaestro.PubSub, telemetry_topic(runner_id))
+
+  @doc "Tells the screens following a runner that it reported `kind` of telemetry."
+  @spec notify_telemetry(Ecto.UUID.t(), atom()) :: :ok
+  def notify_telemetry(runner_id, kind),
+    do:
+      Phoenix.PubSub.broadcast(
+        PipeMaestro.PubSub,
+        telemetry_topic(runner_id),
+        {:runner_telemetry, kind}
+      )
+
   @doc "Closes the runner's open connection, if it has one."
   @spec disconnect(Runner.t()) :: :ok
   def disconnect(%Runner{id: id}) do

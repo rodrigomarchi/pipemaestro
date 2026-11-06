@@ -36,6 +36,12 @@ defmodule PipeMaestroRunner.Connection do
   after every join and then every `:usage_every` ms (default five minutes)
   when it changed.
 
+  With `:health_every` (ms; `runner.start` passes
+  `PipeMaestroProtocol.RunnerHealth.interval_ms/0`), it samples this
+  machine's health (`PipeMaestroRunner.Health`) after every join and then
+  at that interval, and sends it (`runner:health`) while joined; a sample
+  taken while disconnected is dropped.
+
   Progress is reported to `:notify` (a pid) as `{:runner_connection, event}`
   with `event` one of `{:joined, reply}`, `{:disconnected, reason}`,
   `:rejected`, `{:outdated, refusal}`, `{:job_started, job_id}` and
@@ -45,8 +51,8 @@ defmodule PipeMaestroRunner.Connection do
 
   require Logger
 
-  alias PipeMaestroProtocol.{Hello, Job, Worktree}
-  alias PipeMaestroRunner.{Directories, Disk, JobRunner, Outbox}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerHealth, Worktree}
+  alias PipeMaestroRunner.{Directories, Disk, Health, JobRunner, Outbox}
 
   @doc "Starts the connection with the runner's credentials and hello."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -89,6 +95,10 @@ defmodule PipeMaestroRunner.Connection do
         usage_every: Keyword.get(opts, :usage_every, 300_000),
         usage: nil,
         measuring: nil,
+        health_every: Keyword.get(opts, :health_every),
+        sampling: nil,
+        health_timer: nil,
+        cpu: nil,
         outbox: Outbox.new(20_000, Keyword.get(opts, :outbox_path))
       )
 
@@ -169,7 +179,7 @@ defmodule PipeMaestroRunner.Connection do
         send_out(acc, id, event, payload)
       end)
 
-    {:ok, measure_usage(socket)}
+    {:ok, socket |> measure_usage() |> sample_health()}
   end
 
   @impl Slipstream
@@ -275,6 +285,19 @@ defmodule PipeMaestroRunner.Connection do
 
   def handle_info(:measure_usage, socket), do: {:noreply, measure_usage(socket)}
 
+  def handle_info(:sample_health, socket),
+    do: {:noreply, sample_health(assign(socket, health_timer: nil))}
+
+  def handle_info({ref, {sample, cpu}}, %{assigns: %{sampling: ref}} = socket) do
+    Process.demonitor(ref, [:flush])
+
+    if joined?(socket, socket.assigns.topic),
+      do: _pushed = push(socket, socket.assigns.topic, RunnerHealth.event(), sample)
+
+    timer = Process.send_after(self(), :sample_health, socket.assigns.health_every)
+    {:noreply, assign(socket, sampling: nil, cpu: cpu, health_timer: timer)}
+  end
+
   # What the agent is writing: worth showing now or never, so it skips the
   # outbox and is dropped while disconnected.
   def handle_info({:job_live, event, payload}, socket) do
@@ -328,6 +351,27 @@ defmodule PipeMaestroRunner.Connection do
   defp measure_usage(socket) do
     workdir = socket.assigns.workdir
     assign(socket, measuring: Task.async(fn -> Disk.usage(workdir) end).ref)
+  end
+
+  # Commands that may take a moment (`ps`, `df`): in a task, one at a time.
+  # A join samples at once; the timer it replaces is dropped.
+  defp sample_health(%{assigns: %{health_every: nil}} = socket), do: socket
+  defp sample_health(%{assigns: %{sampling: ref}} = socket) when is_reference(ref), do: socket
+
+  defp sample_health(%{assigns: assigns} = socket) do
+    if assigns.health_timer, do: Process.cancel_timer(assigns.health_timer)
+
+    running =
+      if assigns.job_runner, do: length(JobRunner.running_job_ids(assigns.job_runner)), else: 0
+
+    opts = [
+      workdir: assigns.workdir,
+      outbox_pending: Outbox.size(assigns.outbox),
+      running_jobs: running,
+      cpu: assigns.cpu
+    ]
+
+    assign(socket, sampling: Task.async(fn -> Health.sample(opts) end).ref, health_timer: nil)
   end
 
   defp notify(%{assigns: %{notify: pid}}, event) when is_pid(pid),

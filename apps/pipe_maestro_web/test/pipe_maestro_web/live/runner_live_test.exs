@@ -267,6 +267,69 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
       assert has_element?(view, "[data-testid=runner-recent-jobs]")
     end
 
+    test "health: the machine's latest sample, its trend and the week's jobs, live", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+      now = DateTime.utc_now()
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=saude")
+      assert has_element?(view, "[data-testid=runner-health-empty]")
+      refute has_element?(view, "[data-testid=runner-health-unsupported]")
+      assert has_element?(view, "[data-testid=runner-stat-runs]", "0")
+
+      sample = fn at, cpu ->
+        %{
+          "at" => DateTime.to_iso8601(at),
+          "cpu_pct" => cpu,
+          "load1" => 1.25,
+          "mem_used_bytes" => 4 * 1024 ** 3,
+          "mem_total_bytes" => 16 * 1024 ** 3,
+          "disk_free_bytes" => 50 * 1024 ** 3,
+          "disk_total_bytes" => 100 * 1024 ** 3,
+          "outbox_pending" => 2
+        }
+      end
+
+      {:ok, _} =
+        RunnerTelemetry.record_health(runner, sample.(DateTime.add(now, -20, :minute), 10))
+
+      {:ok, _} = RunnerTelemetry.record_health(runner, sample.(now, 30))
+      PipeMaestroWeb.RunnerStatus.notify_telemetry(runner.id, :health)
+
+      assert render(view) =~ "runner-health-cpu-value"
+      assert has_element?(view, "[data-testid=runner-health-cpu-value]", "30%")
+      assert has_element?(view, "[data-testid=runner-health-memory-value]", "25%")
+      assert has_element?(view, "[data-testid=runner-health-load-value]", "1,25")
+      assert has_element?(view, "[data-testid=runner-health-disk-value]", "50 GB (50%)")
+      assert has_element?(view, "[data-testid=runner-health-cpu-trend]")
+      assert has_element?(view, "[data-testid=runner-stat-outbox]", "2")
+
+      view |> element("[data-testid=runner-health-period-7d]") |> render_click()
+      assert_patch(view, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=saude&periodo=7d")
+      assert has_element?(view, "[data-testid=runner-health-cpu-value]", "30%")
+    end
+
+    test "health: a runner that does not send it is asked to update", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "velho"})
+
+      runner
+      |> Ecto.Changeset.change(
+        capabilities: ["scratch"],
+        last_connected_at: DateTime.utc_now(:second)
+      )
+      |> PipeMaestro.Repo.update!()
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=saude")
+      assert has_element?(view, "[data-testid=runner-health-unsupported]")
+    end
+
     test "connections: uptime, drops and each session with how it ended", %{
       conn: conn,
       workspace: workspace,
@@ -303,6 +366,7 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
       assert has_element?(view, "[data-testid=runner-uptime-mac]", "uptime 7d")
+      assert has_element?(view, "[data-testid=runner-failures-mac]", "falhas 7d —")
     end
   end
 

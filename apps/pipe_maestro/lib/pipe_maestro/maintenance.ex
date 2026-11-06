@@ -13,7 +13,9 @@ defmodule PipeMaestro.Maintenance do
       the rest go on the next.
     * audit entries older than `:audit_days` (default 365) go;
     * the integrations' deliveries older than `:deliveries_days` (default 30)
-      go (`PipeMaestro.Integrations.prune_deliveries/1`).
+      go (`PipeMaestro.Integrations.prune_deliveries/1`);
+    * the runners' health samples older than `:health_days` (default 7) go
+      (`PipeMaestro.RunnerTelemetry.prune_health/1`).
 
   When it starts, it also closes the runners' sessions the previous run of
   the control plane left open (`PipeMaestro.RunnerTelemetry.close_orphan_sessions/1`).
@@ -39,6 +41,7 @@ defmodule PipeMaestro.Maintenance do
     job_events_days = Keyword.get(opts, :job_events_days, 30)
     audit_days = Keyword.get(opts, :audit_days, 365)
     deliveries_days = Keyword.get(opts, :deliveries_days, 30)
+    health_days = Keyword.get(opts, :health_days, 7)
     batch = Keyword.get(opts, :batch, 500)
 
     {device_authorizations, _} =
@@ -78,7 +81,8 @@ defmodule PipeMaestro.Maintenance do
       job_events: job_events,
       job_telemetry: job_telemetry,
       audit_events: Audit.prune(DateTime.add(now, -audit_days, :day)),
-      deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day))
+      deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day)),
+      health_samples: RunnerTelemetry.prune_health(DateTime.add(now, -health_days, :day))
     }
   end
 

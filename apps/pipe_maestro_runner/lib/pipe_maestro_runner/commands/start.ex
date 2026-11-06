@@ -33,6 +33,8 @@ defmodule PipeMaestroRunner.Commands.Start do
     Update
   }
 
+  alias PipeMaestroProtocol.RunnerHealth
+
   @switches [root: :string, auto_update: :boolean]
   @spec run([String.t()]) :: no_return()
   def run(args) do
@@ -70,7 +72,8 @@ defmodule PipeMaestroRunner.Commands.Start do
         outbox_path: Path.join(Config.dir(), "outbox.bin"),
         root: config.root,
         # The CLI's OpenTelemetry, received on this machine and relayed.
-        telemetry: true
+        telemetry: true,
+        health_every: interval("RUNNER_HEALTH_EVERY_MS", RunnerHealth.interval_ms())
       )
 
     ref = Process.monitor(pid)
@@ -109,6 +112,14 @@ defmodule PipeMaestroRunner.Commands.Start do
 
       {:DOWN, ^ref, :process, _pid, reason} ->
         Output.fail!("A conexão terminou: #{inspect(reason)}")
+    end
+  end
+
+  # A shorter interval, for the screen tests; never in normal use.
+  defp interval(env, default) do
+    case Integer.parse(System.get_env(env) || "") do
+      {ms, ""} when ms >= 1_000 -> ms
+      _unset -> default
     end
   end
 

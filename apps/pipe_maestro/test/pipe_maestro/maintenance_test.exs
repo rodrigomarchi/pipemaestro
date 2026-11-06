@@ -3,7 +3,7 @@ defmodule PipeMaestro.MaintenanceTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Audit, FakeForgejo, Jobs, Maintenance, Repo, Runners}
+  alias PipeMaestro.{Audit, FakeForgejo, Jobs, Maintenance, Repo, Runners, RunnerTelemetry}
   alias PipeMaestro.Integrations.{Delivery, Ingest}
   alias PipeMaestro.Jobs.Event
   alias PipeMaestro.Runners.DeviceAuthorization
@@ -88,5 +88,20 @@ defmodule PipeMaestro.MaintenanceTest do
 
     assert [%{external_id: "nova"}] =
              Repo.all(Delivery)
+  end
+
+  test "removes the runners' health samples past their retention" do
+    workspace = workspace_fixture()
+    {runner, _token} = runner_fixture(workspace, member_fixture(workspace))
+    now = DateTime.utc_now()
+
+    for days <- [8, 1] do
+      at = DateTime.add(now, -days, :day) |> DateTime.to_iso8601()
+      {:ok, _} = RunnerTelemetry.record_health(runner, %{"at" => at, "cpu_pct" => 1})
+    end
+
+    assert %{health_samples: 1} = Maintenance.run(now)
+    assert %{health_samples: 0} = Maintenance.run(now)
+    assert RunnerTelemetry.latest_health(runner)
   end
 end

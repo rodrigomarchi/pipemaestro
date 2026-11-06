@@ -148,6 +148,29 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       assert [%{end_reason: "revoked"}] = sessions(runner)
     end
 
+    test "health samples are stored and passed on to the runner's screens", %{
+      socket: socket,
+      runner: runner
+    } do
+      {:ok, _reply, channel} =
+        subscribe_and_join(
+          socket,
+          RunnerChannel,
+          "runner:" <> runner.id,
+          Hello.to_map(hello_fixture())
+        )
+
+      RunnerStatus.subscribe_telemetry(runner.id)
+      sample = %{"at" => DateTime.to_iso8601(DateTime.utc_now()), "cpu_pct" => 42}
+      ref = push(channel, "runner:health", sample)
+      assert_reply ref, :ok
+      assert_receive {:runner_telemetry, :health}
+      assert %{cpu_pct: 42.0} = RunnerTelemetry.latest_health(runner)
+
+      ref = push(channel, "runner:health", %{"cpu_pct" => 1})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+    end
+
     test "an invalid hello is recorded as a refusal", %{socket: socket, runner: runner} do
       assert {:error, _} = subscribe_and_join(socket, RunnerChannel, "runner:" <> runner.id, %{})
       assert [%{end_reason: "invalid_hello", ended_at: %DateTime{}}] = sessions(runner)
