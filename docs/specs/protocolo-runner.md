@@ -1,6 +1,6 @@
-# Protocolo runner ↔ control plane (v3)
+# Protocolo runner ↔ control plane (v4)
 
-> Status: v3, implementada em `apps/pipe_maestro_protocol`, que é a fonte da
+> Status: v4, implementada em `apps/pipe_maestro_protocol`, que é a fonte da
 > verdade das constantes e dos formatos `Hello`, `Job` e `JobEvent`. Ela cobre login,
 > conexão, jobs (seção 4) e o contexto das etapas de tarefa (seção 4.4). Leases e
 > dispatcher entram em versões seguintes. As versões anteriores nunca foram
