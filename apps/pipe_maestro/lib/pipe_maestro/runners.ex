@@ -253,8 +253,8 @@ defmodule PipeMaestro.Runners do
 
   @doc """
   Whether `runner` announced a release older than `reference` (by default,
-  the runner's version this control plane requires). Development builds and versions outside the
-  scheme are never outdated (`PipeMaestroProtocol.Version.outdated?/2`).
+  the runner's version this control plane requires). Development builds and
+  versions outside the scheme are never outdated (`PipeMaestroProtocol.Version.outdated?/2`).
   """
   @spec outdated?(Runner.t(), String.t()) :: boolean()
   def outdated?(%Runner{runner_version: version}, reference \\ Version.runner_version()) do
