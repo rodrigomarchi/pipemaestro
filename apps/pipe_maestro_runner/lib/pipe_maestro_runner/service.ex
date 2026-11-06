@@ -17,13 +17,13 @@ defmodule PipeMaestroRunner.Service do
   @doc """
   What the service runs and where, from the environment: the single binary
   itself (Burrito's `__BURRITO_BIN_PATH`; its unpacked release has no
-  `pipemaestro`), which updates itself when the platform is on another
-  version (`--auto-update`), the release's `bin/pipemaestro`, or
+  `pipemaestro`), which updates itself by default when the platform is on
+  another version, the release's `bin/pipemaestro`, or
   `:development` (mix).
   """
   @spec program(%{String.t() => String.t()}) :: {[String.t()], String.t()} | :development
   def program(%{"__BURRITO_BIN_PATH" => bin}),
-    do: {[bin, "start", "--auto-update"], Path.dirname(bin)}
+    do: {[bin, "start"], Path.dirname(bin)}
 
   def program(%{"RELEASE_ROOT" => root}),
     do: {[Path.join([root, "bin", "pipemaestro"]), "start"], root}

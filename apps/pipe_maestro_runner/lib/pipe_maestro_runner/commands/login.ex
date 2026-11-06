@@ -2,15 +2,15 @@ defmodule PipeMaestroRunner.Commands.Login do
   @moduledoc """
   Signs this machine in as a runner:
 
-      pipemaestro login [--url URL] [--name NAME] [--label L]... [--capacity N] [--auto-update]
+      pipemaestro login [--url URL] [--name NAME] [--label L]... [--capacity N] [--no-auto-update]
 
   Without `--url`, it signs in to `PipeMaestroRunner.Config.default_url/0`
   (PipeMaestro's production, or `$PIPEMAESTRO_URL`). Shows a URL and a code; a workspace member opens the URL, signed in, and
   approves the runner. The credentials are saved for `pipemaestro start`.
 
-  Refused for not being on the platform's version, the single binary offers
-  to update itself and sign in again (`PipeMaestroRunner.Update`);
-  `--auto-update` does it without asking.
+  Refused for not being on the platform's version, the single binary updates
+  itself and signs in again without asking (`PipeMaestroRunner.Update`); with
+  `--no-auto-update` it asks in a terminal instead.
   """
 
   alias PipeMaestroRunner.{Config, DeviceLogin, Host, Output, Update}

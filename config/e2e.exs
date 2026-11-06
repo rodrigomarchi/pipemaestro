@@ -65,7 +65,8 @@ config :pipe_maestro, PipeMaestro.Integrations.GitHub,
   web_url: github_url
 
 # The runner under Mix never updates itself (no single binary, no terminal).
-# Here it asks as a single binary in a terminal would (PipeMaestroRunner.Update),
-# for a binary that is only a path: the specs answer "no".
+# Here it acts as a single binary in a terminal would (PipeMaestroRunner.Update),
+# for a binary that is only a path: it would update without asking, so the specs
+# pass --no-auto-update, which makes it ask, and answer "no".
 config :pipe_maestro_runner, :update_prompt,
   binary: Path.join(System.tmp_dir!(), "pipemaestro-e2e-update")

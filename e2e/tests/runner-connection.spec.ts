@@ -2,7 +2,7 @@
  * @section Runners
  * @flow A [done] A runner signs in with the device flow: the CLI prints a code, a workspace member approves it in the browser, the CLI saves its credentials
  * @flow B [done] The runner connects and shows online, live, on the runners page, the board and the backoffice, with its version, which is the runner's own and not the control plane's; the page links the deploy's runner binaries per platform and the connect steps use them, naming the runner's version the platform requires
- * @flow E [done] A runner not on the runner's version the platform requires is refused, on login and on start, asked whether to download and install that version, and, answering no, told which runner's version the platform asks for and where to download it
+ * @flow E [done] A runner not on the runner's version the platform requires is refused, on login and on start; with --no-auto-update (updating is the default) it is asked whether to download and install that version, and, answering no, told which runner's version the platform asks for and where to download it
  * @flow D [done] A runner's page lists the latest jobs it finished, each leading to its audit
  * @flow C [done] A member renames the runner, then revokes it: the CLI is refused and stops, and the runner leaves the list
  */
@@ -49,10 +49,11 @@ test.describe("Runner connection", () => {
       `Baixar e instalar a versão ${escapeRegExp(versions.runner)} agora\\? \\[S/n\\]`,
     );
 
-    // Flow E: an outdated runner cannot even sign in.
+    // Flow E: an outdated runner cannot even sign in. Updating is the default:
+    // --no-auto-update makes it ask instead.
     runner = new RunnerProcess({ version: versions.outdatedRunner });
     const root = runner.createCodeRoot();
-    runner.start("runner.login", ["--url", platform]);
+    runner.start("runner.login", ["--url", platform, "--no-auto-update"]);
     await runner.waitFor(updateQuestion);
     runner.write("n\n");
     expect(await runner.waitForExit()).not.toBe(0);
@@ -76,7 +77,7 @@ test.describe("Runner connection", () => {
 
     // Flow E: signed in, but started on an older build, it is refused and stops.
     runner.useVersion(versions.outdatedRunner);
-    runner.start("runner.start");
+    runner.start("runner.start", ["--no-auto-update"]);
     await runner.waitFor(updateQuestion);
     runner.write("n\n");
     expect(await runner.waitForExit()).not.toBe(0);

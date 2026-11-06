@@ -89,7 +89,7 @@ defmodule PipeMaestroRunner.UpdateTest do
   end
 
   for answer <- ["\n", "s\n", "S\n", "sim\n"] do
-    test "answering #{inspect(answer)} downloads, replaces and runs the same command again",
+    test "--no-auto-update: answering #{inspect(answer)} downloads, replaces and runs the same command again",
          ctx do
       opts = answering(ctx.opts, unquote(answer))
 
@@ -104,7 +104,8 @@ defmodule PipeMaestroRunner.UpdateTest do
   end
 
   for answer <- ["n\n", "N\n", "não\n", "nao\n"] do
-    test "answering #{inspect(answer)} keeps today's message and downloads nothing", ctx do
+    test "--no-auto-update: answering #{inspect(answer)} keeps the message and downloads nothing",
+         ctx do
       opts = answering(ctx.opts, unquote(answer))
 
       assert Update.handle(ctx.refusal, opts) == {:fail, Update.message(ctx.refusal)}
@@ -116,14 +117,14 @@ defmodule PipeMaestroRunner.UpdateTest do
     end
   end
 
-  test "an input that ends (Ctrl+D) is a no", ctx do
+  test "--no-auto-update: an input that ends (Ctrl+D) is a no", ctx do
     opts = answering(ctx.opts, :eof)
 
     assert Update.handle(ctx.refusal, opts) == {:fail, Update.message(ctx.refusal)}
     assert DownloadServer.requests(ctx.server) == []
   end
 
-  test "without a terminal it does not ask: today's message", ctx do
+  test "--no-auto-update without a terminal does not ask: the message", ctx do
     opts = Keyword.put(ctx.opts, :tty?, false)
 
     assert Update.handle(ctx.refusal, opts) == {:fail, Update.message(ctx.refusal)}
@@ -131,6 +132,28 @@ defmodule PipeMaestroRunner.UpdateTest do
     refute_received {:asked, _prompt}
     assert File.read!(ctx.bin) == @old
     assert DownloadServer.requests(ctx.server) == []
+  end
+
+  test "by default, without a terminal, it updates without asking, for the service manager",
+       ctx do
+    opts = ctx.opts |> Keyword.put(:tty?, false) |> Keyword.delete(:auto_update)
+
+    assert Update.handle(ctx.refusal, opts) == :relaunched
+
+    refute_received {:asked, _prompt}
+    assert File.read!(ctx.bin) == @new
+    assert_received {:relaunch, bin, @argv, :service}
+    assert bin == ctx.bin
+  end
+
+  test "by default, in a terminal, it updates without asking and runs again there", ctx do
+    opts = Keyword.delete(ctx.opts, :auto_update)
+
+    assert Update.handle(ctx.refusal, opts) == :relaunched
+
+    refute_received {:asked, _prompt}
+    assert File.read!(ctx.bin) == @new
+    assert_received {:relaunch, _bin, @argv, :interactive}
   end
 
   test "--auto-update without a terminal updates without asking, for the service manager",
@@ -153,9 +176,15 @@ defmodule PipeMaestroRunner.UpdateTest do
     assert_received {:relaunch, _bin, @argv, :interactive}
   end
 
-  test "under Mix or a release (no single binary) it is today's message", ctx do
-    for env <- [%{}, %{"RELEASE_ROOT" => "/rel"}] do
-      opts = ctx.opts |> Keyword.put(:env, env) |> Keyword.put(:auto_update, true)
+  test "under Mix or a release (no single binary) it is the message, whatever the option",
+       ctx do
+    for env <- [%{}, %{"RELEASE_ROOT" => "/rel"}],
+        auto_update <- [nil, true, false] do
+      opts =
+        ctx.opts
+        |> Keyword.put(:env, env)
+        |> Keyword.delete(:auto_update)
+        |> then(&if(auto_update == nil, do: &1, else: Keyword.put(&1, :auto_update, auto_update)))
 
       assert Update.handle(ctx.refusal, opts) == {:fail, Update.message(ctx.refusal)}
     end
