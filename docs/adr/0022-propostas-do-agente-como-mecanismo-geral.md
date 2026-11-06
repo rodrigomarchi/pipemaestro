@@ -24,7 +24,7 @@ tarefa e melhorar um pipeline a partir de como as suas tarefas correram.
   | Tipo | Onde se pede | O que a revisão permite |
   |---|---|---|
   | `pipeline` | Pipelines → Gerar com IA | salvar o projeto e abrir o pipeline preenchido |
-  | `task` | Tarefas → Escrever com IA; triagem de issue | abrir a nova tarefa preenchida (título, prompt, pipeline, runner, diretório, issue); pedida pelo formulário, a tarefa pode ser criada sem revisão ([ADR 0031](0031-auto-aprovacao-da-tarefa-escrita-com-ia.md)) |
+  | `task` | Tarefas → Escrever com IA; triagem de issue ([ADR 0034](0034-integracoes-com-hosts-git.md)) | abrir a nova tarefa preenchida (título, prompt, pipeline, runner, diretório, issue); pedida pelo formulário, a tarefa pode ser criada sem revisão ([ADR 0031](0031-auto-aprovacao-da-tarefa-escrita-com-ia.md)) |
   | `decision` | painel de decisão da tarefa e página Decisões → Sugerir com IA | aplicar a ação sugerida (tentar de novo, avançar, cancelar) com as instruções editáveis |
   | `improve` | card do pipeline → Melhorar com IA | salvar as notas do projeto e abrir o pipeline preenchido, que vira a versão seguinte |
   | `analysis` | pedida pela própria plataforma quando a tarefa pausa por falha ([ADR 0029](0029-questionario-de-decisao.md)) | só ler o diagnóstico e as perguntas; a resposta acontece na tarefa |

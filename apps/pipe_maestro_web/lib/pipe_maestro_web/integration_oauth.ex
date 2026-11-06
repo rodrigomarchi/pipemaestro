@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.IntegrationOAuth do
   """
 
   alias PipeMaestro.Accounts.User
-  alias PipeMaestro.Integrations.{Connection, Credentials}
+  alias PipeMaestro.Integrations.{Connection, Credentials, GitHub}
   alias PipeMaestroWeb.{Endpoint, IntegrationComponents}
 
   @salt "integration oauth"
@@ -32,6 +32,19 @@ defmodule PipeMaestroWeb.IntegrationOAuth do
       state,
       verifier
     )
+  end
+
+  @doc "Where to send `user` to install the GitHub App for `connection`."
+  @spec github_install_url(Connection.t(), User.t()) :: String.t()
+  def github_install_url(%Connection{} = connection, %User{} = user) do
+    state =
+      Phoenix.Token.encrypt(Endpoint, @salt, %{
+        "c" => connection.id,
+        "u" => user.id,
+        "v" => "github"
+      })
+
+    GitHub.install_url(state)
   end
 
   @doc "What a `state` the host sent back carries: the connection's id, the person's and the verifier."

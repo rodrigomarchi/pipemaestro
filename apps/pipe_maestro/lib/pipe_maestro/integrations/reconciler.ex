@@ -12,6 +12,7 @@ defmodule PipeMaestro.Integrations.Reconciler do
   It also processes again the deliveries that waited for a runner or failed,
   up to `@max_attempts` times in the last day, and the feedback of tasks that
   could not be written on their issue (`PipeMaestro.Integrations.Feedback`).
+  The GitHub App's deliveries that failed are asked again from GitHub.
 
   Comments are not read back: a command lost costs little to repeat.
 
@@ -28,6 +29,7 @@ defmodule PipeMaestro.Integrations.Reconciler do
     Credentials,
     Delivery,
     Feedback,
+    GitHub,
     Ingest,
     IssueState,
     LinkedRepo
@@ -47,7 +49,8 @@ defmodule PipeMaestro.Integrations.Reconciler do
   @spec run(DateTime.t(), keyword()) :: %{
           issues: non_neg_integer(),
           retried: non_neg_integer(),
-          feedback: non_neg_integer()
+          feedback: non_neg_integer(),
+          redelivered: non_neg_integer()
         }
   def run(now, opts \\ []) do
     issues =
@@ -58,7 +61,7 @@ defmodule PipeMaestro.Integrations.Reconciler do
       |> Enum.sum()
 
     feedback = Enum.count(Feedback.dirty_task_ids(), &(Feedback.sync(&1) == :ok))
-    %{issues: issues, retried: retry(now, opts), feedback: feedback}
+    %{issues: issues, retried: retry(now, opts), feedback: feedback, redelivered: redeliver()}
   end
 
   @doc "Reads the repository's issues updated since its last sync; answers how many it took in."
@@ -109,6 +112,22 @@ defmodule PipeMaestro.Integrations.Reconciler do
       from i in IssueState, where: i.repo_id == ^repo.id and i.number == ^issue.number
     ) and
       issue[:created_at] != nil and DateTime.compare(issue.created_at, repo.inserted_at) == :gt
+  end
+
+  # GitHub keeps the App's deliveries for three days and never retries them:
+  # the ones that failed are asked again, when there is an installation.
+  defp redeliver do
+    installed =
+      Repo.exists?(
+        from c in Connection, where: c.provider == "github" and not is_nil(c.external_account_id)
+      )
+
+    with true <- GitHub.enabled?() and installed,
+         {:ok, failed} <- GitHub.failed_deliveries() do
+      Enum.count(failed, &(GitHub.redeliver(&1["id"]) == :ok))
+    else
+      _nothing -> 0
+    end
   end
 
   defp retry(now, opts) do

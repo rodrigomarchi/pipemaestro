@@ -5,7 +5,7 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
   """
   use PipeMaestroWeb, :live_view
 
-  alias PipeMaestro.{Audit, Pipelines, Projects, Runners}
+  alias PipeMaestro.{Audit, Integrations, Projects, Runners}
   alias PipeMaestro.Projects.Project
 
   @impl true
@@ -38,7 +38,7 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
        page_title: if(project.id, do: "Editar projeto", else: "Novo projeto"),
        project: project,
        directories: directories(workspace, project),
-       pipelines: Pipelines.list_pipelines(workspace)
+       linked_repos: if(project.id, do: Integrations.repos_for_project(project), else: [])
      )
      |> assign_form(Projects.change_project(project))}
   end
@@ -64,12 +64,12 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
   end
 
   def handle_event("save", %{"project" => params}, socket) do
-    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    workspace = socket.assigns.current_scope.workspace
 
     result =
       if socket.assigns.project.id,
-        do: Projects.update_project(socket.assigns.project, params, user),
-        else: Projects.create_project(workspace, params, user)
+        do: Projects.update_project(socket.assigns.project, params),
+        else: Projects.create_project(workspace, params)
 
     case result do
       {:ok, project} ->
@@ -224,73 +224,35 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
 
         <.card variant="outline">
           <.card_content>
-            <details class="group">
-              <summary class="flex cursor-pointer list-none items-start gap-3">
-                <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
-                  <.icon name="hero-bolt" class="size-5" />
-                </span>
-                <span class="flex-1">
-                  <span class="flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white">
-                    Gatilho do GitHub
-                    <.icon
-                      name="hero-chevron-down"
-                      class="size-4 text-gray-400 transition group-open:rotate-180"
-                    />
-                  </span>
-                  <span class="block text-sm text-gray-500 dark:text-gray-400">
-                    Uma label numa issue começa uma tarefa.
-                  </span>
-                </span>
-              </summary>
-              <div class="mt-5 grid gap-4 sm:grid-cols-3">
-                <.icon_field
-                  field={@form[:github_repo]}
-                  icon="hero-code-bracket-square"
-                  label="Repositório"
-                  placeholder="dono/repositorio"
-                  data-testid="project-github-repo"
-                />
-                <.icon_field
-                  field={@form[:trigger_label]}
-                  icon="hero-tag"
-                  label="Label"
-                  placeholder="claude"
-                  data-testid="project-trigger-label"
-                />
-                <.icon_field
-                  field={@form[:trigger_pipeline_id]}
-                  icon="hero-squares-2x2"
-                  type="select"
-                  label="Pipeline"
-                  prompt="Escolha um pipeline"
-                  options={Enum.map(@pipelines, &{&1.name, &1.id})}
-                  data-testid="project-trigger-pipeline"
-                />
-              </div>
-              <.icon_field
-                field={@form[:trigger_mode]}
-                icon="hero-funnel"
-                type="select"
-                label="Ao receber a issue"
-                options={[
-                  {"Começar a tarefa direto", "task"},
-                  {"O agente escreve a tarefa antes (triagem), e alguém revisa", "triage"}
-                ]}
-                data-testid="project-trigger-mode"
-              />
-              <p class="flex gap-2 text-sm text-gray-600 dark:text-gray-300">
-                <.icon name="hero-information-circle" class="mt-0.5 size-4 shrink-0 text-primary-500" />
-                <span>
-                  No GitHub, crie um webhook de <em>Issues</em>
-                  (content type JSON) para
-                  <code class="break-all" data-testid="project-webhook-url">{url(
-                    ~p"/api/github/webhook/#{@current_scope.workspace.slug}"
-                  )}</code>
-                  com o segredo guardado em Segredos como <code>GITHUB_WEBHOOK_SECRET</code>. As tarefas
-                  ficam em seu nome e rodam num runner online que ofereça este diretório.
-                </span>
-              </p>
-            </details>
+            <.section_heading
+              icon="hero-link"
+              title="Issues que viram tarefas"
+              description="Um repositório do Forgejo ou do GitHub ligado a este projeto, em Integrações."
+            />
+            <ul :if={@linked_repos != []} class="space-y-1 text-sm" data-testid="project-linked-repos">
+              <li :for={repo <- @linked_repos} class="flex items-center gap-2">
+                <.icon name="hero-code-bracket-square" class="size-4 text-gray-400" />
+                <.link
+                  navigate={
+                    ~p"/w/#{@current_scope.workspace.slug}/integrations/#{repo.connection_id}/repos/#{repo.id}"
+                  }
+                  class="font-mono text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  {repo.full_name}
+                </.link>
+                <span class="text-xs text-gray-500 dark:text-gray-400">({repo.connection.name})</span>
+              </li>
+            </ul>
+            <p :if={@linked_repos == []} class="text-sm text-gray-500 dark:text-gray-400">
+              Nenhum repositório ligado.
+              <.link
+                navigate={~p"/w/#{@current_scope.workspace.slug}/integrations"}
+                class="text-primary-600 hover:underline dark:text-primary-400"
+                data-testid="project-integrations-link"
+              >
+                Conectar em Integrações
+              </.link>
+            </p>
           </.card_content>
         </.card>
 

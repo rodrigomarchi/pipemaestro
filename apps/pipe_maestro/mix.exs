@@ -54,6 +54,8 @@ defmodule PipeMaestro.MixProject do
       {:yaml_elixir, "~> 2.11"},
       # The git hosts' APIs (PipeMaestro.Integrations); Plug for Req.Test.
       {:req, "~> 0.7.5"},
+      # The GitHub App's JWT (RS256), for its installation tokens.
+      {:jose, "~> 1.11"},
       {:plug, "~> 1.18", only: :test},
       {:pipe_maestro_protocol, in_umbrella: true}
     ]

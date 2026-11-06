@@ -1071,39 +1071,71 @@ defmodule PipeMaestro.TasksTest do
     end
   end
 
-  describe "a task from a GitHub issue" do
-    test "takes the issue's title, text and link, with the project's pipeline and directory",
+  describe "a task from a linked issue" do
+    test "takes the issue's title, text and link, with the trigger's pipeline and the project's directory",
          ctx do
+      PipeMaestro.FakeForgejo.start()
+
       {:ok, project} =
-        PipeMaestro.Projects.create_project(
-          ctx.workspace,
-          %{
-            "name" => "App",
-            "directory" => "app",
-            "github_repo" => "acme/app",
-            "trigger_label" => "claude",
-            "trigger_pipeline_id" => ctx.pipeline.id
-          },
-          ctx.user
+        PipeMaestro.Projects.create_project(ctx.workspace, %{
+          "name" => "App",
+          "directory" => "app"
+        })
+
+      {:ok, repo} =
+        PipeMaestro.Integrations.link_repo(
+          connection_fixture(ctx.workspace),
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => project.id},
+          "https://pm.test/hook"
         )
+
+      repo = Repo.preload(repo, :project)
+
+      trigger = %PipeMaestro.Integrations.Trigger{
+        acting_user_id: ctx.user.id,
+        pipeline_id: ctx.pipeline.id,
+        mode: "task"
+      }
 
       issue = %{
         "title" => "Botão quebrado",
         "body" => "Ao clicar nada acontece.",
-        "html_url" => "https://github.com/acme/app/issues/9"
+        "html_url" => "https://forge.test/acme/app/issues/9",
+        "number" => 9
       }
 
-      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, issue, ctx.runner.id)
+      assert {:ok, task} =
+               Tasks.create_from_linked_issue(ctx.workspace, repo, trigger, issue, ctx.runner.id)
+
       assert task.title == "Botão quebrado"
       assert task.prompt =~ "Ao clicar nada acontece."
-      assert task.issue_url == "https://github.com/acme/app/issues/9"
+      assert task.issue_url == "https://forge.test/acme/app/issues/9"
+      assert {task.linked_repo_id, task.issue_number} == {repo.id, 9}
       assert task.directory == "app"
       assert task.pipeline_id == ctx.pipeline.id
       assert task.created_by_user_id == ctx.user.id
 
-      empty = %{issue | "body" => nil, "html_url" => "https://github.com/acme/app/issues/10"}
-      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, project, empty, ctx.runner.id)
+      empty = %{
+        issue
+        | "body" => nil,
+          "html_url" => "https://forge.test/acme/app/issues/10",
+          "number" => 10
+      }
+
+      assert {:ok, task} =
+               Tasks.create_from_linked_issue(ctx.workspace, repo, trigger, empty, ctx.runner.id)
+
       assert task.prompt =~ "Botão quebrado"
+
+      assert Tasks.create_from_linked_issue(
+               ctx.workspace,
+               repo,
+               %{trigger | acting_user_id: nil},
+               issue,
+               ctx.runner.id
+             ) ==
+               {:error, :no_acting_user}
     end
   end
 

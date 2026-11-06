@@ -1,0 +1,327 @@
+defmodule PipeMaestro.Integrations.GitHubTest do
+  use PipeMaestro.DataCase, async: true
+
+  import PipeMaestro.Fixtures
+
+  alias PipeMaestro.{FakeGitHub, Integrations, Repo, Runners, Tasks}
+
+  alias PipeMaestro.Integrations.{
+    Connection,
+    Credentials,
+    Delivery,
+    Event,
+    Feedback,
+    GitHub,
+    Ingest,
+    Reconciler
+  }
+
+  @secret "segredo-do-app"
+
+  defp sign(body),
+    do: "sha256=" <> (:crypto.mac(:hmac, :sha256, @secret, body) |> Base.encode16(case: :lower))
+
+  defp headers(event, id \\ "gh-1"), do: %{"x-github-event" => event, "x-github-delivery" => id}
+
+  defp github_connection(workspace, installation \\ "99") do
+    {:ok, connection} =
+      Integrations.create_connection(workspace, member_fixture(workspace), %{
+        "name" => "GitHub",
+        "provider" => "github",
+        "auth_kind" => "github_app"
+      })
+
+    connection
+    |> Connection.installation_changeset(installation)
+    |> Ecto.Changeset.change(status: "active")
+    |> Repo.update!()
+  end
+
+  describe "webhooks" do
+    test "the App's signature and the delivery's id" do
+      body = ~s({"action":"opened"})
+      assert GitHub.app_signed?(%{"x-hub-signature-256" => sign(body)}, body)
+      refute GitHub.app_signed?(%{"x-hub-signature-256" => sign(body <> " ")}, body)
+      refute GitHub.app_signed?(%{}, body)
+      assert GitHub.delivery_id(headers("issues")) == "gh-1"
+    end
+
+    test "normalizes issues, comments, reviews and closed pull requests" do
+      repo = %{"full_name" => "Acme/App"}
+
+      issue = %{
+        "number" => 3,
+        "title" => "T",
+        "body" => "B",
+        "html_url" => "https://github.test/acme/app/issues/3",
+        "user" => %{"login" => "ana"},
+        "labels" => [%{"name" => "pipemaestro"}]
+      }
+
+      assert {:ok,
+              %Event{kind: :issue_opened, repo: "acme/app", issue: %{number: 3, is_pull: false}}} =
+               GitHub.parse_event(headers("issues"), %{
+                 "action" => "opened",
+                 "issue" => issue,
+                 "repository" => repo
+               })
+
+      assert {:ok, %Event{kind: :issue_labels_changed, issue: %{labels: ["pipemaestro"]}}} =
+               GitHub.parse_event(headers("issues"), %{
+                 "action" => "labeled",
+                 "issue" => issue,
+                 "repository" => repo
+               })
+
+      pr_issue = Map.put(issue, "pull_request", %{"url" => "x"})
+
+      assert {:ok,
+              %Event{
+                kind: :issue_comment,
+                issue: %{is_pull: true},
+                comment: %{id: 5, author: "bia"}
+              }} =
+               GitHub.parse_event(headers("issue_comment"), %{
+                 "action" => "created",
+                 "issue" => pr_issue,
+                 "comment" => %{
+                   "id" => 5,
+                   "body" => "/pipemaestro seguir",
+                   "user" => %{"login" => "bia"}
+                 },
+                 "repository" => repo
+               })
+
+      pr = %{"number" => 7, "head" => %{"ref" => "cp/x"}, "merged" => true, "node_id" => "PR_7"}
+
+      assert {:ok, %Event{kind: :pr_review, review: %{state: :rejected, body: "Falta teste"}}} =
+               GitHub.parse_event(headers("pull_request_review"), %{
+                 "action" => "submitted",
+                 "review" => %{"state" => "changes_requested", "body" => "Falta teste"},
+                 "pull_request" => pr,
+                 "repository" => repo
+               })
+
+      assert {:ignore, _} =
+               GitHub.parse_event(headers("pull_request_review"), %{
+                 "action" => "submitted",
+                 "review" => %{"state" => "commented"},
+                 "pull_request" => pr,
+                 "repository" => repo
+               })
+
+      assert {:ok, %Event{kind: :pr_closed, pr: %{merged: true, head: "cp/x"}}} =
+               GitHub.parse_event(headers("pull_request"), %{
+                 "action" => "closed",
+                 "pull_request" => pr,
+                 "repository" => repo
+               })
+
+      assert {:ignore, "evento sem uso: push"} = GitHub.parse_event(headers("push"), %{})
+    end
+  end
+
+  describe "the App's credentials" do
+    setup do
+      %{
+        fake: FakeGitHub.start(permissions: %{"ana" => "maintain"}),
+        workspace: workspace_fixture()
+      }
+    end
+
+    test "mints an installation token with a JWT the App signed, and keeps it", ctx do
+      connection = github_connection(ctx.workspace)
+
+      assert {:ok, client} = Credentials.client(connection)
+      assert {:ok, %{login: "pipemaestro-test[bot]"}} = GitHub.whoami(client)
+      assert {:ok, _again} = Credentials.client(Repo.reload!(connection))
+      assert [%{installation_id: 99, repository_ids: nil}] = FakeGitHub.tokens(ctx.fake)
+    end
+
+    test "a job's git credential is narrowed to its repository, to write code", ctx do
+      connection = github_connection(ctx.workspace)
+
+      assert {:ok,
+              %{
+                "host" => "github.test",
+                "username" => "x-access-token",
+                "password" => "ghs_" <> _
+              }} =
+               Credentials.git_credential(connection, %{external_id: "123"})
+
+      assert [%{repository_ids: [123], permissions: %{"contents" => "write"}}] =
+               FakeGitHub.tokens(ctx.fake)
+    end
+
+    test "an installation GitHub does not know is an error", ctx do
+      connection = github_connection(ctx.workspace, "7")
+      assert {:error, message} = Credentials.client(connection)
+      assert message =~ "404"
+    end
+
+    test "confirms the installation of whoever installed it", ctx do
+      {:ok, connection} =
+        Integrations.create_connection(ctx.workspace, member_fixture(ctx.workspace), %{
+          "name" => "GitHub",
+          "provider" => "github",
+          "auth_kind" => "github_app"
+        })
+
+      assert connection.base_url == "https://github.test"
+      assert connection.status == "pending"
+
+      assert {:error, "essa instalação não é de quem entrou no GitHub"} =
+               Integrations.confirm_installation(connection, "55", "code-1")
+
+      assert {:error, _} = Integrations.confirm_installation(connection, "99", "codigo-errado")
+
+      assert {:ok,
+              %Connection{
+                status: "active",
+                external_account_id: "99",
+                bot_login: "pipemaestro-test[bot]"
+              }} =
+               Integrations.confirm_installation(connection, "99", "code-1")
+
+      assert Integrations.github_connection("99").id == connection.id
+    end
+
+    test "maps permissions and lists the installation's repositories", ctx do
+      {:ok, client} = Credentials.client(github_connection(ctx.workspace))
+
+      assert GitHub.permission(client, "acme/app", "ana") == {:ok, :write}
+      assert GitHub.permission(client, "acme/app", "estranho") == {:ok, :none}
+
+      assert {:ok, [%{full_name: "acme/app", default_branch: "main"}], false} =
+               GitHub.list_repos(client, "acme", 1)
+
+      assert {:ok, "app"} = GitHub.create_webhook(client, "acme/app", "u", "s")
+    end
+  end
+
+  describe "the App's webhook" do
+    setup do
+      FakeGitHub.start()
+      workspace = workspace_fixture()
+      %{workspace: workspace, connection: github_connection(workspace)}
+    end
+
+    test "goes to the installation's connection, once", ctx do
+      Integrations.subscribe_deliveries(ctx.workspace)
+
+      body =
+        JSON.encode!(%{
+          "action" => "opened",
+          "installation" => %{"id" => 99},
+          "repository" => %{"full_name" => "acme/nada"}
+        })
+
+      headers = Map.put(headers("issues", "gh-9"), "x-hub-signature-256", sign(body))
+
+      assert {:ok, %Delivery{connection_id: connection_id}} =
+               Ingest.receive_app_webhook(headers, body)
+
+      assert connection_id == ctx.connection.id
+      assert_receive {:delivery_updated, %Delivery{status: "ignored"}}, 2_000
+      assert Ingest.receive_app_webhook(headers, body) == :duplicate
+    end
+
+    test "a removed installation stops its connection; an unsigned delivery is refused", ctx do
+      body = JSON.encode!(%{"action" => "deleted", "installation" => %{"id" => 99}})
+      headers = Map.put(headers("installation"), "x-hub-signature-256", sign(body))
+
+      assert {:ok, :installation} = Ingest.receive_app_webhook(headers, body)
+      assert %Connection{status: "error"} = Repo.reload!(ctx.connection)
+
+      assert {:error, :bad_signature} =
+               Ingest.receive_app_webhook(%{headers | "x-hub-signature-256" => "sha256=00"}, body)
+    end
+
+    test "another installation's event is acknowledged and dropped" do
+      body = JSON.encode!(%{"action" => "opened", "installation" => %{"id" => 1}})
+      headers = Map.put(headers("issues"), "x-hub-signature-256", sign(body))
+      assert {:ok, :ignored} = Ingest.receive_app_webhook(headers, body)
+    end
+  end
+
+  describe "feedback on GitHub" do
+    test "a stage is a check run and the draft is marked ready through GraphQL" do
+      fake = FakeGitHub.start()
+      FakeGitHub.put_issue(fake, "acme/app", %{"number" => 3})
+      workspace = workspace_fixture()
+      user = member_fixture(workspace)
+      {runner, _} = runner_fixture(workspace, user)
+
+      {:ok, runner} =
+        Runners.record_hello(
+          runner,
+          hello_fixture(%{directories: [%{"name" => "app", "git" => true}]})
+        )
+
+      connection = github_connection(workspace)
+
+      {:ok, repo} =
+        Integrations.link_repo(
+          connection,
+          user,
+          %{"full_name" => "acme/app", "project_id" => project_fixture(workspace).id},
+          "https://x"
+        )
+
+      assert repo.webhook_status == "managed"
+
+      {:ok, task} =
+        Tasks.create_task(
+          user,
+          workspace,
+          %{
+            "title" => "Corrige",
+            "prompt" => "Corrija.",
+            "pipeline_id" => pipeline_fixture(workspace, %{"delivery" => "pr"}).id,
+            "runner_id" => runner.id,
+            "directory" => "app",
+            "issue_url" => "https://github.test/acme/app/issues/3"
+          },
+          issue: %{linked_repo_id: repo.id, issue_number: 3}
+        )
+
+      task |> Ecto.Changeset.change(head_sha: "abc") |> Repo.update!()
+      assert Feedback.sync(task.id) == :ok
+
+      fake_repo = FakeGitHub.repo(fake, "acme/app")
+
+      assert [%{"name" => "pipemaestro/a", "head_sha" => "abc", "status" => "in_progress"}] =
+               fake_repo.check_runs
+
+      assert [%{"draft" => true, "node_id" => "PR_1"}] = fake_repo.pulls
+
+      Repo.reload!(task) |> Ecto.Changeset.change(status: :succeeded) |> Repo.update!()
+      assert Feedback.sync(task.id) == :ok
+      assert FakeGitHub.state(fake).ready == ["PR_1"]
+
+      assert Enum.all?(
+               Enum.drop(FakeGitHub.repo(fake, "acme/app").check_runs, 1),
+               &(&1["conclusion"] == "success")
+             )
+    end
+  end
+
+  test "the reconciliation asks GitHub again for the deliveries that failed" do
+    recent = DateTime.utc_now() |> DateTime.add(-3600) |> DateTime.to_iso8601()
+    old = DateTime.utc_now() |> DateTime.add(-5 * 86_400) |> DateTime.to_iso8601()
+
+    fake =
+      FakeGitHub.start(
+        deliveries: [
+          %{"id" => 1, "status" => "OK", "delivered_at" => recent},
+          %{"id" => 2, "status" => "Invalid HTTP Response: 502", "delivered_at" => recent},
+          %{"id" => 3, "status" => "timed out", "delivered_at" => old}
+        ]
+      )
+
+    github_connection(workspace_fixture())
+
+    assert %{redelivered: 1} = Reconciler.run(DateTime.utc_now())
+    assert FakeGitHub.state(fake).attempts == [2]
+  end
+end

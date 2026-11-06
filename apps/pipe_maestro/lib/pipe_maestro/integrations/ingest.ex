@@ -43,6 +43,7 @@ defmodule PipeMaestro.Integrations.Ingest do
     Delivery,
     Event,
     Feedback,
+    GitHub,
     IssueState,
     LinkedRepo,
     Trigger
@@ -60,6 +61,63 @@ defmodule PipeMaestro.Integrations.Ingest do
           {:ok, Delivery.t()} | :duplicate | {:error, :not_found | :bad_signature | :bad_payload}
   def receive_webhook(connection_id, headers, raw_body, opts \\ []) do
     with {:ok, delivery} <- record_webhook(connection_id, headers, raw_body) do
+      {:ok, _pid} = Task.Supervisor.start_child(@supervisor, fn -> process(delivery, opts) end)
+      {:ok, delivery}
+    end
+  end
+
+  @doc """
+  Takes a delivery of the platform's GitHub App, whose single webhook serves
+  every installation (`PipeMaestro.Integrations.GitHub`): an installation
+  removed or suspended stops its connections; any other event goes to the
+  installation's connection, recorded and processed in the background.
+  """
+  @spec receive_app_webhook(map(), binary(), keyword()) ::
+          {:ok, Delivery.t() | :installation | :ignored}
+          | :duplicate
+          | {:error, :not_found | :bad_signature | :bad_payload}
+  def receive_app_webhook(headers, raw_body, opts \\ []) do
+    with true <- GitHub.enabled?() || {:error, :not_found},
+         true <- GitHub.app_signed?(headers, raw_body) || {:error, :bad_signature},
+         {:ok, payload} <- decode(raw_body) do
+      installation = to_string(get_in(payload, ["installation", "id"]) || "")
+
+      app_event(
+        GitHub.event_name(headers),
+        payload["action"],
+        installation,
+        headers,
+        payload,
+        opts
+      )
+    end
+  end
+
+  defp app_event("installation", action, installation, _headers, _payload, _opts)
+       when action in ["deleted", "suspend"] do
+    Integrations.installation_gone(
+      installation,
+      "O GitHub App foi removido ou suspenso nessa conta."
+    )
+
+    {:ok, :installation}
+  end
+
+  defp app_event(event, _action, _installation, _headers, _payload, _opts)
+       when event in ["installation", "installation_repositories", "ping"],
+       do: {:ok, :ignored}
+
+  defp app_event(event, _action, installation, headers, payload, opts) do
+    with %Connection{} = connection <-
+           Integrations.github_connection(installation) || {:ok, :ignored},
+         {:ok, delivery} <-
+           insert(
+             connection,
+             "webhook",
+             GitHub.delivery_id(headers) || hash(JSON.encode!(payload)),
+             event,
+             payload
+           ) do
       {:ok, _pid} = Task.Supervisor.start_child(@supervisor, fn -> process(delivery, opts) end)
       {:ok, delivery}
     end

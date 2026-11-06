@@ -2,14 +2,15 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
   @moduledoc """
   Creates or edits a connection to a git host. A token connection is
   checked as it is saved; an OAuth one is saved and sends the person to the
-  host to authorize (`PipeMaestroWeb.IntegrationOAuth`).
+  host to authorize, and a GitHub one to install the platform's App
+  (`PipeMaestroWeb.IntegrationOAuth`).
   """
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.IntegrationComponents
 
   alias PipeMaestro.Integrations
-  alias PipeMaestro.Integrations.Connection
+  alias PipeMaestro.Integrations.{Connection, GitHub}
   alias PipeMaestroWeb.IntegrationOAuth
 
   @impl true
@@ -27,7 +28,8 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
        socket
        |> assign(
          page_title: if(connection.id, do: "Editar conexão", else: "Nova conexão"),
-         connection: connection
+         connection: connection,
+         github?: GitHub.enabled?()
        )
        |> assign_form(Integrations.change_connection(connection))}
     else
@@ -41,12 +43,15 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
   defp assign_form(socket, changeset) do
     assign(socket,
       form: to_form(changeset, as: "connection"),
+      provider: Ecto.Changeset.get_field(changeset, :provider),
       auth_kind: Ecto.Changeset.get_field(changeset, :auth_kind)
     )
   end
 
   @impl true
   def handle_event("validate", %{"connection" => params}, socket) do
+    params = with_provider_auth(params)
+
     changeset =
       socket.assigns.connection
       |> Integrations.change_connection(params)
@@ -57,7 +62,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
 
   def handle_event("save", %{"connection" => params}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
-    params = Map.put(params, "provider", "forgejo")
+    params = with_provider_auth(params)
 
     result =
       if socket.assigns.connection.id,
@@ -65,6 +70,11 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
         else: Integrations.create_connection(workspace, user, params)
 
     case result do
+      {:ok, %Connection{auth_kind: "github_app"} = connection}
+      when connection.status != "active" ->
+        {:noreply,
+         redirect(socket, external: IntegrationOAuth.github_install_url(connection, user))}
+
       {:ok, %Connection{auth_kind: "oauth"} = connection} when connection.status != "active" ->
         {:noreply, redirect(socket, external: IntegrationOAuth.authorize_url(connection, user))}
 
@@ -79,6 +89,15 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
     end
   end
 
+  # GitHub signs in only through the App; Forgejo, by token unless OAuth.
+  defp with_provider_auth(%{"provider" => "github"} = params),
+    do: Map.merge(params, %{"auth_kind" => "github_app", "api_mode" => "control_plane"})
+
+  defp with_provider_auth(%{"provider" => "forgejo", "auth_kind" => "github_app"} = params),
+    do: Map.put(params, "auth_kind", "token")
+
+  defp with_provider_auth(params), do: params
+
   defp flash_kind(%Connection{status: "error"}), do: :error
   defp flash_kind(_connection), do: :info
 
@@ -87,6 +106,10 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
 
   defp saved_message(%Connection{name: name, bot_login: login}),
     do: "Conexão #{name} salva, como #{login}."
+
+  defp save_label("oauth", _connection), do: "Salvar e autorizar no Forgejo"
+  defp save_label("github_app", %Connection{id: nil}), do: "Salvar e instalar o GitHub App"
+  defp save_label(_auth_kind, _connection), do: "Salvar"
 
   @impl true
   def render(assigns) do
@@ -110,8 +133,20 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
           <.card_content>
             <.section_heading
               icon="hero-server-stack"
-              title="Instância"
-              description="Um Forgejo (ou Codeberg) que a plataforma vai usar em nome do workspace."
+              title="Host"
+              description="Onde ficam os repositórios cujas issues viram tarefas."
+            />
+            <.icon_field
+              :if={!@connection.id}
+              field={@form[:provider]}
+              icon="hero-cube"
+              type="select"
+              label="Provedor"
+              options={
+                [{"Forgejo (ou Codeberg)", "forgejo"}] ++
+                  if(@github?, do: [{"GitHub (pelo GitHub App da plataforma)", "github"}], else: [])
+              }
+              data-testid="integration-provider"
             />
             <div class="grid gap-4 sm:grid-cols-2">
               <.icon_field
@@ -122,6 +157,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
                 data-testid="integration-name"
               />
               <.icon_field
+                :if={@provider != "github"}
                 field={@form[:base_url]}
                 icon="hero-globe-alt"
                 label="Endereço"
@@ -129,14 +165,21 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
                 data-testid="integration-base-url"
               />
             </div>
-            <p class="flex gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <p
+              :if={@provider == "github"}
+              class="flex gap-2 text-sm text-gray-600 dark:text-gray-300"
+              data-testid="integration-github-help"
+            >
               <.icon name="hero-information-circle" class="mt-0.5 size-4 shrink-0 text-primary-500" />
-              <span>O GitHub chega depois, como um GitHub App.</span>
+              <span>
+                Ao salvar, você instala o GitHub App da plataforma na sua conta ou organização e escolhe os repositórios.
+                A plataforma age como o App: comenta, põe labels, abre o PR e mostra cada etapa como um check.
+              </span>
             </p>
           </.card_content>
         </.card>
 
-        <.card variant="outline">
+        <.card :if={@provider != "github"} variant="outline">
           <.card_content>
             <.section_heading
               icon="hero-key"
@@ -196,7 +239,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
           </.card_content>
         </.card>
 
-        <.card variant="outline">
+        <.card :if={@provider != "github"} variant="outline">
           <.card_content>
             <.section_heading
               icon="hero-arrows-right-left"
@@ -221,10 +264,14 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
 
         <div class="sticky bottom-0 z-10 flex justify-end rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
           <.button
-            icon={if @auth_kind == "oauth", do: "hero-arrow-top-right-on-square", else: "hero-check"}
+            icon={
+              if @auth_kind in ["oauth", "github_app"],
+                do: "hero-arrow-top-right-on-square",
+                else: "hero-check"
+            }
             data-testid="integration-save"
           >
-            {if @auth_kind == "oauth", do: "Salvar e autorizar no Forgejo", else: "Salvar"}
+            {save_label(@auth_kind, @connection)}
           </.button>
         </div>
       </.form>

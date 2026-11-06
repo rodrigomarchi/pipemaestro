@@ -220,9 +220,10 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
 
   defp webhook_status(assigns) do
     {color, label} =
-      case assigns.repo.webhook_status do
-        "managed" -> {"success", "webhook criado"}
-        "failed" -> {"danger", "webhook falhou"}
+      case {assigns.repo.webhook_status, assigns.repo.webhook_id} do
+        {status, id} when status == "app" or id == "app" -> {"success", "webhook do App"}
+        {"managed", _id} -> {"success", "webhook criado"}
+        {"failed", _id} -> {"danger", "webhook falhou"}
         _manual -> {"warning", "webhook manual"}
       end
 
@@ -359,7 +360,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                 <.icon_field
                   field={f[:query]}
                   icon="hero-magnifying-glass"
-                  label="Buscar no Forgejo"
+                  label={"Buscar no #{provider_name(@connection.provider)}"}
                   placeholder="dono/repositório"
                   phx-debounce="300"
                   data-testid="repo-search"
@@ -473,7 +474,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
         <.card variant="outline">
           <.card_header
             title="Entregas"
-            description="Cada evento do Forgejo que chegou (ou que a reconciliação achou) e o que a plataforma fez com ele."
+            description="Cada evento do host que chegou (ou que a reconciliação achou) e o que a plataforma fez com ele."
           >
             <:action>
               <.form
@@ -584,7 +585,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
           </.card_content>
         </.card>
 
-        <.card variant="outline">
+        <.card :if={@connection.provider != "github"} variant="outline">
           <.card_header
             title="Webhook"
             description="Para um repositório sem webhook criado pela plataforma: no Forgejo, Configurações → Webhooks → Forgejo, content type JSON, eventos de issues, comentários e pull requests."

@@ -4,7 +4,7 @@ defmodule PipeMaestro.Integrations.Connection do
 
   - `auth_kind`: `"token"` (a bot user's token) or `"oauth"` (a person
     signs in through the instance's OAuth2) on Forgejo; `"github_app"` on
-    GitHub.
+    GitHub, whose installation is `external_account_id`.
   - `api_mode`: who calls the host's API. `"control_plane"` reacts,
     comments, labels, posts statuses and keeps the pull request;
     `"runner"` leaves the pull request and the comments to the runner, for an
@@ -20,6 +20,7 @@ defmodule PipeMaestro.Integrations.Connection do
 
   import Ecto.Changeset
 
+  alias PipeMaestro.Integrations.GitHub
   alias PipeMaestro.Vault
   alias PipeMaestro.Workspaces.Workspace
 
@@ -49,6 +50,7 @@ defmodule PipeMaestro.Integrations.Connection do
           last_error: String.t() | nil,
           checked_at: DateTime.t() | nil,
           connected_by_id: Ecto.UUID.t() | nil,
+          external_account_id: String.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
@@ -74,6 +76,7 @@ defmodule PipeMaestro.Integrations.Connection do
     field :last_error, :string
     field :checked_at, :utc_datetime
     field :connected_by_id, :binary_id
+    field :external_account_id, :string
 
     belongs_to :workspace, Workspace
 
@@ -105,6 +108,7 @@ defmodule PipeMaestro.Integrations.Connection do
       :oauth_client_id,
       :oauth_client_secret
     ])
+    |> put_github_url()
     |> update_change(:name, &String.trim/1)
     |> update_change(:base_url, &(&1 |> String.trim() |> String.trim_trailing("/")))
     |> validate_required([:name], message: "dê um nome à conexão")
@@ -121,6 +125,14 @@ defmodule PipeMaestro.Integrations.Connection do
       name: :integration_connections_workspace_id_name_index,
       message: "já existe uma conexão com esse nome"
     )
+  end
+
+  @doc "The GitHub App's installation a person confirmed, now the connection's credential."
+  @spec installation_changeset(t(), String.t()) :: Ecto.Changeset.t()
+  def installation_changeset(connection, installation_id) do
+    connection
+    |> credentials_changeset(%{"installation_id" => installation_id})
+    |> change(external_account_id: installation_id)
   end
 
   @doc "Records the checked identity and version of the host, or the error."
@@ -173,6 +185,13 @@ defmodule PipeMaestro.Integrations.Connection do
   def oauth_client_secret(%__MODULE__{encrypted_oauth_client_secret: blob}) do
     {:ok, secret} = Vault.decrypt(blob, @aad)
     secret
+  end
+
+  # A GitHub connection is to the App's GitHub.
+  defp put_github_url(changeset) do
+    if get_field(changeset, :provider) == "github",
+      do: put_change(changeset, :base_url, GitHub.web_url()),
+      else: changeset
   end
 
   defp validate_base_url(:base_url, url) do

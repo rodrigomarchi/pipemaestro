@@ -698,7 +698,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Entrega"})
 
       {:ok, _project} =
-        Projects.create_project(ctx.workspace, %{"name" => "App", "directory" => "app"}, ctx.user)
+        Projects.create_project(ctx.workspace, %{"name" => "App", "directory" => "app"})
 
       job = ask(ctx, "improve", %{"pipeline_id" => pipeline.id})
 

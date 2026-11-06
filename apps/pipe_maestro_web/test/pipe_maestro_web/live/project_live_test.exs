@@ -52,31 +52,28 @@ defmodule PipeMaestroWeb.ProjectLiveTest do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/projects/#{project.id}/edit")
     assert view |> element("[data-testid=project-copy-paths]") |> render() =~ "deps\n_build"
 
-    pipeline = pipeline_fixture(workspace, %{"name" => "Fluxo"})
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/projects/#{project.id}/edit")
+    assert has_element?(view, "[data-testid=project-integrations-link]")
 
-    assert has_element?(
-             view,
-             "[data-testid=project-webhook-url]",
-             "/api/github/webhook/#{workspace.slug}"
-           )
+    PipeMaestro.FakeForgejo.start(repos: %{"acme/retro" => %{}})
+
+    {:ok, _repo} =
+      PipeMaestro.Integrations.link_repo(
+        connection_fixture(workspace),
+        user,
+        %{"full_name" => "acme/retro", "project_id" => project.id},
+        "https://pm.test/hook"
+      )
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/projects/#{project.id}/edit")
+    assert has_element?(view, "[data-testid=project-linked-repos]", "acme/retro")
 
     {:error, {:live_redirect, _}} =
       view
-      |> form("#project-form",
-        project: %{
-          lint_command: "mix credo",
-          github_repo: "acme/retro",
-          trigger_label: "claude",
-          trigger_pipeline_id: pipeline.id
-        }
-      )
+      |> form("#project-form", project: %{lint_command: "mix credo"})
       |> render_submit()
 
-    saved = Projects.get_project!(workspace, project.id)
-    assert saved.lint_command == "mix credo"
-    assert {saved.github_repo, saved.trigger_label} == {"acme/retro", "claude"}
-    assert saved.trigger_user_id == user.id
+    assert Projects.get_project!(workspace, project.id).lint_command == "mix credo"
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/projects")
     view |> element("[data-testid=project-delete-retro_hex_chat]") |> render_click()

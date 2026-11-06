@@ -23,6 +23,7 @@ defmodule PipeMaestro.Integrations do
     Connection,
     Credentials,
     Delivery,
+    GitHub,
     IssueUrl,
     Labels,
     LinkedRepo,
@@ -40,6 +41,7 @@ defmodule PipeMaestro.Integrations do
   @doc "The provider of a connection (`PipeMaestro.Integrations.Provider`)."
   @spec provider(Connection.t()) :: module()
   def provider(%Connection{provider: "forgejo"}), do: PipeMaestro.Integrations.Forgejo
+  def provider(%Connection{provider: "github"}), do: PipeMaestro.Integrations.GitHub
 
   @doc "Subscribes the caller to the workspace's deliveries: `{:delivery_updated, delivery}`."
   @spec subscribe_deliveries(Workspace.t()) :: :ok
@@ -110,10 +112,11 @@ defmodule PipeMaestro.Integrations do
         on: t.linked_repo_id == r.id,
         join: s in PipeMaestro.Tasks.StageRun,
         on: s.task_id == t.id,
-        where: s.id == ^stage_run_id and c.status == "active"
+        where: s.id == ^stage_run_id and c.status == "active",
+        select: {c, r}
 
-    with %Connection{} = connection <- Repo.one(query),
-         {:ok, credential} <- Credentials.git_credential(connection) do
+    with {%Connection{} = connection, repo} <- Repo.one(query),
+         {:ok, credential} <- Credentials.git_credential(connection, repo) do
       credential
     else
       _none -> nil
@@ -239,6 +242,52 @@ defmodule PipeMaestro.Integrations do
     :ok
   end
 
+  @doc """
+  Confirms the GitHub App's installation for `connection`: the person who
+  installed it signed in with `code`, and the installation is among theirs.
+  """
+  @spec confirm_installation(Connection.t(), String.t(), String.t()) ::
+          {:ok, Connection.t()} | {:error, String.t()}
+  def confirm_installation(%Connection{provider: "github"} = connection, installation_id, code) do
+    case GitHub.user_installations(code) do
+      {:ok, ids} ->
+        if installation_id in ids do
+          connection =
+            connection |> Connection.installation_changeset(installation_id) |> Repo.update!()
+
+          {:ok, check_connection(connection)}
+        else
+          {:error, "essa instalação não é de quem entrou no GitHub"}
+        end
+
+      {:error, error} ->
+        {:error, describe(error)}
+    end
+  end
+
+  @doc "The GitHub connection of an installation, or `nil`."
+  @spec github_connection(String.t()) :: Connection.t() | nil
+  def github_connection(installation_id) do
+    Repo.one(
+      from c in Connection,
+        where: c.provider == "github" and c.external_account_id == ^installation_id,
+        limit: 1
+    )
+  end
+
+  @doc "An installation removed or suspended on GitHub: its connections stop."
+  @spec installation_gone(String.t(), String.t()) :: :ok
+  def installation_gone(installation_id, why) do
+    from(c in Connection,
+      where: c.provider == "github" and c.external_account_id == ^installation_id
+    )
+    |> Repo.update_all(
+      set: [status: "error", last_error: why, updated_at: DateTime.utc_now(:second)]
+    )
+
+    :ok
+  end
+
   @doc "Asks the host who the credential is and its version, and records the answer."
   @spec check_connection(Connection.t()) :: Connection.t()
   def check_connection(%Connection{} = connection) do
@@ -266,7 +315,9 @@ defmodule PipeMaestro.Integrations do
     end
   end
 
-  defp maybe_check(%Connection{auth_kind: "oauth"} = connection) do
+  # OAuth and the GitHub App wait, pending, for someone to sign in or install.
+  defp maybe_check(%Connection{auth_kind: auth_kind} = connection)
+       when auth_kind in ["oauth", "github_app"] do
     if Connection.credentials(connection) == %{},
       do: connection,
       else: check_connection(connection)
@@ -325,6 +376,17 @@ defmodule PipeMaestro.Integrations do
         where: r.connection_id == ^connection_id,
         order_by: r.full_name,
         preload: [:project, :triggers]
+    )
+  end
+
+  @doc "The repositories linked to `project`, with their connections."
+  @spec repos_for_project(PipeMaestro.Projects.Project.t()) :: [LinkedRepo.t()]
+  def repos_for_project(%{id: project_id}) do
+    Repo.all(
+      from r in LinkedRepo,
+        where: r.project_id == ^project_id,
+        order_by: r.full_name,
+        preload: :connection
     )
   end
 

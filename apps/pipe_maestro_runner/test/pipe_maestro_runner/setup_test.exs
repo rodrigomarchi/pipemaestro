@@ -81,7 +81,8 @@ defmodule PipeMaestroRunner.SetupTest do
         )
       end)
 
-    assert_receive {:os_pid, os_pid}
+    # Spawning a shell takes longer than the default wait on a busy machine.
+    assert_receive {:os_pid, os_pid}, 5_000
     # As a cancel does: TERM, then KILL, which a process just spawned cannot
     # have blocked.
     PipeMaestroRunner.Shell.signal(os_pid, "TERM")

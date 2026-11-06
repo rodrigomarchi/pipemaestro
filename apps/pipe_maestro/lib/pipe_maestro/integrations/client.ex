@@ -15,7 +15,8 @@ defmodule PipeMaestro.Integrations.Client do
   A client of `provider` at `api_url` (the API's root) sending
   `authorization`; `base_url` is the instance's own address.
   """
-  @spec new(module(), String.t(), String.t(), String.t() | nil, keyword()) :: t()
+  @spec new(module(), String.t(), String.t(), String.t() | nil, [{String.t(), String.t()}]) ::
+          t()
   def new(provider, base_url, api_url, authorization, headers \\ []) do
     req =
       Req.new(

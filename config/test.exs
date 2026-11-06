@@ -11,6 +11,19 @@ config :pipe_maestro, PipeMaestro.Integrations,
   req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false],
   public_url: "https://pm.test"
 
+# The platform's GitHub App, against the fake GitHub (PipeMaestro.FakeGitHub).
+github_key = :public_key.generate_key({:rsa, 2048, 65_537})
+
+config :pipe_maestro, PipeMaestro.Integrations.GitHub,
+  app_id: "4242",
+  slug: "pipemaestro-test",
+  client_id: "Iv1.teste",
+  client_secret: "segredo-do-cliente",
+  private_key: :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPrivateKey, github_key)]),
+  webhook_secret: "segredo-do-app",
+  api_url: "https://api.github.test",
+  web_url: "https://github.test"
+
 # Tests reflect a task on its issue themselves (PipeMaestro.Integrations.Feedback).
 config :pipe_maestro, PipeMaestro.Integrations.FeedbackWorker, false
 

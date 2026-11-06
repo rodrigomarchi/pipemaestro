@@ -31,7 +31,6 @@ defmodule PipeMaestro.Proposals do
   alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
-  alias PipeMaestro.Pipelines
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
 
@@ -205,28 +204,6 @@ defmodule PipeMaestro.Proposals do
   end
 
   @doc """
-  Has the agent write the task for a GitHub issue (`"title"`, `"body"`,
-  `"html_url"`) of `project`, whose trigger triages (`trigger_mode`
-  `"triage"`), on `runner_id`, on behalf of whoever set the trigger up. The
-  trigger's pipeline is suggested to the agent.
-  """
-  @spec triage_issue(Workspace.t(), Project.t(), map(), Ecto.UUID.t()) ::
-          {:ok, Job.t()} | {:error, Changeset.t() | :no_trigger_user | :already_triaging}
-  def triage_issue(%Workspace{} = workspace, %Project{} = project, issue, runner_id) do
-    case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
-      %User{} = user ->
-        triage(workspace, user, issue, %{
-          "runner_id" => runner_id,
-          "directory" => project.directory,
-          "suggested_pipeline_id" => project.trigger_pipeline_id
-        })
-
-      _nobody ->
-        {:error, :no_trigger_user}
-    end
-  end
-
-  @doc """
   Has the agent write the task for an issue of a linked repository
   (`%{"title", "body", "html_url", "number"}`), on `runner_id`, on behalf of
   the trigger's person. The trigger's pipeline, if any, is the one the task
@@ -262,7 +239,6 @@ defmodule PipeMaestro.Proposals do
   # so the check and the insert run under a lock on the issue.
   defp triage(workspace, user, issue, attrs) do
     url = issue["html_url"]
-    {suggested, attrs} = Map.pop(attrs, "suggested_pipeline_id")
 
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1))", ["triage:" <> url])
@@ -270,7 +246,7 @@ defmodule PipeMaestro.Proposals do
 
       attrs =
         attrs
-        |> Map.put("request", triage_request(workspace, suggested, issue))
+        |> Map.put("request", triage_request(issue))
         |> Map.put("issue_url", url)
         |> Map.reject(fn {_key, value} -> is_nil(value) end)
 
@@ -286,16 +262,11 @@ defmodule PipeMaestro.Proposals do
   end
 
   # The issue's body is cut: a host allows far more than a request takes.
-  defp triage_request(workspace, suggested_pipeline_id, issue) do
-    pipeline =
-      suggested_pipeline_id &&
-        Enum.find(Pipelines.list_pipelines(workspace), &(&1.id == suggested_pipeline_id))
-
+  defp triage_request(issue) do
     """
     # #{issue["title"]}
 
     #{Instructions.cut(issue["body"] || "", @issue_body_bytes)}
-    #{if pipeline, do: "\nO gatilho deste projeto usa o pipeline **#{pipeline.name}**; prefira-o se servir.\n"}
     """
   end
 

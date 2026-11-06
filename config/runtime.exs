@@ -76,6 +76,18 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
+  # The platform's GitHub App (docs/guias/github-app.md); without it, only
+  # Forgejo connects.
+  if app_id = System.get_env("GITHUB_APP_ID") do
+    config :pipe_maestro, PipeMaestro.Integrations.GitHub,
+      app_id: app_id,
+      slug: System.fetch_env!("GITHUB_APP_SLUG"),
+      client_id: System.fetch_env!("GITHUB_APP_CLIENT_ID"),
+      client_secret: System.fetch_env!("GITHUB_APP_CLIENT_SECRET"),
+      private_key: System.fetch_env!("GITHUB_APP_PRIVATE_KEY"),
+      webhook_secret: System.fetch_env!("GITHUB_APP_WEBHOOK_SECRET")
+  end
+
   # The platform's address in what it writes on a git host (a task's link).
   config :pipe_maestro, PipeMaestro.Integrations, public_url: "https://#{host}"
 

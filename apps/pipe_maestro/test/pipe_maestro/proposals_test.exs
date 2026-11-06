@@ -164,7 +164,7 @@ defmodule PipeMaestro.ProposalsTest do
                result.checks
 
       assert result.project["copy_paths_text"] == "deps\n_build"
-      assert {:ok, project} = Projects.create_project(ctx.workspace, result.project, ctx.user)
+      assert {:ok, project} = Projects.create_project(ctx.workspace, result.project)
       assert project.test_command == "mix test"
       assert {:ok, pipeline} = Pipelines.create_pipeline(ctx.workspace, result.pipeline)
       assert length(pipeline.stages) == 2
@@ -267,38 +267,49 @@ defmodule PipeMaestro.ProposalsTest do
       refute Proposals.triaging?(ctx.workspace, url)
     end
 
-    test "triages an issue once, with its body cut, on behalf of who set the trigger up", ctx do
-      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})
+    test "triages a linked issue once, with its body cut, on behalf of the trigger's person",
+         ctx do
+      PipeMaestro.FakeForgejo.start()
 
       {:ok, project} =
-        Projects.create_project(
-          ctx.workspace,
-          %{
-            "name" => "App",
-            "directory" => "app",
-            "copy_paths_text" => "deps\nvendor",
-            "github_repo" => "acme/app",
-            "trigger_label" => "ia",
-            "trigger_pipeline_id" => pipeline.id,
-            "trigger_mode" => "triage"
-          },
-          ctx.user
+        Projects.create_project(ctx.workspace, %{
+          "name" => "App",
+          "directory" => "app",
+          "copy_paths_text" => "deps\nvendor"
+        })
+
+      {:ok, repo} =
+        PipeMaestro.Integrations.link_repo(
+          connection_fixture(ctx.workspace),
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => project.id},
+          "https://pm.test/hook"
         )
+
+      repo = PipeMaestro.Repo.preload(repo, :project)
+
+      trigger = %PipeMaestro.Integrations.Trigger{
+        acting_user_id: ctx.user.id,
+        auto_approve: false
+      }
 
       issue = %{
         "title" => "Botão quebrado",
         "body" => String.duplicate("a", 40_000),
-        "html_url" => "https://github.com/acme/app/issues/5"
+        "html_url" => "https://forge.test/acme/app/issues/5",
+        "number" => 5
       }
 
-      assert {:ok, job} = Proposals.triage_issue(ctx.workspace, project, issue, ctx.runner.id)
+      assert {:ok, job} =
+               Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue, ctx.runner.id)
+
       assert job.created_by_user_id == ctx.user.id
-      assert job.prompt =~ "prefira-o"
       assert byte_size(job.prompt) < 20_000
+      assert Proposals.input(job)["issue_number"] == 5
       # The project's own dependency paths go to the disposable worktree.
       assert job.context["setup"] == %{"copy" => ["deps", "vendor"]}
 
-      assert Proposals.triage_issue(ctx.workspace, project, issue, ctx.runner.id) ==
+      assert Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue, ctx.runner.id) ==
                {:error, :already_triaging}
     end
 
@@ -794,8 +805,7 @@ defmodule PipeMaestro.ProposalsTest do
       {:ok, _project} =
         Projects.create_project(
           ctx.workspace,
-          %{"name" => "App", "directory" => "app", "notes" => "Notas velhas"},
-          ctx.user
+          %{"name" => "App", "directory" => "app", "notes" => "Notas velhas"}
         )
 
       assert {:ok, job} =

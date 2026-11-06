@@ -42,6 +42,8 @@ defmodule PipeMaestroWeb.Router do
 
     # One address for every OAuth app registered on a git host.
     get "/integrations/oauth/callback", IntegrationOAuthController, :callback
+    # Where GitHub sends whoever installed the platform's App.
+    get "/integrations/github/setup", IntegrationOAuthController, :github_setup
 
     live_session :user, on_mount: [{PipeMaestroWeb.UserAuth, :require_authenticated}] do
       live "/workspaces", WorkspacePickerLive
@@ -123,7 +125,8 @@ defmodule PipeMaestroWeb.Router do
 
     get "/healthz", HealthController, :index
     get "/version", HealthController, :version
-    post "/api/github/webhook/:workspace_slug", GithubWebhookController, :receive_event
+    # The GitHub App's single webhook, before a connection's own.
+    post "/api/integrations/github/webhook", IntegrationWebhookController, :receive_app_event
     post "/api/integrations/:connection_id/webhook", IntegrationWebhookController, :receive_event
     post "/api/runner/device/code", RunnerDeviceController, :create_code
     post "/api/runner/device/token", RunnerDeviceController, :create_token

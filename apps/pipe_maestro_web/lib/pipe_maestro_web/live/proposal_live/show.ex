@@ -208,8 +208,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
     result =
       if socket.assigns.project.id,
-        do: Projects.update_project(socket.assigns.project, params, user),
-        else: Projects.create_project(workspace, params, user)
+        do: Projects.update_project(socket.assigns.project, params),
+        else: Projects.create_project(workspace, params)
 
     case result do
       {:ok, project} ->
@@ -255,7 +255,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   def handle_event("save_notes", %{"notes" => %{"notes" => notes}}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
 
-    case Projects.update_project(socket.assigns.project, %{"notes" => notes}, user) do
+    case Projects.update_project(socket.assigns.project, %{"notes" => notes}) do
       {:ok, project} ->
         Audit.record(workspace, user, "project.saved", project)
 

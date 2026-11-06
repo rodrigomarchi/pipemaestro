@@ -1832,32 +1832,6 @@ defmodule PipeMaestro.Tasks do
   end
 
   @doc """
-  Starts a task from a GitHub issue (`"title"`, `"body"`, `"html_url"`) with
-  the project's trigger: its pipeline and directory, on `runner_id`, on
-  behalf of whoever set the trigger up.
-  """
-  @spec create_from_issue(Workspace.t(), Project.t(), map(), Ecto.UUID.t()) ::
-          {:ok, Task.t()} | {:error, Ecto.Changeset.t() | :no_trigger_user}
-  def create_from_issue(%Workspace{} = workspace, %Project{} = project, issue, runner_id) do
-    case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
-      %User{} = user ->
-        body = blank_to_nil(issue["body"]) || issue["title"]
-
-        create_task(user, workspace, %{
-          "title" => String.slice(issue["title"] || "Issue", 0, 120),
-          "prompt" => "#{body}\n\nIssue: #{issue["html_url"]}",
-          "pipeline_id" => project.trigger_pipeline_id,
-          "runner_id" => runner_id,
-          "directory" => project.directory,
-          "issue_url" => issue["html_url"]
-        })
-
-      _nobody ->
-        {:error, :no_trigger_user}
-    end
-  end
-
-  @doc """
   Starts a task from an issue of a linked repository (`%{"title", "body",
   "html_url"}`, `number`) with a trigger that goes straight to the task: the
   trigger's pipeline, the repository's project directory, on `runner_id`, on

@@ -1,6 +1,8 @@
 defmodule PipeMaestroWeb.IntegrationWebhookController do
   @moduledoc """
-  A connection's webhook (`POST /api/integrations/<connection>/webhook`): the
+  The webhooks of the integrations. A Forgejo connection has its own
+  (`POST /api/integrations/<connection>/webhook`); the GitHub App has one for
+  every installation (`POST /api/integrations/github/webhook`). The
   delivery is checked against the connection's secret, recorded and answered
   at once; processing happens in the background
   (`PipeMaestro.Integrations.Ingest`), since hosts give up on a slow answer
@@ -9,6 +11,32 @@ defmodule PipeMaestroWeb.IntegrationWebhookController do
   use PipeMaestroWeb, :controller
 
   alias PipeMaestro.Integrations.Ingest
+
+  @doc "Takes one delivery of the platform's GitHub App, for whichever installation it is."
+  @spec receive_app_event(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def receive_app_event(conn, _params) do
+    headers = Map.new(conn.req_headers)
+
+    case Ingest.receive_app_webhook(headers, conn.assigns[:raw_body] || "") do
+      {:ok, %{id: id}} ->
+        conn |> put_status(202) |> json(%{delivery_id: id})
+
+      {:ok, _ignored} ->
+        json(conn, %{ok: true})
+
+      :duplicate ->
+        json(conn, %{duplicate: true})
+
+      {:error, :bad_signature} ->
+        conn |> put_status(401) |> json(%{error: "assinatura inválida"})
+
+      {:error, :bad_payload} ->
+        conn |> put_status(400) |> json(%{error: "corpo inválido"})
+
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(%{error: "GitHub App não configurado"})
+    end
+  end
 
   @doc "Takes one delivery."
   @spec receive_event(Plug.Conn.t(), map()) :: Plug.Conn.t()

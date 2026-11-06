@@ -123,16 +123,28 @@ defmodule PipeMaestro.Integrations.Conversation do
     )
   end
 
-  defp task_for(repo, %Event{pr: %{head: branch}}) when is_binary(branch) do
+  # A pull request: by its link (a comment on it, whose issue's link is the
+  # pull request's) or by its branch.
+  defp task_for(repo, %Event{issue: issue, pr: pr}) do
+    url = issue && issue.is_pull && issue.url
+    branch = pr && pr.head
+
+    Enum.find_value([pr_url: url, branch: branch], fn
+      {_field, nil} -> nil
+      {_field, false} -> nil
+      {field, value} -> latest_task(repo, [{field, value}])
+    end)
+  end
+
+  defp latest_task(repo, filter) do
     Repo.one(
       from t in Task,
-        where: t.linked_repo_id == ^repo.id and t.branch == ^branch,
+        where: t.linked_repo_id == ^repo.id,
+        where: ^filter,
         order_by: [desc: t.inserted_at],
         limit: 1
     )
   end
-
-  defp task_for(_repo, _event), do: nil
 
   # A comment is applied once, however many times it is delivered.
   defp once(repo, %Event{issue: issue, comment: %{id: id}}, fun) do

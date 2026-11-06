@@ -15,7 +15,7 @@ defmodule PipeMaestro.Integrations.Credentials do
 
   import Ecto.Query
 
-  alias PipeMaestro.Integrations.{Client, Connection, Forgejo}
+  alias PipeMaestro.Integrations.{Client, Connection, Forgejo, GitHub}
   alias PipeMaestro.Repo
 
   @scopes "write:issue write:repository read:user"
@@ -36,14 +36,81 @@ defmodule PipeMaestro.Integrations.Credentials do
          do: {:ok, Forgejo.client(connection.base_url, "Bearer " <> token)}
   end
 
-  def client(%Connection{}), do: {:error, "provedor ainda não suportado"}
+  def client(%Connection{provider: "github", auth_kind: "github_app"} = connection) do
+    with {:ok, token} <- installation_token(connection),
+         do: {:ok, GitHub.client(token)}
+  end
+
+  def client(%Connection{}), do: {:error, "provedor não suportado"}
+
+  # The installation's token, kept with the connection and minted again
+  # (under the row's lock) when it is about to expire.
+  defp installation_token(%Connection{id: id}) do
+    Repo.transaction(fn ->
+      connection = Repo.one!(from c in Connection, where: c.id == ^id, lock: "FOR UPDATE")
+      credentials = Connection.credentials(connection)
+
+      cond do
+        credentials["installation_id"] == nil ->
+          {:error, "instale o GitHub App pela página da integração"}
+
+        fresh?(credentials) ->
+          {:ok, credentials["access_token"]}
+
+        true ->
+          mint(connection, credentials)
+      end
+    end)
+    |> elem(1)
+  end
+
+  defp mint(connection, credentials) do
+    case GitHub.installation_token(credentials["installation_id"]) do
+      {:ok, %{"token" => token, "expires_at" => expires_at}} ->
+        credentials =
+          Map.merge(credentials, %{"access_token" => token, "expires_at" => expires_at})
+
+        connection |> Connection.credentials_changeset(credentials) |> Repo.update!()
+        {:ok, token}
+
+      {:error, error} ->
+        {:error, "o GitHub recusou o token da instalação: " <> describe(error)}
+    end
+  end
+
+  defp describe(%{status: status, message: message}), do: "#{status} #{message}"
 
   @doc """
   What git signs in to the connection's host with (ADR 0035): `"host"`,
   `"username"`, `"password"` and, for a token that expires, `"expires_at"`.
   """
-  @spec git_credential(Connection.t()) :: {:ok, map()} | {:error, String.t()}
-  def git_credential(%Connection{provider: "forgejo", auth_kind: "token"} = connection) do
+  @spec git_credential(Connection.t(), PipeMaestro.Integrations.LinkedRepo.t() | nil) ::
+          {:ok, map()} | {:error, String.t()}
+  def git_credential(connection, repo \\ nil)
+
+  # On GitHub, a token of an hour for the repository only, to write its code.
+  def git_credential(%Connection{provider: "github"} = connection, %{external_id: repo_id})
+      when is_binary(repo_id) do
+    with %{"installation_id" => installation_id} <- Connection.credentials(connection),
+         {:ok, %{"token" => token, "expires_at" => expires_at}} <-
+           GitHub.installation_token(installation_id,
+             repository_ids: [String.to_integer(repo_id)],
+             permissions: %{contents: "write"}
+           ) do
+      {:ok,
+       %{
+         "host" => host(connection),
+         "username" => "x-access-token",
+         "password" => token,
+         "expires_at" => expires_at
+       }}
+    else
+      {:error, error} -> {:error, describe(error)}
+      _not_installed -> {:error, "instale o GitHub App pela página da integração"}
+    end
+  end
+
+  def git_credential(%Connection{provider: "forgejo", auth_kind: "token"} = connection, _repo) do
     case Connection.credentials(connection) do
       %{"token" => token} ->
         {:ok,
@@ -58,7 +125,7 @@ defmodule PipeMaestro.Integrations.Credentials do
     end
   end
 
-  def git_credential(%Connection{provider: "forgejo", auth_kind: "oauth"} = connection) do
+  def git_credential(%Connection{provider: "forgejo", auth_kind: "oauth"} = connection, _repo) do
     with {:ok, token} <- access_token(connection) do
       expires_at =
         connection |> Repo.reload!() |> Connection.credentials() |> Map.get("expires_at")
@@ -73,7 +140,7 @@ defmodule PipeMaestro.Integrations.Credentials do
     end
   end
 
-  def git_credential(%Connection{}), do: {:error, "provedor ainda não suportado"}
+  def git_credential(%Connection{}, _repo), do: {:error, "provedor não suportado"}
 
   defp host(connection) do
     case URI.parse(connection.base_url) do

@@ -34,6 +34,43 @@ defmodule PipeMaestroWeb.IntegrationOAuthController do
     end
   end
 
+  @doc """
+  Takes whoever installed the GitHub App back: the installation becomes the
+  connection's once the person, signed in on GitHub (`code`), is shown to
+  reach it.
+  """
+  @spec github_setup(Plug.Conn.t(), map()) :: Plug.Conn.t()
+  def github_setup(conn, params) do
+    user = conn.assigns.current_scope.user
+
+    with {:ok, state} <- IntegrationOAuth.read_state(params["state"]),
+         true <- state.user_id == user.id || :not_yours,
+         %Connection{} = connection <- Integrations.get_connection(state.connection_id) || :gone,
+         workspace = Workspaces.get_workspace!(connection.workspace_id),
+         true <- admin?(workspace, user) || :not_admin,
+         %{"installation_id" => installation, "code" => code} <- params do
+      page = ~p"/w/#{workspace.slug}/integrations/#{connection.id}"
+
+      case Integrations.confirm_installation(connection, installation, code) do
+        {:ok, _connection} ->
+          conn |> put_flash(:info, "GitHub App instalado.") |> redirect(to: page)
+
+        {:error, message} ->
+          conn
+          |> put_flash(:error, "A instalação não foi confirmada: #{message}")
+          |> redirect(to: page)
+      end
+    else
+      :not_admin ->
+        conn |> put_status(403) |> text("Só admins do workspace conectam integrações.")
+
+      _invalid ->
+        conn
+        |> put_flash(:error, "A instalação expirou ou não é desta sessão. Tente de novo.")
+        |> redirect(to: ~p"/workspaces")
+    end
+  end
+
   defp finish(conn, workspace, connection, state, params) do
     page = ~p"/w/#{workspace.slug}/integrations/#{connection.id}"
 
