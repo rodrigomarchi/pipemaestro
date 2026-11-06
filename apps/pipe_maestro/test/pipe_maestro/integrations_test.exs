@@ -201,24 +201,39 @@ defmodule PipeMaestro.IntegrationsTest do
                Integrations.link_repo(
                  ctx.connection,
                  ctx.user,
-                 %{"full_name" => "acme/nada"},
+                 %{"full_name" => "acme/nada", "project_id" => ctx.project.id},
                  @hook
                )
 
       assert %{full_name: ["o host não encontrou o repositório" <> _]} = errors_on(changeset)
 
       {:ok, _} =
-        Integrations.link_repo(ctx.connection, ctx.user, %{"full_name" => "acme/app"}, @hook)
+        Integrations.link_repo(
+          ctx.connection,
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => ctx.project.id},
+          @hook
+        )
 
       assert {:error, changeset} =
                Integrations.link_repo(
                  ctx.connection,
                  ctx.user,
-                 %{"full_name" => "acme/app"},
+                 %{"full_name" => "acme/app", "project_id" => ctx.project.id},
                  @hook
                )
 
       assert %{full_name: ["já está vinculado"]} = errors_on(changeset)
+
+      assert {:error, changeset} =
+               Integrations.link_repo(
+                 ctx.connection,
+                 ctx.user,
+                 %{"full_name" => "acme/site"},
+                 @hook
+               )
+
+      assert %{project_id: ["escolha o projeto" <> _]} = errors_on(changeset)
 
       other = app_project_fixture(workspace_fixture())
 
@@ -235,7 +250,12 @@ defmodule PipeMaestro.IntegrationsTest do
 
     test "unlinking removes the managed webhook and leaves the tasks without the link", ctx do
       {:ok, repo} =
-        Integrations.link_repo(ctx.connection, ctx.user, %{"full_name" => "acme/app"}, @hook)
+        Integrations.link_repo(
+          ctx.connection,
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => ctx.project.id},
+          @hook
+        )
 
       assert :ok = Integrations.unlink_repo(repo, ctx.user)
       assert FakeForgejo.repo(ctx.fake, "acme/app").hooks == []

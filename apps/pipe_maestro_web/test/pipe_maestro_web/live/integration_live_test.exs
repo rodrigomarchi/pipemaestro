@@ -161,7 +161,7 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
         Integrations.link_repo(
           ctx.connection,
           ctx.user,
-          %{"full_name" => "acme/app"},
+          %{"full_name" => "acme/app", "project_id" => ctx.project.id},
           "https://x"
         )
 
@@ -179,7 +179,7 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
         Integrations.link_repo(
           ctx.connection,
           ctx.user,
-          %{"full_name" => "acme/app"},
+          %{"full_name" => "acme/app", "project_id" => ctx.project.id},
           "https://x"
         )
 
@@ -334,7 +334,7 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
 
       deliver(ctx.connection, "d-1", %{
         "action" => "opened",
-        "repository" => %{"full_name" => "acme/nada"},
+        "repository" => %{"full_name" => "acme/nada", "project_id" => ctx.project.id},
         "issue" => %{"number" => 1, "labels" => []}
       })
 
@@ -360,7 +360,12 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
       connection = connection_fixture(ctx.workspace)
 
       {:ok, repo} =
-        Integrations.link_repo(connection, ctx.user, %{"full_name" => "acme/app"}, "https://x")
+        Integrations.link_repo(
+          connection,
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => ctx.project.id},
+          "https://x"
+        )
 
       Integrations.save_trigger(repo, ctx.user, Integrations.new_trigger(repo, ctx.user), %{
         "kind" => "label",

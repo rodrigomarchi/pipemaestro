@@ -57,13 +57,19 @@ defmodule PipeMaestro.Integrations.LinkedRepo do
     timestamps()
   end
 
-  @doc "Changeset for the repository's name, project and label prefix."
+  @doc """
+  Changeset for the repository's name, project and label prefix. The project
+  is required: it decides where the repository's issues run.
+  """
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(repo, attrs) do
     repo
     |> cast(attrs, [:full_name, :project_id, :label_prefix])
     |> update_change(:full_name, &String.downcase(String.trim(&1)))
     |> validate_required([:full_name], message: "escolha o repositório")
+    |> validate_required([:project_id],
+      message: "escolha o projeto: é nele que as issues viram tarefas"
+    )
     |> validate_format(:full_name, ~r{^[\w.-]+/[\w.-]+$}, message: "use dono/repositório")
     |> validate_format(:label_prefix, ~r/^[a-z0-9][a-z0-9._-]{0,29}$/,
       message: "use letras minúsculas, números, ponto, hífen ou _"

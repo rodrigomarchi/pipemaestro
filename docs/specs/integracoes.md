@@ -8,7 +8,7 @@
 | Esquema | Tabela | Papel |
 |---|---|---|
 | `Connection` | `integration_connections` | Um host git conectado ao workspace: provedor, `base_url`, `auth_kind` (`token`, `oauth`, `github_app`), `api_mode` (`control_plane`, `runner`), credencial e segredo do webhook cifrados, bot, versão, `status` (`pending`, `active`, `error`) |
-| `LinkedRepo` | `integration_repos` | Um repositório da conexão ligado a um projeto: `full_name`, branch padrão, webhook (`managed`, `manual`, `failed`), prefixo das labels, `synced_at` |
+| `LinkedRepo` | `integration_repos` | Um repositório da conexão ligado a um projeto (obrigatório ao vincular): `full_name`, branch padrão, webhook (`managed`, `manual`, `failed`), prefixo das labels, `synced_at` |
 | `Trigger` | `integration_triggers` | O que dispara uma tarefa no repositório (seção 3) |
 | `IssueState` | `integration_issues` | Por issue: o retrato das labels, a última atualização vista, os gatilhos que já dispararam e os comentários já aplicados como comando |
 | `Delivery` | `integration_deliveries` | Cada entrega recebida, reconciliada ou reprocessada, com o evento, o status e o motivo |
@@ -57,7 +57,8 @@ que a issue não tenha tarefa nem triagem em andamento.
 ```
 received ──► processed     (criou a triagem ou a tarefa, ou aplicou um comando)
    ├──────► ignored        (o motivo vai em `outcome`)
-   ├──────► waiting_runner (o projeto sem runner ou sem a pasta; a reconciliação tenta de novo)
+   ├──────► waiting_runner (o repositório sem projeto, ou o projeto sem runner ou sem a pasta;
+   │                        a reconciliação tenta de novo, e a label continua contando como nova)
    └──────► failed         (erro da API ou da criação; a reconciliação tenta de novo)
 ```
 
@@ -74,7 +75,7 @@ Os passos, em ordem; o primeiro que encerra deixa o motivo:
 8. o gatilho não passou do limite por hora;
 9. a issue não tem tarefa nem triagem em andamento;
 10. relida pela API, a issue continua aberta (`control_plane`);
-11. o projeto pode receber trabalho (`Projects.health/2`): o runner dele offline não impede
+11. o repositório tem um projeto e o projeto pode receber trabalho (`Projects.health/2`): o runner dele offline não impede
     nada, o job espera por ele; projeto sem runner, ou cujo runner não oferece mais a pasta,
     deixa a entrega `waiting_runner`, e o comentário de status diz o que falta;
 12. cria a triagem ou a tarefa, registra o disparo e reconhece na issue (reação, label e
