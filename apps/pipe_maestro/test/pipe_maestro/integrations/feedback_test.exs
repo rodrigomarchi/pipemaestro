@@ -181,7 +181,11 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
       put_task(Repo.reload!(ctx.task), decision_reason: "dúvida, de novo")
       Feedback.sync(ctx.task.id)
 
-      assert Enum.count(fake_repo(ctx).comments, &(&1["body"] =~ "espera uma decisão")) == 1
+      assert [notice] =
+               Enum.filter(fake_repo(ctx).comments, &(&1["body"] =~ "espera uma decisão"))
+
+      # Whoever opened the issue is asked.
+      assert notice["body"] =~ ~r/^@ana /
     end
 
     test "posts a status per stage on the pushed commit", ctx do
@@ -232,6 +236,31 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
 
       assert %{feedback: 1} = Reconciler.run(DateTime.utc_now())
       assert %{"dirty" => false, "error" => nil} = Repo.reload!(ctx.task).issue_feedback
+    end
+
+    test "a status comment someone deleted is written again", ctx do
+      Feedback.sync(ctx.task.id)
+      [%{"id" => id}] = fake_repo(ctx).comments
+      FakeForgejo.fail(ctx.fake, {"PATCH", "/api/v1/repos/acme/app/issues/comments/#{id}"}, 404)
+
+      put_task(Repo.reload!(ctx.task), current_stage: 1)
+      assert Feedback.sync(ctx.task.id) == :ok
+      assert [_old, %{"id" => new_id}] = fake_repo(ctx).comments
+      assert Repo.reload!(ctx.task).issue_feedback["comment_id"] == new_id
+    end
+
+    test "stops trying a feedback that keeps failing, until the task changes", ctx do
+      FakeForgejo.fail(ctx.fake, {"POST", "/api/v1/repos/acme/app/issues/3/comments"}, 500)
+      put_task(ctx.task, issue_feedback: %{"failures" => 19})
+
+      assert {:error, _} = Feedback.sync(ctx.task.id)
+      assert %{"failures" => 20, "dirty" => true} = Repo.reload!(ctx.task).issue_feedback
+      assert Feedback.dirty_task_ids() == []
+    end
+
+    test "a task left for later is picked by the reconciliation", ctx do
+      assert Feedback.mark_dirty(ctx.task.id) == :ok
+      assert Feedback.dirty_task_ids() == [ctx.task.id]
     end
 
     test "skips a task without a linked repository or whose connection leaves it to the runner",

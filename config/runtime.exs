@@ -85,11 +85,17 @@ if config_env() == :prod do
       client_id: System.fetch_env!("GITHUB_APP_CLIENT_ID"),
       client_secret: System.fetch_env!("GITHUB_APP_CLIENT_SECRET"),
       private_key: System.fetch_env!("GITHUB_APP_PRIVATE_KEY"),
-      webhook_secret: System.fetch_env!("GITHUB_APP_WEBHOOK_SECRET")
+      webhook_secret: System.fetch_env!("GITHUB_APP_WEBHOOK_SECRET"),
+      # GitHub Enterprise Server: https://<host>/api/v3 and https://<host>.
+      api_url: System.get_env("GITHUB_API_URL", "https://api.github.com"),
+      web_url: System.get_env("GITHUB_WEB_URL", "https://github.com")
   end
 
   # The platform's address in what it writes on a git host (a task's link).
-  config :pipe_maestro, PipeMaestro.Integrations, public_url: "https://#{host}"
+  config :pipe_maestro, PipeMaestro.Integrations,
+    public_url: "https://#{host}",
+    # A self-hosted platform on the same network as its git host.
+    allow_private_hosts: System.get_env("INTEGRATIONS_ALLOW_PRIVATE_HOSTS") == "true"
 
   config :pipe_maestro_web, PipeMaestroWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],

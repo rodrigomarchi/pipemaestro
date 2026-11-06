@@ -35,12 +35,65 @@ defmodule PipeMaestroRunner.GitCredentialTest do
 
     assert prepared.env["OUTRO"] == "x"
     assert prepared.env["PIPEMAESTRO_GIT_CREDENTIAL_FILE"] == GitCredential.path(workdir, "j1")
-    assert prepared.env["GIT_CONFIG_KEY_0"] == "credential.https://forge.test.helper"
+    assert prepared.env["GIT_CONFIG_PARAMETERS"] =~ "'credential.https://forge.test.helper'=''"
 
     assert Enum.sort(Enum.map(GitCredential.git_env(prepared), &elem(&1, 0))) ==
-             ~w(GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_0 GIT_CONFIG_VALUE_1 PIPEMAESTRO_GIT_CREDENTIAL_FILE)
+             ~w(GIT_CONFIG_PARAMETERS PIPEMAESTRO_GIT_CREDENTIAL_FILE)
 
     assert GitCredential.prepare(%Job{id: "j2", prompt: "p"}, workdir).env == nil
+  end
+
+  test "the machine's own helpers are not asked nor told about the job's token", %{
+    tmp_dir: workdir
+  } do
+    path = GitCredential.write(workdir, "j1", @credential)
+    stored = Path.join(workdir, "guardado")
+    global = Path.join(workdir, "gitconfig")
+
+    File.write!(global, """
+    [credential]
+    \thelper = "!f() { echo username=da-maquina; echo password=da-maquina; }; f"
+    \thelper = store --file #{stored}
+    """)
+
+    env = [
+      {"GIT_CONFIG_GLOBAL", global},
+      {"GIT_CONFIG_NOSYSTEM", "1"} | Enum.to_list(GitCredential.env(path, "forge.test"))
+    ]
+
+    request = "protocol=https\nhost=forge.test\n"
+
+    {output, 0} =
+      System.cmd("sh", ["-c", "printf '#{request}\n' | git credential fill"], env: env)
+
+    assert output =~ "password=tok"
+
+    {_, 0} =
+      System.cmd(
+        "sh",
+        [
+          "-c",
+          "printf '#{request}username=pipemaestro-bot\npassword=tok\n\n' | git credential approve"
+        ],
+        env: env
+      )
+
+    refute File.exists?(stored)
+  end
+
+  test "the credential's password is a secret the changes may not carry", %{tmp_dir: workdir} do
+    job =
+      GitCredential.prepare(
+        %Job{id: "j3", prompt: "p", env: %{"API" => "x"}, git_credential: @credential},
+        workdir
+      )
+
+    assert {"git_credential", "tok"} in GitCredential.secrets(job)
+    assert {"API", "x"} in GitCredential.secrets(job)
+    # The helper's own variables are no secret to look for.
+    refute Enum.any?(GitCredential.secrets(job), fn {name, _} ->
+             String.starts_with?(name, "GIT_CONFIG")
+           end)
   end
 
   test "git asks the helper and gets the credential", %{tmp_dir: workdir} do

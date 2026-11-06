@@ -21,25 +21,69 @@ defmodule PipeMaestro.Integrations.Feedback do
   import Ecto.Query
 
   alias PipeMaestro.{Integrations, Repo, Tasks}
-  alias PipeMaestro.Integrations.{Client, Connection, Credentials, Labels, LinkedRepo}
+  alias PipeMaestro.Integrations.{Client, Connection, Credentials, IssueState, Labels, LinkedRepo}
   alias PipeMaestro.Tasks.{StageRun, Task}
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.PrText
 
   @marker "<!-- pipemaestro:status -->"
+  # A task's feedback that failed this many times in a row is no longer tried
+  # by the reconciliation; the next change of the task tries again.
+  @max_failures 20
 
   @doc """
-  Tells the issue's author the platform took it: a 👀 reaction and the state
-  label (`:triaging` or the task's status).
+  Tells the issue's author the platform took it: a 👀 reaction, the state
+  label (`:triaging` or the task's status) and the status comment.
   """
   @spec acknowledge(Connection.t(), Client.t(), LinkedRepo.t(), pos_integer(), atom()) :: :ok
   def acknowledge(%Connection{api_mode: "control_plane"}, client, repo, number, status) do
     _ = client.provider.add_reaction(client, repo.full_name, {:issue, number}, "eyes")
     _ = set_state_label(client, repo, number, status)
+
+    text =
+      if status == :triaging,
+        do: "A IA está lendo a issue para escrever a tarefa.",
+        else: "A tarefa foi criada e vai começar."
+
+    _ = status_note(client, repo, number, text)
     :ok
   end
 
   def acknowledge(_connection, _client, _repo, _number, _status), do: :ok
+
+  @doc """
+  Writes `text` in the issue's status comment, creating it the first time
+  (kept in `PipeMaestro.Integrations.IssueState`, where a task that comes of
+  the issue finds it).
+  """
+  @spec status_note(Client.t(), LinkedRepo.t(), pos_integer(), String.t()) ::
+          :ok | {:error, String.t()}
+  def status_note(client, repo, number, text) do
+    state =
+      Repo.get_by(IssueState, repo_id: repo.id, number: number) ||
+        %IssueState{repo_id: repo.id, number: number}
+
+    body = "#{@marker}\n**PipeMaestro** · #{text}"
+
+    result =
+      case state.status_comment_id &&
+             client.provider.update_comment(client, repo.full_name, state.status_comment_id, body) do
+        :ok -> {:ok, state.status_comment_id}
+        _none_or_gone -> client.provider.create_comment(client, repo.full_name, number, body)
+      end
+
+    case result do
+      {:ok, id} ->
+        state
+        |> Ecto.Changeset.change(status_comment_id: to_string(id))
+        |> Repo.insert_or_update!()
+
+        :ok
+
+      {:error, error} ->
+        {:error, Integrations.describe(error)}
+    end
+  end
 
   @doc "Puts the state label for `status` on the issue, taking the other state labels off."
   @spec set_state_label(Client.t(), LinkedRepo.t(), pos_integer(), atom()) ::
@@ -53,6 +97,79 @@ defmodule PipeMaestro.Integrations.Feedback do
         others = Labels.state_labels(repo.label_prefix) -- [label]
         client.provider.set_labels(client, repo.full_name, number, add: [label], remove: others)
     end
+  end
+
+  @doc """
+  Tells a linked issue how its triage ended, in the background, when no task
+  came of it (a task, once created, has its own feedback): the agent's
+  questions or the reason the task was not created, or that the triage did
+  not finish, with the link to the proposal, and the label of a decision to
+  take.
+  """
+  @spec triage_finished(PipeMaestro.Jobs.Job.t()) :: :ok
+  def triage_finished(%{
+        id: job_id,
+        context: %{"proposal" => %{"input" => %{"linked_repo_id" => repo_id}}}
+      })
+      when is_binary(repo_id) do
+    _ = Integrations.background(fn -> tell_triage(job_id) end)
+    :ok
+  end
+
+  def triage_finished(_job), do: :ok
+
+  @doc false
+  @spec tell_triage(Ecto.UUID.t()) :: :ok | :skipped | {:error, String.t()}
+  def tell_triage(job_id) do
+    job = Repo.get!(PipeMaestro.Jobs.Job, job_id)
+    input = get_in(job.context, ["proposal", "input"]) || %{}
+
+    with repo_id when is_binary(repo_id) <- input["linked_repo_id"],
+         nil <- PipeMaestro.Proposals.created_task_id(job),
+         %LinkedRepo{} = repo <- Repo.get(LinkedRepo, repo_id),
+         %Connection{api_mode: "control_plane", status: "active"} = connection <-
+           Repo.get(Connection, repo.connection_id),
+         {:ok, client} <- Credentials.client(connection) do
+      body = triage_comment(job, input)
+      number = input["issue_number"]
+      _ = set_state_label(client, repo, number, :awaiting_decision)
+
+      _ =
+        status_note(
+          client,
+          repo,
+          number,
+          "a triagem terminou sem criar a tarefa; veja o comentário abaixo."
+        )
+
+      case client.provider.create_comment(client, repo.full_name, number, body) do
+        {:ok, _id} -> :ok
+        {:error, error} -> {:error, Integrations.describe(error)}
+      end
+    else
+      {:error, message} -> {:error, message}
+      _not_for_the_host -> :skipped
+    end
+  end
+
+  defp triage_comment(job, input) do
+    workspace = Repo.get!(Workspace, job.workspace_id)
+    url = "#{Integrations.public_url()}/w/#{workspace.slug}/proposals/#{job.id}"
+
+    why =
+      case {job.status, get_in(job.context, ["proposal", "auto_approve"]), input["auto_approve"]} do
+        {:succeeded, %{"status" => "skipped", "reason" => reason}, _auto} ->
+          "A IA leu a issue, mas a tarefa ainda não começou:\n\n#{reason}\n\n" <>
+            "Complete a issue e ponha a label de novo, ou responda e crie a tarefa na plataforma."
+
+        {:succeeded, _none, _auto} ->
+          "A IA escreveu a tarefa a partir desta issue; ela espera alguém revisar e criar na plataforma."
+
+        {status, _none, _auto} ->
+          "A triagem não terminou (#{status}). Veja o motivo na plataforma e ponha a label de novo para tentar outra vez."
+      end
+
+    "**PipeMaestro** · triagem\n\n#{why}\n\n[Abrir a proposta](#{url})"
   end
 
   @doc """
@@ -216,7 +333,7 @@ defmodule PipeMaestro.Integrations.Feedback do
     hash =
       desired |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16()
 
-    feedback = task.issue_feedback
+    feedback = with_issue_comment(task.issue_feedback, repo, task.issue_number)
 
     if feedback["synced_hash"] == hash and feedback["dirty"] != true do
       :unchanged
@@ -235,6 +352,16 @@ defmodule PipeMaestro.Integrations.Feedback do
     end
   end
 
+  # The status comment written when the issue was taken is the task's too.
+  defp with_issue_comment(%{"comment_id" => _} = feedback, _repo, _number), do: feedback
+
+  defp with_issue_comment(feedback, repo, number) do
+    case Repo.get_by(IssueState, repo_id: repo.id, number: number) do
+      %IssueState{status_comment_id: id} when is_binary(id) -> Map.put(feedback, "comment_id", id)
+      _none -> feedback
+    end
+  end
+
   defp write(task, repo, client, desired, hash, feedback) do
     steps = [
       &write_label(&1, client, repo, task, desired),
@@ -248,12 +375,23 @@ defmodule PipeMaestro.Integrations.Feedback do
       {:ok, acc} ->
         keep(
           task,
-          Map.merge(acc, %{"synced_hash" => hash, "error" => nil, "dirty" => false}),
+          Map.merge(acc, %{
+            "synced_hash" => hash,
+            "error" => nil,
+            "dirty" => false,
+            "failures" => 0
+          }),
           :ok
         )
 
       {:error, acc, message} ->
-        keep(task, Map.merge(acc, %{"error" => message, "dirty" => true}), {:error, message})
+        failures = (acc["failures"] || 0) + 1
+
+        keep(
+          task,
+          Map.merge(acc, %{"error" => message, "dirty" => true, "failures" => failures}),
+          {:error, message}
+        )
     end
   end
 
@@ -269,14 +407,18 @@ defmodule PipeMaestro.Integrations.Feedback do
   end
 
   defp write_comment(acc, client, repo, task, %{comment: body}) do
-    result =
-      case acc["comment_id"] do
-        nil ->
-          client.provider.create_comment(client, repo.full_name, task.issue_number, body)
+    create = fn ->
+      client.provider.create_comment(client, repo.full_name, task.issue_number, body)
+    end
 
-        id ->
-          with :ok <- client.provider.update_comment(client, repo.full_name, id, body),
-               do: {:ok, id}
+    # A status comment someone deleted is written again.
+    result =
+      case acc["comment_id"] &&
+             client.provider.update_comment(client, repo.full_name, acc["comment_id"], body) do
+        nil -> create.()
+        :ok -> {:ok, acc["comment_id"]}
+        {:error, %{status: 404}} -> create.()
+        {:error, _} = error -> error
       end
 
     case result do
@@ -361,12 +503,28 @@ defmodule PipeMaestro.Integrations.Feedback do
     if key in notified do
       {:ok, acc}
     else
-      case client.provider.create_comment(client, repo.full_name, task.issue_number, text) do
+      case client.provider.create_comment(
+             client,
+             repo.full_name,
+             task.issue_number,
+             mention(client, repo, task, key) <> text
+           ) do
         {:ok, _id} -> {:ok, Map.put(acc, "notified", notified ++ [key])}
         {:error, error} -> {:error, acc, "aviso: " <> Integrations.describe(error)}
       end
     end
   end
+
+  # A decision is asked of whoever opened the issue (the platform does not
+  # know who of the host is the task's decider).
+  defp mention(client, repo, task, "decision:" <> _) do
+    case client.provider.get_issue(client, repo.full_name, task.issue_number) do
+      {:ok, %{author: author}} when is_binary(author) -> "@#{author} "
+      _unknown -> ""
+    end
+  end
+
+  defp mention(_client, _repo, _task, _key), do: ""
 
   defp keep(task, feedback, reply) do
     task |> Ecto.Changeset.change(issue_feedback: feedback) |> Repo.update!()
@@ -385,6 +543,22 @@ defmodule PipeMaestro.Integrations.Feedback do
     |> Map.new()
   end
 
+  @doc "Leaves a task's feedback for the reconciliation to write."
+  @spec mark_dirty(Ecto.UUID.t()) :: :ok
+  def mark_dirty(task_id) do
+    Repo.update_all(
+      from(t in Task,
+        where: t.id == ^task_id,
+        update: [
+          set: [issue_feedback: fragment("? || '{\"dirty\": true}'::jsonb", t.issue_feedback)]
+        ]
+      ),
+      []
+    )
+
+    :ok
+  end
+
   @doc "Tasks whose feedback failed and waits to be tried again."
   @spec dirty_task_ids() :: [Ecto.UUID.t()]
   def dirty_task_ids do
@@ -392,6 +566,8 @@ defmodule PipeMaestro.Integrations.Feedback do
       from t in Task,
         where: not is_nil(t.linked_repo_id),
         where: fragment("(?->>'dirty')::boolean", t.issue_feedback),
+        where:
+          fragment("coalesce((?->>'failures')::int, 0) < ?", t.issue_feedback, ^@max_failures),
         select: t.id
     )
   end

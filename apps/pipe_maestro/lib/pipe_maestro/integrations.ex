@@ -15,6 +15,8 @@ defmodule PipeMaestro.Integrations do
 
   import Ecto.Query
 
+  require Logger
+
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
@@ -33,6 +35,23 @@ defmodule PipeMaestro.Integrations do
   alias PipeMaestro.{Pipelines, Repo, Workspaces}
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Workspaces.Workspace
+
+  @doc """
+  Runs `fun` in the background (`PipeMaestro.Integrations.TaskSupervisor`).
+  `:busy` when as many run already: what `fun` would do is left for the
+  reconciliation (`PipeMaestro.Integrations.Reconciler`).
+  """
+  @spec background((-> term())) :: :ok | :busy
+  def background(fun) do
+    case Task.Supervisor.start_child(PipeMaestro.Integrations.TaskSupervisor, fun) do
+      {:ok, _pid} ->
+        :ok
+
+      {:error, :max_children} ->
+        Logger.warning("Integrações ocupadas: o trabalho fica para a reconciliação.")
+        :busy
+    end
+  end
 
   @doc "The pattern of an issue's link on any host."
   @spec issue_url_regex() :: Regex.t()
@@ -60,19 +79,28 @@ defmodule PipeMaestro.Integrations do
 
   @doc """
   The connection's latest deliveries, newest first, narrowed by `status`
-  (`nil` for every one).
+  (`nil` for every one), without their payloads (`get_delivery!/2` has it).
   """
   @spec list_deliveries(Connection.t(), String.t() | nil, pos_integer()) :: [Delivery.t()]
   def list_deliveries(%Connection{id: connection_id}, status \\ nil, limit \\ 50) do
     from(d in Delivery,
       where: d.connection_id == ^connection_id,
       order_by: [desc: d.inserted_at],
-      limit: ^limit
+      limit: ^limit,
+      # The payload, up to 64 KB each, only when someone opens one.
+      select: struct(d, ^(Delivery.__schema__(:fields) -- [:payload]))
     )
     |> then(fn query ->
       if status in [nil, ""], do: query, else: where(query, [d], d.status == ^status)
     end)
     |> Repo.all()
+  end
+
+  @doc "Removes the deliveries recorded before `before`; answers how many went."
+  @spec prune_deliveries(DateTime.t()) :: non_neg_integer()
+  def prune_deliveries(before) do
+    {count, _} = Repo.delete_all(from d in Delivery, where: d.inserted_at < ^before)
+    count
   end
 
   @doc "One of the connection's deliveries."
@@ -249,21 +277,50 @@ defmodule PipeMaestro.Integrations do
   @spec confirm_installation(Connection.t(), String.t(), String.t()) ::
           {:ok, Connection.t()} | {:error, String.t()}
   def confirm_installation(%Connection{provider: "github"} = connection, installation_id, code) do
-    case GitHub.user_installations(code) do
-      {:ok, ids} ->
-        if installation_id in ids do
-          connection =
-            connection |> Connection.installation_changeset(installation_id) |> Repo.update!()
-
-          {:ok, check_connection(connection)}
-        else
-          {:error, "essa instalação não é de quem entrou no GitHub"}
-        end
-
-      {:error, error} ->
-        {:error, describe(error)}
+    with {:ok, ids} <- administered(code),
+         true <-
+           installation_id in ids ||
+             {:error, "quem entrou no GitHub não administra essa instalação"},
+         {:ok, connection} <-
+           connection
+           |> Connection.installation_changeset(installation_id)
+           |> Repo.update()
+           |> taken() do
+      connection = check_connection(connection)
+      fill_repos(connection)
+      {:ok, connection}
     end
   end
+
+  defp administered(code) do
+    case GitHub.administered_installations(code) do
+      {:ok, ids} -> {:ok, ids}
+      {:error, error} -> {:error, describe(error)}
+    end
+  end
+
+  defp taken({:ok, connection}), do: {:ok, connection}
+  defp taken({:error, _changeset}), do: {:error, "essa instalação já está ligada a outra conexão"}
+
+  # Repositories linked before the installation (the projects' legacy
+  # triggers) learn their id and default branch from the host.
+  defp fill_repos(%Connection{status: "active"} = connection) do
+    with {:ok, client} <- Credentials.client(connection) do
+      for %LinkedRepo{external_id: nil} = repo <- list_repos(connection),
+          {:ok, host_repo} <- [client.provider.get_repo(client, repo.full_name)] do
+        repo
+        |> LinkedRepo.host_changeset(%{
+          external_id: to_string(host_repo.id),
+          default_branch: host_repo.default_branch
+        })
+        |> Repo.update!()
+      end
+    end
+
+    :ok
+  end
+
+  defp fill_repos(_connection), do: :ok
 
   @doc "The GitHub connection of an installation, or `nil`."
   @spec github_connection(String.t()) :: Connection.t() | nil

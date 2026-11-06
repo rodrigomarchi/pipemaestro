@@ -317,24 +317,12 @@ defmodule PipeMaestroRunner.JobRunner do
     %{run | port: nil, os_pid: nil, finishing: {task.ref, code}}
   end
 
-  # What may not show up in the changes: the workspace's secrets and the
-  # password of the job's git credential.
-  defp secrets(job) do
-    credential =
-      case job.git_credential do
-        %{"password" => password} -> [{"git_credential", password}]
-        nil -> []
-      end
-
-    Map.to_list(job.env || %{}) ++ credential
-  end
-
   # The checks, then the gates when the checks hold (a gate run on a worktree
   # the checks refused would be time spent for nothing); `nil` when there were
   # none.
   defp verify(dir, job, tracking, {checks, gates}, on_os_pid) do
     exclude = (tracking && tracking[:exclude]) || []
-    checked = Checks.run(dir, checks, env: secrets(job), exclude: exclude)
+    checked = Checks.run(dir, checks, env: GitCredential.secrets(job), exclude: exclude)
 
     gated =
       if gates == [] or not Enum.all?(checked, & &1["passed"]),

@@ -126,6 +126,9 @@ defmodule PipeMaestro.Integrations.ConversationTest do
                )
 
       assert event.details == %{"login" => "ana", "action" => "advance"}
+
+      assert [%{decided_via: "Forgejo: ana", action: :advance}] =
+               Repo.preload(Repo.reload!(ctx.task), :decisions).decisions
     end
 
     test "the same comment delivered twice is applied once", ctx do
@@ -232,8 +235,22 @@ defmodule PipeMaestro.Integrations.ConversationTest do
   end
 
   describe "the pull request" do
-    test "a review asking for changes on a finished task becomes a correction", ctx do
+    test "a review asking for changes on a finished task becomes a correction, with its line comments",
+         ctx do
       ctx.task |> Ecto.Changeset.change(status: :succeeded) |> Repo.update!()
+
+      Agent.update(ctx.fake, fn state ->
+        put_in(state, [:repos, "acme/app", :reviews, 7], [
+          %{"id" => 1, "state" => "APPROVED", "comments" => []},
+          %{
+            "id" => 2,
+            "state" => "REQUEST_CHANGES",
+            "comments" => [
+              %{"path" => "lib/auth.ex", "position" => 12, "body" => "Normalize aqui."}
+            ]
+          }
+        ])
+      end)
 
       review =
         payload("pull_request_review_rejected", %{
@@ -246,6 +263,31 @@ defmodule PipeMaestro.Integrations.ConversationTest do
       task = Repo.reload!(ctx.task)
       assert task.status == :running
       assert List.last(task.stages).name =~ "Correção"
+
+      [correction] =
+        Repo.all(
+          from d in PipeMaestro.Tasks.Decision,
+            where: d.task_id == ^task.id and d.action == :correct
+        )
+
+      assert correction.instructions =~ "Falta o teste do e-mail com espaço."
+      assert correction.instructions =~ "`lib/auth.ex` (linha 12): Normalize aqui."
+      assert correction.decided_via == "Forgejo: bia"
+    end
+
+    test "a review from someone without write access changes nothing", ctx do
+      ctx.task |> Ecto.Changeset.change(status: :succeeded) |> Repo.update!()
+
+      review =
+        payload("pull_request_review_rejected", %{
+          "pull_request" => %{"head" => %{"ref" => ctx.task.branch}},
+          "sender" => %{"login" => "rui"}
+        })
+
+      assert %Delivery{status: "ignored", outcome: "o autor não tem permissão de escrita"} =
+               deliver(ctx, "pull_request_review_rejected", review)
+
+      assert Repo.reload!(ctx.task).status == :succeeded
     end
 
     test "a review on a task still running waits; an approval changes nothing", ctx do

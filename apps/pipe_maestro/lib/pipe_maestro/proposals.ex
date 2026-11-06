@@ -28,7 +28,7 @@ defmodule PipeMaestro.Proposals do
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
-  alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
+  alias PipeMaestro.Integrations.{Feedback, LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Projects
@@ -413,10 +413,14 @@ defmodule PipeMaestro.Proposals do
   the reason is kept with it. Other proposals are left alone.
   """
   @spec job_finished(Job.t()) :: :ok
-  def job_finished(%Job{status: :succeeded, context: %{"proposal" => %{"kind" => "task"}}} = job) do
-    if input(job)["auto_approve"] == true and is_nil(created_task_id(job)),
-      do: auto_create(job),
-      else: :ok
+  def job_finished(%Job{context: %{"proposal" => %{"kind" => "task"}}} = job) do
+    if job.status == :succeeded and input(job)["auto_approve"] == true and
+         is_nil(created_task_id(job)),
+       do: auto_create(job)
+
+    # A triage of a linked issue tells the issue how it ended.
+    Feedback.triage_finished(job)
+    :ok
   end
 
   def job_finished(%Job{}), do: :ok

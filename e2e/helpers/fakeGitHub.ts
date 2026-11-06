@@ -3,8 +3,8 @@
  * be installed and to link a repository (`config/e2e.exs` points the App at
  * `fakeGitHub.url`).
  *
- * Installing redirects at once to the platform's setup URL with the
- * installation `99` and the sign-in code `e2e-code`, as GitHub does with
+ * Installing redirects at once to the platform's setup URL with a new
+ * installation id and the sign-in code `e2e-code`, as GitHub does with
  * "Request user authorization (OAuth) during installation" on. Specs create
  * repositories (`createGitHubRepo`), which the installation reaches.
  */
@@ -22,6 +22,9 @@ type Json = Record<string, any>;
 
 const repos = new Map<string, Json>();
 let nextId = 1;
+// Each installation is a new one, as on GitHub: an installation belongs to one connection.
+let nextInstallation = Math.floor(Date.now() / 1000);
+const installations: number[] = [];
 
 function send(res: http.ServerResponse, status: number, body?: unknown) {
   res.writeHead(status, { "content-type": "application/json" });
@@ -51,7 +54,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   // Installing the App goes straight back to the platform.
   if (method === "GET" && parts[0] === "apps" && parts[2] === "installations" && parts[3] === "new") {
     const back = new URL(`${fakeGitHub.platformUrl}/integrations/github/setup`);
-    back.searchParams.set("installation_id", "99");
+    const installation = nextInstallation++;
+    installations.push(installation);
+    back.searchParams.set("installation_id", String(installation));
     back.searchParams.set("setup_action", "install");
     back.searchParams.set("code", "e2e-code");
     back.searchParams.set("state", url.searchParams.get("state") || "");
@@ -63,7 +68,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return body.code === "e2e-code" ? send(res, 200, { access_token: "ghu_e2e" }) : send(res, 200, { error: "bad_verification_code" });
   }
 
-  if (method === "GET" && url.pathname === "/user/installations") return send(res, 200, { installations: [{ id: 99 }] });
+  if (method === "GET" && url.pathname === "/user") return send(res, 200, { login: "gil", id: 8 });
+  if (method === "GET" && url.pathname === "/user/installations") {
+    return send(res, 200, { installations: installations.map((id) => ({ id, account: { type: "Organization", login: "acme" } })) });
+  }
+  if (method === "GET" && url.pathname === "/user/memberships/orgs/acme") return send(res, 200, { role: "admin", state: "active" });
 
   if (method === "POST" && parts[0] === "app" && parts[1] === "installations" && parts[3] === "access_tokens") {
     return send(res, 201, { token: `ghs_e2e_${nextId++}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() });

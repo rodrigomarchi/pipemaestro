@@ -7,6 +7,7 @@ defmodule PipeMaestro.Integrations.FeedbackWorker do
   """
   use GenServer
 
+  alias PipeMaestro.Integrations
   alias PipeMaestro.Integrations.Feedback
   alias PipeMaestro.Tasks
 
@@ -22,10 +23,8 @@ defmodule PipeMaestro.Integrations.FeedbackWorker do
 
   @impl true
   def handle_info({:linked_task_updated, task_id}, state) do
-    {:ok, _pid} =
-      Task.Supervisor.start_child(PipeMaestro.Integrations.TaskSupervisor, fn ->
-        Feedback.sync(task_id)
-      end)
+    if Integrations.background(fn -> Feedback.sync(task_id) end) == :busy,
+      do: Feedback.mark_dirty(task_id)
 
     {:noreply, state}
   end

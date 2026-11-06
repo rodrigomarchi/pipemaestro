@@ -28,6 +28,7 @@ defmodule PipeMaestro.Tasks.Decision do
           instructions: String.t() | nil,
           questions: map() | nil,
           answers: map() | nil,
+          decided_via: String.t() | nil,
           task_id: Ecto.UUID.t() | nil,
           task: Task.t() | Ecto.Association.NotLoaded.t(),
           decided_by_user_id: Ecto.UUID.t() | nil,
@@ -44,6 +45,8 @@ defmodule PipeMaestro.Tasks.Decision do
     field :instructions, :string
     field :questions, :map
     field :answers, :map
+    # Decided from a git host: the provider and the login there.
+    field :decided_via, :string
 
     belongs_to :task, Task
     belongs_to :decided_by_user, User

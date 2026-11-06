@@ -77,4 +77,6 @@ config :phoenix, :stacktrace_depth, 20
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
 config :pipe_maestro, PipeMaestro.Secrets, key: "dev_only_secrets_key_change_me_in_prod"
 
-config :pipe_maestro, PipeMaestro.Integrations, public_url: "http://localhost:4000"
+config :pipe_maestro, PipeMaestro.Integrations,
+  allow_private_hosts: true,
+  public_url: "http://localhost:4000"

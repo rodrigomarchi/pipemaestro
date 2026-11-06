@@ -954,7 +954,11 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     {decision.instructions}
                   </p>
                   <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"} · {Calendar.strftime(
+                    {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"}
+                    <span :if={decision.decided_via} data-testid={"task-decision-via-#{n}"}>
+                      (via {decision.decided_via})
+                    </span>
+                    · {Calendar.strftime(
                       decision.inserted_at,
                       "%d/%m %H:%M"
                     )}

@@ -15,12 +15,14 @@ defmodule PipeMaestro.Integrations.Credentials do
 
   import Ecto.Query
 
+  alias PipeMaestro.Integrations
   alias PipeMaestro.Integrations.{Client, Connection, Forgejo, GitHub}
   alias PipeMaestro.Repo
 
   @scopes "write:issue write:repository read:user"
-  # A token this close to expiring is refreshed before use.
-  @margin_seconds 60
+  # A token this close to expiring is refreshed before use: the same margin as
+  # the renewal a running job's credential gets (PipeMaestroWeb.RunnerChannel).
+  @margin_seconds 300
 
   @doc "A client of the connection's host, signed in."
   @spec client(Connection.t()) :: {:ok, Client.t()} | {:error, String.t()}
@@ -46,6 +48,16 @@ defmodule PipeMaestro.Integrations.Credentials do
   # The installation's token, kept with the connection and minted again
   # (under the row's lock) when it is about to expire.
   defp installation_token(%Connection{id: id}) do
+    case current(id) do
+      %{"access_token" => token} = credentials when is_binary(token) ->
+        if fresh?(credentials), do: {:ok, token}, else: locked_installation_token(id)
+
+      _none ->
+        locked_installation_token(id)
+    end
+  end
+
+  defp locked_installation_token(id) do
     Repo.transaction(fn ->
       connection = Repo.one!(from c in Connection, where: c.id == ^id, lock: "FOR UPDATE")
       credentials = Connection.credentials(connection)
@@ -74,11 +86,9 @@ defmodule PipeMaestro.Integrations.Credentials do
         {:ok, token}
 
       {:error, error} ->
-        {:error, "o GitHub recusou o token da instalação: " <> describe(error)}
+        {:error, "o GitHub recusou o token da instalação: " <> Integrations.describe(error)}
     end
   end
-
-  defp describe(%{status: status, message: message}), do: "#{status} #{message}"
 
   @doc """
   What git signs in to the connection's host with (ADR 0035): `"host"`,
@@ -105,7 +115,7 @@ defmodule PipeMaestro.Integrations.Credentials do
          "expires_at" => expires_at
        }}
     else
-      {:error, error} -> {:error, describe(error)}
+      {:error, error} -> {:error, Integrations.describe(error)}
       _not_installed -> {:error, "instale o GitHub App pela página da integração"}
     end
   end
@@ -159,6 +169,25 @@ defmodule PipeMaestro.Integrations.Credentials do
   """
   @spec access_token(Connection.t()) :: {:ok, String.t()} | {:error, String.t()}
   def access_token(%Connection{id: id}) do
+    case current(id) do
+      %{"access_token" => token} = credentials when is_binary(token) ->
+        if fresh?(credentials), do: {:ok, token}, else: locked_access_token(id)
+
+      _none ->
+        locked_access_token(id)
+    end
+  end
+
+  # The credential as it is now, read without a lock: a fresh token needs
+  # none, and only a renewal takes the row's lock.
+  defp current(id) do
+    case Repo.get(Connection, id) do
+      nil -> nil
+      connection -> Connection.credentials(connection)
+    end
+  end
+
+  defp locked_access_token(id) do
     result =
       Repo.transaction(fn ->
         connection = Repo.one!(from c in Connection, where: c.id == ^id, lock: "FOR UPDATE")

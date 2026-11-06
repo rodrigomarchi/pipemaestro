@@ -44,8 +44,10 @@ ou de `X-GitHub-Delivery`.
 | `opened` | uma issue (não um PR) foi aberta por alguém que não é o bot | só `control_plane` |
 
 Cada gatilho tem `mode` (`triage`, com a IA escrevendo a tarefa, ou `task`, direta),
-`auto_approve`, pipeline (opcional na triagem), `author_policy` (`writers` ou `anyone`,
-este com confirmação), `max_per_hour` e a pessoa em nome de quem a tarefa nasce.
+`auto_approve`, pipeline (opcional na triagem), `author_policy` (`writers` ou `anyone`;
+este com confirmação e só com triagem), `max_per_hour` e a pessoa em nome de quem a tarefa
+nasce. Com `writers`, a permissão é conferida em quem comentou, abriu a issue ou pôs a
+label.
 
 Um gatilho dispara uma vez por issue. Tirar a label e pôr de novo dispara outra vez, desde
 que a issue não tenha tarefa nem triagem em andamento.
@@ -68,13 +70,19 @@ Os passos, em ordem; o primeiro que encerra deixa o motivo:
 5. um comentário com comando numa issue (ou PR) com tarefa vai para os comandos (seção 6);
    um evento do PR de uma tarefa vai para a seção 7;
 6. algum gatilho ligado casa;
-7. o autor tem permissão de escrita (com `writers`);
+7. quem causou o evento tem permissão de escrita (com `writers`; para a label, quem a pôs);
 8. o gatilho não passou do limite por hora;
 9. a issue não tem tarefa nem triagem em andamento;
 10. relida pela API, a issue continua aberta (`control_plane`);
 11. há um runner online que oferece o diretório do projeto (na triagem, com a capability
-    `scratch` e o diretório em git);
-12. cria a triagem ou a tarefa, registra o disparo e reconhece na issue.
+    `scratch` e o diretório em git); sem runner, o comentário de status diz que espera um;
+12. cria a triagem ou a tarefa, registra o disparo e reconhece na issue (reação, label e
+    comentário de status).
+
+Um erro no processamento deixa a entrega `failed` com a mensagem. A reconciliação tenta de
+novo as `waiting_runner` e `failed` (até 5 vezes, no último dia) e as que ficaram
+`received` por mais de dez minutos. As entregas saem depois de 30 dias
+(`PipeMaestro.Maintenance`).
 
 ## 5. Retorno no host
 
@@ -90,13 +98,16 @@ Labels, com o prefixo do repositório (padrão `pipemaestro`):
 | `pipemaestro:cancelada` | `canceled` |
 
 O comentário de status é um só por issue, marcado com `<!-- pipemaestro:status -->` e
-editado no lugar: estado, etapas, links da tarefa e do PR e, numa decisão, o motivo e as
-perguntas. Comentários novos só quando a tarefa espera uma decisão, quando o PR fica pronto
-e quando ela é cancelada.
+editado no lugar: nasce quando a issue é reconhecida e passa para a tarefa (estado, etapas,
+links da tarefa e do PR e, numa decisão, o motivo e as perguntas). Apagado, ele é escrito
+de novo. Comentários novos, que notificam, só quando a tarefa espera uma decisão
+(mencionando quem abriu a issue), quando o PR fica pronto, quando ela é cancelada e quando
+a triagem termina sem criar a tarefa.
 
 Commit status no `head_sha`, um por etapa, com `context` `pipemaestro/<chave da etapa>`:
 `success` para a que passou, `pending` para a atual, `warning` para a pausada, `failure` para
-a esgotada e `error` quando a tarefa foi cancelada. No GitHub, um check run por etapa.
+a esgotada e `error` quando a tarefa foi cancelada. No GitHub, um check run por etapa,
+atualizado no lugar; o de uma etapa parada oferece "Refazer etapa".
 
 ## 6. Comandos em comentário
 
@@ -112,11 +123,12 @@ linha que começa com o comando do gatilho é a lida.
 | `/pipemaestro cancelar` | ativa | cancela |
 | `/pipemaestro corrigir <pedido>` | `succeeded` ou `canceled` | nova etapa "Correção N" |
 
-Um comando aplicado ganha uma reação 👍; um inválido para o estado recebe uma resposta com
-os comandos válidos.
+Um comando aplicado ganha uma reação 👍 e fica na decisão como `decided_via` (provedor e
+login); um inválido para o estado recebe uma resposta com os comandos válidos.
 
 ## 7. Eventos do PR
 
-- Review pedindo mudanças num PR de tarefa `succeeded`: nova etapa "Correção N" com o
-  review como pedido.
+- Review pedindo mudanças num PR de tarefa `succeeded`, de quem tem escrita: nova etapa
+  "Correção N" com o texto do review e os comentários de linha como pedido.
+- "Refazer etapa" no check run (GitHub), de quem tem escrita: nova tentativa da etapa.
 - PR fechado com merge: o comentário de status diz "integrado".

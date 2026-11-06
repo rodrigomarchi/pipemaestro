@@ -1142,6 +1142,7 @@ defmodule PipeMaestro.Tasks do
   """
   @type decision_opts :: [
           by: User.t() | nil,
+          via: String.t() | nil,
           choice: String.t() | nil,
           answers: [Questionnaire.answer()] | nil
         ]
@@ -1430,7 +1431,12 @@ defmodule PipeMaestro.Tasks do
   (`:runner_id`, the task's own when absent) and whether that runner is
   online (`:runner_online?`, for stopping a job it cannot confirm).
   """
-  @type rerun_opts :: [by: User.t() | nil, runner_id: String.t() | nil, runner_online?: boolean()]
+  @type rerun_opts :: [
+          by: User.t() | nil,
+          via: String.t() | nil,
+          runner_id: String.t() | nil,
+          runner_online?: boolean()
+        ]
 
   @typedoc "Why a task's stage could not be run again."
   @type rerun_error :: :running | :active | :no_stage | :blank | :removing | :runner
@@ -1514,7 +1520,8 @@ defmodule PipeMaestro.Tasks do
             stage_index: index,
             action: :correct,
             instructions: String.trim(prompt),
-            decided_by_user_id: opts[:by] && opts[:by].id
+            decided_by_user_id: opts[:by] && opts[:by].id,
+            decided_via: opts[:via]
           })
 
           Audit.record(task.workspace_id, opts[:by], "task.corrected", task, %{
@@ -1678,7 +1685,7 @@ defmodule PipeMaestro.Tasks do
     if task.status == :awaiting_decision and claim(task) do
       choice = blank_to_nil(opts[:choice])
       answers = answered(task, opts[:answers])
-      record_decision(task, action, choice, instructions, opts[:by], answers)
+      record_decision(task, action, choice, instructions, opts, answers)
       given = join_instructions([choice && "Decisão: #{choice}", instructions])
 
       task = %{
@@ -1732,7 +1739,9 @@ defmodule PipeMaestro.Tasks do
     |> Enum.join("\n\n")
   end
 
-  defp record_decision(task, action, choice, instructions, user, answers \\ nil) do
+  # `opts`: who decided (`:by`) and, from a git host, the login there (`:via`).
+  defp record_decision(task, action, choice, instructions, opts, answers \\ nil) do
+    user = opts[:by]
     run = latest_run(task, task.current_stage)
 
     if action != :cancel,
@@ -1762,7 +1771,8 @@ defmodule PipeMaestro.Tasks do
       instructions: blank_to_nil(instructions),
       questions: answers && %{"perguntas" => answers["perguntas"]},
       answers: answers && %{"respostas" => answers["respostas"]},
-      decided_by_user_id: user && user.id
+      decided_by_user_id: user && user.id,
+      decided_via: opts[:via]
     })
   end
 
@@ -1800,7 +1810,7 @@ defmodule PipeMaestro.Tasks do
         {:ok, task}
 
       :awaiting_decision ->
-        record_decision(task, :cancel, nil, nil, opts[:by])
+        record_decision(task, :cancel, nil, nil, opts)
         Audit.record(task.workspace_id, opts[:by], "task.canceled", task)
         analysis = task.decision_analysis_job_id
         task = task |> finish(:canceled) |> preload()

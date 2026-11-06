@@ -3,14 +3,16 @@ defmodule PipeMaestro.Integrations.GitHub do
   The GitHub provider, through the platform's GitHub App
   (`config :pipe_maestro, PipeMaestro.Integrations.GitHub`: `app_id`,
   `slug`, `client_id`, `client_secret`, `private_key`, `webhook_secret`, and
-  `api_url` / `web_url` for another address than github.com).
+  `api_url` / `web_url` for GitHub Enterprise Server, whose API is
+  `https://<host>/api/v3`).
 
   - The App authenticates with a JWT (RS256, its private key, `iss` its client
     id) to mint installation tokens of an hour, which may be narrowed to some
     repositories and permissions (`installation_token/2`).
   - A workspace's connection is an installation, confirmed by the person who
-    installed it signing in (`user_installations/1`): the `installation_id`
-    of the setup URL alone can be forged.
+    installed it signing in and administering its account
+    (`administered_installations/1`): the `installation_id` of the setup URL
+    alone can be forged.
   - The App has a single webhook (`X-Hub-Signature-256`, the App's secret);
     a repository needs none of its own.
   - A stage's progress is a check run; a draft pull request is GitHub's own,
@@ -19,9 +21,17 @@ defmodule PipeMaestro.Integrations.GitHub do
 
   @behaviour PipeMaestro.Integrations.Provider
 
+  import PipeMaestro.Integrations.ProviderSupport
+
   alias PipeMaestro.Integrations.{Client, Event}
 
   @api_version "2026-03-10"
+  # A stopped stage's check run offers to run it again (`check_run.requested_action`).
+  @retry_action %{
+    label: "Refazer etapa",
+    description: "Tenta a etapa de novo",
+    identifier: "retry"
+  }
   @per_page 100
   @max_pages 10
 
@@ -38,6 +48,14 @@ defmodule PipeMaestro.Integrations.GitHub do
   def web_url, do: (config() || [])[:web_url] || "https://github.com"
 
   defp api_url, do: (config() || [])[:api_url] || "https://api.github.com"
+
+  # GitHub Enterprise Server answers REST under /api/v3 and GraphQL under
+  # /api/graphql; github.com, both at the API's root.
+  defp graphql_url do
+    if String.ends_with?(api_url(), "/api/v3"),
+      do: String.replace_suffix(api_url(), "/api/v3", "/api/graphql"),
+      else: api_url() <> "/graphql"
+  end
 
   @doc "Where a person installs the App, carrying `state` back."
   @spec install_url(String.t()) :: String.t()
@@ -95,17 +113,20 @@ defmodule PipeMaestro.Integrations.GitHub do
          do: {:ok, Map.take(token, ["token", "expires_at"])}
   end
 
-  @doc "The installations a person who signed in with `code` reaches."
-  @spec user_installations(String.t()) :: {:ok, [String.t()]} | {:error, map()}
-  def user_installations(code) do
+  @doc """
+  The installations a person who signed in with `code` administers: on their
+  own account, or on an organization they are an admin of. Seeing an
+  installation is not enough: anyone with read access to one of its
+  repositories does.
+  """
+  @spec administered_installations(String.t()) :: {:ok, [String.t()]} | {:error, map()}
+  def administered_installations(code) do
     web = Client.new(__MODULE__, web_url(), web_url(), nil)
     form = %{client_id: config()[:client_id], client_secret: config()[:client_secret], code: code}
 
     case Client.request(web, method: :post, url: "/login/oauth/access_token", form: form) do
       {:ok, %{"access_token" => token}, _} ->
-        with {:ok, body, _} <-
-               Client.request(client(token), url: "/user/installations", params: [per_page: 100]),
-             do: {:ok, Enum.map(body["installations"] || [], &to_string(&1["id"]))}
+        administered_by(client(token))
 
       {:ok, body, _} ->
         {:error, %{status: 401, message: body["error"] || "sem token"}}
@@ -115,21 +136,59 @@ defmodule PipeMaestro.Integrations.GitHub do
     end
   end
 
-  @doc "The App's webhook deliveries that did not succeed, from the last three days."
+  defp administered_by(person) do
+    with {:ok, me, _} <- Client.request(person, url: "/user"),
+         {:ok, body, _} <-
+           Client.request(person, url: "/user/installations", params: [per_page: 100]) do
+      ids =
+        for installation <- body["installations"] || [],
+            administers?(person, me["login"], installation["account"] || %{}),
+            do: to_string(installation["id"])
+
+      {:ok, ids}
+    end
+  end
+
+  defp administers?(_person, login, %{"type" => "User", "login" => login}), do: true
+
+  defp administers?(person, _login, %{"type" => "Organization", "login" => org}) do
+    match?(
+      {:ok, %{"role" => "admin", "state" => "active"}, _},
+      Client.request(person, url: "/user/memberships/orgs/#{org}")
+    )
+  end
+
+  defp administers?(_person, _login, _account), do: false
+
+  @doc """
+  The App's webhook deliveries of the last three days that never succeeded and
+  were not asked again yet (GitHub lists a redelivery as a delivery of the
+  same `guid`).
+  """
   @spec failed_deliveries() :: {:ok, [map()]} | {:error, map()}
   def failed_deliveries do
     since = DateTime.utc_now() |> DateTime.add(-3 * 86_400)
 
     with {:ok, deliveries, _} <-
            Client.request(client(app_jwt()), url: "/app/hook/deliveries", params: [per_page: 100]) do
-      {:ok,
-       Enum.filter(deliveries, fn delivery ->
-         delivery["status"] != "OK" and
-           match?(
-             {:ok, at, _} when at > since,
-             DateTime.from_iso8601(delivery["delivered_at"] || "")
-           )
-       end)}
+      failed =
+        deliveries
+        |> Enum.filter(&recent?(&1, since))
+        |> Enum.group_by(& &1["guid"])
+        |> Enum.reject(fn {_guid, attempts} -> Enum.any?(attempts, &settled?/1) end)
+        |> Enum.flat_map(fn {_guid, attempts} -> attempts end)
+
+      {:ok, failed}
+    end
+  end
+
+  # Delivered, or already asked again.
+  defp settled?(attempt), do: attempt["status"] == "OK" or attempt["redelivery"] == true
+
+  defp recent?(delivery, since) do
+    case DateTime.from_iso8601(delivery["delivered_at"] || "") do
+      {:ok, at, _offset} -> DateTime.compare(at, since) == :gt
+      _invalid -> false
     end
   end
 
@@ -232,8 +291,23 @@ defmodule PipeMaestro.Integrations.GitHub do
       do:
         {:ok,
          build(:pr_review, payload, headers)
-         |> Map.put(:review, %{state: state, body: get_in(payload, ["review", "body"]) || ""})},
+         |> Map.put(:review, %{
+           id: get_in(payload, ["review", "id"]),
+           state: state,
+           body: get_in(payload, ["review", "body"]) || ""
+         })},
       else: {:ignore, "review só com comentários"}
+  end
+
+  # The check run's "Refazer etapa" button.
+  defp event("check_run", "requested_action", payload, headers) do
+    {:ok,
+     build(:check_action, payload, headers)
+     |> Map.put(:check, %{
+       head_sha: get_in(payload, ["check_run", "head_sha"]),
+       name: get_in(payload, ["check_run", "name"]),
+       action: get_in(payload, ["requested_action", "identifier"])
+     })}
   end
 
   defp event("pull_request", "closed", payload, headers),
@@ -446,29 +520,63 @@ defmodule PipeMaestro.Integrations.GitHub do
   @impl true
   def delete_webhook(_client, _full_name, _id), do: :ok
 
-  # A stage's progress is a check run named after it.
+  # A stage's progress is a check run named after it, one per stage and
+  # commit: the existing one is updated.
   @impl true
   def set_commit_status(client, full_name, sha, status) do
-    {run_status, conclusion} =
-      case status.state do
-        "pending" -> {"in_progress", nil}
-        "success" -> {"completed", "success"}
-        "failure" -> {"completed", "failure"}
-        "warning" -> {"completed", "action_required"}
-        _error -> {"completed", "cancelled"}
-      end
+    body = check_run(sha, status)
 
-    body =
-      %{
-        name: status.context,
-        head_sha: sha,
-        status: run_status,
-        details_url: status[:target_url],
-        output: %{title: status.description, summary: status.description}
-      }
-      |> then(&if(conclusion, do: Map.put(&1, :conclusion, conclusion), else: &1))
+    case Client.request(client,
+           url: "/repos/#{full_name}/commits/#{sha}/check-runs",
+           params: [check_name: status.context]
+         ) do
+      {:ok, %{"check_runs" => [%{"id" => id} | _]}, _} ->
+        request_ok(client,
+          method: :patch,
+          url: "/repos/#{full_name}/check-runs/#{id}",
+          json: Map.delete(body, :head_sha)
+        )
 
-    request_ok(client, method: :post, url: "/repos/#{full_name}/check-runs", json: body)
+      _none ->
+        request_ok(client, method: :post, url: "/repos/#{full_name}/check-runs", json: body)
+    end
+  end
+
+  defp check_run(sha, status) do
+    {run_status, conclusion} = run_state(status.state)
+
+    %{
+      name: status.context,
+      head_sha: sha,
+      status: run_status,
+      details_url: status[:target_url],
+      output: %{title: status.description, summary: status.description}
+    }
+    |> then(&if(conclusion, do: Map.put(&1, :conclusion, conclusion), else: &1))
+    |> then(
+      &if(conclusion in ["failure", "action_required"],
+        do: Map.put(&1, :actions, [@retry_action]),
+        else: &1
+      )
+    )
+  end
+
+  defp run_state("pending"), do: {"in_progress", nil}
+  defp run_state("success"), do: {"completed", "success"}
+  defp run_state("failure"), do: {"completed", "failure"}
+  defp run_state("warning"), do: {"completed", "action_required"}
+  defp run_state(_error), do: {"completed", "cancelled"}
+
+  @impl true
+  def review_comments(_client, _full_name, _number, %{id: nil}), do: {:ok, []}
+
+  def review_comments(client, full_name, number, %{id: id}) do
+    with {:ok, comments, _} <-
+           Client.request(client,
+             url: "/repos/#{full_name}/pulls/#{number}/reviews/#{id}/comments"
+           ) do
+      {:ok, Enum.map(comments, &%{path: &1["path"], line: &1["line"], body: &1["body"] || ""})}
+    end
   end
 
   @impl true
@@ -526,25 +634,12 @@ defmodule PipeMaestro.Integrations.GitHub do
 
     request_ok(client,
       method: :post,
-      url: "/graphql",
+      url: graphql_url(),
       json: %{query: query, variables: %{id: node_id}}
     )
   end
 
   defp mark_ready(_client, _pr, _ready), do: :ok
-
-  defp request_ok(client, options) do
-    with {:ok, _, _} <- Client.request(client, options), do: :ok
-  end
-
-  defp each_ok(items, fun) do
-    Enum.reduce_while(items, :ok, fn item, :ok ->
-      case fun.(item) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
-    end)
-  end
 
   defp all_pages(client, path, params) do
     Enum.reduce_while(1..@max_pages, {:ok, []}, fn page, {:ok, acc} ->
@@ -560,16 +655,4 @@ defmodule PipeMaestro.Integrations.GitHub do
       end
     end)
   end
-
-  defp datetime(nil), do: nil
-
-  defp datetime(text) do
-    case DateTime.from_iso8601(text) do
-      {:ok, datetime, _offset} -> DateTime.truncate(datetime, :second)
-      _invalid -> nil
-    end
-  end
-
-  defp downcase(nil), do: nil
-  defp downcase(text), do: String.downcase(text)
 end

@@ -128,7 +128,7 @@ defmodule PipeMaestroWeb.IntegrationGitHubSetupTest do
       )
 
     assert redirected_to(conn) == page
-    assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "não é de quem entrou"
+    assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "não administra essa instalação"
 
     conn =
       get(

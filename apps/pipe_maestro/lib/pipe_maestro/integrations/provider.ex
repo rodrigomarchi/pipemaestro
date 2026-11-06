@@ -92,6 +92,14 @@ defmodule PipeMaestro.Integrations.Provider do
   @doc "Sets a commit status: `%{state, context, description, target_url}`."
   @callback set_commit_status(Client.t(), repo(), sha :: String.t(), map()) :: :ok | error()
 
+  @doc """
+  The comments on lines of a review asking for changes (`review` as in
+  `PipeMaestro.Integrations.Event`, with its `id` when the host gives it):
+  `%{path, line, body}`.
+  """
+  @callback review_comments(Client.t(), repo(), pr_number :: pos_integer(), review :: map()) ::
+              {:ok, [map()]} | error()
+
   @doc "The open pull request whose head is `branch`."
   @callback find_open_pr(Client.t(), repo(), branch :: String.t()) ::
               {:ok, map() | nil} | error()

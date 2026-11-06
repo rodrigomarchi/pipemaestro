@@ -7,7 +7,9 @@ defmodule PipeMaestro.Integrations.IssueState do
   - `fired`: the triggers that already fired on it, by trigger id
     (`%{"at", "task_id" | "proposal_job_id"}`), so neither a repeated
     delivery nor the reconciliation fires twice;
-  - `commands`: the comments already applied as commands, by id.
+  - `commands`: the comments already applied as commands, by id;
+  - `status_comment_id`: the platform's status comment, written when the
+    issue was taken and kept by its task (`PipeMaestro.Integrations.Feedback`).
   """
   use PipeMaestro.Schema
 
@@ -20,6 +22,7 @@ defmodule PipeMaestro.Integrations.IssueState do
           seen_updated_at: DateTime.t() | nil,
           fired: map(),
           commands: [String.t()],
+          status_comment_id: String.t() | nil,
           repo_id: Ecto.UUID.t() | nil,
           repo: LinkedRepo.t() | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
@@ -32,6 +35,7 @@ defmodule PipeMaestro.Integrations.IssueState do
     field :seen_updated_at, :utc_datetime
     field :fired, :map, default: %{}
     field :commands, {:array, :string}, default: []
+    field :status_comment_id, :string
 
     belongs_to :repo, LinkedRepo
 

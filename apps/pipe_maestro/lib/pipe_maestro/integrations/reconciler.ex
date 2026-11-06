@@ -10,7 +10,8 @@ defmodule PipeMaestro.Integrations.Reconciler do
   processing as a webhook (`PipeMaestro.Integrations.Ingest`), as a
   `"reconcile"` delivery. The issue's state keeps a trigger from firing twice.
   It also processes again the deliveries that waited for a runner or failed,
-  up to `@max_attempts` times in the last day, and the feedback of tasks that
+  up to `@max_attempts` times in the last day (and those whose processing was
+  lost, still `"received"` after ten minutes), and the feedback of tasks that
   could not be written on their issue (`PipeMaestro.Integrations.Feedback`).
   The GitHub App's deliveries that failed are asked again from GitHub.
 
@@ -21,6 +22,8 @@ defmodule PipeMaestro.Integrations.Reconciler do
   use GenServer
 
   import Ecto.Query
+
+  require Logger
 
   alias PipeMaestro.{Integrations, Repo}
 
@@ -57,11 +60,21 @@ defmodule PipeMaestro.Integrations.Reconciler do
       from(c in Connection, where: c.status == "active" and c.api_mode == "control_plane")
       |> Repo.all()
       |> Enum.flat_map(&Integrations.list_repos/1)
-      |> Enum.map(&sync_repo(&1, now, opts))
+      |> Enum.map(&guarded(fn -> sync_repo(&1, now, opts) end, 0))
       |> Enum.sum()
 
-    feedback = Enum.count(Feedback.dirty_task_ids(), &(Feedback.sync(&1) == :ok))
-    %{issues: issues, retried: retry(now, opts), feedback: feedback, redelivered: redeliver()}
+    feedback =
+      Enum.count(
+        Feedback.dirty_task_ids(),
+        &(guarded(fn -> Feedback.sync(&1) end, :error) == :ok)
+      )
+
+    %{
+      issues: issues,
+      retried: retry(now, opts),
+      feedback: feedback,
+      redelivered: guarded(&redeliver/0, 0)
+    }
   end
 
   @doc "Reads the repository's issues updated since its last sync; answers how many it took in."
@@ -133,14 +146,30 @@ defmodule PipeMaestro.Integrations.Reconciler do
   defp retry(now, opts) do
     since = DateTime.add(now, -86_400)
 
+    # A delivery still "received" minutes later lost its processing (the
+    # node restarted): it goes again too.
+    stuck = DateTime.add(now, -600)
+
     from(d in Delivery,
-      where: d.status in ["waiting_runner", "failed"] and d.attempts < @max_attempts,
-      where: d.inserted_at > ^since,
+      where: d.attempts < @max_attempts and d.inserted_at > ^since,
+      where:
+        d.status in ["waiting_runner", "failed"] or
+          (d.status == "received" and d.inserted_at < ^stuck),
       order_by: d.inserted_at
     )
     |> Repo.all()
-    |> Enum.map(&Ingest.process(&1, opts))
+    |> Enum.map(&guarded(fn -> Ingest.process(&1, opts) end, nil))
     |> length()
+  end
+
+  # One repository, task or delivery that fails is logged and skipped: the
+  # rest of the pass goes on.
+  defp guarded(fun, fallback) do
+    fun.()
+  rescue
+    exception ->
+      Logger.error(Exception.format(:error, exception, __STACKTRACE__))
+      fallback
   end
 
   @impl true

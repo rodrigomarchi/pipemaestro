@@ -32,7 +32,8 @@ Eventos:
 - Issues;
 - Issue comment;
 - Pull request;
-- Pull request review.
+- Pull request review;
+- Check run (o botão "Refazer etapa").
 
 Depois de criar o App, gere uma chave privada e um client secret.
 
@@ -46,6 +47,7 @@ Depois de criar o App, gere uma chave privada e um client secret.
 | `GITHUB_APP_CLIENT_SECRET` | o client secret |
 | `GITHUB_APP_PRIVATE_KEY` | o conteúdo do `.pem` da chave privada |
 | `GITHUB_APP_WEBHOOK_SECRET` | o segredo do webhook |
+| `GITHUB_API_URL`, `GITHUB_WEB_URL` | só no GitHub Enterprise Server: `https://<host>/api/v3` e `https://<host>` |
 
 Sem essas variáveis, a opção GitHub não aparece em Integrações.
 
@@ -53,7 +55,8 @@ Sem essas variáveis, a opção GitHub não aparece em Integrações.
 
 - **Conectar:** em Integrações → Nova conexão → GitHub, salvar leva à instalação do
   App. O GitHub devolve a pessoa com a instalação e um login, e a plataforma confere
-  que a instalação é dela antes de ativar a conexão.
+  que ela administra a conta da instalação (a própria conta ou uma organização em que é
+  admin) antes de ativar a conexão. Uma instalação serve a uma conexão só.
 - **Tokens:** cada chamada usa um token da instalação, que dura uma hora. Cada job de
   etapa leva ao runner um token só do repositório da tarefa, com `contents: write`.
 - **Webhook:** um só, o do App, para todas as instalações. O GitHub não reenvia uma

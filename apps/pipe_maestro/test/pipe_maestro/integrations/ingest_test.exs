@@ -4,7 +4,7 @@ defmodule PipeMaestro.Integrations.IngestTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Proposals, Repo, Runners, Tasks}
-  alias PipeMaestro.Integrations.{Connection, Delivery, Ingest, IssueState}
+  alias PipeMaestro.Integrations.{Connection, Delivery, Feedback, Ingest, IssueState}
   alias PipeMaestro.Tasks.Task
 
   @fixtures Path.expand("../../support/fixtures/forgejo", __DIR__)
@@ -102,6 +102,17 @@ defmodule PipeMaestro.Integrations.IngestTest do
     Ingest.process(delivery, ctx.opts)
   end
 
+  # What a background step left, once it shows.
+  defp eventually(read, done?, tries \\ 50) do
+    value = read.()
+
+    cond do
+      done?.(value) -> value
+      tries == 0 -> flunk("never happened: #{inspect(value)}")
+      true -> Process.sleep(20) && eventually(read, done?, tries - 1)
+    end
+  end
+
   defp proposal_jobs(ctx), do: Proposals.list(ctx.workspace, %{"kind" => "task"})
 
   describe "receiving a webhook" do
@@ -191,12 +202,57 @@ defmodule PipeMaestro.Integrations.IngestTest do
       assert task.created_by_user_id == ctx.user.id
     end
 
+    test "a triage that is not ready asks its questions on the issue", ctx do
+      %Delivery{proposal_job_id: job_id} = deliver(ctx, "issue_label", payload("issue_label"))
+      {:ok, _} = Jobs.mark_started(ctx.runner, job_id)
+
+      {:ok, _} =
+        Jobs.finish_job(ctx.runner, job_id, %{
+          "status" => "succeeded",
+          "structured_output" => %{
+            "analise" => "Falta saber o navegador.",
+            "titulo" => "Normalizar o e-mail",
+            "descricao" => "Detalhes.",
+            "pipeline" => "Correção de bug",
+            "pronta" => false,
+            "perguntas" => ["Em qual navegador acontece?"]
+          }
+        })
+
+      repo =
+        eventually(fn -> FakeForgejo.repo(ctx.fake, "acme/app") end, &(length(&1.comments) == 2))
+
+      assert [%{"body" => status}, %{"body" => body}] = repo.comments
+      assert status =~ "a triagem terminou sem criar a tarefa"
+      assert body =~ "Em qual navegador acontece?"
+      assert body =~ "/proposals/#{job_id}"
+      assert "pipemaestro:aguardando-decisao" in Enum.map(repo.issues[3]["labels"], & &1["name"])
+      refute Repo.get_by(Task, proposal_job_id: job_id)
+    end
+
+    test "a triage that failed says so on the issue", ctx do
+      %Delivery{proposal_job_id: job_id} = deliver(ctx, "issue_label", payload("issue_label"))
+      {:ok, _} = Jobs.mark_started(ctx.runner, job_id)
+
+      {:ok, _} =
+        Jobs.finish_job(ctx.runner, job_id, %{"status" => "failed", "error" => "sem créditos"})
+
+      repo =
+        eventually(fn -> FakeForgejo.repo(ctx.fake, "acme/app") end, &(length(&1.comments) == 2))
+
+      assert [_status, %{"body" => body}] = repo.comments
+      assert body =~ "não terminou"
+    end
+
     test "acknowledges on the issue: a reaction and the triage label", ctx do
       deliver(ctx, "issue_label", payload("issue_label"))
       repo = FakeForgejo.repo(ctx.fake, "acme/app")
 
       assert {:issue, 3, "eyes"} in repo.reactions
       assert "pipemaestro:triando" in Enum.map(repo.issues[3]["labels"], & &1["name"])
+      assert [%{"body" => status}] = repo.comments
+      assert status =~ "<!-- pipemaestro:status -->"
+      assert status =~ "A IA está lendo a issue"
     end
 
     test "a label that was already there does not fire again", ctx do
@@ -245,6 +301,24 @@ defmodule PipeMaestro.Integrations.IngestTest do
       assert Tasks.active_for_issue?(ctx.workspace, task.issue_url)
     end
 
+    test "a label added by someone without write access (an issue template) is ignored", ctx do
+      template = payload("issue_label", %{"sender" => %{"login" => "estranho"}})
+
+      assert %Delivery{status: "ignored", outcome: "o autor não tem permissão de escrita"} =
+               deliver(ctx, "issue_label", template)
+
+      assert proposal_jobs(ctx) == []
+    end
+
+    test "the task keeps the status comment written when the issue was taken", ctx do
+      Integrations.save_trigger(ctx.repo, ctx.user, ctx.trigger, %{"mode" => "task"})
+      %Delivery{task_id: task_id} = deliver(ctx, "issue_label", payload("issue_label"))
+
+      assert Feedback.sync(task_id) == :ok
+      assert [%{"body" => body}] = FakeForgejo.repo(ctx.fake, "acme/app").comments
+      assert body =~ "pipeline Correção de bug"
+    end
+
     test "uses the issue as the host has it now: a closed one is skipped", ctx do
       Agent.update(ctx.fake, &put_in(&1, [:repos, "acme/app", :issues, 3, "state"], "closed"))
 
@@ -263,6 +337,8 @@ defmodule PipeMaestro.Integrations.IngestTest do
                Ingest.process(delivery, presence: fn _ -> MapSet.new() end)
 
       assert outcome =~ "nenhum runner online"
+      assert [%{"body" => waiting}] = FakeForgejo.repo(ctx.fake, "acme/app").comments
+      assert waiting =~ "Esperando um runner online"
 
       assert %Delivery{status: "processed", attempts: 2} =
                Ingest.process(Repo.reload!(delivery), ctx.opts)
@@ -296,6 +372,13 @@ defmodule PipeMaestro.Integrations.IngestTest do
                deliver(ctx, "issue_comment", comment)
 
       assert outcome =~ "inexistente"
+    end
+
+    test "a command on a pull request is not a trigger", ctx do
+      on_pull = payload("issue_comment_pull", %{"comment" => %{"body" => "/pipemaestro"}})
+
+      assert %Delivery{status: "ignored", outcome: "nenhum gatilho casou"} =
+               deliver(ctx, "pull_request_comment", on_pull)
     end
 
     test "a reader's command and a plain comment are ignored", ctx do

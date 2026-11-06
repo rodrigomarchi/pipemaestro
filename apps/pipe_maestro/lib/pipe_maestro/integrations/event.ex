@@ -4,12 +4,15 @@ defmodule PipeMaestro.Integrations.Event do
   (`docs/specs/integracoes.md`, section 2):
 
   - `kind`: `:ping`, `:issue_opened`, `:issue_labels_changed`,
-    `:issue_comment`, `:issue_closed`, `:pr_review` or `:pr_closed`;
+    `:issue_comment`, `:issue_closed`, `:pr_review`, `:pr_closed` or
+    `:check_action`;
   - `issue`: `%{number, title, body, url, author, labels, updated_at,
     is_pull}` (labels by name);
   - `comment`: `%{id, body, author}`;
   - `pr`: `%{number, merged, head}`;
   - `review`: `%{state, body}`, `state` being `:approved` or `:rejected`;
+  - `check`: `%{head_sha, name, action}`, a button of a check run pressed
+    (`:check_action`, GitHub);
   - `sender`: the login of whoever caused it.
   """
 
@@ -21,6 +24,7 @@ defmodule PipeMaestro.Integrations.Event do
           | :issue_closed
           | :pr_review
           | :pr_closed
+          | :check_action
 
   @type t :: %__MODULE__{
           kind: kind(),
@@ -32,6 +36,7 @@ defmodule PipeMaestro.Integrations.Event do
           comment: map() | nil,
           pr: map() | nil,
           review: map() | nil,
+          check: map() | nil,
           sender: String.t() | nil
         }
 
@@ -46,6 +51,7 @@ defmodule PipeMaestro.Integrations.Event do
     :comment,
     :pr,
     :review,
+    :check,
     :sender
   ]
 end

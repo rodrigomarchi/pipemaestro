@@ -7,8 +7,8 @@ defmodule PipeMaestro.FakeGitHub do
   - `/app/*` takes only the App's JWT, checked against its key;
   - an installation token (`ghs_*`) is handed per installation, with the
     repositories and permissions asked, and opens the repository endpoints;
-  - the OAuth code `code-1` signs in a person whose installations are
-    `user_installations`;
+  - the OAuth code `code-1` signs in `ana`, who sees the installations of
+    `user_installations` (id => account) and has the `memberships` roles;
   - per repository it keeps labels, issues, comments, reactions, check runs
     and pull requests; `deliveries` are the App's webhook deliveries.
   """
@@ -29,7 +29,13 @@ defmodule PipeMaestro.FakeGitHub do
       Agent.start_link(fn ->
         %{
           installations: Keyword.get(opts, :installations, [99]),
-          user_installations: Keyword.get(opts, :user_installations, [99]),
+          # What the person who signs in sees: installation id => its account.
+          user_installations:
+            Keyword.get(opts, :user_installations, %{
+              99 => %{"type" => "Organization", "login" => "acme"}
+            }),
+          # The person's role in each organization.
+          memberships: Keyword.get(opts, :memberships, %{"acme" => "admin"}),
           repos: repos,
           permissions: Keyword.get(opts, :permissions, %{}),
           tokens: %{},
@@ -128,11 +134,27 @@ defmodule PipeMaestro.FakeGitHub do
        else: respond(conn, 200, %{"error" => "bad_verification_code"})
   end
 
+  defp route(conn, _fake, "GET", ["user"]) do
+    if bearer(conn) == "ghu_pessoa",
+      do: respond(conn, 200, %{"login" => "ana", "id" => 8}),
+      else: respond(conn, 401, %{"message" => "Bad credentials"})
+  end
+
+  defp route(conn, fake, "GET", ["user", "memberships", "orgs", org]) do
+    case bearer(conn) == "ghu_pessoa" && state(fake).memberships[org] do
+      role when is_binary(role) -> respond(conn, 200, %{"role" => role, "state" => "active"})
+      _none -> respond(conn, 404, %{"message" => "Not Found"})
+    end
+  end
+
   defp route(conn, fake, "GET", ["user", "installations"]) do
     if bearer(conn) == "ghu_pessoa",
       do:
         respond(conn, 200, %{
-          "installations" => Enum.map(state(fake).user_installations, &%{"id" => &1})
+          "installations" =>
+            Enum.map(state(fake).user_installations, fn {id, account} ->
+              %{"id" => id, "account" => account}
+            end)
         }),
       else: respond(conn, 401, %{"message" => "Bad credentials"})
   end
@@ -335,13 +357,21 @@ defmodule PipeMaestro.FakeGitHub do
   end
 
   defp repo_path(conn, fake, _token, full, _repo, "POST", ["check-runs"]) do
-    update_repo(
-      fake,
-      full,
-      &Map.update!(&1, :check_runs, fn runs -> runs ++ [conn.body_params] end)
-    )
+    run = Map.put(conn.body_params, "id", next_id(fake))
+    update_repo(fake, full, &Map.update!(&1, :check_runs, fn runs -> runs ++ [run] end))
+    respond(conn, 201, run)
+  end
 
-    respond(conn, 201, conn.body_params)
+  defp repo_path(conn, _fake, _token, _full, repo, "GET", ["commits", sha, "check-runs"]) do
+    name = conn.query_params["check_name"]
+    runs = Enum.filter(repo.check_runs, &(&1["head_sha"] == sha and &1["name"] == name))
+    respond(conn, 200, %{"total_count" => length(runs), "check_runs" => runs})
+  end
+
+  defp repo_path(conn, fake, _token, full, _repo, "PATCH", ["check-runs", id]) do
+    edit = &if(to_string(&1["id"]) == id, do: Map.merge(&1, conn.body_params), else: &1)
+    update_repo(fake, full, &Map.update!(&1, :check_runs, fn runs -> Enum.map(runs, edit) end))
+    respond(conn, 200, %{"id" => id})
   end
 
   defp repo_path(conn, _fake, _token, full, repo, "GET", ["pulls"]) do

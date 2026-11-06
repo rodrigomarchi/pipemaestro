@@ -54,6 +54,9 @@ Forgejo:
 
 - `[webhook] ALLOWED_HOST_LIST`: o padrão (`external`) aceita a plataforma num endereço
   público. Numa rede interna, inclua o host da plataforma.
+- **Forgejo numa rede interna:** a plataforma recusa chamar um endereço privado, loopback
+  ou link-local. Uma plataforma self-hosted na mesma rede do Forgejo libera isso com
+  `INTEGRATIONS_ALLOW_PRIVATE_HOSTS=true`.
 - O Forgejo espera 5 s pela resposta e não reenvia uma entrega que falhou. A plataforma
   responde na hora e, a cada cinco minutos, lê as issues alteradas para pegar o que um
   webhook perdeu.

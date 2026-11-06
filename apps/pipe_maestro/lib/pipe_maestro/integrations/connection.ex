@@ -20,7 +20,7 @@ defmodule PipeMaestro.Integrations.Connection do
 
   import Ecto.Changeset
 
-  alias PipeMaestro.Integrations.GitHub
+  alias PipeMaestro.Integrations.{GitHub, HostGuard}
   alias PipeMaestro.Vault
   alias PipeMaestro.Workspaces.Workspace
 
@@ -133,6 +133,9 @@ defmodule PipeMaestro.Integrations.Connection do
     connection
     |> credentials_changeset(%{"installation_id" => installation_id})
     |> change(external_account_id: installation_id)
+    |> unique_constraint(:external_account_id,
+      name: :integration_connections_provider_external_account_id_index
+    )
   end
 
   @doc "Records the checked identity and version of the host, or the error."
@@ -197,9 +200,15 @@ defmodule PipeMaestro.Integrations.Connection do
   defp validate_base_url(:base_url, url) do
     case URI.parse(url) do
       %URI{scheme: "https", host: host} when is_binary(host) and host != "" -> []
-      %URI{scheme: "http", host: host} when host in @local_hosts -> []
+      %URI{scheme: "http", host: host} when host in @local_hosts -> local_http()
       _other -> [base_url: "use o endereço https da instância"]
     end
+  end
+
+  # Plain http only to a local host, and only where private hosts are allowed
+  # (development, tests, a self-hosted platform).
+  defp local_http do
+    if HostGuard.private_allowed?(), do: [], else: [base_url: "use o endereço https da instância"]
   end
 
   defp validate_auth_kind(changeset) do

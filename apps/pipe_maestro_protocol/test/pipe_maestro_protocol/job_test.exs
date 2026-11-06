@@ -481,6 +481,9 @@ defmodule PipeMaestroProtocol.JobTest do
     test "is renewed by its own event, and its file's variable is the runner's" do
       assert Job.credential_event() == "job:credential"
       refute Job.env_name?("PIPEMAESTRO_GIT_CREDENTIAL_FILE")
+      # git's own configuration is the runner's: a secret cannot set a helper.
+      refute Job.env_name?("GIT_CONFIG_COUNT")
+      refute Job.env_name?("GIT_CONFIG_KEY_0")
     end
 
     test "a runner that does not know the field takes the job anyway" do

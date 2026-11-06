@@ -16,6 +16,8 @@ defmodule PipeMaestro.Integrations.Forgejo do
 
   @behaviour PipeMaestro.Integrations.Provider
 
+  import PipeMaestro.Integrations.ProviderSupport
+
   alias PipeMaestro.Integrations.{Client, Event}
 
   @draft "WIP: "
@@ -326,16 +328,6 @@ defmodule PipeMaestro.Integrations.Forgejo do
     end
   end
 
-  # Runs `fun` on each item until one fails.
-  defp each_ok(items, fun) do
-    Enum.reduce_while(items, :ok, fn item, :ok ->
-      case fun.(item) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
-    end)
-  end
-
   @impl true
   def create_webhook(client, full_name, url, secret) do
     body = %{
@@ -375,6 +367,29 @@ defmodule PipeMaestro.Integrations.Forgejo do
       url: "/repos/#{full_name}/statuses/#{sha}",
       json: Map.take(status, [:state, :context, :description, :target_url])
     )
+  end
+
+  # Forgejo's webhook does not name the review: the latest one asking for
+  # changes is it.
+  @impl true
+  def review_comments(client, full_name, number, _review) do
+    path = "/repos/#{full_name}/pulls/#{number}/reviews"
+
+    with {:ok, reviews} <- all_pages(client, path, []) do
+      reviews
+      |> Enum.filter(&(&1["state"] == "REQUEST_CHANGES"))
+      |> List.last()
+      |> line_comments(client, path)
+    end
+  end
+
+  defp line_comments(nil, _client, _path), do: {:ok, []}
+
+  defp line_comments(review, client, path) do
+    with {:ok, comments, _} <- Client.request(client, url: "#{path}/#{review["id"]}/comments"),
+         do:
+           {:ok,
+            Enum.map(comments, &%{path: &1["path"], line: &1["position"], body: &1["body"] || ""})}
   end
 
   @impl true
@@ -422,10 +437,6 @@ defmodule PipeMaestro.Integrations.Forgejo do
     end
   end
 
-  defp request_ok(client, options) do
-    with {:ok, _, _} <- Client.request(client, options), do: :ok
-  end
-
   defp all_pages(client, path, params, limit \\ @page_size) do
     Enum.reduce_while(1..@max_pages, {:ok, []}, fn page, {:ok, acc} ->
       client
@@ -452,16 +463,4 @@ defmodule PipeMaestro.Integrations.Forgejo do
 
   defp put_param(params, _key, nil), do: params
   defp put_param(params, key, value), do: params ++ [{key, value}]
-
-  defp datetime(nil), do: nil
-
-  defp datetime(text) do
-    case DateTime.from_iso8601(text) do
-      {:ok, datetime, _offset} -> DateTime.truncate(datetime, :second)
-      _invalid -> nil
-    end
-  end
-
-  defp downcase(nil), do: nil
-  defp downcase(text), do: String.downcase(text)
 end

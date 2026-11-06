@@ -9,7 +9,8 @@ config :pipe_maestro, PipeMaestro.Integrations.Reconciler, false
 # The git hosts answer from PipeMaestro.FakeForgejo, through Req.Test.
 config :pipe_maestro, PipeMaestro.Integrations,
   req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false],
-  public_url: "https://pm.test"
+  public_url: "https://pm.test",
+  allow_private_hosts: true
 
 # The platform's GitHub App, against the fake GitHub (PipeMaestro.FakeGitHub).
 github_key = :public_key.generate_key({:rsa, 2048, 65_537})

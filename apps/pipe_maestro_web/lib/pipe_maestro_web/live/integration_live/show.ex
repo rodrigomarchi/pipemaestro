@@ -53,6 +53,27 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
   end
 
   @impl true
+  def handle_async(:check, {:ok, connection}, socket) do
+    socket =
+      case connection.status do
+        "active" -> put_flash(socket, :info, "O host respondeu, como #{connection.bot_login}.")
+        _error -> put_flash(socket, :error, "O host recusou: #{connection.last_error}")
+      end
+
+    {:noreply, assign(socket, connection: connection)}
+  end
+
+  def handle_async(:replay, {:ok, {:ok, copy}}, socket) do
+    {:noreply,
+     socket
+     |> load_deliveries()
+     |> put_flash(:info, "Reprocessada: #{status_name(copy.status)} (#{copy.outcome}).")}
+  end
+
+  def handle_async(_name, {:exit, reason}, socket),
+    do: {:noreply, put_flash(socket, :error, "O host não respondeu: #{inspect(reason)}")}
+
+  @impl true
   def handle_info({:delivery_updated, %Delivery{connection_id: id}}, socket) do
     if id == socket.assigns.connection.id,
       do: {:noreply, load_deliveries(socket)},
@@ -70,16 +91,11 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
   end
 
   @impl true
+  # Calls to the host run off the LiveView's process: a host that does not
+  # answer must not freeze the page.
   def handle_event("check", _params, socket) do
-    connection = Integrations.check_connection(socket.assigns.connection)
-
-    socket =
-      case connection.status do
-        "active" -> put_flash(socket, :info, "O host respondeu, como #{connection.bot_login}.")
-        _error -> put_flash(socket, :error, "O host recusou: #{connection.last_error}")
-      end
-
-    {:noreply, assign(socket, connection: connection)}
+    connection = socket.assigns.connection
+    {:noreply, start_async(socket, :check, fn -> Integrations.check_connection(connection) end)}
   end
 
   def handle_event("authorize", _params, socket) do
@@ -103,18 +119,18 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
     do: {:noreply, socket |> assign(delivery_status: status) |> load_deliveries()}
 
   def handle_event("toggle_payload", %{"id" => id}, socket) do
-    open = if socket.assigns.open_payload == id, do: nil, else: id
-    {:noreply, assign(socket, open_payload: open)}
+    if socket.assigns.open_payload && socket.assigns.open_payload.id == id do
+      {:noreply, assign(socket, open_payload: nil)}
+    else
+      {:noreply,
+       assign(socket, open_payload: Integrations.get_delivery!(socket.assigns.connection, id))}
+    end
   end
 
   def handle_event("replay", %{"id" => id}, socket) do
     delivery = Integrations.get_delivery!(socket.assigns.connection, id)
-    {:ok, copy} = Ingest.replay(delivery, socket.assigns.current_scope.user)
-
-    {:noreply,
-     socket
-     |> load_deliveries()
-     |> put_flash(:info, "Reprocessada: #{status_name(copy.status)} (#{copy.outcome}).")}
+    user = socket.assigns.current_scope.user
+    {:noreply, start_async(socket, :replay, fn -> Ingest.replay(delivery, user) end)}
   end
 
   def handle_event("toggle_secret", _params, socket),
@@ -216,6 +232,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
   defp kind_name("issue_closed"), do: "issue fechada"
   defp kind_name("pr_review"), do: "review do PR"
   defp kind_name("pr_closed"), do: "PR fechado"
+  defp kind_name("check_action"), do: "botão de um check"
   defp kind_name(_other), do: "evento"
 
   defp webhook_status(assigns) do
@@ -576,10 +593,10 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                   </div>
                 </div>
                 <pre
-                  :if={@open_payload == delivery.id}
+                  :if={@open_payload && @open_payload.id == delivery.id}
                   class="mt-2 max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"
                   data-testid={"delivery-payload-#{key(delivery.external_id)}"}
-                >{JSON.encode!(delivery.payload)}</pre>
+                >{JSON.encode!(@open_payload.payload)}</pre>
               </li>
             </ul>
           </.card_content>

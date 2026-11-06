@@ -13,7 +13,8 @@ defmodule PipeMaestro.Application do
         {DNSCluster, query: Application.get_env(:pipe_maestro, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: PipeMaestro.PubSub},
         # Integrations' deliveries, processed outside the webhook's request.
-        {Task.Supervisor, name: PipeMaestro.Integrations.TaskSupervisor}
+        # At most so many at once: past that, the reconciliation takes them.
+        {Task.Supervisor, name: PipeMaestro.Integrations.TaskSupervisor, max_children: 50}
       ] ++ maintenance() ++ reconciler()
 
     Supervisor.start_link(children, strategy: :one_for_one, name: PipeMaestro.Supervisor)

@@ -129,7 +129,9 @@ defmodule PipeMaestro.FakeForgejo do
         comments: [],
         reactions: [],
         statuses: [],
-        pulls: []
+        pulls: [],
+        # By pull request number: its reviews, each with its line comments.
+        reviews: %{}
       },
       repo
     )
@@ -392,6 +394,21 @@ defmodule PipeMaestro.FakeForgejo do
     status = Map.put(conn.body_params, "sha", sha)
     update_repo(fake, full, &Map.update!(&1, :statuses, fn statuses -> statuses ++ [status] end))
     respond(conn, 201, status)
+  end
+
+  defp repo_route(conn, _fake, _full, repo, "GET", ["pulls", number, "reviews"]) do
+    reviews = Map.get(repo.reviews, String.to_integer(number), [])
+    respond(conn, 200, Enum.map(reviews, &Map.delete(&1, "comments")))
+  end
+
+  defp repo_route(conn, _fake, _full, repo, "GET", ["pulls", number, "reviews", id, "comments"]) do
+    review =
+      Enum.find(
+        Map.get(repo.reviews, String.to_integer(number), []),
+        &(to_string(&1["id"]) == id)
+      )
+
+    respond(conn, 200, (review && review["comments"]) || [])
   end
 
   defp repo_route(conn, _fake, _full, repo, "GET", ["pulls"]) do

@@ -5,8 +5,8 @@ defmodule PipeMaestroRunner.GitCredential do
 
   It is written to `<workdir>/credentials/<job_id>` (the directory `0700`,
   the file `0600`) in the form `git credential` answers, and every git the
-  job runs (the runner's own and the agent's) is told, by `GIT_CONFIG_*`
-  variables (`env/2`), to read it for the host. A renewed credential
+  job runs (the runner's own and the agent's) is told, by
+  `GIT_CONFIG_PARAMETERS` (`env/2`), to read it for the host. A renewed credential
   (`"job:credential"`) rewrites the file atomically; the file goes when the
   job ends, and whatever is left goes when the runner starts.
   """
@@ -50,19 +50,23 @@ defmodule PipeMaestroRunner.GitCredential do
 
   @doc """
   The variables that make git read the credential at `path` for `host` (over
-  https, and http for a local host).
+  https, and http for a local host). For each, an empty helper comes first:
+  it clears the helpers of the machine's own configuration, so a keychain or
+  `store` helper is neither asked nor told the job's token. They go in
+  `GIT_CONFIG_PARAMETERS` (what `git -c` passes on): an empty variable, as
+  `GIT_CONFIG_VALUE_<n>` would need, does not survive a port's environment.
   """
   @spec env(Path.t(), String.t()) :: %{String.t() => String.t()}
   def env(path, host) do
-    %{
-      @file_env => path,
-      "GIT_CONFIG_COUNT" => "2",
-      "GIT_CONFIG_KEY_0" => "credential.https://#{host}.helper",
-      "GIT_CONFIG_VALUE_0" => @helper,
-      "GIT_CONFIG_KEY_1" => "credential.http://#{host}.helper",
-      "GIT_CONFIG_VALUE_1" => @helper
-    }
+    parameters =
+      for scheme <- ["https", "http"], value <- ["", @helper], into: [] do
+        quote_parameter("credential.#{scheme}://#{host}.helper") <> "=" <> quote_parameter(value)
+      end
+
+    %{@file_env => path, "GIT_CONFIG_PARAMETERS" => Enum.join(parameters, " ")}
   end
+
+  defp quote_parameter(text), do: "'" <> String.replace(text, "'", ~S('\'')) <> "'"
 
   @doc """
   The job ready to run: with a `git_credential`, written under `workdir` and
@@ -76,14 +80,30 @@ defmodule PipeMaestroRunner.GitCredential do
 
   def prepare(%Job{} = job, _workdir), do: job
 
+  @doc """
+  What may not show up in a stage's changes (the `no_secrets` check): the
+  workspace's secrets and the password of the job's git credential.
+  """
+  @spec secrets(Job.t()) :: [{String.t(), String.t()}]
+  def secrets(%Job{} = job) do
+    credential =
+      case job.git_credential do
+        %{"password" => password} -> [{"git_credential", password}]
+        nil -> []
+      end
+
+    Enum.reject(Map.to_list(job.env || %{}), fn {name, _value} -> git_env?(name) end) ++
+      credential
+  end
+
   @doc "Of the job's variables, those git needs for the credential, as `System.cmd/3` takes them."
   @spec git_env(Job.t() | map() | nil) :: [{String.t(), String.t()}]
   def git_env(%Job{env: env}), do: git_env(env)
   def git_env(nil), do: []
 
   def git_env(env) when is_map(env) do
-    for {name, value} <- env,
-        name == @file_env or String.starts_with?(name, "GIT_CONFIG_"),
-        do: {name, value}
+    for {name, value} <- env, git_env?(name), do: {name, value}
   end
+
+  defp git_env?(name), do: name == @file_env or String.starts_with?(name, "GIT_CONFIG_")
 end

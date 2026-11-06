@@ -10,7 +10,8 @@ defmodule PipeMaestro.Integrations.Trigger do
     with the issue's text.
   - `author_policy`: `"writers"` (whoever has write access to the repository)
     or `"anyone"`, which a comment or a new issue must confirm
-    (`confirm_anyone`): the issue's text goes into the agent's prompt.
+    (`confirm_anyone`) and only with a triage: the issue's text goes into the
+    agent's prompt.
   - `max_per_hour`: how many times it may fire in an hour.
   - `acting_user`: on whose behalf the task is created.
 
@@ -137,7 +138,19 @@ defmodule PipeMaestro.Integrations.Trigger do
       else: changeset
   end
 
+  # Any author's text goes only to a triage, which runs apart, without the
+  # workspace's secrets nor the git credential; a task would carry both.
   defp validate_anyone(changeset) do
+    anyone? =
+      get_field(changeset, :author_policy) == "anyone" and
+        get_field(changeset, :kind) in ~w(comment opened)
+
+    if anyone? and get_field(changeset, :mode) == "task",
+      do: add_error(changeset, :mode, "com qualquer autor, use a triagem com IA"),
+      else: confirm_anyone(changeset)
+  end
+
+  defp confirm_anyone(changeset) do
     if get_field(changeset, :author_policy) == "anyone" and
          get_field(changeset, :kind) in ~w(comment opened) and
          get_change(changeset, :author_policy) != nil and

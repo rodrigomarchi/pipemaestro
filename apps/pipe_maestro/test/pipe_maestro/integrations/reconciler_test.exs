@@ -137,6 +137,44 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
     assert triages(ctx) == 1
   end
 
+  test "takes again a delivery whose processing was lost", ctx do
+    FakeForgejo.put_issue(ctx.fake, "acme/app", %{
+      "number" => 5,
+      "labels" => ["pipemaestro"],
+      "updated_at" => now_iso()
+    })
+
+    issue = %{
+      number: 5,
+      title: "Issue 5",
+      body: "",
+      url: "https://forge.test/acme/app/issues/5",
+      state: "open",
+      author: "ana",
+      labels: ["pipemaestro"],
+      updated_at: DateTime.utc_now(:second)
+    }
+
+    {name, payload} =
+      Integrations.provider(ctx.connection).synthetic_event(:labels, "acme/app", issue)
+
+    {:ok, headers_delivery} = Ingest.ingest_event(ctx.connection, "perdida", "push", %{})
+
+    lost =
+      headers_delivery
+      |> Ecto.Changeset.change(
+        status: "received",
+        event: name,
+        payload: payload,
+        attempts: 0,
+        inserted_at: DateTime.add(DateTime.utc_now(), -900)
+      )
+      |> Repo.update!()
+
+    Reconciler.run(DateTime.utc_now(), Keyword.put(ctx.opts, :presence, fn _ -> MapSet.new() end))
+    assert %Delivery{status: "waiting_runner", attempts: 1} = Repo.reload!(lost)
+  end
+
   test "skips connections the platform must not call and repositories without readable triggers",
        ctx do
     FakeForgejo.put_issue(ctx.fake, "acme/app", %{

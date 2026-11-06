@@ -233,6 +233,16 @@ defmodule PipeMaestro.Integrations.SchemasTest do
                "control_plane"
              ).valid?
 
+      task =
+        Map.merge(attrs, %{
+          "confirm_anyone" => "true",
+          "mode" => "task",
+          "pipeline_id" => Ecto.UUID.generate()
+        })
+
+      assert %{mode: ["com qualquer autor, use a triagem com IA"]} =
+               errors_on(Trigger.changeset(%Trigger{}, task, "control_plane"))
+
       label = %{"kind" => "label", "label" => "pm", "author_policy" => "anyone"}
       assert Trigger.changeset(%Trigger{}, label, "control_plane").valid?
     end

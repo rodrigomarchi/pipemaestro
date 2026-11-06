@@ -33,13 +33,15 @@ defmodule PipeMaestro.Integrations.Ingest do
 
   import Ecto.Query
 
+  require Logger
+
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.{Audit, Integrations, Pipelines, Proposals, Repo, Runners, Tasks}
 
   alias PipeMaestro.Integrations.{
+    Access,
     Connection,
     Conversation,
-    Credentials,
     Delivery,
     Event,
     Feedback,
@@ -51,8 +53,6 @@ defmodule PipeMaestro.Integrations.Ingest do
 
   alias PipeMaestro.Workspaces.Workspace
 
-  @supervisor PipeMaestro.Integrations.TaskSupervisor
-
   @doc """
   Takes a webhook delivery: checks its signature, records it and processes it
   in the background. `:duplicate` when the delivery was already taken.
@@ -61,7 +61,7 @@ defmodule PipeMaestro.Integrations.Ingest do
           {:ok, Delivery.t()} | :duplicate | {:error, :not_found | :bad_signature | :bad_payload}
   def receive_webhook(connection_id, headers, raw_body, opts \\ []) do
     with {:ok, delivery} <- record_webhook(connection_id, headers, raw_body) do
-      {:ok, _pid} = Task.Supervisor.start_child(@supervisor, fn -> process(delivery, opts) end)
+      _ = Integrations.background(fn -> process(delivery, opts) end)
       {:ok, delivery}
     end
   end
@@ -103,6 +103,13 @@ defmodule PipeMaestro.Integrations.Ingest do
     {:ok, :installation}
   end
 
+  defp app_event("installation", "unsuspend", installation, _headers, _payload, _opts) do
+    with %Connection{} = connection <- Integrations.github_connection(installation),
+         do: Integrations.check_connection(connection)
+
+    {:ok, :installation}
+  end
+
   defp app_event(event, _action, _installation, _headers, _payload, _opts)
        when event in ["installation", "installation_repositories", "ping"],
        do: {:ok, :ignored}
@@ -118,7 +125,7 @@ defmodule PipeMaestro.Integrations.Ingest do
              event,
              payload
            ) do
-      {:ok, _pid} = Task.Supervisor.start_child(@supervisor, fn -> process(delivery, opts) end)
+      _ = Integrations.background(fn -> process(delivery, opts) end)
       {:ok, delivery}
     end
   end
@@ -127,8 +134,10 @@ defmodule PipeMaestro.Integrations.Ingest do
   @spec record_webhook(String.t(), map(), binary()) ::
           {:ok, Delivery.t()} | :duplicate | {:error, :not_found | :bad_signature | :bad_payload}
   def record_webhook(connection_id, headers, raw_body) do
+    # A GitHub connection takes only the App's webhook (receive_app_webhook/3).
     with %Connection{} = connection <-
            Integrations.get_connection(connection_id) || {:error, :not_found},
+         true <- connection.provider == "forgejo" || {:error, :not_found},
          provider = Integrations.provider(connection),
          true <-
            provider.verify_signature(headers, raw_body, Connection.webhook_secret(connection)) ||
@@ -214,17 +223,29 @@ defmodule PipeMaestro.Integrations.Ingest do
     case provider.parse_event(headers, delivery.payload) do
       {:ok, event} ->
         result =
-          serialized(connection, event, fn ->
-            result = handle(connection, event, opts)
-            remember(connection, event, result)
-            result
-          end)
+          serialized(connection, event, fn -> handle_and_remember(connection, event, opts) end)
 
         finish(delivery, Atom.to_string(event.kind), result)
 
       {:ignore, reason} ->
         finish(delivery, nil, {:ignored, reason})
     end
+  end
+
+  defp handle_and_remember(connection, event, opts) do
+    result = guarded(fn -> handle(connection, event, opts) end)
+    remember(connection, event, result)
+    result
+  end
+
+  # An error while processing ends the delivery as failed, logged and kept
+  # with its message, for the reconciliation to try again.
+  defp guarded(fun) do
+    fun.()
+  rescue
+    exception ->
+      Logger.error(Exception.format(:error, exception, __STACKTRACE__))
+      {:failed, "erro ao processar: " <> Exception.message(exception)}
   end
 
   # Deliveries of the same issue wait for one another.
@@ -268,12 +289,12 @@ defmodule PipeMaestro.Integrations.Ingest do
          :continue <- Conversation.handle(connection, repo, event),
          {:ok, added} <- observe(repo, event),
          {:ok, trigger, pipeline_id} <- match(repo, event, added),
-         {:ok, client} <- client(connection),
-         :ok <- author_allowed(client, connection, repo, trigger, event),
+         {:ok, client} <- Access.client(connection),
+         :ok <- author_allowed(client, trigger, repo, event),
          :ok <- within_limit(repo, trigger),
          :ok <- not_active(repo, event),
          {:ok, issue} <- fresh_issue(client, connection, repo, event),
-         {:ok, runner} <- runner(repo, trigger, opts) do
+         {:ok, runner} <- runner(connection, client, repo, trigger, issue, opts) do
       start(connection, client, repo, %{trigger | pipeline_id: pipeline_id}, issue, runner)
     end
   end
@@ -346,7 +367,7 @@ defmodule PipeMaestro.Integrations.Ingest do
 
   defp matches(
          %Trigger{kind: "comment", command: command} = trigger,
-         %Event{kind: :issue_comment} = event,
+         %Event{kind: :issue_comment, issue: %{is_pull: false}} = event,
          _added
        ) do
     first_line =
@@ -384,32 +405,18 @@ defmodule PipeMaestro.Integrations.Ingest do
     end
   end
 
-  defp client(connection) do
-    case Credentials.client(connection) do
-      {:ok, client} -> {:ok, client}
-      {:error, message} -> {:failed, "sem acesso ao host: " <> message}
-    end
-  end
+  # Whoever caused the event must have write access, unless the trigger takes
+  # any author. A label is checked too: an issue template adds labels for
+  # anyone who opens an issue. A label the reconciliation found has no known
+  # sender; its issue's author stands for it.
+  defp author_allowed(_client, %Trigger{author_policy: "anyone"}, _repo, _event), do: :ok
 
-  # Adding a label already takes write access; the other kinds ask the host.
-  defp author_allowed(_client, _connection, _repo, %Trigger{kind: "label"}, _event), do: :ok
+  defp author_allowed(client, %Trigger{kind: "label"}, repo, event),
+    do: Access.writer(client, repo, event.sender || event.issue.author)
 
-  defp author_allowed(_client, _connection, _repo, %Trigger{author_policy: "anyone"}, _event),
-    do: :ok
-
-  defp author_allowed(client, _connection, repo, _trigger, event) do
+  defp author_allowed(client, _trigger, repo, event) do
     author = if event.comment, do: event.comment.author, else: event.issue.author
-
-    case client.provider.permission(client, repo.full_name, author) do
-      {:ok, permission} when permission in [:admin, :write] ->
-        :ok
-
-      {:ok, _none} ->
-        {:ignored, "o autor não tem permissão de escrita"}
-
-      {:error, error} ->
-        {:failed, "não foi possível ver a permissão do autor: " <> Integrations.describe(error)}
-    end
+    Access.writer(client, repo, author)
   end
 
   defp within_limit(repo, trigger) do
@@ -453,10 +460,10 @@ defmodule PipeMaestro.Integrations.Ingest do
 
   defp fresh_issue(_client, _connection, _repo, %Event{issue: issue}), do: {:ok, issue}
 
-  defp runner(%LinkedRepo{project: nil}, _trigger, _opts),
+  defp runner(_connection, _client, %LinkedRepo{project: nil}, _trigger, _issue, _opts),
     do: {:ignored, "o repositório não está ligado a um projeto"}
 
-  defp runner(repo, trigger, opts) do
+  defp runner(connection, client, repo, trigger, issue, opts) do
     directory = repo.project.directory
 
     suitable? =
@@ -465,8 +472,20 @@ defmodule PipeMaestro.Integrations.Ingest do
         else: fn _runner -> true end
 
     case Runners.pick_online(%Workspace{id: repo.workspace_id}, directory, suitable?, opts) do
-      nil -> {:waiting_runner, "nenhum runner online oferece o diretório #{directory}"}
-      runner -> {:ok, runner}
+      nil ->
+        if connection.api_mode == "control_plane",
+          do:
+            Feedback.status_note(
+              client,
+              repo,
+              issue.number,
+              "Esperando um runner online que ofereça o diretório `#{directory}`; a issue segue assim que um se conectar."
+            )
+
+        {:waiting_runner, "nenhum runner online oferece o diretório #{directory}"}
+
+      runner ->
+        {:ok, runner}
     end
   end
 

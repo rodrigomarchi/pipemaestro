@@ -46,7 +46,9 @@ config :phoenix_live_view, enable_expensive_runtime_checks: true
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
 config :pipe_maestro, PipeMaestro.Secrets, key: "e2e_only_secrets_key"
 
-config :pipe_maestro, PipeMaestro.Integrations, public_url: "http://localhost:#{e2e_http_port}"
+config :pipe_maestro, PipeMaestro.Integrations,
+  allow_private_hosts: true,
+  public_url: "http://localhost:#{e2e_http_port}"
 
 # The platform's GitHub App, against the suite's fake GitHub (e2e/helpers/fakeGitHub.ts).
 github_url = "http://localhost:#{System.get_env("E2E_GITHUB_PORT", "4014")}"

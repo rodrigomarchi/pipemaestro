@@ -3,7 +3,8 @@ defmodule PipeMaestro.MaintenanceTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Audit, Jobs, Maintenance, Repo, Runners}
+  alias PipeMaestro.{Audit, FakeForgejo, Jobs, Maintenance, Repo, Runners}
+  alias PipeMaestro.Integrations.{Delivery, Ingest}
   alias PipeMaestro.Jobs.Event
   alias PipeMaestro.Runners.DeviceAuthorization
 
@@ -67,5 +68,25 @@ defmodule PipeMaestro.MaintenanceTest do
     assert Jobs.list_telemetry(old_job) == []
     # The job itself (its outcome and cost) stays.
     assert Jobs.get_job!(workspace, old_job.id).status == :succeeded
+  end
+
+  test "removes the integrations' deliveries past their retention" do
+    workspace = workspace_fixture()
+    FakeForgejo.start()
+    connection = connection_fixture(workspace)
+
+    for {id, days} <- [{"velha", 40}, {"nova", 1}] do
+      {:ok, delivery} =
+        Ingest.ingest_event(connection, id, "push", %{})
+
+      delivery
+      |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -days, :day))
+      |> Repo.update!()
+    end
+
+    assert %{deliveries: 1} = Maintenance.run(DateTime.utc_now())
+
+    assert [%{external_id: "nova"}] =
+             Repo.all(Delivery)
   end
 end

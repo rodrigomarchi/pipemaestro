@@ -199,8 +199,8 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
     test "tests the connection and removes it", ctx do
       {:ok, view, _html} = live(ctx.conn, ipath(ctx, "/#{ctx.connection.id}"))
 
-      assert view |> element("[data-testid=integration-check]") |> render_click() =~
-               "pipemaestro-bot"
+      view |> element("[data-testid=integration-check]") |> render_click()
+      assert render_async(view) =~ "pipemaestro-bot"
 
       view |> element("[data-testid=integration-delete]") |> render_click()
       assert_redirect(view, ipath(ctx))
@@ -350,8 +350,8 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
       view |> element("[data-testid=delivery-payload-toggle-d-1]") |> render_click()
       assert view |> element("[data-testid=delivery-payload-d-1]") |> render() =~ "acme/nada"
 
-      assert view |> element("[data-testid=delivery-replay-d-1]") |> render_click() =~
-               "Reprocessada: ignorada"
+      view |> element("[data-testid=delivery-replay-d-1]") |> render_click()
+      assert render_async(view) =~ "Reprocessada: ignorada"
     end
   end
 
@@ -373,7 +373,8 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
       })
 
       {:ok, view, _html} = live(ctx.conn, ipath(ctx, "/#{connection.id}/repos/#{repo.id}"))
-      assert view |> element("[data-testid=repo-sync]") |> render_click() =~ "1 issue lida"
+      view |> element("[data-testid=repo-sync]") |> render_click()
+      assert render_async(view) =~ "1 issue lida"
     end
   end
 end

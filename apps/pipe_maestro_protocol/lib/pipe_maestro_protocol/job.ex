@@ -427,7 +427,9 @@ defmodule PipeMaestroProtocol.Job do
   @doc "Whether `name` can be a secret's variable: A-Z, 0-9 and _, not one the runner needs."
   @spec env_name?(term()) :: boolean()
   def env_name?(name),
-    do: is_binary(name) and name =~ @env_name and name not in @reserved_env
+    do:
+      is_binary(name) and name =~ @env_name and name not in @reserved_env and
+        not String.starts_with?(name, "GIT_CONFIG")
 
   defp status?(nil), do: true
 

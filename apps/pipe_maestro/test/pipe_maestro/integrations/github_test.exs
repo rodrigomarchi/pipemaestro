@@ -170,7 +170,7 @@ defmodule PipeMaestro.Integrations.GitHubTest do
       assert connection.base_url == "https://github.test"
       assert connection.status == "pending"
 
-      assert {:error, "essa instalação não é de quem entrou no GitHub"} =
+      assert {:error, "quem entrou no GitHub não administra essa instalação"} =
                Integrations.confirm_installation(connection, "55", "code-1")
 
       assert {:error, _} = Integrations.confirm_installation(connection, "99", "codigo-errado")
@@ -184,6 +184,40 @@ defmodule PipeMaestro.Integrations.GitHubTest do
                Integrations.confirm_installation(connection, "99", "code-1")
 
       assert Integrations.github_connection("99").id == connection.id
+
+      {:ok, other} =
+        Integrations.create_connection(workspace_fixture(), member_fixture(ctx.workspace), %{
+          "name" => "GitHub",
+          "provider" => "github",
+          "auth_kind" => "github_app"
+        })
+
+      assert {:error, "essa instalação já está ligada a outra conexão"} =
+               Integrations.confirm_installation(other, "99", "code-1")
+    end
+
+    test "someone who only sees an installation cannot take it", ctx do
+      FakeGitHub.start(
+        user_installations: %{
+          99 => %{"type" => "Organization", "login" => "acme"},
+          100 => %{"type" => "User", "login" => "outra-pessoa"},
+          101 => %{"type" => "User", "login" => "ana"}
+        },
+        memberships: %{"acme" => "member"}
+      )
+
+      {:ok, connection} =
+        Integrations.create_connection(ctx.workspace, member_fixture(ctx.workspace), %{
+          "name" => "GitHub",
+          "provider" => "github",
+          "auth_kind" => "github_app"
+        })
+
+      assert {:error, _} = Integrations.confirm_installation(connection, "99", "code-1")
+      assert {:error, _} = Integrations.confirm_installation(connection, "100", "code-1")
+
+      assert {:ok, %Connection{external_account_id: "101"}} =
+               Integrations.confirm_installation(connection, "101", "code-1")
     end
 
     test "maps permissions and lists the installation's repositories", ctx do
@@ -237,6 +271,10 @@ defmodule PipeMaestro.Integrations.GitHubTest do
                Ingest.receive_app_webhook(%{headers | "x-hub-signature-256" => "sha256=00"}, body)
     end
 
+    test "a GitHub connection takes no webhook of its own", ctx do
+      assert Ingest.record_webhook(ctx.connection.id, %{}, "{}") == {:error, :not_found}
+    end
+
     test "another installation's event is acknowledged and dropped" do
       body = JSON.encode!(%{"action" => "opened", "installation" => %{"id" => 1}})
       headers = Map.put(headers("issues"), "x-hub-signature-256", sign(body))
@@ -246,7 +284,7 @@ defmodule PipeMaestro.Integrations.GitHubTest do
 
   describe "feedback on GitHub" do
     test "a stage is a check run and the draft is marked ready through GraphQL" do
-      fake = FakeGitHub.start()
+      fake = FakeGitHub.start(permissions: %{"ana" => "write"})
       FakeGitHub.put_issue(fake, "acme/app", %{"number" => 3})
       workspace = workspace_fixture()
       user = member_fixture(workspace)
@@ -299,10 +337,47 @@ defmodule PipeMaestro.Integrations.GitHubTest do
       assert Feedback.sync(task.id) == :ok
       assert FakeGitHub.state(fake).ready == ["PR_1"]
 
-      assert Enum.all?(
-               Enum.drop(FakeGitHub.repo(fake, "acme/app").check_runs, 1),
-               &(&1["conclusion"] == "success")
-             )
+      # One check run per stage, updated as the task goes.
+      runs = FakeGitHub.repo(fake, "acme/app").check_runs
+      assert Enum.map(runs, & &1["name"]) == ["pipemaestro/a", "pipemaestro/b"]
+      assert Enum.all?(runs, &(&1["conclusion"] == "success"))
+
+      # A stopped stage offers to run it again; pressing it does.
+      Repo.reload!(task)
+      |> Ecto.Changeset.change(
+        status: :awaiting_decision,
+        current_stage: 1,
+        decision_reason: "travou"
+      )
+      |> Repo.update!()
+
+      Feedback.sync(task.id)
+
+      stopped =
+        Enum.find(FakeGitHub.repo(fake, "acme/app").check_runs, &(&1["name"] == "pipemaestro/b"))
+
+      assert [%{"identifier" => "retry"}] = stopped["actions"]
+
+      body =
+        JSON.encode!(%{
+          "action" => "requested_action",
+          "installation" => %{"id" => 99},
+          "repository" => %{"full_name" => "acme/app"},
+          "sender" => %{"login" => "ana"},
+          "check_run" => %{"head_sha" => "abc", "name" => "pipemaestro/b"},
+          "requested_action" => %{"identifier" => "retry"}
+        })
+
+      Integrations.subscribe_deliveries(workspace)
+      headers = Map.put(headers("check_run", "gh-retry"), "x-hub-signature-256", sign(body))
+      {:ok, _} = Ingest.receive_app_webhook(headers, body)
+
+      assert_receive {:delivery_updated,
+                      %Delivery{status: "processed", outcome: "etapa refeita a pedido de ana"}},
+                     2_000
+
+      assert [%{decided_via: "GitHub: ana", action: :retry}] =
+               Repo.preload(Repo.reload!(task), :decisions).decisions
     end
   end
 
@@ -313,9 +388,23 @@ defmodule PipeMaestro.Integrations.GitHubTest do
     fake =
       FakeGitHub.start(
         deliveries: [
-          %{"id" => 1, "status" => "OK", "delivered_at" => recent},
-          %{"id" => 2, "status" => "Invalid HTTP Response: 502", "delivered_at" => recent},
-          %{"id" => 3, "status" => "timed out", "delivered_at" => old}
+          %{"id" => 1, "guid" => "a", "status" => "OK", "delivered_at" => recent},
+          %{
+            "id" => 2,
+            "guid" => "b",
+            "status" => "Invalid HTTP Response: 502",
+            "delivered_at" => recent
+          },
+          %{"id" => 3, "guid" => "c", "status" => "timed out", "delivered_at" => old},
+          # Asked again already: not again.
+          %{"id" => 4, "guid" => "d", "status" => "timed out", "delivered_at" => recent},
+          %{
+            "id" => 5,
+            "guid" => "d",
+            "status" => "timed out",
+            "delivered_at" => recent,
+            "redelivery" => true
+          }
         ]
       )
 

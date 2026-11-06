@@ -65,11 +65,10 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
     end
   end
 
+  # Off the LiveView's process: a host that does not answer must not freeze the page.
   def handle_event("sync", _params, socket) do
-    taken = Reconciler.sync_repo(socket.assigns.repo)
-
-    {:noreply,
-     put_flash(socket, :info, "Sincronizado: #{plural(taken, "issue lida", "issues lidas")}.")}
+    repo = socket.assigns.repo
+    {:noreply, start_async(socket, :sync, fn -> Reconciler.sync_repo(repo) end)}
   end
 
   def handle_event("unlink", _params, socket) do
@@ -129,6 +128,15 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
     :ok = Integrations.delete_trigger(trigger, socket.assigns.current_scope.user)
     {:noreply, socket |> reload() |> close_trigger() |> put_flash(:info, "Gatilho removido.")}
   end
+
+  @impl true
+  def handle_async(:sync, {:ok, taken}, socket),
+    do:
+      {:noreply,
+       put_flash(socket, :info, "Sincronizado: #{plural(taken, "issue lida", "issues lidas")}.")}
+
+  def handle_async(:sync, {:exit, reason}, socket),
+    do: {:noreply, put_flash(socket, :error, "O host não respondeu: #{inspect(reason)}")}
 
   defp trigger_key(%Trigger{kind: "label", label: label}), do: "label-#{key(label)}"
   defp trigger_key(%Trigger{kind: "comment", command: command}), do: "comment-#{key(command)}"

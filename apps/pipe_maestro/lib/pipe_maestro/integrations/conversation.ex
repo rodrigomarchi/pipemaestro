@@ -11,7 +11,8 @@ defmodule PipeMaestro.Integrations.Conversation do
     commands that do;
   - a review asking for changes on the pull request of a finished task
     becomes the stage "Correção N";
-  - the pull request merged is told on the issue.
+  - the pull request merged is told on the issue;
+  - "Refazer etapa" on a stopped stage's check run (GitHub) runs it again.
 
   Anything else goes on to the triggers (`:continue`). Commands need the
   platform to call the host (`api_mode` `"control_plane"`).
@@ -20,12 +21,12 @@ defmodule PipeMaestro.Integrations.Conversation do
   import Ecto.Query
 
   alias PipeMaestro.Accounts.User
-  alias PipeMaestro.{Audit, Integrations, Repo, Tasks}
+  alias PipeMaestro.{Audit, Repo, Tasks}
 
   alias PipeMaestro.Integrations.{
+    Access,
     Commands,
     Connection,
-    Credentials,
     Event,
     Feedback,
     IssueState,
@@ -64,19 +65,13 @@ defmodule PipeMaestro.Integrations.Conversation do
     end
   end
 
-  def handle(_connection, repo, %Event{kind: :pr_review, review: %{state: :rejected}} = event) do
+  def handle(connection, repo, %Event{kind: :pr_review, review: %{state: :rejected}} = event) do
     case task_for(repo, event) do
       nil ->
         :continue
 
       %Task{status: status} = task when status in [:succeeded, :canceled] ->
-        prompt =
-          "Pedido de mudanças no review do pull request, por @#{event.sender}:\n\n#{event.review.body}"
-
-        case Tasks.correct(task, prompt, by: owner(task)) do
-          {:ok, task} -> {:processed, "correção pedida pelo review", %{task_id: task.id}}
-          {:error, reason} -> {:ignored, "a correção não pôde começar (#{reason})"}
-        end
+        correct_from_review(connection, repo, task, event)
 
       _active ->
         {:ignored, "a tarefa ainda está em andamento; o review fica para quando ela terminar"}
@@ -104,7 +99,66 @@ defmodule PipeMaestro.Integrations.Conversation do
   def handle(_connection, _repo, %Event{kind: :pr_closed}),
     do: {:ignored, "pull request fechado sem integrar"}
 
+  # "Refazer etapa" on a stopped stage's check run (GitHub).
+  def handle(
+        connection,
+        repo,
+        %Event{kind: :check_action, check: %{action: "retry", head_sha: sha}} = event
+      ) do
+    with %Task{} = task <- task_for_commit(repo, sha) || {:ignored, "nenhuma tarefa nesse commit"},
+         {:ok, client} <- client(connection),
+         :ok <- Access.writer(client, repo, event.sender) do
+      case Tasks.retry_stage(task, nil,
+             by: owner(task),
+             via: "#{provider_name(connection)}: #{event.sender}"
+           ) do
+        {:ok, task} ->
+          {:processed, "etapa refeita a pedido de #{event.sender}", %{task_id: task.id}}
+
+        {:error, :not_awaiting} ->
+          {:ignored, "a tarefa não espera uma decisão agora"}
+      end
+    end
+  end
+
+  def handle(_connection, _repo, %Event{kind: :check_action}),
+    do: {:ignored, "ação de check sem uso"}
+
   def handle(_connection, _repo, _event), do: :continue
+
+  defp task_for_commit(repo, sha) when is_binary(sha), do: latest_task(repo, head_sha: sha)
+  defp task_for_commit(_repo, _sha), do: nil
+
+  # A review's text goes into the agent's prompt: only a writer's.
+  defp correct_from_review(connection, repo, task, event) do
+    with {:ok, client} <- client(connection),
+         :ok <- Access.writer(client, repo, event.sender) do
+      prompt = review_prompt(client, repo, event)
+
+      case Tasks.correct(task, prompt,
+             by: owner(task),
+             via: "#{provider_name(connection)}: #{event.sender}"
+           ) do
+        {:ok, task} -> {:processed, "correção pedida pelo review", %{task_id: task.id}}
+        {:error, reason} -> {:ignored, "a correção não pôde começar (#{reason})"}
+      end
+    end
+  end
+
+  # The review's text and its comments on lines of the code.
+  defp review_prompt(client, repo, event) do
+    lines =
+      case client.provider.review_comments(client, repo.full_name, event.pr.number, event.review) do
+        {:ok, comments} -> Enum.map_join(comments, "\n", &"- `#{&1.path}`#{line(&1)}: #{&1.body}")
+        {:error, _} -> ""
+      end
+
+    "Pedido de mudanças no review do pull request, por @#{event.sender}:\n\n#{event.review.body}" <>
+      if(lines == "", do: "", else: "\n\nComentários nas linhas:\n\n" <> lines)
+  end
+
+  defp line(%{line: nil}), do: ""
+  defp line(%{line: line}), do: " (linha #{line})"
 
   # The repository's comment command, or the default one.
   defp command(%LinkedRepo{triggers: triggers}) when is_list(triggers) do
@@ -172,8 +226,10 @@ defmodule PipeMaestro.Integrations.Conversation do
 
   defp apply_command(connection, repo, task, event, parsed, command) do
     with {:ok, client} <- client(connection),
-         :ok <- writer(client, repo, event.comment.author) do
-      case run(task, parsed) do
+         :ok <- Access.writer(client, repo, event.comment.author) do
+      via = "#{provider_name(connection)}: #{event.comment.author}"
+
+      case run(task, parsed, via) do
         {:ok, _task} ->
           _ =
             client.provider.add_reaction(
@@ -210,7 +266,7 @@ defmodule PipeMaestro.Integrations.Conversation do
 
   defp unknown(connection, repo, event, command) do
     with {:ok, client} <- client(connection),
-         :ok <- writer(client, repo, event.comment.author) do
+         :ok <- Access.writer(client, repo, event.comment.author) do
       _ =
         client.provider.create_comment(
           client,
@@ -226,44 +282,29 @@ defmodule PipeMaestro.Integrations.Conversation do
   defp client(%Connection{api_mode: "runner"}),
     do: {:ignored, "comandos precisam que a plataforma chame o host"}
 
-  defp client(connection) do
-    case Credentials.client(connection) do
-      {:ok, client} -> {:ok, client}
-      {:error, message} -> {:failed, "sem acesso ao host: " <> message}
-    end
-  end
+  defp client(connection), do: Access.client(connection)
 
-  defp writer(client, repo, login) do
-    case client.provider.permission(client, repo.full_name, login) do
-      {:ok, permission} when permission in [:admin, :write] ->
-        :ok
+  defp run(task, %{action: :advance, text: text}, via),
+    do: Tasks.advance(task, blank(text), by: owner(task), via: via)
 
-      {:ok, _none} ->
-        {:ignored, "o autor não tem permissão de escrita"}
+  defp run(task, %{action: :retry, text: text}, via),
+    do: Tasks.retry_stage(task, blank(text), by: owner(task), via: via)
 
-      {:error, error} ->
-        {:failed, "não foi possível ver a permissão do autor: " <> Integrations.describe(error)}
-    end
-  end
+  defp run(task, %{action: :pause}, _via), do: Tasks.request_pause(task)
+  defp run(task, %{action: :cancel}, via), do: Tasks.cancel_task(task, by: owner(task), via: via)
 
-  defp run(task, %{action: :advance, text: text}),
-    do: Tasks.advance(task, blank(text), by: owner(task))
+  defp run(task, %{action: :correct, text: text}, via),
+    do: Tasks.correct(task, blank(text), by: owner(task), via: via)
 
-  defp run(task, %{action: :retry, text: text}),
-    do: Tasks.retry_stage(task, blank(text), by: owner(task))
-
-  defp run(task, %{action: :pause}), do: Tasks.request_pause(task)
-  defp run(task, %{action: :cancel}), do: Tasks.cancel_task(task, by: owner(task))
-
-  defp run(task, %{action: :correct, text: text}),
-    do: Tasks.correct(task, blank(text), by: owner(task))
-
-  defp run(task, %{action: :answer, text: text}) do
+  defp run(task, %{action: :answer, text: text}, via) do
     questions = get_in(task.decision_questionnaire || %{}, ["perguntas"]) || []
-    Tasks.answer(task, Commands.answers(text, questions), nil, by: owner(task))
+    Tasks.answer(task, Commands.answers(text, questions), nil, by: owner(task), via: via)
   end
 
   defp owner(%Task{created_by_user_id: id}), do: Repo.get(User, id)
+
+  defp provider_name(%Connection{provider: "github"}), do: "GitHub"
+  defp provider_name(%Connection{}), do: "Forgejo"
 
   defp blank(text), do: if(String.trim(text) == "", do: nil, else: text)
 
