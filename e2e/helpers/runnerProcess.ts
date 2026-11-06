@@ -60,10 +60,14 @@ export class RunnerProcess {
   /** Starts `mix <task> <args>` in the runner app (MIX_ENV=e2e, like the server). */
   start(task: string, args: string[] = []): void {
     this.output = "";
+    // A job's git credential reaches git through these variables; the runner
+    // sets them per job, never from the shell that runs the suite.
+    const { GIT_CONFIG_PARAMETERS: _params, PIPEMAESTRO_GIT_CREDENTIAL_FILE: _file, ...inherited } =
+      process.env;
     this.child = spawn("mix", [task, ...args], {
       cwd: runnerDir,
       env: {
-        ...process.env,
+        ...inherited,
         ...this.extraEnv,
         MIX_ENV: "e2e",
         RUNNER_CONFIG_DIR: this.configDir,
