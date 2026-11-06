@@ -13,13 +13,15 @@ defmodule PipeMaestroWeb.HealthController do
   def index(conn, _params), do: text(conn, "ok")
 
   @doc """
-  The control plane's version (`PipeMaestro.Version`) and the release it runs
-  from: `scripts/deploy.sh` stamps the release with the commit it built.
+  The control plane's version (`PipeMaestro.Version`), the runner's version it
+  requires, and the release it runs from: `scripts/deploy.sh` stamps the
+  release with the commit it built.
   """
   @spec version(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def version(conn, _params) do
     json(conn, %{
       version: Version.version(),
+      runner_version: Version.runner_version(),
       release: to_string(Application.spec(:pipe_maestro, :vsn))
     })
   end

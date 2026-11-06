@@ -1,10 +1,11 @@
 defmodule PipeMaestroRunner.Update do
   @moduledoc """
   What the runner does when the platform refuses it for not being on the
-  platform's version (`"outdated"`, on login and on every join).
+  runner's version the platform asks for (`"outdated"`, on login and on every
+  join).
 
   As a single binary (Burrito's `__BURRITO_BIN_PATH`) it offers to download
-  and install the platform's version in its place, and runs the same command
+  and install that version in its place, and runs the same command
   again (`PipeMaestroRunner.SelfUpdate`): it asks in a terminal, and does it
   without asking with `--auto-update` (the service). Otherwise (Mix, a
   release, no terminal, a "no") it says which version it runs, which one the
@@ -17,8 +18,8 @@ defmodule PipeMaestroRunner.Update do
   @spec message(map()) :: String.t()
   def message(refusal) do
     """
-    Este runner está na versão #{refusal["runner_version"] || "?"}, e a plataforma está na \
-    #{refusal["version"] || "?"}: só a versão da plataforma conecta.
+    Este runner está na versão #{refusal["runner_version"] || "?"}, e a plataforma pede a \
+    versão #{refusal["version"] || "?"} do runner: só ela conecta.
 
     Baixe a versão atual em #{refusal["download_url"] || "a tela Executores da plataforma"}, \
     substitua o binário (no repositório: atualize o código) e rode de novo.
@@ -29,8 +30,8 @@ defmodule PipeMaestroRunner.Update do
   @spec prompt(map()) :: String.t()
   def prompt(refusal) do
     """
-    Este runner está na versão #{refusal["runner_version"] || "?"} e a plataforma está na \
-    #{refusal["version"] || "?"}.
+    Este runner está na versão #{refusal["runner_version"] || "?"} e a plataforma pede a \
+    versão #{refusal["version"] || "?"} do runner.
     Baixar e instalar a versão #{refusal["version"] || "?"} agora? [S/n]\
     """
   end

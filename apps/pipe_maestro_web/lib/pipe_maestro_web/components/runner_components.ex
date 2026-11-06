@@ -109,12 +109,12 @@ defmodule PipeMaestroWeb.RunnerComponents do
   def downloads_url, do: Application.get_env(:pipe_maestro_web, :runner_downloads_url)
 
   @doc """
-  Links to the runner's binary for each platform, built by the same deploy as
-  this control plane, and the command that installs one.
+  Links to the runner's binary for each platform, of the runner's version this
+  control plane requires, and the command that installs one.
   """
   attr :url, :string, required: true, doc: "the platform URL"
   attr :downloads, :string, required: true, doc: "where the binaries are, under the platform"
-  attr :version, :string, required: true, doc: "the version they were built as"
+  attr :version, :string, required: true, doc: "the runner's version they were built as"
 
   @spec runner_downloads(map()) :: Phoenix.LiveView.Rendered.t()
   def runner_downloads(assigns) do
@@ -143,7 +143,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
       </div>
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
         Versão <span class="font-mono" data-testid="runner-download-version">{@version}</span>,
-        a mesma desta plataforma. Pelo terminal, o macOS não pede para liberar o app
+        a que esta plataforma pede. Pelo terminal, o macOS não pede para liberar o app
         (troque <span class="font-mono">macos_arm64</span> pelo seu alvo):
       </p>
       <pre
@@ -173,11 +173,12 @@ defmodule PipeMaestroWeb.RunnerComponents do
   @doc """
   The commands that connect a new runner to this platform: with published
   binaries, download one and use it (`login` names the platform only when it
-  is not the default one); without them, the repository's make targets.
+  is not the default one); without them, the repository's make targets. Both
+  name the runner's version the platform requires.
   """
   attr :url, :string, required: true, doc: "the platform URL the runner should use"
   attr :downloads, :string, default: nil, doc: "where the binaries are, if published"
-  attr :version, :string, default: nil, doc: "the version they were built as"
+  attr :version, :string, required: true, doc: "the runner's version the platform requires"
 
   @spec connect_instructions(map()) :: Phoenix.LiveView.Rendered.t()
   def connect_instructions(%{downloads: downloads} = assigns) when is_binary(downloads) do
@@ -189,6 +190,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
     assigns = assign(assigns, login: login)
 
     ~H"""
+    <.expected_version version={@version} />
     <ol class="space-y-4 text-sm text-gray-600 dark:text-gray-300">
       <li>
         <p class="font-medium text-gray-900 dark:text-white">
@@ -217,6 +219,7 @@ defmodule PipeMaestroWeb.RunnerComponents do
 
   def connect_instructions(assigns) do
     ~H"""
+    <.expected_version version={@version} />
     <ol class="space-y-4 text-sm text-gray-600 dark:text-gray-300">
       <li>
         <p class="font-medium text-gray-900 dark:text-white">
@@ -237,6 +240,24 @@ defmodule PipeMaestroWeb.RunnerComponents do
         <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-xs text-gray-100 dark:bg-gray-950 dark:ring-1 dark:ring-gray-700">make runner.start</pre>
       </li>
     </ol>
+    """
+  end
+
+  attr :version, :string, required: true
+
+  defp expected_version(assigns) do
+    ~H"""
+    <p class="mb-4 flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+      A plataforma pede o runner na versão
+      <.badge
+        size="sm"
+        variant="soft"
+        color="primary"
+        class="font-mono"
+        label={@version}
+        data-testid="runners-expected-version"
+      />
+    </p>
     """
   end
 

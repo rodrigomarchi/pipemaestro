@@ -22,9 +22,9 @@ export class RunnerProcess {
   private exit?: Promise<number | null>;
 
   /**
-   * The version the runner is built as (`CP_VERSION`). The platform takes only
-   * runners on its own version, so by default it is the server's
-   * (`versions.controlPlane`); `useVersion` changes it, keeping the credentials.
+   * The version the runner is built as (`RUNNER_VERSION`). The platform takes only
+   * runners on the runner's version it requires, so by default it is that one
+   * (`versions.runner`); `useVersion` changes it, keeping the credentials.
    */
   private version: string;
 
@@ -47,7 +47,7 @@ export class RunnerProcess {
     } = {},
   ) {
     this.configDir = mkdtempSync(join(tmpdir(), options.configPrefix ?? "pipemaestro-e2e-"));
-    this.version = options.version ?? versions.controlPlane;
+    this.version = options.version ?? versions.runner;
     this.claudeBin = options.claudeBin ?? fakeClaude;
     this.extraEnv = options.env ?? {};
   }
@@ -68,7 +68,7 @@ export class RunnerProcess {
         MIX_ENV: "e2e",
         RUNNER_CONFIG_DIR: this.configDir,
         CLAUDE_BIN: this.claudeBin,
-        CP_VERSION: this.version,
+        RUNNER_VERSION: this.version,
       },
     });
     this.child.stdout?.on("data", (chunk) => (this.output += chunk.toString()));

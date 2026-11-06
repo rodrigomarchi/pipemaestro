@@ -120,20 +120,35 @@ if [ ! -f "${TARBALL}" ]; then
 fi
 
 # ------------------------------------------------------------------
-# 4. The runner's binaries, from the same commit, in the toolchain image
-#    (docker/runner-binary). Published before the release goes live: a
-#    binary that fails to build stops the deploy here.
+# 4. The runner's binaries, in the toolchain image (docker/runner-binary),
+#    only when the runner's version changed. It follows the last commit
+#    that changed the runner (PipeMaestroProtocol.Version.Git.runner/1);
+#    the published VERSION names the one the binaries were built as.
+#    Published before the release goes live: a binary that fails to build
+#    stops the deploy here.
 # ------------------------------------------------------------------
 RUNNER_VERSION="$(cd apps/pipe_maestro_runner && mix runner.version | tail -n 1)"
-RUNNER_STAGE="${DOWNLOADS_DIR}/runner.new"
-rm -rf "${RUNNER_STAGE}"
-CP_VERSION="${RUNNER_VERSION}" scripts/build_runner_binaries.sh "${RUNNER_STAGE}"
-chmod 0755 "${RUNNER_STAGE}"
-rm -rf "${DOWNLOADS_DIR}/runner.old"
-if [ -d "${DOWNLOADS_DIR}/runner" ]; then mv "${DOWNLOADS_DIR}/runner" "${DOWNLOADS_DIR}/runner.old"; fi
-mv "${RUNNER_STAGE}" "${DOWNLOADS_DIR}/runner"
-rm -rf "${DOWNLOADS_DIR}/runner.old"
-echo "==> Runner ${RUNNER_VERSION} published in ${DOWNLOADS_DIR}/runner"
+
+# Whether the binaries published in <dir> are already of <version>.
+runner_published() {
+  [ "$(cat "$1/VERSION" 2>/dev/null)" = "$2" ]
+}
+
+if runner_published "${DOWNLOADS_DIR}/runner" "${RUNNER_VERSION}"; then
+  echo "==> Runner ${RUNNER_VERSION} already published in ${DOWNLOADS_DIR}/runner: not rebuilt"
+else
+  RUNNER_STAGE="${DOWNLOADS_DIR}/runner.new"
+  rm -rf "${RUNNER_STAGE}"
+  RUNNER_VERSION="${RUNNER_VERSION}" scripts/build_runner_binaries.sh "${RUNNER_STAGE}"
+  echo "${RUNNER_VERSION}" > "${RUNNER_STAGE}/VERSION"
+  chmod 0755 "${RUNNER_STAGE}"
+  chmod 0644 "${RUNNER_STAGE}/VERSION"
+  rm -rf "${DOWNLOADS_DIR}/runner.old"
+  if [ -d "${DOWNLOADS_DIR}/runner" ]; then mv "${DOWNLOADS_DIR}/runner" "${DOWNLOADS_DIR}/runner.old"; fi
+  mv "${RUNNER_STAGE}" "${DOWNLOADS_DIR}/runner"
+  rm -rf "${DOWNLOADS_DIR}/runner.old"
+  echo "==> Runner ${RUNNER_VERSION} published in ${DOWNLOADS_DIR}/runner"
+fi
 
 # ------------------------------------------------------------------
 # 5. Hand it to DeployEx

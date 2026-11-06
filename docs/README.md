@@ -57,6 +57,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0032 | [Sem ruas sem saída](adr/0032-sem-ruas-sem-saida.md) | Aceita |
 | 0033 | [Contrato entre o harness e o agente](adr/0033-contrato-entre-harness-e-agente.md) | Aceita |
 | 0034 | [O projeto é runner + pasta e a escolha única de onde o trabalho roda](adr/0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md) | Aceita |
+| 0035 | [Versão própria do runner](adr/0035-versao-propria-do-runner.md) | Aceita |
 
 ## Specs
 

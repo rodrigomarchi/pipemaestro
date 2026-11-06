@@ -23,7 +23,10 @@ defmodule PipeMaestroWeb.RunnersLive do
      socket
      |> assign(page_title: "Executores", renaming: nil, rename_form: nil, connecting: false)
      |> assign(platform_url: PipeMaestroWeb.Endpoint.url())
-     |> assign(downloads_url: RunnerComponents.downloads_url(), version: Version.version())
+     |> assign(
+       downloads_url: RunnerComponents.downloads_url(),
+       runner_version: Version.runner_version()
+     )
      |> load_runners()}
   end
 
@@ -304,7 +307,7 @@ defmodule PipeMaestroWeb.RunnersLive do
             title="Baixar o runner"
             description="Um executável por plataforma, sem instalar nada antes. Depois: pipemaestro login e pipemaestro start."
           />
-          <.runner_downloads url={@platform_url} downloads={@downloads_url} version={@version} />
+          <.runner_downloads url={@platform_url} downloads={@downloads_url} version={@runner_version} />
         </.card_content>
       </.card>
 
@@ -315,7 +318,11 @@ defmodule PipeMaestroWeb.RunnersLive do
         max_width="lg"
         on_cancel={JS.push("close_connect")}
       >
-        <.connect_instructions url={@platform_url} downloads={@downloads_url} version={@version} />
+        <.connect_instructions
+          url={@platform_url}
+          downloads={@downloads_url}
+          version={@runner_version}
+        />
       </.modal>
 
       <.modal

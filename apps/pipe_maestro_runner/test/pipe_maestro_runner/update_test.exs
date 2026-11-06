@@ -62,13 +62,30 @@ defmodule PipeMaestroRunner.UpdateTest do
     end)
   end
 
-  test "the question names both versions" do
+  test "the question names the runner's version and the one the platform asks for" do
     prompt = Update.prompt(%{"version" => "dev+def5678", "runner_version" => "dev+abc1234"})
 
     assert prompt =~
-             "Este runner está na versão dev+abc1234 e a plataforma está na dev+def5678."
+             "Este runner está na versão dev+abc1234 e a plataforma pede a versão dev+def5678 do runner."
+
+    refute prompt =~ "a plataforma está na"
 
     assert prompt =~ "Baixar e instalar a versão dev+def5678 agora? [S/n]"
+  end
+
+  test "the message says which runner's version the platform asks for" do
+    message =
+      Update.message(%{
+        "version" => "dev+def5678",
+        "runner_version" => "dev+abc1234",
+        "download_url" => "https://pipemaestro.example/downloads/runner/"
+      })
+
+    assert message =~
+             "Este runner está na versão dev+abc1234, e a plataforma pede a versão dev+def5678 do runner"
+
+    refute message =~ "a plataforma está na"
+    assert message =~ "https://pipemaestro.example/downloads/runner/"
   end
 
   for answer <- ["\n", "s\n", "S\n", "sim\n"] do

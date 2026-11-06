@@ -40,9 +40,12 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-# A fixed control-plane version, so the runners' "outdated" badge does not
-# depend on the git state of the checkout running the tests.
-config :pipe_maestro, PipeMaestro.Version, version: "2026-11-04.02"
+# Fixed versions, the control plane's and the runner's it requires, so the
+# runners' "outdated" badge does not depend on the git state of the checkout
+# running the tests. They differ, as they do when a deploy leaves the runner be.
+config :pipe_maestro, PipeMaestro.Version,
+  version: "2026-11-04.02",
+  runner_version: "2026-11-03.02"
 
 # Fixture runners announce made-up versions; the tests of the rule turn it on.
 config :pipe_maestro, :runner_version_policy, :off
