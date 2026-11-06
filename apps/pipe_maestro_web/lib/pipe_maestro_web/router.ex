@@ -40,6 +40,9 @@ defmodule PipeMaestroWeb.Router do
   scope "/", PipeMaestroWeb do
     pipe_through [:browser, :require_authenticated_user]
 
+    # One address for every OAuth app registered on a git host.
+    get "/integrations/oauth/callback", IntegrationOAuthController, :callback
+
     live_session :user, on_mount: [{PipeMaestroWeb.UserAuth, :require_authenticated}] do
       live "/workspaces", WorkspacePickerLive
       live "/runners/activate", ActivateRunnerLive
@@ -56,6 +59,11 @@ defmodule PipeMaestroWeb.Router do
       live "/w/:workspace_slug/pull-requests", PullRequestsLive
       live "/w/:workspace_slug/audit", AuditLive
       live "/w/:workspace_slug/secrets", SecretsLive
+      live "/w/:workspace_slug/integrations", IntegrationLive.Index
+      live "/w/:workspace_slug/integrations/new", IntegrationLive.Form, :new
+      live "/w/:workspace_slug/integrations/:id", IntegrationLive.Show
+      live "/w/:workspace_slug/integrations/:id/edit", IntegrationLive.Form, :edit
+      live "/w/:workspace_slug/integrations/:id/repos/:repo_id", IntegrationLive.Repo
       live "/w/:workspace_slug/runners", RunnersLive
       live "/w/:workspace_slug/runners/:id", RunnerLive
       live "/w/:workspace_slug/jobs", JobsLive

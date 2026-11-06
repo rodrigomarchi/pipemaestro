@@ -235,6 +235,15 @@ defmodule PipeMaestroWeb.Layouts do
               active={@active == :secrets}
               data-testid="sidebar-secrets"
             />
+            <.sidebar_item
+              :if={can?(@current_scope, :manage_integrations)}
+              label="Integrações"
+              path={@home <> "/integrations"}
+              icon="hero-link"
+              link_type="live_redirect"
+              active={@active == :integrations}
+              data-testid="sidebar-integrations"
+            />
           </.sidebar_group>
 
           <:footer>
