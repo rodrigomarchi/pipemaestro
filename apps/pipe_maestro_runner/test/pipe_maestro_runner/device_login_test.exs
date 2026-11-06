@@ -80,7 +80,7 @@ defmodule PipeMaestroRunner.DeviceLoginTest do
     assert run(__MODULE__.Expired, hello, self()) == {:error, :expired}
   end
 
-  test "an outdated runner is told the runner's version the platform asks for and where to download it", %{
+  test "an outdated runner is told the version the platform asks for and where to get it", %{
     hello: hello
   } do
     refusal = %{
