@@ -22,12 +22,13 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
       )
 
     connection = connection_fixture(workspace)
+    project = project_fixture(runner, "app")
 
     {:ok, repo} =
       Integrations.link_repo(
         connection,
         user,
-        %{"full_name" => "acme/app", "project_id" => project_fixture(workspace).id},
+        %{"full_name" => "acme/app", "project_id" => project.id},
         "https://pm.test/hook"
       )
 
@@ -51,9 +52,19 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
       fake: fake,
       connection: connection,
       repo: repo,
+      project: project,
+      runner: runner,
       opts: [presence: fn _ -> MapSet.new([runner.id]) end]
     }
   end
+
+  # The project loses its runner (deleted), or gets it back.
+  defp put_runner(ctx, runner_id),
+    do:
+      ctx.project
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.force_change(:runner_id, runner_id)
+      |> Repo.update!()
 
   defp now_iso, do: DateTime.utc_now() |> DateTime.to_iso8601()
   defp triages(ctx), do: length(Proposals.list(ctx.workspace, %{"kind" => "task"}))
@@ -130,8 +141,10 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
       "updated_at" => now_iso()
     })
 
-    Reconciler.run(DateTime.utc_now(), presence: fn _ -> MapSet.new() end)
+    put_runner(ctx, nil)
+    Reconciler.run(DateTime.utc_now(), ctx.opts)
     assert [%Delivery{status: "waiting_runner"}] = Repo.all(Delivery)
+    put_runner(ctx, ctx.runner.id)
 
     assert %{retried: 1} = Reconciler.run(DateTime.utc_now(), ctx.opts)
     assert triages(ctx) == 1
@@ -171,7 +184,8 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
       )
       |> Repo.update!()
 
-    Reconciler.run(DateTime.utc_now(), Keyword.put(ctx.opts, :presence, fn _ -> MapSet.new() end))
+    put_runner(ctx, nil)
+    Reconciler.run(DateTime.utc_now(), ctx.opts)
     assert %Delivery{status: "waiting_runner", attempts: 1} = Repo.reload!(lost)
   end
 

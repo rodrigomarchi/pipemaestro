@@ -5,6 +5,7 @@ defmodule PipeMaestro.Integrations.IngestTest do
 
   alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Proposals, Repo, Runners, Tasks}
   alias PipeMaestro.Integrations.{Connection, Delivery, Feedback, Ingest, IssueState}
+  alias PipeMaestro.Projects.Project
   alias PipeMaestro.Tasks.Task
 
   @fixtures Path.expand("../../support/fixtures/forgejo", __DIR__)
@@ -32,7 +33,7 @@ defmodule PipeMaestro.Integrations.IngestTest do
         })
       )
 
-    project = project_fixture(workspace)
+    project = project_fixture(runner, "app")
     connection = connection_fixture(workspace)
 
     {:ok, repo} =
@@ -327,18 +328,37 @@ defmodule PipeMaestro.Integrations.IngestTest do
     end
   end
 
-  describe "waiting for a runner" do
-    test "a delivery without a runner online waits, and the retry processes it", ctx do
+  describe "where the work runs" do
+    test "the project's runner offline is no reason to wait: the job waits for it", ctx do
       trigger(ctx, %{"kind" => "label", "label" => "pipemaestro"})
+
+      offline = %{ctx | opts: [presence: fn _ -> MapSet.new() end]}
+
+      assert %Delivery{status: "processed", proposal_job_id: job_id} =
+               deliver(offline, "issue_label", payload("issue_label"))
+
+      assert Jobs.get_job!(ctx.workspace, job_id).status == :queued
+    end
+
+    test "a project without a runner waits, and the retry processes it once it has one", ctx do
+      trigger(ctx, %{"kind" => "label", "label" => "pipemaestro"})
+      project = Repo.get!(Project, ctx.repo.project_id)
+      project |> Ecto.Changeset.change(runner_id: nil) |> Repo.update!()
+
       {headers, body} = signed(ctx, "issue_label", "d-wait", payload("issue_label"))
       {:ok, delivery} = Ingest.record_webhook(ctx.connection.id, headers, body)
 
       assert %Delivery{status: "waiting_runner", outcome: outcome} =
-               Ingest.process(delivery, presence: fn _ -> MapSet.new() end)
+               Ingest.process(delivery, ctx.opts)
 
-      assert outcome =~ "nenhum runner online"
+      assert outcome =~ "não tem um runner"
       assert [%{"body" => waiting}] = FakeForgejo.repo(ctx.fake, "acme/app").comments
-      assert waiting =~ "Esperando um runner online"
+      assert waiting =~ "não tem um runner"
+
+      project
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.force_change(:runner_id, ctx.runner.id)
+      |> Repo.update!()
 
       assert %Delivery{status: "processed", attempts: 2} =
                Ingest.process(Repo.reload!(delivery), ctx.opts)

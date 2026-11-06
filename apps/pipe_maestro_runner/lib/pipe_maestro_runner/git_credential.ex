@@ -1,6 +1,6 @@
 defmodule PipeMaestroRunner.GitCredential do
   @moduledoc """
-  The git credential a job brings from the control plane (ADR 0035), handed
+  The git credential a job brings from the control plane (ADR 0037), handed
   to git through a credential helper, never in a remote's URL.
 
   It is written to `<workdir>/credentials/<job_id>` (the directory `0700`,

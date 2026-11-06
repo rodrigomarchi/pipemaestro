@@ -2,7 +2,8 @@ defmodule PipeMaestro.Usage do
   @moduledoc """
   What a workspace's agents did in a period, from the jobs that ran and
   ended in it (a job canceled before it started did not run): cost,
-  runs and time in total, by day, by pipeline, runner and person, and by
+  runs and time in total, by day, by pipeline, project, runner and person,
+  and by
   pipeline stage (with the failed runs, a stage's retries, and the average
   time a run waited for its runner and spent in the stage's gates), and by
   origin: a pipeline's stages, each kind of proposal
@@ -14,6 +15,7 @@ defmodule PipeMaestro.Usage do
 
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Insights
+  alias PipeMaestro.Projects.Project
   alias PipeMaestro.Repo
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{StageRun, Task}
@@ -66,6 +68,7 @@ defmodule PipeMaestro.Usage do
           total: totals(),
           by_day: [map()],
           by_pipeline: [map()],
+          by_project: [map()],
           by_runner: [map()],
           by_person: [map()],
           by_stage: [map()],
@@ -74,7 +77,9 @@ defmodule PipeMaestro.Usage do
 
   @doc """
   The workspace's usage since `since`, optionally only a `"pipeline"`'s (its
-  name, in `filters`). `by_origin` names each origin `"stage"`,
+  name, in `filters`) or a project's (`"project_id"`). `by_project` names
+  the jobs of no project (from before projects, or of a project deleted
+  since) `"sem projeto"`. `by_origin` names each origin `"stage"`,
   `"standalone"` or `"proposal:<kind>"`.
   """
   @spec report(Workspace.t(), DateTime.t(), map()) :: report()
@@ -96,6 +101,7 @@ defmodule PipeMaestro.Usage do
         |> normalize(),
       by_day: by_day(jobs),
       by_pipeline: by_pipeline(jobs),
+      by_project: by_project(jobs),
       by_runner: by_runner(jobs),
       by_person: by_person(jobs),
       by_stage: by_stage(jobs),
@@ -148,6 +154,25 @@ defmodule PipeMaestro.Usage do
       select: %{
         name: t.pipeline_name,
         tasks: count(t.id, :distinct),
+        cost_usd: sum(j.cost_usd),
+        runs: count(j.id),
+        duration_ms: sum(j.duration_ms),
+        tokens: tokens(j)
+      }
+    )
+    |> Repo.all()
+    |> Enum.map(&normalize/1)
+  end
+
+  defp by_project(jobs) do
+    from(j in jobs,
+      left_join: p in Project,
+      on: p.id == j.project_id,
+      group_by: [p.id, p.name],
+      order_by: [desc: sum(j.cost_usd), asc: p.name],
+      select: %{
+        project_id: p.id,
+        name: coalesce(p.name, "sem projeto"),
         cost_usd: sum(j.cost_usd),
         runs: count(j.id),
         duration_ms: sum(j.duration_ms),

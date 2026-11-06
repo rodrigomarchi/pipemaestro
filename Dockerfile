@@ -2,7 +2,7 @@
 # protocol, never the runner) on the same Elixir/OTP image it was built with,
 # so the release's runtime matches the system's libraries.
 #
-#   make image   (docker build --build-arg CP_VERSION=<versão> -t pipemaestro .)
+#   make image   (docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .)
 #   docker run -p 4000:4000 -e DATABASE_URL=... -e SECRET_KEY_BASE=... \
 #     -e SECRETS_KEY=... -e PHX_HOST=plataforma.exemplo.com pipemaestro
 #
@@ -32,10 +32,13 @@ COPY apps apps
 COPY config/runtime.exs config/
 COPY rel rel
 
-# The image has no .git to read its version from: `make image` passes it
-# (PipeMaestroProtocol.Version.Git); without it, dev+unknown.
+# The image has no .git to read its versions from: `make image` passes the
+# control plane's and the runner's it requires
+# (PipeMaestroProtocol.Version.Git); without them, dev+unknown.
 ARG CP_VERSION=""
 ENV CP_VERSION=${CP_VERSION}
+ARG RUNNER_VERSION=""
+ENV RUNNER_VERSION=${RUNNER_VERSION}
 
 RUN mix compile \
     && cd apps/pipe_maestro_web && mix assets.deploy && cd ../.. \

@@ -297,12 +297,13 @@ defmodule PipeMaestro.Integrations.GitHubTest do
         )
 
       connection = github_connection(workspace)
+      project = project_fixture(runner, "app")
 
       {:ok, repo} =
         Integrations.link_repo(
           connection,
           user,
-          %{"full_name" => "acme/app", "project_id" => project_fixture(workspace).id},
+          %{"full_name" => "acme/app", "project_id" => project.id},
           "https://x"
         )
 
@@ -316,8 +317,7 @@ defmodule PipeMaestro.Integrations.GitHubTest do
             "title" => "Corrige",
             "prompt" => "Corrija.",
             "pipeline_id" => pipeline_fixture(workspace, %{"delivery" => "pr"}).id,
-            "runner_id" => runner.id,
-            "directory" => "app",
+            "project_id" => project.id,
             "issue_url" => "https://github.test/acme/app/issues/3"
           },
           issue: %{linked_repo_id: repo.id, issue_number: 3}

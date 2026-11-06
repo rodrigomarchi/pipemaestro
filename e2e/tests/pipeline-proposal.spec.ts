@@ -1,6 +1,6 @@
 /**
  * @section Tarefas e pipelines
- * @flow A [done] An admin asks the agent, through a real runner, to study a git directory and propose a pipeline and its project; the analysis runs in a disposable worktree that leaves the directory untouched and goes away
+ * @flow A [done] An admin asks the agent, through a real runner, to study a git directory and propose a pipeline for an existing project; the analysis runs in a disposable worktree that leaves the directory untouched and goes away
  * @flow B [done] The proposal shows what the agent understood, the commands it checked and the stages; saving its project opens the pipeline form filled with it, and both are saved
  * @flow C [done] A cost cap the agent proposes never reaches the form: the pipeline opens with no cap per task nor per stage, and saves without one
  */
@@ -25,7 +25,7 @@ test.describe("Pipeline proposal", () => {
 
   test.afterEach(() => runner?.cleanup());
 
-  test("the agent studies a directory and proposes a pipeline and its project", async ({ page, browser }) => {
+  test("the agent studies a project and proposes a pipeline", async ({ page, browser }) => {
     const suffix = uniqueSuffix();
     const workspace = { name: `Propostas ${suffix}`, slug: `propostas-${suffix}` };
     const user = { name: `Pietra ${suffix}`, email: `pietra-${suffix}@e2e.test` };
@@ -51,16 +51,18 @@ test.describe("Pipeline proposal", () => {
     runner.start("runner.start", ["--root", root]);
     await runner.waitFor(/Online como/);
 
-    // Flow A: only git directories can be studied.
+    // Flow A: the pipeline is proposed for a project that already exists.
+    const projects = new ProjectsPage(app.page);
+    await projects.open(workspace.slug);
+    await projects.create({ name: "App", runner: runnerName, directory: "app" });
+
     const pipelines = new PipelinesPage(app.page);
     await pipelines.open(workspace.slug);
     const proposal = new ProposalPage(app.page);
     await app.page.getByTestId("generate-pipeline").click();
-    await app.page.getByTestId("proposal-request-runner").selectOption({ label: runnerName });
-    await expect(proposal.directoryOptions).toHaveText(["Escolha um diretório", "app"]);
     await app.page.getByTestId("proposal-request-text").fill("Entregar issues com testes e um PR.");
     await shot(app.page, "proposal-request");
-    await proposal.submitRequest({ runner: runnerName, directory: "app" });
+    await proposal.submitRequest({ project: "App" });
     await proposal.waitForAnswer();
 
     // The agent ran in a disposable worktree: its file never reached the directory.
@@ -75,11 +77,9 @@ test.describe("Pipeline proposal", () => {
     await expect(proposal.checks).toContainText("Sem alvo de lint");
     await expect(proposal.stage(1)).toContainText("Implementação");
     await expect(proposal.stage(1)).toContainText("{{projeto.teste}}");
-    await expect(proposal.projectField("test")).toHaveValue("make test");
     await shot(app.page, "proposal-review");
 
-    await proposal.projectField("lint").fill("make check");
-    await proposal.saveProject();
+    await proposal.openPipeline();
     await expect(app.page.getByTestId("pipeline-name")).toHaveValue("Entrega proposta");
     await expect(pipelines.stageGates(1)).toHaveValue("{{projeto.teste}}");
     // Flow C: the agent answered with caps; the form opens without them.
@@ -92,8 +92,8 @@ test.describe("Pipeline proposal", () => {
     await app.page.goto(`/w/${workspace.slug}/proposals`);
     await expect(app.page.getByTestId("proposals")).toContainText("Entregar issues");
 
-    const projects = new ProjectsPage(app.page);
+    // The proposal does not touch the project.
     await projects.open(workspace.slug);
-    await expect(projects.project("app")).toContainText("App do fake");
+    await expect(projects.project("app")).toContainText("App");
   });
 });

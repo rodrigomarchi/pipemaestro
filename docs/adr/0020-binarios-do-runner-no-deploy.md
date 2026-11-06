@@ -1,6 +1,6 @@
 # 0020 — Binários do runner gerados em contêiner e publicados no deploy
 
-- **Status:** aceita
+- **Status:** aceita; ajustada pela [ADR 0035](0035-versao-propria-do-runner.md): os binários só são gerados quando a versão do runner muda
 - **Data:** 04/11/2026
 
 ## Contexto

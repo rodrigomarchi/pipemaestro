@@ -1,8 +1,8 @@
-# 0035 — Credencial git por job
+# 0037 — Credencial git por job
 
 - **Status:** aceita
 - **Data:** 06/11/2026
-- **Relacionada:** [ADR 0027](0027-entrega-em-pr-no-forgejo.md), [ADR 0034](0034-integracoes-com-hosts-git.md)
+- **Relacionada:** [ADR 0027](0027-entrega-em-pr-no-forgejo.md), [ADR 0036](0036-integracoes-com-hosts-git.md)
 
 ## Contexto
 

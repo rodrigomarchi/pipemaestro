@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
+import { selectProject } from "../helpers/projectSelect";
 import { shot } from "../helpers/screenshots";
 
 /** Tasks: the list, the new-task form and one task's stages and decisions. */
@@ -20,16 +21,12 @@ export class TasksPage {
     await waitForLiveView(this.page);
   }
 
-  /**
-   * Starts a task and waits on its page; returns the task's id. The directory
-   * select fills in once the runner is picked (selectOption waits for it).
-   */
+  /** Starts a task in the project named `project`, waits on its page and returns the task's id. */
   async create(task: {
     title: string;
     prompt: string;
     pipeline: string;
-    runner: string;
-    directory: string;
+    project: string;
     /** Captures the filled form under this name (E2E_SHOTS). */
     shot?: string;
   }): Promise<string> {
@@ -37,34 +34,12 @@ export class TasksPage {
     await this.page.getByTestId("task-title").fill(task.title);
     await this.page.getByTestId("task-prompt").fill(task.prompt);
     await this.page.getByTestId("task-pipeline").selectOption({ label: task.pipeline });
-    await this.selectRunner(task.runner);
-    await this.page.getByTestId("task-directory").selectOption(task.directory);
+    await selectProject(this.page.getByTestId("task-project"), task.project);
     if (task.shot) await shot(this.page, task.shot);
     await this.page.getByTestId("task-submit").click();
     await expect(this.page.getByTestId("task-prompt-text")).toHaveText(task.prompt);
     await waitForLiveView(this.page);
     return new URL(this.page.url()).pathname.split("/").pop()!;
-  }
-
-  /**
-   * Each runner option reads "<name> (<how busy it is>)"; picks it by the name,
-   * waiting for the runner to be listed (it shows once it is online).
-   */
-  private async selectRunner(name: string): Promise<void> {
-    const select = this.page.getByTestId("task-runner");
-    let value: string | undefined;
-
-    await expect
-      .poll(async () => {
-        const options = await select.evaluate((el: HTMLSelectElement) =>
-          Array.from(el.options).map((o) => ({ label: o.text, value: o.value })),
-        );
-        value = options.find((o) => o.label.startsWith(`${name} (`))?.value;
-        return value;
-      }, { message: `runner ${name} among the options` })
-      .toBeTruthy();
-
-    await select.selectOption(value!);
   }
 
   /** Opens one task's page. */
@@ -77,6 +52,20 @@ export class TasksPage {
   /** The warning a running task shows while its runner is offline. */
   get runnerOffline(): Locator {
     return this.page.getByTestId("task-runner-offline");
+  }
+
+  /** The notice a task shows while its first stage waits for the project's runner. */
+  get waitingRunner(): Locator {
+    return this.page.getByTestId("task-waiting-runner");
+  }
+
+  /** The task's project (a link to it) and its snapshot from when the task started. */
+  get project(): Locator {
+    return this.page.getByTestId("task-project");
+  }
+
+  get projectSnapshot(): Locator {
+    return this.page.getByTestId("task-project-snapshot");
   }
 
   stageRunStatus(key: string, attempt: number): Locator {

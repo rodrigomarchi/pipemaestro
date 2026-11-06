@@ -22,8 +22,7 @@ defmodule PipeMaestro.AuditTest do
         "title" => "Corrigir",
         "prompt" => "p",
         "pipeline_id" => pipeline.id,
-        "runner_id" => ctx.runner.id,
-        "directory" => "app"
+        "project_id" => project_fixture(ctx.runner, "app").id
       })
 
     {:ok, _} = Tasks.cancel_task(task, by: ctx.user)

@@ -77,6 +77,12 @@ defmodule PipeMaestroWeb.PullRequestsLive do
                 >
                   {task.pr_url |> String.split("/") |> Enum.take(-2) |> Enum.join("/")}
                 </a>
+                <span
+                  class="ml-2 text-xs text-gray-500 dark:text-gray-400"
+                  data-testid={"pull-request-project-#{task.id}"}
+                >
+                  {(task.project || %{})["name"] || task.directory}
+                </span>
               </span>
               <span class="flex items-center gap-2">
                 <.task_status task={task} />

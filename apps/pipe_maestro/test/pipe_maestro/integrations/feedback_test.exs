@@ -21,7 +21,7 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
       )
 
     connection = connection_fixture(workspace)
-    project = project_fixture(workspace)
+    project = project_fixture(runner, "app")
 
     {:ok, repo} =
       Integrations.link_repo(
@@ -50,8 +50,7 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
           "title" => "Corrige login",
           "prompt" => "O login quebra.",
           "pipeline_id" => pipeline.id,
-          "runner_id" => runner.id,
-          "directory" => "app",
+          "project_id" => project.id,
           "issue_url" => "https://forge.test/acme/app/issues/3"
         },
         issue: %{linked_repo_id: repo.id, issue_number: 3}
@@ -296,8 +295,7 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
             "title" => "Outra",
             "prompt" => "Outra.",
             "pipeline_id" => ctx.task.pipeline_id,
-            "runner_id" => ctx.task.runner_id,
-            "directory" => "app"
+            "project_id" => ctx.task.project_id
           },
           issue: %{linked_repo_id: ctx.repo.id, issue_number: 3}
         )

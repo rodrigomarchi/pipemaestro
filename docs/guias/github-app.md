@@ -2,8 +2,8 @@
 
 O GitHub se conecta por um GitHub App da instalação do PipeMaestro: cada workspace
 instala o App na sua conta ou organização e escolhe os repositórios. As decisões estão
-no [ADR 0034](../adr/0034-integracoes-com-hosts-git.md) e no
-[ADR 0035](../adr/0035-credencial-git-por-job.md).
+no [ADR 0036](../adr/0036-integracoes-com-hosts-git.md) e no
+[ADR 0037](../adr/0037-credencial-git-por-job.md).
 
 ## 1. Registrar o App (uma vez por instalação da plataforma)
 

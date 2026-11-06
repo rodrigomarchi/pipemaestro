@@ -288,7 +288,7 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   # Of the job's variables, those the delivery signs in with: the job's git
-  # credential (ADR 0035), or a Forgejo token among the workspace's secrets.
+  # credential (ADR 0037), or a Forgejo token among the workspace's secrets.
   defp delivery_env(job) do
     token = for {"FORGEJO_TOKEN" = name, value} <- job.env || %{}, do: {name, value}
     token ++ GitCredential.git_env(job)

@@ -110,7 +110,7 @@ defmodule PipeMaestro.Tasks do
 
   @doc """
   The workspace's most recent tasks, newest first. `filters` (blank values
-  ignored): `"pipeline"` (its name), `"runner_id"`, `"directory"`, `"user_id"`
+  ignored): `"pipeline"` (its name), `"runner_id"`, `"project_id"`, `"user_id"`
   (who created it), `"q"` (text in the title or the prompt).
   """
   @spec list_tasks(Workspace.t(), map()) :: [Task.t()]
@@ -129,17 +129,17 @@ defmodule PipeMaestro.Tasks do
   end
 
   defp filter({"pipeline", name}, query), do: where(query, [t], t.pipeline_name == ^name)
-  defp filter({"directory", dir}, query), do: where(query, [t], t.directory == ^dir)
 
   defp filter({"q", text}, query) do
     pattern = "%" <> String.replace(text, ~r/([\\%_])/, "\\\\\\1") <> "%"
     where(query, [t], ilike(t.title, ^pattern) or ilike(t.prompt, ^pattern))
   end
 
-  defp filter({key, id}, query) when key in ["runner_id", "user_id"] do
+  defp filter({key, id}, query) when key in ["runner_id", "project_id", "user_id"] do
     case {key, Ecto.UUID.cast(id)} do
       {_key, :error} -> where(query, false)
       {"runner_id", {:ok, id}} -> where(query, [t], t.runner_id == ^id)
+      {"project_id", {:ok, id}} -> where(query, [t], t.project_id == ^id)
       {"user_id", {:ok, id}} -> where(query, [t], t.created_by_user_id == ^id)
     end
   end
@@ -241,8 +241,11 @@ defmodule PipeMaestro.Tasks do
   # ── Starting ──────────────────────────────────────────────────────────────
 
   @doc """
-  Creates a task and starts its first stage. The pipeline, the runner (active)
-  and the directory (one the runner announced) must belong to the workspace.
+  Creates a task and starts its first stage. The pipeline and the project
+  (`project_id`) must belong to the workspace; the project decides the
+  runner and the directory, and its runner must still offer the directory.
+  With the runner offline, the first job waits for it
+  (`waiting_for_runner?/2`).
 
   With `proposal: job`, the task is the one the task proposal `job` became
   (`PipeMaestro.Proposals.create_task/4`); a proposal already turned into a
@@ -271,7 +274,6 @@ defmodule PipeMaestro.Tasks do
       }
       |> Task.create_changeset(attrs)
       |> put_pipeline(workspace)
-      |> put_directory(workspace)
       |> put_project(workspace)
 
     # The first stage's job is handed to the runner as it is created, so the
@@ -325,52 +327,34 @@ defmodule PipeMaestro.Tasks do
     end
   end
 
-  defp put_directory(changeset, workspace) do
-    runner_id = Ecto.Changeset.get_field(changeset, :runner_id)
-    directory = Ecto.Changeset.get_field(changeset, :directory)
-
-    with true <- is_binary(runner_id) and is_binary(directory),
-         %Runner{} = runner <- active_runner(workspace, runner_id) do
-      case Enum.find(runner.directories, &(&1["name"] == directory)) do
-        nil ->
-          Ecto.Changeset.add_error(changeset, :directory, "o runner não oferece esse diretório")
-
-        dir ->
-          Ecto.Changeset.put_change(changeset, :git, dir["git"] == true)
-      end
-    else
-      false ->
-        changeset
-
-      nil ->
-        Ecto.Changeset.add_error(changeset, :runner_id, "não é um runner ativo deste workspace")
-    end
-  end
-
-  # The directory's project, if any, as it is now.
+  # The project decides where the task runs: its runner, its directory and
+  # whether it is git; the task keeps a snapshot of the project as it is now.
   defp put_project(changeset, workspace) do
-    with directory when is_binary(directory) <- Ecto.Changeset.get_field(changeset, :directory),
-         %Project{} = project <- Projects.for_directory(workspace, directory) do
-      changeset
-      |> Ecto.Changeset.put_change(:project_id, project.id)
-      |> Ecto.Changeset.put_change(:project, Project.snapshot(project))
-    else
-      _no_project -> changeset
+    case Ecto.Changeset.get_field(changeset, :project_id) do
+      nil -> changeset
+      id -> put_project(changeset, workspace, Projects.get_project(workspace, id))
     end
   end
 
-  defp active_runner(workspace, runner_id) do
-    case Ecto.UUID.cast(runner_id) do
-      {:ok, id} ->
-        Repo.one(
-          from r in Runner,
-            where: r.id == ^id and r.workspace_id == ^workspace.id and is_nil(r.revoked_at)
-        )
+  defp put_project(changeset, _workspace, nil),
+    do: Ecto.Changeset.add_error(changeset, :project_id, "o projeto não existe mais")
 
-      :error ->
-        nil
+  defp put_project(changeset, _workspace, %Project{runner: %Runner{revoked_at: nil}} = project) do
+    case Runner.directory(project.runner, project.directory) do
+      nil ->
+        Ecto.Changeset.add_error(changeset, :directory, "o runner não oferece esse diretório")
+
+      dir ->
+        changeset
+        |> Ecto.Changeset.put_change(:runner_id, project.runner_id)
+        |> Ecto.Changeset.put_change(:directory, project.directory)
+        |> Ecto.Changeset.put_change(:git, dir["git"] == true)
+        |> Ecto.Changeset.put_change(:project, Project.snapshot(project))
     end
   end
+
+  defp put_project(changeset, _workspace, %Project{}),
+    do: Ecto.Changeset.add_error(changeset, :project_id, "o projeto precisa de um runner")
 
   # Past the workspace's limit of tasks at once, the task waits in line.
   defp start_or_queue(task) do
@@ -470,6 +454,7 @@ defmodule PipeMaestro.Tasks do
     Jobs.create_stage_job(%{
       workspace_id: task.workspace_id,
       runner_id: task.runner_id,
+      project_id: task.project_id,
       created_by_user_id: task.created_by_user_id,
       stage_run_id: stage_run.id,
       prompt: prompt,
@@ -1186,6 +1171,29 @@ defmodule PipeMaestro.Tasks do
   def runner_offline?(%Task{}, _online_runner_ids), do: false
 
   @doc """
+  Whether `task` has a job waiting for its runner, which is not in
+  `online_runner_ids`: the job is handed over when the runner connects.
+  """
+  @spec waiting_for_runner?(Task.t(), MapSet.t()) :: boolean()
+  def waiting_for_runner?(%Task{runner_id: nil}, _online_runner_ids), do: false
+
+  def waiting_for_runner?(%Task{runner_id: runner_id} = task, online_runner_ids) do
+    not MapSet.member?(online_runner_ids, runner_id) and queued_job?(task)
+  end
+
+  defp queued_job?(%Task{stage_runs: runs}) when is_list(runs),
+    do: Enum.any?(runs, &match?(%StageRun{job: %Job{status: :queued}}, &1))
+
+  defp queued_job?(%Task{id: task_id}) do
+    Repo.exists?(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: r.task_id == ^task_id and j.status == :queued
+    )
+  end
+
+  @doc """
   The next instant at which one of `alerts` (`alerts/2`) ends by itself, with
   no event: the earliest future reset among the runners near their limit.
   `nil` when none of them ends with time.
@@ -1844,17 +1852,16 @@ defmodule PipeMaestro.Tasks do
   @doc """
   Starts a task from an issue of a linked repository (`%{"title", "body",
   "html_url"}`, `number`) with a trigger that goes straight to the task: the
-  trigger's pipeline, the repository's project directory, on `runner_id`, on
-  behalf of the trigger's person.
+  trigger's pipeline, on the project the repository is linked to (its
+  runner, waiting for it when offline), on behalf of the trigger's person.
   """
-  @spec create_from_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map(), Ecto.UUID.t()) ::
+  @spec create_from_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map()) ::
           {:ok, Task.t()} | {:error, Ecto.Changeset.t() | :no_acting_user}
   def create_from_linked_issue(
         %Workspace{} = workspace,
         %LinkedRepo{} = repo,
         %Trigger{} = trigger,
-        issue,
-        runner_id
+        issue
       ) do
     case trigger.acting_user_id && Repo.get(User, trigger.acting_user_id) do
       %User{} = user ->
@@ -1867,8 +1874,7 @@ defmodule PipeMaestro.Tasks do
             "title" => String.slice(issue["title"] || "Issue", 0, 120),
             "prompt" => "#{body}\n\nIssue: #{issue["html_url"]}",
             "pipeline_id" => trigger.pipeline_id,
-            "runner_id" => runner_id,
-            "directory" => repo.project.directory,
+            "project_id" => repo.project_id,
             "issue_url" => issue["html_url"]
           },
           issue: %{linked_repo_id: repo.id, issue_number: issue["number"]}
@@ -1880,8 +1886,8 @@ defmodule PipeMaestro.Tasks do
   end
 
   @doc """
-  What a new task like `task` starts from: the same request, pipeline, runner
-  and directory (to change before starting it).
+  What a new task like `task` starts from: the same request, pipeline and
+  project (to change before starting it).
   """
   @spec duplicate_params(Task.t()) :: map()
   def duplicate_params(%Task{} = task) do
@@ -1889,16 +1895,24 @@ defmodule PipeMaestro.Tasks do
       "title" => task.title,
       "prompt" => task.prompt,
       "pipeline_id" => task.pipeline_id,
-      "runner_id" => task.runner_id,
-      "directory" => task.directory
+      "project_id" => task.project_id
     }
   end
 
   @doc """
   Starts a new task with the same request as `task`, by `user`. It uses the
-  pipeline as it is now, so it fails if the pipeline is gone.
+  pipeline and the project as they are now, so it fails if either is gone.
   """
   @spec rerun(User.t(), Task.t()) :: {:ok, Task.t()} | {:error, Ecto.Changeset.t()}
+  def rerun(%User{}, %Task{project_id: nil} = task) do
+    task
+    |> duplicate_params()
+    |> change_task()
+    |> Map.update!(:errors, &Keyword.delete(&1, :project_id))
+    |> Ecto.Changeset.add_error(:project_id, "o projeto não existe mais")
+    |> Ecto.Changeset.apply_action(:insert)
+  end
+
   def rerun(%User{} = user, %Task{} = task),
     do: create_task(user, %Workspace{id: task.workspace_id}, duplicate_params(task))
 

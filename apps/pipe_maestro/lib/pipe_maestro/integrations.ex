@@ -4,7 +4,7 @@ defmodule PipeMaestro.Integrations do
   (`PipeMaestro.Integrations.Connection`), links its repositories to projects
   (`PipeMaestro.Integrations.LinkedRepo`) and says what starts a task from an
   issue (`PipeMaestro.Integrations.Trigger`). The rules are in
-  `docs/specs/integracoes.md`; the decisions in ADR 0034.
+  `docs/specs/integracoes.md`; the decisions in ADR 0036.
 
   Who may call these is the screens' concern (`:manage_integrations`,
   `PipeMaestro.Authorization`); every change is audited. Calls to the host
@@ -125,7 +125,7 @@ defmodule PipeMaestro.Integrations do
   end
 
   @doc """
-  The git credential a stage job takes to its runner (ADR 0035): the one of
+  The git credential a stage job takes to its runner (ADR 0037): the one of
   the connection of the task's linked repository, when it is active; `nil`
   for any other job.
   """

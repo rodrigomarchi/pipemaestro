@@ -1,11 +1,12 @@
-# 0034 — Integrações com hosts git (Forgejo e GitHub)
+# 0036 — Integrações com hosts git (Forgejo e GitHub)
 
 - **Status:** aceita
 - **Data:** 06/11/2026
 - **Plano:** [`04-integracao-forges.md`](../plano/04-integracao-forges.md)
 - **Spec:** [`integracoes.md`](../specs/integracoes.md)
 - **Substitui:** o webhook do GitHub por label do [ADR 0014](0014-pendencias-do-roadmap.md) e
-  os campos de gatilho do projeto (removidos na fase do GitHub App)
+  os campos de gatilho do projeto (removidos na fase do GitHub App), entre eles o
+  `github_repo` único por workspace do [ADR 0034](0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md)
 
 ## Contexto
 
@@ -43,6 +44,10 @@ interface web.
      só existe o gatilho por label, porque os outros dependem de verificar pela API a
      permissão de quem disparou.
 3. **Repositório vinculado a um projeto** (`LinkedRepo`).
+   - O projeto decide onde o trabalho roda (o runner e a pasta dele, [ADR 0034](0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md)):
+     a triagem e a tarefa de uma issue vão para o runner do projeto, esperando por ele se
+     estiver offline. Sem runner, ou com a pasta sumida, a entrega espera e a issue diz o
+     que falta.
    - O vínculo cria as labels da plataforma que faltam e, quando a credencial pode,
      o webhook do repositório. Sem permissão, a tela mostra a URL e o segredo para criar à
      mão.
@@ -109,7 +114,7 @@ interface web.
 - O domínio passa a depender do `Req` e ganha um `Task.Supervisor` para o processamento.
 - O segredo `GITHUB_WEBHOOK_SECRET` deixa de ser usado; como os segredos chegam aos runners,
   quem o tinha deve apagá-lo.
-- A credencial git de cada job está no [ADR 0035](0035-credencial-git-por-job.md).
+- A credencial git de cada job está no [ADR 0037](0037-credencial-git-por-job.md).
 - **Um nó só.** O processamento de uma mesma issue e o retorno de uma mesma tarefa são
   serializados com `:global`, e a reconciliação roda em cada nó, como o
   `PipeMaestro.Maintenance`. Com mais de um nó fora de um cluster Erlang, é preciso trocar

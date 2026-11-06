@@ -12,7 +12,7 @@ defmodule PipeMaestro.IntegrationsTest do
     workspace = workspace_fixture()
     user = member_fixture(workspace)
     fake = FakeForgejo.start(repos: %{"acme/app" => %{}, "acme/site" => %{}})
-    %{workspace: workspace, user: user, fake: fake, project: project_fixture(workspace)}
+    %{workspace: workspace, user: user, fake: fake, project: app_project_fixture(workspace)}
   end
 
   defp attrs(extra \\ %{}) do
@@ -220,7 +220,7 @@ defmodule PipeMaestro.IntegrationsTest do
 
       assert %{full_name: ["já está vinculado"]} = errors_on(changeset)
 
-      other = project_fixture(workspace_fixture())
+      other = app_project_fixture(workspace_fixture())
 
       assert {:error, changeset} =
                Integrations.link_repo(

@@ -124,4 +124,13 @@ defmodule PipeMaestroWeb.HealthControllerTest do
     assert version == PipeMaestro.Version.version()
     assert release == to_string(Application.spec(:pipe_maestro, :vsn))
   end
+
+  test "GET /version also answers the runner's version the control plane requires", %{
+    conn: conn
+  } do
+    assert %{"runner_version" => runner_version} =
+             conn |> get(~p"/version") |> json_response(200)
+
+    assert runner_version == PipeMaestro.Version.runner_version()
+  end
 end

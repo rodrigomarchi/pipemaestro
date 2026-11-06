@@ -152,9 +152,13 @@ defmodule PipeMaestro.RunnersTest do
       refute outdated?.("2026-11-04.01", "dev+abc1234")
     end
 
-    test "by default, compared with this control plane's version", %{runner: runner} do
-      assert Runners.outdated?(%{runner | runner_version: "2026-11-04.01"})
-      refute Runners.outdated?(%{runner | runner_version: "2026-11-04.02"})
+    test "by default, compared with the runner's version this control plane requires", %{
+      runner: runner
+    } do
+      # config/test.exs: the control plane is 2026-11-04.02, the runner 2026-11-03.02.
+      assert Runners.outdated?(%{runner | runner_version: "2026-11-03.01"})
+      refute Runners.outdated?(%{runner | runner_version: "2026-11-03.02"})
+      refute Runners.outdated?(%{runner | runner_version: "2026-11-04.01"})
     end
 
     test "records its worktrees' disk usage", %{runner: runner} do
@@ -190,7 +194,7 @@ defmodule PipeMaestro.RunnersTest do
     assert Runners.format_user_code("WDJBMJHT") == "WDJB-MJHT"
   end
 
-  describe "online_ids/2 and pick_online/4" do
+  describe "online_ids/2" do
     setup %{workspace: workspace, user: user} do
       {mac, _token} = runner_fixture(workspace, user, %{name: "mac"})
       mac = with_directories(mac, [%{"name" => "app", "git" => true}])
@@ -205,24 +209,6 @@ defmodule PipeMaestro.RunnersTest do
       assert Runners.online_ids(ctx.workspace.id, presence: fn _id -> online end) == online
       assert Runners.online_ids(ctx.workspace.id, presence: __MODULE__.Online) == online_all()
       assert Runners.online_ids(ctx.workspace.id, presence: nil) == MapSet.new()
-    end
-
-    test "picks an online runner that offers the directory and passes the filter", ctx do
-      both = fn _id -> MapSet.new([ctx.mac.id, ctx.linux.id]) end
-      only_linux = fn _id -> MapSet.new([ctx.linux.id]) end
-      git? = fn runner -> Enum.any?(runner.directories, &(&1["name"] == "app" and &1["git"])) end
-
-      assert Runners.pick_online(ctx.workspace, "app", fn _ -> true end, presence: both)
-
-      assert %Runner{name: "mac"} =
-               Runners.pick_online(ctx.workspace, "app", git?, presence: both)
-
-      assert %Runner{name: "linux"} =
-               Runners.pick_online(ctx.workspace, "notas", fn _ -> true end, presence: both)
-
-      assert Runners.pick_online(ctx.workspace, "app", git?, presence: only_linux) == nil
-      assert Runners.pick_online(ctx.workspace, "outro", fn _ -> true end, presence: both) == nil
-      assert Runners.pick_online(ctx.workspace, "app", fn _ -> true end, presence: nil) == nil
     end
 
     defp online_all, do: MapSet.new(["todos"])

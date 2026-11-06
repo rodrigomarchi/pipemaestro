@@ -11,7 +11,7 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
   setup %{workspace: workspace} do
     %{
       fake: FakeForgejo.start(repos: %{"acme/app" => %{}, "acme/site" => %{}}),
-      project: project_fixture(workspace)
+      project: app_project_fixture(workspace)
     }
   end
 

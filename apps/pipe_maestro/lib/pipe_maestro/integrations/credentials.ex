@@ -91,7 +91,7 @@ defmodule PipeMaestro.Integrations.Credentials do
   end
 
   @doc """
-  What git signs in to the connection's host with (ADR 0035): `"host"`,
+  What git signs in to the connection's host with (ADR 0037): `"host"`,
   `"username"`, `"password"` and, for a token that expires, `"expires_at"`.
   """
   @spec git_credential(Connection.t(), PipeMaestro.Integrations.LinkedRepo.t() | nil) ::

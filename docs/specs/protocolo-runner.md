@@ -38,10 +38,13 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 `runner_version` é uma string de 1 a 120 bytes. Os runners deste repositório mandam
 `AAAA-MM-DD.NN` numa release, `AAAA-MM-DD.NN+dev.<commit>` ou `dev+<commit>` fora dela
 (`PipeMaestroProtocol.Version`, [ADR 0016](../adr/0016-esquema-de-versao.md)).
-O control plane só aceita o runner que está **exatamente na versão dele**
-(`PipeMaestro.Runners.version_check/1`, [ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md)).
-O deploy publica o runner do mesmo commit. Qualquer outra versão, mais velha ou de outro
-build, recebe `409`:
+O control plane só aceita o runner que está **exatamente na versão de runner que ele
+exige** (`PipeMaestro.Runners.version_check/1`,
+[ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md),
+[ADR 0035](../adr/0035-versao-propria-do-runner.md)). Essa versão é a do último commit que
+mudou o runner, não a do control plane, e o deploy publica o runner dela. Qualquer outra
+versão, mais velha ou de outro build, recebe `409`. O `"version"` é a versão de runner
+exigida:
 
 ```json
 {"error": "outdated", "reason": "outdated", "version": "dev+6f85389",
@@ -52,7 +55,7 @@ build, recebe `409`:
 O runner não pede o código. O `download_url` é um diretório com um binário por alvo,
 `pipemaestro_<alvo>` (`macos_arm64`, `macos_x86_64`, `linux_x86_64`, `linux_arm64`), e
 um `SHA256SUMS` no formato do `sha256sum` (`PipeMaestroProtocol.Downloads`). O binário
-único oferece baixar e instalar a versão da plataforma
+único oferece baixar e instalar a versão que a plataforma pede
 ([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)), e só baixa se:
 
 - o `download_url` estiver na mesma origem (esquema, host e porta) da plataforma;
@@ -128,11 +131,12 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
-  Um runner fora da versão do control plane recebe o mesmo payload do `409` do login
+  Um runner fora da versão de runner que o control plane exige recebe o mesmo payload do `409` do login
   (`{"reason": "outdated", "version", "runner_version", "download_url"}`). Nada dele é
   gravado e ele não fica online. O runner cancela os jobs que roda, não tenta de novo e
   se atualiza ou pede para baixar a versão atual, como no login. Como o deploy reinicia o control plane, todo runner
-  reconecta e passa por essa checagem a cada versão nova.
+  reconecta e passa por essa checagem. Um deploy que não muda o runner não muda a versão
+  exigida, e os runners voltam online.
 - **O que acontece no join:** o control plane grava o `Hello` (labels, capacidade,
   versão, hostname, SO e arch) e passa a mostrar o runner como **online** no
   workspace enquanto o canal existir.
@@ -156,7 +160,7 @@ canal `runner:<runner_id>`.
 |---|---|---|
 | `job:assign` | `{"id", "prompt"}` (`PipeMaestroProtocol.Job`; prompt de até 32 000 bytes) | põe o job na fila local; ignora um job que já tem na fila ou em execução |
 | `job:cancel` | `{"job_id"}` | tira da fila, ou interrompe o job em execução (SIGTERM ao grupo de processos e, depois de 5 s, SIGKILL) |
-| `job:credential` | `{"job_id", "git_credential"}` | a credencial git renovada de um job na fila ou em execução, alguns minutos antes de a anterior vencer; o runner regrava o arquivo dela (ADR 0035) |
+| `job:credential` | `{"job_id", "git_credential"}` | a credencial git renovada de um job na fila ou em execução, alguns minutos antes de a anterior vencer; o runner regrava o arquivo dela (ADR 0037) |
 
 No join, o control plane reenvia `job:assign` para cada job ainda `queued` daquele
 runner.
@@ -244,11 +248,11 @@ plane antigo ainda mande.
 | `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB). Sem o campo, o runner tira `CP_ARTIFACT_PATH` do ambiente do agente, para que um valor herdado não vaze para o job |
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
-| `delivery` | `{"push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou nas verificações e nos gates ([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). O runner **não faz commit**: faz o push do `HEAD` (já verificado), abre ou adota o PR da branch e escreve só o bloco da plataforma na descrição (`{"title", "block", "ready"}`: o título só na criação; `ready` tira o prefixo de rascunho) e comenta na issue (`{"url", "body"}`) e, com `"status"` (`{"context", "state", "description", "target_url"}`), põe o commit status da etapa no que empurrou, num Forgejo. Numa tarefa de um repositório vinculado cuja conexão deixa a plataforma chamar o host ([ADR 0034](../adr/0034-integracoes-com-hosts-git.md)), a entrega é só `{"push": true}`: o PR e a issue ficam com o control plane. O bloco do PR é o de `PipeMaestroProtocol.PrText`. O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}`, `commit` sendo o commit entregue |
+| `delivery` | `{"push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou nas verificações e nos gates ([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). O runner **não faz commit**: faz o push do `HEAD` (já verificado), abre ou adota o PR da branch e escreve só o bloco da plataforma na descrição (`{"title", "block", "ready"}`: o título só na criação; `ready` tira o prefixo de rascunho) e comenta na issue (`{"url", "body"}`) e, com `"status"` (`{"context", "state", "description", "target_url"}`), põe o commit status da etapa no que empurrou, num Forgejo. Numa tarefa de um repositório vinculado cuja conexão deixa a plataforma chamar o host ([ADR 0036](../adr/0036-integracoes-com-hosts-git.md)), a entrega é só `{"push": true}`: o PR e a issue ficam com o control plane. O bloco do PR é o de `PipeMaestroProtocol.PrText`. O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}`, `commit` sendo o commit entregue |
 | `checks` | `[{"id", ...}]`: as verificações da plataforma, rodadas depois do agente e antes dos gates (ADR 0033): `branch` (`branch`), `no_operation`, `contains_origin` (`branch`), `clean` (`artifacts`: a pasta dos artefatos, que fica de fora, como o que o setup copiou ou criou), `artifact_committed` (`path`), `no_artifacts` (`path`) e `no_secrets` (os valores de `env`, nunca escritos no resultado). Cada resultado vem em `gates`, com `"platform": true`, `"id"` e `"message"` (o motivo, escrito para o agente). Com alguma falhando, os gates não rodam e não há entrega |
 | `sync` | `true` numa etapa de tarefa com git: antes do agente, o runner faz o `fetch` da branch, o fast-forward quando ele é seguro (na branch, limpo, nada em andamento, só atrás) e, fora isso, anexa ao prompt a seção "Estado do repositório" com o que achou |
 | `artifacts` | `[{"path", "content"}]`: os artefatos das etapas anteriores, como o control plane os guardou. Antes do agente, o runner grava os que faltam no disco |
-| `git_credential` | `{"host", "username", "password", "expires_at"?}`: a credencial do repositório vinculado da tarefa ([ADR 0035](../adr/0035-credencial-git-por-job.md)). O runner a grava em `<workdir>/credentials/<job_id>` (`0600`) e a entrega ao git, o seu e o do agente, por um credential helper configurado em variáveis `GIT_CONFIG_*`, nunca na URL do remoto; o arquivo sai quando o job termina. A senha entra na verificação `no_secrets`. Só vai a um runner com a capacidade `"git_credential"`, e nunca numa proposta |
+| `git_credential` | `{"host", "username", "password", "expires_at"?}`: a credencial do repositório vinculado da tarefa ([ADR 0037](../adr/0037-credencial-git-por-job.md)). O runner a grava em `<workdir>/credentials/<job_id>` (`0600`) e a entrega ao git, o seu e o do agente, por um credential helper configurado em variáveis `GIT_CONFIG_*`, nunca na URL do remoto; o arquivo sai quando o job termina. A senha entra na verificação `no_secrets`. Só vai a um runner com a capacidade `"git_credential"`, e nunca numa proposta |
 | `scratch` | `true` numa análise (ADR 0021): roda num worktree descartável do `directory`, em `<workdir>/scratch/<job_id>`, destacado no `HEAD` (`git worktree add --detach`) e removido quando o job termina. Recebe só a cópia de dependências do `setup`, sem comando, e não reporta `changes`. Exige `directory` e não aceita `worktree` nem `delivery`. O control plane só manda `scratch` a um runner que anunciou a capacidade `"scratch"` no `Hello`: um runner antigo descartaria o campo e rodaria no próprio diretório |
 | `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |

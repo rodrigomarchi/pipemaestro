@@ -46,11 +46,11 @@ defmodule PipeMaestro.Fixtures do
     workspace
   end
 
-  @doc "A user who belongs to `workspace`."
-  @spec member_fixture(Workspaces.Workspace.t(), map()) :: Accounts.User.t()
-  def member_fixture(workspace, attrs \\ %{}) do
+  @doc "A user who belongs to `workspace`, with `role` (the first one is the admin)."
+  @spec member_fixture(Workspaces.Workspace.t(), map(), atom() | nil) :: Accounts.User.t()
+  def member_fixture(workspace, attrs \\ %{}, role \\ nil) do
     user = user_fixture(attrs)
-    {:ok, _membership} = Workspaces.add_member(workspace, user)
+    {:ok, _membership} = Workspaces.add_member(workspace, user, role)
     user
   end
 
@@ -100,6 +100,52 @@ defmodule PipeMaestro.Fixtures do
     runner
   end
 
+  @doc """
+  A project of `runner`'s workspace on `runner`'s `directory` (which the
+  runner must offer), named after the directory unless `attrs` says.
+  """
+  @spec project_fixture(PipeMaestro.Runners.Runner.t(), String.t(), map()) ::
+          PipeMaestro.Projects.Project.t()
+  def project_fixture(runner, directory, attrs \\ %{}) do
+    workspace = PipeMaestro.Repo.get!(Workspaces.Workspace, runner.workspace_id)
+
+    {:ok, project} =
+      PipeMaestro.Projects.create_project(
+        workspace,
+        Enum.into(attrs, %{
+          "name" => directory,
+          "runner_id" => runner.id,
+          "directory" => directory
+        })
+      )
+
+    project
+  end
+
+  @doc """
+  The project of `runner`'s `directory`: the one already there, or a new one
+  (`project_fixture/3`).
+  """
+  @spec project_on(PipeMaestro.Runners.Runner.t(), String.t()) ::
+          PipeMaestro.Projects.Project.t()
+  def project_on(runner, directory) do
+    PipeMaestro.Repo.get_by(PipeMaestro.Projects.Project,
+      runner_id: runner.id,
+      directory: directory
+    ) || project_fixture(runner, directory)
+  end
+
+  @doc """
+  The projects of `runner` for each of the directories it offers, by
+  directory name.
+  """
+  @spec projects_fixture(PipeMaestro.Runners.Runner.t()) :: %{
+          String.t() => PipeMaestro.Projects.Project.t()
+        }
+  def projects_fixture(runner) do
+    Map.new(runner.directories, &{&1["name"], project_fixture(runner, &1["name"])})
+  end
+
   @doc "A pipeline of `workspace`; by default two stages, `a` and `b`."
   @spec pipeline_fixture(Workspaces.Workspace.t(), map()) ::
           PipeMaestro.Pipelines.Pipeline.t()
@@ -126,7 +172,7 @@ defmodule PipeMaestro.Fixtures do
     workspace = PipeMaestro.Repo.get!(Workspaces.Workspace, runner.workspace_id)
 
     {:ok, job} =
-      PipeMaestro.Jobs.create_job(
+      PipeMaestro.Jobs.create_runner_job(
         user,
         workspace,
         Enum.into(attrs, %{"prompt" => "diga oi", "runner_id" => runner.id})
@@ -158,16 +204,26 @@ defmodule PipeMaestro.Fixtures do
     |> PipeMaestro.Repo.insert!()
   end
 
-  @doc "A project of `workspace` in `directory`."
-  @spec project_fixture(Workspaces.Workspace.t(), map()) :: PipeMaestro.Projects.Project.t()
-  def project_fixture(workspace, attrs \\ %{}) do
-    alias PipeMaestro.Projects.Project
+  @doc """
+  A project `app` of `workspace` on a runner of its own, `app-runner`, which
+  offers the directory in git and runs disposable worktrees.
+  """
+  @spec app_project_fixture(Workspaces.Workspace.t(), map()) :: PipeMaestro.Projects.Project.t()
+  def app_project_fixture(workspace, attrs \\ %{}) do
+    {runner, _token} =
+      runner_fixture(workspace, member_fixture(workspace, %{}, :admin), %{
+        name: "app-runner-#{System.unique_integer([:positive])}"
+      })
 
-    {:ok, project} =
-      %Project{workspace_id: workspace.id}
-      |> Project.changeset(Enum.into(attrs, %{"name" => "App", "directory" => "app"}))
-      |> PipeMaestro.Repo.insert()
+    {:ok, runner} =
+      PipeMaestro.Runners.record_hello(
+        runner,
+        hello_fixture(%{
+          capabilities: ["git_credential", "scratch"],
+          directories: [%{"name" => "app", "git" => true}]
+        })
+      )
 
-    project
+    project_fixture(runner, "app", Enum.into(attrs, %{"name" => "App"}))
   end
 end

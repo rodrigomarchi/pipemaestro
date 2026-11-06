@@ -4,8 +4,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   live timeline; once it ends, the review of its kind
   (`PipeMaestroWeb.ProposalComponents`), and what the person can do with it:
 
-    * pipeline: edit and save the directory's project, then open the
-      pipeline form filled with the proposal;
+    * project: review the project form filled with the answer and save it
+      (nothing is saved before), on the runner and directory asked;
+    * pipeline: open the pipeline form filled with the proposal;
     * task: open the new-task form filled with it;
     * decision: apply the suggested decision (retry, advance or cancel), with
       the instructions as the person left them;
@@ -94,15 +95,17 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     end
   end
 
-  # The project form, filled with the proposal over the directory's project.
-  defp assign_review(%{assigns: %{result: result}} = socket, "pipeline") do
-    project = directory_project(socket, result.project["directory"]) || %Project{}
+  # The project form, filled with the answer, for the runner's directory asked.
+  defp assign_review(%{assigns: %{result: result}} = socket, "project") do
+    project = %Project{workspace_id: socket.assigns.current_scope.workspace.id}
 
     assign(socket,
       project: project,
       form: to_form(Projects.change_project(project, result.project))
     )
   end
+
+  defp assign_review(socket, "pipeline"), do: socket
 
   defp assign_review(%{assigns: %{result: result}} = socket, "decision") do
     task = Tasks.get_task!(socket.assigns.current_scope.workspace, result.task_id)
@@ -119,7 +122,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   end
 
   defp assign_review(%{assigns: %{result: result}} = socket, "improve") do
-    project = directory_project(socket, result.directory)
+    project =
+      result.project_id &&
+        Projects.get_project(socket.assigns.current_scope.workspace, result.project_id)
 
     assign(socket,
       project: project,
@@ -141,9 +146,6 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       auto_approve: Proposals.auto_approve(job)
     )
   end
-
-  defp directory_project(socket, directory),
-    do: Projects.for_directory(socket.assigns.current_scope.workspace, directory)
 
   @impl true
   def handle_info({:job_updated, %Job{} = job}, socket) do
@@ -192,11 +194,11 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         {:noreply, put_flash(socket, :error, "Só quem pediu a proposta ou um admin a cancela.")}
   end
 
-  # Pipeline: the project.
+  # Project: the form filled with the answer, saved only now.
   def handle_event("validate_project", %{"project" => params}, socket) do
     changeset =
       socket.assigns.project
-      |> Projects.change_project(with_directory(params, socket))
+      |> Projects.change_project(with_place(params, socket))
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, form: to_form(changeset))}
@@ -204,23 +206,15 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   def handle_event("save_project", %{"project" => params}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
-    params = with_directory(params, socket)
 
-    result =
-      if socket.assigns.project.id,
-        do: Projects.update_project(socket.assigns.project, params),
-        else: Projects.create_project(workspace, params)
-
-    case result do
+    case Projects.create_project(workspace, with_place(params, socket)) do
       {:ok, project} ->
         Audit.record(workspace, user, "project.saved", project)
 
         {:noreply,
          socket
-         |> put_flash(:info, "Projeto #{project.name} salvo. Revise o pipeline proposto.")
-         |> push_navigate(
-           to: ~p"/w/#{workspace.slug}/pipelines/new?proposta=#{socket.assigns.job.id}"
-         )}
+         |> put_flash(:info, "Projeto #{project.name} salvo.")
+         |> push_navigate(to: ~p"/w/#{workspace.slug}/projects")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, form: to_form(changeset))}
@@ -331,8 +325,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   end
 
   # The directory is the one studied, not a field the person changes here.
-  defp with_directory(params, socket),
-    do: Map.put(params, "directory", socket.assigns.input["directory"])
+  # The runner and the directory are the ones the proposal was asked about.
+  defp with_place(params, socket),
+    do: Map.merge(params, Map.take(socket.assigns.result.project, ~w(runner_id directory)))
 
   defp blank_to_nil(value) when is_binary(value),
     do: if(String.trim(value) == "", do: nil, else: value)
@@ -464,12 +459,17 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         {@error}
       </.alert>
 
+      <.project_review
+        :if={@result && @kind == "project"}
+        result={@result}
+        form={@form}
+        input={@input}
+      />
       <.pipeline_review
         :if={@result && @kind == "pipeline"}
         result={@result}
-        form={@form}
-        project={@project}
-        input={@input}
+        job={@job}
+        workspace={@current_scope.workspace}
       />
       <.task_review
         :if={@result && @kind == "task"}
@@ -561,9 +561,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   end
 
   attr :result, :map, required: true
-  attr :form, :any, required: true
-  attr :project, :any, required: true
-  attr :input, :map, required: true
+  attr :job, :any, required: true
+  attr :workspace, :any, required: true
 
   defp pipeline_review(assigns) do
     ~H"""
@@ -584,8 +583,39 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               description={@result.pipeline["description"]}
             />
             <.stages pipeline={@result.pipeline} />
+            <div class="mt-4 flex justify-end">
+              <.button
+                link_type="live_redirect"
+                to={~p"/w/#{@workspace.slug}/pipelines/new?proposta=#{@job.id}"}
+                icon="hero-arrow-right-circle"
+                data-testid="proposal-open-pipeline"
+              >
+                Revisar o pipeline
+              </.button>
+            </div>
           </.card_content>
         </.card>
+      </div>
+      <div class="space-y-6"><.checks checks={@result.checks} /></div>
+    </div>
+    """
+  end
+
+  attr :result, :map, required: true
+  attr :form, :any, required: true
+  attr :input, :map, required: true
+
+  defp project_review(assigns) do
+    ~H"""
+    <div class="grid gap-6 xl:grid-cols-3">
+      <div class="space-y-6 xl:col-span-2">
+        <.markdown_card
+          id="proposal-analysis"
+          icon="hero-magnifying-glass"
+          title="O que o agente entendeu do projeto"
+          markdown={@result.analysis}
+          testid="proposal-analysis"
+        />
       </div>
       <div class="space-y-6"><.checks checks={@result.checks} /></div>
 
@@ -593,12 +623,13 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         <.card_content>
           <.section_heading
             icon="hero-folder-open"
-            title={if @project.id, do: "Projeto (atualiza o existente)", else: "Projeto"}
+            title="Projeto"
             description={"Como #{@input["directory"]} instala, testa e faz lint: as etapas usam esses comandos."}
           />
           <.form
             for={@form}
             id="proposal-project-form"
+            data-testid="proposal-project-form"
             phx-change="validate_project"
             phx-submit="save_project"
           >
@@ -647,10 +678,10 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             <div class="flex justify-end">
               <.button
                 type="submit"
-                icon="hero-arrow-right-circle"
+                icon="hero-check"
                 data-testid="proposal-save-project"
               >
-                Salvar projeto e revisar o pipeline
+                Salvar projeto
               </.button>
             </div>
           </.form>

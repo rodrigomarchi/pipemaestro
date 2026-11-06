@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { waitForLiveView } from "../helpers/liveView";
+import { selectProject } from "../helpers/projectSelect";
 
 /**
  * Asking the agent for a proposal (pipeline, task, decision, improvement) and
@@ -13,12 +14,11 @@ export class ProposalPage {
   }
 
   /**
-   * Fills the open request form (picks the runner, then one of its git
-   * directories, then the text when given) and sends it; waits on the proposal.
+   * Fills the open request form (picks the project, then the text when given)
+   * and sends it; waits on the proposal.
    */
   async submitRequest(request: {
-    runner: string;
-    directory: string;
+    project: string;
     text?: string;
     focus?: string;
     /** Task: the pipeline to write for (by default the agent picks one). */
@@ -26,19 +26,20 @@ export class ProposalPage {
     /** Task: whether to create and start the task without review (on by default). */
     autoApprove?: boolean;
   }) {
-    await this.page.getByTestId("proposal-request-runner").selectOption({ label: request.runner });
-    await expect(this.directoryOptions.filter({ hasText: request.directory })).toHaveCount(1);
-    await this.page.getByTestId("proposal-request-directory").selectOption(request.directory);
+    await selectProject(this.page.getByTestId("proposal-request-project"), request.project);
     if (request.text) await this.page.getByTestId("proposal-request-text").fill(request.text);
     if (request.focus) await this.page.getByTestId("proposal-request-focus").fill(request.focus);
     if (request.pipeline)
       await this.page.getByTestId("proposal-request-pipeline").selectOption({ label: request.pipeline });
-    // Petal's switch hides its input (sr-only) under the label that draws it; the click lands
-    // on the label, which toggles the input.
-    if (request.autoApprove !== undefined)
-      await this.page
-        .getByTestId("proposal-request-auto-approve")
-        .setChecked(request.autoApprove, { force: true });
+    // Petal's switch hides its input (sr-only), which a pointer cannot land on: the keyboard toggles it.
+    if (request.autoApprove !== undefined) {
+      const autoApprove = this.page.getByTestId("proposal-request-auto-approve");
+      if ((await autoApprove.isChecked()) !== request.autoApprove) {
+        await autoApprove.focus();
+        await this.page.keyboard.press("Space");
+      }
+      await expect(autoApprove).toBeChecked({ checked: request.autoApprove });
+    }
     await this.page.getByTestId("proposal-request-submit").click();
     await this.waitForProposal();
   }
@@ -48,9 +49,9 @@ export class ProposalPage {
     await waitForLiveView(this.page);
   }
 
-  /** The directory options of the open request form. */
-  get directoryOptions(): Locator {
-    return this.page.getByTestId("proposal-request-directory").locator("option");
+  /** The project options of the open request form. */
+  get projectOptions(): Locator {
+    return this.page.getByTestId("proposal-request-project").locator("option");
   }
 
   get status(): Locator {
@@ -74,16 +75,24 @@ export class ProposalPage {
     return this.page.getByTestId(`proposal-stage-${index}`);
   }
 
-  projectField(name: "name" | "setup" | "test" | "lint" | "copy-paths"): Locator {
+  /** Project: a field of the project form the agent filled. */
+  projectField(name: "name" | "setup" | "test" | "lint" | "copy-paths" | "notes"): Locator {
     return this.page.getByTestId(`proposal-project-${name}`);
   }
 
-  /** Pipeline: saves the project and lands on the pipeline form filled with the proposal. */
-  async saveProject() {
-    await this.page.getByTestId("proposal-save-project").click();
+  /** Pipeline: lands on the pipeline form filled with the proposal. */
+  async openPipeline() {
+    await this.page.getByTestId("proposal-open-pipeline").click();
     await this.page.waitForURL(/\/pipelines\/new\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
+  }
+
+  /** Project: saves the project as reviewed and lands on the list of projects. */
+  async saveProposedProject() {
+    await this.page.getByTestId("proposal-save-project").click();
+    await this.page.waitForURL(/\/projects$/);
+    await waitForLiveView(this.page);
   }
 
   /** Task: opens the new-task form filled with the task the agent wrote. */

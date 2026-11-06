@@ -10,6 +10,7 @@ import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { PipelinesPage } from "../pages/PipelinesPage";
+import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
 
@@ -47,6 +48,10 @@ test.describe("Board alerts", () => {
     runner.start("runner.start", ["--root", root]);
     await runner.waitFor(/Online como/);
 
+    const projects = new ProjectsPage(app.page);
+    await projects.open(workspace.slug);
+    await projects.create({ name: "App", runner: runnerName, directory: "app" });
+
     const pipelines = new PipelinesPage(app.page);
     await pipelines.open(workspace.slug);
     await pipelines.createDefaults();
@@ -61,8 +66,7 @@ test.describe("Board alerts", () => {
       title: "Demora perto do limite",
       prompt: "Trabalhe devagar. [lento] [limite]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "app",
+      project: "App",
     });
     await expect(tasks.status).toHaveText("Executando");
 

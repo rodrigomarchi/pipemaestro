@@ -49,7 +49,7 @@ test.describe("GitHub App", () => {
 
     const projects = new ProjectsPage(app.page);
     await projects.open(workspace.slug);
-    await projects.create({ name: "App", directory: "app" });
+    await projects.create({ name: "App", runner: `github-${suffix}`, directory: "app" });
 
     const integrations = new IntegrationsPage(app.page);
     await integrations.open(workspace.slug);

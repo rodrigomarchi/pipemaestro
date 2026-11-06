@@ -62,6 +62,11 @@ export class RunnersPage {
     return login;
   }
 
+  /** The runner's version the platform requires, in the "Conectar runner" modal. */
+  get expectedVersion(): Locator {
+    return this.page.getByTestId("runners-expected-version");
+  }
+
   /** The version on the runner's page. */
   get detailVersion(): Locator {
     return this.page.getByTestId("runner-detail-version");

@@ -1,7 +1,7 @@
 # Integrações com hosts git
 
-> Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0034](../adr/0034-integracoes-com-hosts-git.md)
-> e [ADR 0035](../adr/0035-credencial-git-por-job.md).
+> Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md)
+> e [ADR 0037](../adr/0037-credencial-git-por-job.md).
 
 ## 1. Modelo de dados
 
@@ -57,7 +57,7 @@ que a issue não tenha tarefa nem triagem em andamento.
 ```
 received ──► processed     (criou a triagem ou a tarefa, ou aplicou um comando)
    ├──────► ignored        (o motivo vai em `outcome`)
-   ├──────► waiting_runner (nenhum runner online; a reconciliação tenta de novo)
+   ├──────► waiting_runner (o projeto sem runner ou sem a pasta; a reconciliação tenta de novo)
    └──────► failed         (erro da API ou da criação; a reconciliação tenta de novo)
 ```
 
@@ -74,8 +74,9 @@ Os passos, em ordem; o primeiro que encerra deixa o motivo:
 8. o gatilho não passou do limite por hora;
 9. a issue não tem tarefa nem triagem em andamento;
 10. relida pela API, a issue continua aberta (`control_plane`);
-11. há um runner online que oferece o diretório do projeto (na triagem, com a capability
-    `scratch` e o diretório em git); sem runner, o comentário de status diz que espera um;
+11. o projeto pode receber trabalho (`Projects.health/2`): o runner dele offline não impede
+    nada, o job espera por ele; projeto sem runner, ou cujo runner não oferece mais a pasta,
+    deixa a entrega `waiting_runner`, e o comentário de status diz o que falta;
 12. cria a triagem ou a tarefa, registra o disparo e reconhece na issue (reação, label e
     comentário de status).
 

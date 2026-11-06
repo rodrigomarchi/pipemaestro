@@ -56,7 +56,7 @@ test.describe("Conversation on the issue", () => {
     await pipelines.createDefaults();
     const projects = new ProjectsPage(app.page);
     await projects.open(workspace.slug);
-    await projects.create({ name: "App", directory: "app" });
+    await projects.create({ name: "App", runner: `conversa-${suffix}`, directory: "app" });
 
     const integrations = new IntegrationsPage(app.page);
     await integrations.open(workspace.slug);

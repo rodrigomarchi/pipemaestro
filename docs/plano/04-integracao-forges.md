@@ -1,8 +1,8 @@
 # Plano — Integração com Forgejo e GitHub
 
 > Versão 0.1 — 06/11/2026
-> Decisões: [ADR 0034](../adr/0034-integracoes-com-hosts-git.md) e
-> [ADR 0035](../adr/0035-credencial-git-por-job.md). Formatos e regras:
+> Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md) e
+> [ADR 0037](../adr/0037-credencial-git-por-job.md). Formatos e regras:
 > [`specs/integracoes.md`](../specs/integracoes.md).
 
 ## Objetivo
@@ -20,7 +20,7 @@ também com `make e2e` e `make e2e.shots`.
 
 | Fase | Entrega |
 |---|---|
-| 0 | Documentação: este plano, os ADRs 0034 e 0035 e a spec |
+| 0 | Documentação: este plano, os ADRs 0036 e 0037 e a spec |
 | 1 | Fundação no domínio: `Vault` (a cifra dos segredos extraída), presença dos runners no domínio, esquemas de `Integrations`, o behaviour `Provider` e o cliente do Forgejo, credenciais (token e OAuth com rotação), conexões, repositórios e gatilhos |
 | 2 | Telas: Integrações (lista, formulário com token e OAuth, detalhe da conexão, repositório e gatilhos), o callback do OAuth e o Forgejo falso do e2e |
 | 3 | Ingestão: o endpoint do webhook, o registro de entregas, o processamento, a triagem com auto-aprovação ligada à issue, a reconciliação e a tela de entregas com reprocessamento |

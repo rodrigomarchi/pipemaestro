@@ -6,10 +6,6 @@ defmodule PipeMaestro.ProjectsTest do
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
 
-  setup do
-    %{workspace: workspace_fixture()}
-  end
-
   @attrs %{
     "name" => "Retro Hex Chat",
     "directory" => "retro_hex_chat",
@@ -20,13 +16,20 @@ defmodule PipeMaestro.ProjectsTest do
     "notes" => "Usa Postgres na porta 5442."
   }
 
-  test "create, list, find by directory, update, delete", %{workspace: workspace} do
-    assert {:ok, %Project{} = project} = Projects.create_project(workspace, @attrs)
+  setup do
+    workspace = workspace_fixture()
+    {runner, _token} = runner_fixture(workspace, member_fixture(workspace))
+    runner = with_directories(runner, [%{"name" => "retro_hex_chat", "git" => true}])
+    %{workspace: workspace, attrs: Map.put(@attrs, "runner_id", runner.id)}
+  end
+
+  test "create, list, find, update, delete", %{workspace: workspace, attrs: attrs} do
+    assert {:ok, %Project{} = project} = Projects.create_project(workspace, attrs)
     assert project.copy_paths == ["deps", "_build"]
     assert [%Project{id: id}] = Projects.list_projects(workspace)
     assert id == project.id
-    assert Projects.for_directory(workspace, "retro_hex_chat").id == project.id
-    assert Projects.for_directory(workspace, "outro") == nil
+    assert Projects.get_project(workspace, project.id).id == project.id
+    assert Projects.get_project(workspace, Ecto.UUID.generate()) == nil
 
     assert {:ok, %Project{test_command: "mix test --warnings-as-errors"}} =
              Projects.update_project(project, %{"test_command" => "mix test --warnings-as-errors"})
@@ -35,30 +38,36 @@ defmodule PipeMaestro.ProjectsTest do
     assert Projects.list_projects(workspace) == []
   end
 
-  test "validates name, directory and paths, one project per directory", %{workspace: workspace} do
+  test "validates name, runner, directory and paths, one project per runner directory", %{
+    workspace: workspace,
+    attrs: attrs
+  } do
     assert {:error, changeset} = Projects.create_project(workspace, %{})
-    assert %{name: [_], directory: [_]} = errors_on(changeset)
+    assert %{name: [_], runner_id: [_], directory: [_]} = errors_on(changeset)
 
     assert {:error, changeset} =
-             Projects.create_project(workspace, %{@attrs | "directory" => "../etc"})
+             Projects.create_project(workspace, %{attrs | "directory" => "../etc"})
 
     assert %{directory: [_]} = errors_on(changeset)
 
     assert {:error, changeset} =
-             Projects.create_project(workspace, %{@attrs | "copy_paths_text" => "/abs\n../x"})
+             Projects.create_project(workspace, %{attrs | "copy_paths_text" => "/abs\n../x"})
 
     assert %{copy_paths: [_]} = errors_on(changeset)
 
-    {:ok, _} = Projects.create_project(workspace, @attrs)
+    {:ok, _} = Projects.create_project(workspace, attrs)
 
     assert {:error, changeset} =
-             Projects.create_project(workspace, %{@attrs | "name" => "Outro nome"})
+             Projects.create_project(workspace, %{attrs | "name" => "Outro nome"})
 
-    assert %{directory: ["já tem um projeto"]} = errors_on(changeset)
+    assert %{directory: ["esse runner já tem um projeto nessa pasta"]} = errors_on(changeset)
   end
 
-  test "the snapshot a task keeps and the setup a runner gets", %{workspace: workspace} do
-    {:ok, project} = Projects.create_project(workspace, @attrs)
+  test "the snapshot a task keeps and the setup a runner gets", %{
+    workspace: workspace,
+    attrs: attrs
+  } do
+    {:ok, project} = Projects.create_project(workspace, attrs)
 
     assert Project.snapshot(project) == %{
              "name" => "Retro Hex Chat",
@@ -81,12 +90,12 @@ defmodule PipeMaestro.ProjectsTest do
     assert Project.setup(nil) == nil
   end
 
-  test "a workspace does not see another's projects", %{workspace: workspace} do
-    {:ok, project} = Projects.create_project(workspace, @attrs)
+  test "a workspace does not see another's projects", %{workspace: workspace, attrs: attrs} do
+    {:ok, project} = Projects.create_project(workspace, attrs)
     other = workspace_fixture()
 
     assert Projects.list_projects(other) == []
-    assert Projects.for_directory(other, "retro_hex_chat") == nil
+    assert Projects.get_project(other, project.id) == nil
     assert_raise Ecto.NoResultsError, fn -> Projects.get_project!(other, project.id) end
   end
 end

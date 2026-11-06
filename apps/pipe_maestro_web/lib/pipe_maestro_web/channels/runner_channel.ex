@@ -15,7 +15,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
   every job but a proposal the workspace's secrets (`PipeMaestro.Secrets`),
   added only on the way out, and, from a task of a linked repository, the
   git credential of its connection, renewed with `job:credential` before it
-  expires (ADR 0035).
+  expires (ADR 0037).
 
   So do the task worktrees (`PipeMaestroProtocol.Worktree`): the channel
   pushes `worktree:remove` when someone asks for a task's worktree to go, and
@@ -176,7 +176,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
   # never a proposal's: it reads untrusted text (an issue's body) with every
   # permission, and needs no secret to study a project.
   # So does the git credential of a task from a linked repository, to a
-  # runner that knows it (ADR 0035).
+  # runner that knows it (ADR 0037).
   defp push_assign(socket, job) do
     env = if proposal?(job), do: %{}, else: Secrets.env(job.workspace_id)
     credential = git_credential(socket.assigns.runner, job)

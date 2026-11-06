@@ -22,8 +22,9 @@ defmodule PipeMaestro.Integrations.Ingest do
    7. the trigger has not reached its hourly limit;
    8. the issue has no task nor triage going on;
    9. read again from the host, the issue is still open;
-  10. a runner online offers the project's directory (`waiting_runner`
-      otherwise, for the reconciliation to try again);
+  10. the project can take work (`PipeMaestro.Projects.health/2`): its
+      runner offline is fine, the job waits for it; no runner, or the
+      directory gone, is `waiting_runner`, for the reconciliation to try again;
   11. the triage or the task starts, the trigger's firing is kept and the
       issue is acknowledged.
 
@@ -36,7 +37,7 @@ defmodule PipeMaestro.Integrations.Ingest do
   require Logger
 
   alias PipeMaestro.Accounts.User
-  alias PipeMaestro.{Audit, Integrations, Pipelines, Proposals, Repo, Runners, Tasks}
+  alias PipeMaestro.{Audit, Integrations, Pipelines, Projects, Proposals, Repo, Runners, Tasks}
 
   alias PipeMaestro.Integrations.{
     Access,
@@ -294,8 +295,8 @@ defmodule PipeMaestro.Integrations.Ingest do
          :ok <- within_limit(repo, trigger),
          :ok <- not_active(repo, event),
          {:ok, issue} <- fresh_issue(client, connection, repo, event),
-         {:ok, runner} <- runner(connection, client, repo, trigger, issue, opts) do
-      start(connection, client, repo, %{trigger | pipeline_id: pipeline_id}, issue, runner)
+         :ok <- project_ready(connection, client, repo, issue, opts) do
+      start(connection, client, repo, %{trigger | pipeline_id: pipeline_id}, issue)
     end
   end
 
@@ -460,36 +461,44 @@ defmodule PipeMaestro.Integrations.Ingest do
 
   defp fresh_issue(_client, _connection, _repo, %Event{issue: issue}), do: {:ok, issue}
 
-  defp runner(_connection, _client, %LinkedRepo{project: nil}, _trigger, _issue, _opts),
+  # The project decides where the work runs (its runner and directory). A
+  # runner offline is no error: the job waits for it. A project without a
+  # runner, or whose runner no longer offers the directory, takes no work: the
+  # delivery waits, for the reconciliation to try again once it is fixed.
+  defp project_ready(_connection, _client, %LinkedRepo{project: nil}, _issue, _opts),
     do: {:ignored, "o repositório não está ligado a um projeto"}
 
-  defp runner(connection, client, repo, trigger, issue, opts) do
-    directory = repo.project.directory
+  defp project_ready(connection, client, repo, issue, opts) do
+    project = repo.project
 
-    suitable? =
-      if trigger.mode == "triage",
-        do: &(Proposals.capable?(&1) and Proposals.git_directory?(&1, directory)),
-        else: fn _runner -> true end
+    waiting =
+      case Projects.health(project, Runners.online_ids(repo.workspace_id, opts)) do
+        healthy when healthy in [:ok, :runner_offline] -> nil
+        :needs_runner -> "o projeto #{project.name} não tem um runner"
+        :directory_gone -> "o runner do projeto não oferece mais a pasta #{project.directory}"
+      end
 
-    case Runners.pick_online(%Workspace{id: repo.workspace_id}, directory, suitable?, opts) do
-      nil ->
-        if connection.api_mode == "control_plane",
-          do:
-            Feedback.status_note(
-              client,
-              repo,
-              issue.number,
-              "Esperando um runner online que ofereça o diretório `#{directory}`; a issue segue assim que um se conectar."
-            )
+    if waiting do
+      note(
+        connection,
+        client,
+        repo,
+        issue,
+        "Esperando: #{waiting}; a issue segue assim que isso for resolvido."
+      )
 
-        {:waiting_runner, "nenhum runner online oferece o diretório #{directory}"}
-
-      runner ->
-        {:ok, runner}
+      {:waiting_runner, waiting}
+    else
+      :ok
     end
   end
 
-  defp start(connection, client, repo, trigger, issue, runner) do
+  defp note(%Connection{api_mode: "control_plane"}, client, repo, issue, text),
+    do: Feedback.status_note(client, repo, issue.number, text)
+
+  defp note(_connection, _client, _repo, _issue, _text), do: :ok
+
+  defp start(connection, client, repo, trigger, issue) do
     workspace = Repo.get!(Workspace, repo.workspace_id)
 
     attrs = %{
@@ -501,8 +510,8 @@ defmodule PipeMaestro.Integrations.Ingest do
 
     result =
       case trigger.mode do
-        "task" -> Tasks.create_from_linked_issue(workspace, repo, trigger, attrs, runner.id)
-        _triage -> Proposals.triage_linked_issue(workspace, repo, trigger, attrs, runner.id)
+        "task" -> Tasks.create_from_linked_issue(workspace, repo, trigger, attrs)
+        _triage -> Proposals.triage_linked_issue(workspace, repo, trigger, attrs)
       end
 
     case result do

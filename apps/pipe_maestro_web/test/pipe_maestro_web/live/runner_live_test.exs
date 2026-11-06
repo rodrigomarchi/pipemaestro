@@ -7,24 +7,25 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
 
   setup :register_and_log_in_member
 
-  test "shows the runner's version, marked when older than the control plane's", %{
+  test "shows the runner's version, marked when older than the runner's required", %{
     conn: conn,
     workspace: workspace,
     user: user
   } do
-    # The control plane runs as 2026-11-04.02 in tests (config/test.exs).
+    # In tests (config/test.exs) the control plane runs as 2026-11-04.02 and
+    # requires runners on 2026-11-03.02.
     {old, _token} =
-      runner_fixture(workspace, user, %{name: "antigo", runner_version: "2026-11-04.01"})
+      runner_fixture(workspace, user, %{name: "antigo", runner_version: "2026-11-03.01"})
 
     {current, _token} =
-      runner_fixture(workspace, user, %{name: "atual", runner_version: "2026-11-04.02"})
+      runner_fixture(workspace, user, %{name: "atual", runner_version: "2026-11-03.02"})
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{old.id}")
-    assert has_element?(view, "[data-testid=runner-detail-version]", "2026-11-04.01")
+    assert has_element?(view, "[data-testid=runner-detail-version]", "2026-11-03.01")
     assert has_element?(view, "[data-testid=runner-detail-outdated]", "desatualizado")
 
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{current.id}")
-    assert has_element?(view, "[data-testid=runner-detail-version]", "2026-11-04.02")
+    assert has_element?(view, "[data-testid=runner-detail-version]", "2026-11-03.02")
     refute has_element?(view, "[data-testid=runner-detail-outdated]")
   end
 
@@ -201,8 +202,7 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
           "title" => "Corrigir login",
           "prompt" => "O botão não responde",
           "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-          "runner_id" => runner.id,
-          "directory" => "app"
+          "project_id" => project_on(runner, "app").id
         })
 
       [%{job: job}] = task.stage_runs

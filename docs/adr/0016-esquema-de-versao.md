@@ -1,6 +1,6 @@
 # 0016 — Esquema de versão do runner e do control plane
 
-- **Status:** aceita
+- **Status:** aceita; ajustada pela [ADR 0035](0035-versao-propria-do-runner.md): o runner tem a própria versão, no mesmo esquema
 - **Data:** 04/11/2026
 - **Roadmap:** Marco 5 de [`03-roadmap-orquestrador.md`](../plano/03-roadmap-orquestrador.md)
 

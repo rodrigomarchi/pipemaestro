@@ -61,23 +61,31 @@ defmodule PipeMaestro.Umbrella.MixProject do
     ]
   end
 
-  # A binary unpacks itself once per version: the release (or the commit) and
-  # the build's moment in its semver build metadata make each build a new one,
-  # so an updated binary never runs an older payload. The version the runner
-  # shows is PipeMaestroRunner.Version's, not this one.
+  # A binary unpacks itself once per version: the runner's version
+  # (RUNNER_VERSION, else the release or the commit) and the build's moment in
+  # its semver build metadata make each build a new one, so an updated binary
+  # never runs an older payload. The version the runner shows is
+  # PipeMaestroRunner.Version's, not this one.
   defp binary_version do
     built_at = Calendar.strftime(DateTime.utc_now(), "%Y%m%d%H%M%S")
 
     build =
-      case git(["tag", "--points-at", "HEAD", "--list", "runner-*"]) do
-        "runner-" <> _ = tags ->
-          tags |> String.split("\n", trim: true) |> Enum.max() |> String.trim_leading("runner-")
-
-        _no_release ->
-          git(["rev-parse", "--short", "HEAD"]) || "unknown"
+      case System.get_env("RUNNER_VERSION") do
+        version when is_binary(version) and version != "" -> version
+        _unset -> git_build()
       end
 
     "0.1.0+#{String.replace(build, ~r/[^0-9A-Za-z.-]/, "-")}.#{built_at}"
+  end
+
+  defp git_build do
+    case git(["tag", "--points-at", "HEAD", "--list", "runner-*"]) do
+      "runner-" <> _ = tags ->
+        tags |> String.split("\n", trim: true) |> Enum.max() |> String.trim_leading("runner-")
+
+      _no_release ->
+        git(["rev-parse", "--short", "HEAD"]) || "unknown"
+    end
   end
 
   defp git(args) do

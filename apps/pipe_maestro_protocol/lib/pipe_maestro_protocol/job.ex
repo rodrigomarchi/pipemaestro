@@ -28,7 +28,7 @@ defmodule PipeMaestroProtocol.Job do
   `git_credential` signs git in to the repository's host
   (`"host"`, `"username"`, `"password"`, `"expires_at"`), renewed by
   `"job:credential"`; only a runner with the capability `"git_credential"`
-  gets it (ADR 0035).
+  gets it (ADR 0037).
   `checks` are the platform's own verifications of a task's worktree, run
   with the gates (`%{"id" => id}` plus its parameters): `"branch"`
   (`"branch"`: HEAD is on it), `"no_operation"` (no merge, rebase or

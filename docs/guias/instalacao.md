@@ -10,16 +10,17 @@ a [0012](../adr/0012-uso-papeis-auditoria-e-segredos.md); o protocolo, em
 ### Imagem
 
 ```bash
-make image        # docker build --build-arg CP_VERSION=<versão> -t pipemaestro .
+make image        # docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .
 ```
 
 A imagem roda `bin/server`: aplica as migrations pendentes e sobe o servidor web na
 porta 4000.
 
-A imagem não leva o `.git`, então a versão entra pelo `--build-arg CP_VERSION`, que o
-`make image` calcula (`make runner.version`). Num `docker build` feito à mão sem esse
-argumento, o control plane fica `dev+unknown` e não marca nenhum runner como
-desatualizado (seção 4).
+A imagem não leva o `.git`, então as versões entram por `--build-arg`: `CP_VERSION`, a
+do control plane (`make cp.version`), e `RUNNER_VERSION`, a versão de runner que ele
+exige (`make runner.version`). O `make image` calcula as duas. Num `docker build` feito
+à mão sem elas, as duas ficam `dev+unknown`, e o control plane não marca nenhum runner
+como desatualizado (seção 4).
 
 ### Variáveis
 
@@ -132,15 +133,23 @@ O login mostra um código. Um **admin** do workspace o aprova em
 - **Histórico:** a página do runner lista as últimas execuções que ele terminou, com
   duração, custo, tokens e cache; cada uma abre a auditoria da execução.
 
-## 3. O primeiro pipeline
+## 3. O primeiro projeto e o primeiro pipeline
 
-**O atalho: Pipelines → Gerar com IA.** Escolha um runner online, um dos diretórios git
-dele, e conte o que o pipeline deve fazer. O agente estuda o projeto num worktree
-descartável (nada muda no seu código) e roda os comandos que encontrar. Depois propõe a
-configuração do projeto e um pipeline. Revise e salve o projeto, depois o pipeline, que
-abre preenchido. Se precisar, gere de novo com um comentário
+Todo trabalho roda num **projeto**: um runner e um dos diretórios dele
+([ADR 0034](../adr/0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md)).
+
+**Projetos → Novo projeto.** Escolha o runner e um dos diretórios que ele oferece.
+"Analisar com IA" pede ao agente que estude o diretório num worktree descartável (nada
+muda no seu código) e preencha o formulário (nome, setup, teste, lint, o que copiar e
+notas) para você revisar; nada é salvo até "Salvar". A mesma pasta pode ser projeto em
+runners diferentes, e um projeto pode trocar de runner por outro que ofereça a pasta.
+
+**O atalho do pipeline: Pipelines → Gerar com IA.** Escolha o projeto e conte o que o
+pipeline deve fazer. O agente estuda o projeto num worktree descartável e roda os
+comandos que encontrar; depois propõe um pipeline, que abre preenchido para revisar. Se
+precisar, gere de novo com um comentário
 ([ADR 0021](../adr/0021-propostas-de-pipeline-pelo-agente.md)). Isso exige um runner
-atualizado: os antigos aparecem como "atualize o runner".
+atualizado: projetos em runners antigos aparecem como "o runner precisa ser atualizado".
 
 Ou, à mão:
 
@@ -148,16 +157,17 @@ Ou, à mão:
    funcionalidade, refatoração, revisão, investigação de produção...) já vêm prontos.
    As etapas rodam com todas as permissões e seguem sozinhas; a tarefa só para quando
    precisa de ajuda ([ADR 0018](../adr/0018-etapas-autonomas.md)).
-2. **Projetos → Novo projeto**, para cada diretório que vai receber tarefas:
+2. **Projetos → Novo projeto**, para cada diretório que vai receber tarefas (o runner e
+   o diretório dele):
    - o comando de setup, que roda uma vez por worktree (`mix deps.get && mix
      compile`);
    - os de teste e de lint;
    - o que copiar do checkout (`deps`, `_build`; em branco, o runner detecta).
 
    Os prompts usam `{{projeto.teste}}`, e os gates das etapas também.
-3. **Tarefas → Nova tarefa:** escolha o pipeline, um runner online e o diretório, e
-   descreva o pedido. Cada tarefa roda num `git worktree` próprio; o seu checkout não é
-   tocado.
+3. **Tarefas → Nova tarefa** (ou "Nova tarefa" no projeto): escolha o pipeline e o
+   projeto, e descreva o pedido. Cada tarefa roda num `git worktree` próprio; o seu
+   checkout não é tocado. Com o runner do projeto offline, a tarefa espera por ele.
 4. Acompanhe na tarefa:
    - o texto do agente ao vivo;
    - os artefatos de cada etapa e o diff do que ela mudou;

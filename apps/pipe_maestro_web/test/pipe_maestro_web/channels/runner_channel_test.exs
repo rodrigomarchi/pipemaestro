@@ -3,6 +3,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
 
   alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Repo, Runners, Tasks}
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Runners.Runner
   alias PipeMaestroProtocol.Hello
   alias PipeMaestroWeb.{RunnerChannel, RunnerSocket, RunnerStatus}
 
@@ -119,15 +120,6 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
     defp linked_task(ctx, hello) do
       FakeForgejo.start()
       connection = connection_fixture(ctx.workspace)
-      project = project_fixture(ctx.workspace)
-
-      {:ok, repo} =
-        Integrations.link_repo(
-          connection,
-          ctx.user,
-          %{"full_name" => "acme/app", "project_id" => project.id},
-          "https://pm.test/hook"
-        )
 
       channel =
         join_runner(
@@ -137,6 +129,15 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
         )
 
       Process.put(:channel_pid, channel.channel_pid)
+      project = project_fixture(Repo.get!(Runner, ctx.runner.id), "app")
+
+      {:ok, repo} =
+        Integrations.link_repo(
+          connection,
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => project.id},
+          "https://pm.test/hook"
+        )
 
       {:ok, task} =
         Tasks.create_task(
@@ -146,8 +147,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
             "title" => "Corrige",
             "prompt" => "Corrija",
             "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-            "runner_id" => ctx.runner.id,
-            "directory" => "app"
+            "project_id" => project.id
           },
           issue: %{linked_repo_id: repo.id, issue_number: 1}
         )
@@ -217,7 +217,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       join_runner(ctx.socket, ctx.runner)
 
       {:ok, job} =
-        Jobs.create_job(
+        Jobs.create_runner_job(
           ctx.user,
           ctx.workspace,
           %{prompt: "analise", runner_id: ctx.runner.id},
@@ -390,8 +390,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
           "title" => "Tarefa",
           "prompt" => "faça",
           "pipeline_id" => pipeline.id,
-          "runner_id" => ctx.runner.id,
-          "directory" => "app"
+          "project_id" => project_on(ctx.runner, "app").id
         })
 
       assert_push "job:assign", %{
@@ -412,8 +411,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
           "title" => "Tarefa",
           "prompt" => "faça",
           "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-          "runner_id" => runner.id,
-          "directory" => "app"
+          "project_id" => project_on(runner, "app").id
         })
 
       task =

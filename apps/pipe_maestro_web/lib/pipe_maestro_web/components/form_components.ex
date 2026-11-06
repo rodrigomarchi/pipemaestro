@@ -27,7 +27,7 @@ defmodule PipeMaestroWeb.FormComponents do
 
   attr :rest, :global,
     include:
-      ~w(id options rows placeholder help_text min max step no_margin class data-testid prompt autocomplete checked required viewable)
+      ~w(id options rows placeholder help_text min max step no_margin class data-testid prompt autocomplete checked required viewable disabled)
 
   @doc """
   A `<.field>` with an icon before its label. The visible label is decoration:

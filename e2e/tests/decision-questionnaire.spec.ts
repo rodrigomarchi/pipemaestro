@@ -12,6 +12,7 @@ import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { PipelinesPage } from "../pages/PipelinesPage";
+import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
 
@@ -48,6 +49,10 @@ async function setUp(
   runner.start("runner.start", ["--root", root]);
   await runner.waitFor(/Online como/);
 
+  const projects = new ProjectsPage(app.page);
+  await projects.open(workspace.slug);
+  await projects.create({ name: "Notas", runner: runnerName, directory: "notas" });
+
   const pipelines = new PipelinesPage(app.page);
   await pipelines.open(workspace.slug);
   await pipelines.createDefaults();
@@ -74,8 +79,7 @@ test.describe("Decision questionnaire", () => {
       title: "Tela branca",
       prompt: "Às vezes a tela fica branca. [perguntas]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "notas",
+      project: "Notas",
     });
 
     await expect(tasks.status).toHaveText("Aguardando decisão");
@@ -131,8 +135,7 @@ test.describe("Decision questionnaire", () => {
       title: "Falha no build",
       prompt: "O build quebra. [falha]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "notas",
+      project: "Notas",
     });
 
     await expect(tasks.status).toHaveText("Aguardando decisão", { timeout: 60_000 });
@@ -161,8 +164,7 @@ test.describe("Decision questionnaire", () => {
       title: "Menu some",
       prompt: "O menu desaparece. [perguntas]",
       pipeline: "Prompt único",
-      runner: runnerName,
-      directory: "notas",
+      project: "Notas",
     });
     await expect(tasks.status).toHaveText("Aguardando decisão");
 

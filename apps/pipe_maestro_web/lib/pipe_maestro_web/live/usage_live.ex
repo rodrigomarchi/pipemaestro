@@ -224,8 +224,9 @@ defmodule PipeMaestroWeb.UsageLive do
           </.card>
         </div>
 
-        <div class="grid gap-6 xl:grid-cols-3">
+        <div class="grid gap-6 xl:grid-cols-2">
           <.usage_table title="Por pipeline" rows={@report.by_pipeline} testid="usage-by-pipeline" />
+          <.usage_table title="Por projeto" rows={@report.by_project} testid="usage-by-project" />
           <.usage_table title="Por runner" rows={@report.by_runner} testid="usage-by-runner" />
           <.usage_table title="Por pessoa" rows={@report.by_person} testid="usage-by-person" />
         </div>

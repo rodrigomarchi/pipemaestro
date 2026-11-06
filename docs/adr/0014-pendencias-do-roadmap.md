@@ -27,7 +27,7 @@ pendentes.
      worktree disputariam o índice.
    - O diff de uma etapa paralela pode incluir o que as irmãs mudaram ao mesmo tempo.
 2. **Webhook do GitHub por label** (substituído pelas integrações do
-   [ADR 0034](0034-integracoes-com-hosts-git.md); os gatilhos dos projetos viraram
+   [ADR 0036](0036-integracoes-com-hosts-git.md); os gatilhos dos projetos viraram
    gatilhos de repositórios vinculados).
    - O projeto ganha repositório, label e pipeline de gatilho. As tarefas ficam em
      nome de quem configurou o gatilho.

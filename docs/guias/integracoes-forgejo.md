@@ -2,7 +2,7 @@
 
 Como ligar uma instância do Forgejo (ou o Codeberg) a um workspace, para que issues
 virem tarefas e o andamento volte para a issue e para o pull request. As decisões estão
-no [ADR 0034](../adr/0034-integracoes-com-hosts-git.md); as regras, na
+no [ADR 0036](../adr/0036-integracoes-com-hosts-git.md); as regras, na
 [spec](../specs/integracoes.md).
 
 ## 1. Escolher como a plataforma entra

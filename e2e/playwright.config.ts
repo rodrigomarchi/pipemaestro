@@ -67,9 +67,10 @@ export default defineConfig({
       : []),
   ],
   // Boots the e2e server from the repo root unless one is already up, built
-  // as a fixed version so the runners' "outdated" badge is predictable.
+  // as fixed versions (its own and the runner's it requires) so the runners'
+  // "outdated" badge is predictable.
   webServer: {
-    command: `cd .. && CP_VERSION=${versions.controlPlane} MIX_ENV=e2e E2E_PORT=${e2ePort} mix phx.server`,
+    command: `cd .. && CP_VERSION=${versions.controlPlane} RUNNER_VERSION=${versions.runner} MIX_ENV=e2e E2E_PORT=${e2ePort} mix phx.server`,
     url: `${baseURL}/healthz`,
     reuseExistingServer: true,
     timeout: 180_000,
