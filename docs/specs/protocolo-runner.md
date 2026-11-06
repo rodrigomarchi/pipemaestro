@@ -38,10 +38,13 @@ Segue o modelo do OAuth 2.0 Device Authorization Grant (RFC 8628).
 `runner_version` é uma string de 1 a 120 bytes. Os runners deste repositório mandam
 `AAAA-MM-DD.NN` numa release, `AAAA-MM-DD.NN+dev.<commit>` ou `dev+<commit>` fora dela
 (`PipeMaestroProtocol.Version`, [ADR 0016](../adr/0016-esquema-de-versao.md)).
-O control plane só aceita o runner que está **exatamente na versão dele**
-(`PipeMaestro.Runners.version_check/1`, [ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md)).
-O deploy publica o runner do mesmo commit. Qualquer outra versão, mais velha ou de outro
-build, recebe `409`:
+O control plane só aceita o runner que está **exatamente na versão de runner que ele
+exige** (`PipeMaestro.Runners.version_check/1`,
+[ADR 0023](../adr/0023-runner-na-versao-da-plataforma.md),
+[ADR 0035](../adr/0035-versao-propria-do-runner.md)). Essa versão é a do último commit que
+mudou o runner, não a do control plane, e o deploy publica o runner dela. Qualquer outra
+versão, mais velha ou de outro build, recebe `409`. O `"version"` é a versão de runner
+exigida:
 
 ```json
 {"error": "outdated", "reason": "outdated", "version": "dev+6f85389",
@@ -52,7 +55,7 @@ build, recebe `409`:
 O runner não pede o código. O `download_url` é um diretório com um binário por alvo,
 `pipemaestro_<alvo>` (`macos_arm64`, `macos_x86_64`, `linux_x86_64`, `linux_arm64`), e
 um `SHA256SUMS` no formato do `sha256sum` (`PipeMaestroProtocol.Downloads`). O binário
-único oferece baixar e instalar a versão da plataforma
+único oferece baixar e instalar a versão que a plataforma pede
 ([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)), e só baixa se:
 
 - o `download_url` estiver na mesma origem (esquema, host e porta) da plataforma;
@@ -127,11 +130,12 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   O runner manda um `Hello` novo a cada (re)join. A resposta é
   `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
-  Um runner fora da versão do control plane recebe o mesmo payload do `409` do login
+  Um runner fora da versão de runner que o control plane exige recebe o mesmo payload do `409` do login
   (`{"reason": "outdated", "version", "runner_version", "download_url"}`). Nada dele é
   gravado e ele não fica online. O runner cancela os jobs que roda, não tenta de novo e
   se atualiza ou pede para baixar a versão atual, como no login. Como o deploy reinicia o control plane, todo runner
-  reconecta e passa por essa checagem a cada versão nova.
+  reconecta e passa por essa checagem. Um deploy que não muda o runner não muda a versão
+  exigida, e os runners voltam online.
 - **O que acontece no join:** o control plane grava o `Hello` (labels, capacidade,
   versão, hostname, SO e arch) e passa a mostrar o runner como **online** no
   workspace enquanto o canal existir.

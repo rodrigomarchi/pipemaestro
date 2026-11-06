@@ -59,8 +59,13 @@ O `scripts/deploy_sun.sh` faz quatro coisas:
    - compila a release `pipe_maestro` com a versão `<mix>-<sha>`;
    - entrega o tarball ao DeployEx, que roda `PipeMaestro.Release.migrate` antes de subir a
      versão nova;
-3. ainda no Sun, o mesmo script gera os binários do runner do mesmo commit, na imagem
-   `docker/runner-binary`, e os publica em `/var/www/pipemaestro/downloads/runner/`.
+3. ainda no Sun, se a versão do runner do commit mudou, o mesmo script gera os
+   binários do runner na imagem `docker/runner-binary` e os publica em
+   `/var/www/pipemaestro/downloads/runner/`, com um `VERSION` que nomeia a versão deles.
+   A versão do runner é a do último commit que mudou o runner
+   ([ADR 0035](../adr/0035-versao-propria-do-runner.md)): quando o `VERSION` publicado é
+   igual a ela, os binários não são gerados de novo, e os runners não precisam se
+   atualizar.
    O nginx serve esses binários em `/downloads/runner/`, e a tela de runners tem os
    links. O primeiro deploy constrói a imagem e o cache, e é mais lento. Os runners se
    atualizam a partir desse diretório

@@ -10,16 +10,17 @@ a [0012](../adr/0012-uso-papeis-auditoria-e-segredos.md); o protocolo, em
 ### Imagem
 
 ```bash
-make image        # docker build --build-arg CP_VERSION=<versão> -t pipemaestro .
+make image        # docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .
 ```
 
 A imagem roda `bin/server`: aplica as migrations pendentes e sobe o servidor web na
 porta 4000.
 
-A imagem não leva o `.git`, então a versão entra pelo `--build-arg CP_VERSION`, que o
-`make image` calcula (`make runner.version`). Num `docker build` feito à mão sem esse
-argumento, o control plane fica `dev+unknown` e não marca nenhum runner como
-desatualizado (seção 4).
+A imagem não leva o `.git`, então as versões entram por `--build-arg`: `CP_VERSION`, a
+do control plane (`make cp.version`), e `RUNNER_VERSION`, a versão de runner que ele
+exige (`make runner.version`). O `make image` calcula as duas. Num `docker build` feito
+à mão sem elas, as duas ficam `dev+unknown`, e o control plane não marca nenhum runner
+como desatualizado (seção 4).
 
 ### Variáveis
 
