@@ -15,7 +15,9 @@ defmodule PipeMaestro.Maintenance do
     * the integrations' deliveries older than `:deliveries_days` (default 30)
       go (`PipeMaestro.Integrations.prune_deliveries/1`);
     * the runners' health samples older than `:health_days` (default 7) go
-      (`PipeMaestro.RunnerTelemetry.prune_health/1`).
+      (`PipeMaestro.RunnerTelemetry.prune_health/1`), and so do their log
+      lines past their workspace's retention and their events past 30 days
+      (`PipeMaestro.RunnerTelemetry.prune_logs/1`).
 
   When it starts, it also closes the runners' sessions the previous run of
   the control plane left open (`PipeMaestro.RunnerTelemetry.close_orphan_sessions/1`).
@@ -84,7 +86,11 @@ defmodule PipeMaestro.Maintenance do
       deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day)),
       health_samples: RunnerTelemetry.prune_health(DateTime.add(now, -health_days, :day))
     }
+    |> Map.merge(runner_logs(RunnerTelemetry.prune_logs(now)))
   end
+
+  defp runner_logs(%{lines: lines, events: events}),
+    do: %{runner_log_lines: lines, runner_events: events}
 
   @impl true
   def init(opts) do

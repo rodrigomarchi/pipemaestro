@@ -3,6 +3,8 @@ defmodule PipeMaestro.Workspaces.Workspace do
   A customer company: the tenant every pipeline, runner and user belongs to.
   `max_running_tasks` caps how many of its tasks run at once (none when
   `nil`); past it, new tasks wait in line (`PipeMaestro.Tasks`).
+  `runner_log_retention_days` is how long its runners' log lines are kept
+  (`PipeMaestro.RunnerTelemetry`); 0 keeps none, only their events.
   """
   use PipeMaestro.Schema
 
@@ -17,6 +19,7 @@ defmodule PipeMaestro.Workspaces.Workspace do
           slug: String.t() | nil,
           member_count: non_neg_integer() | nil,
           max_running_tasks: pos_integer() | nil,
+          runner_log_retention_days: non_neg_integer(),
           users: [User.t()] | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
@@ -27,6 +30,7 @@ defmodule PipeMaestro.Workspaces.Workspace do
     field :slug, :string
     field :member_count, :integer, virtual: true
     field :max_running_tasks, :integer
+    field :runner_log_retention_days, :integer, default: 7
 
     has_many :memberships, Membership
     many_to_many :users, User, join_through: Membership
@@ -41,8 +45,14 @@ defmodule PipeMaestro.Workspaces.Workspace do
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(workspace, attrs) do
     workspace
-    |> cast(attrs, [:name, :slug, :max_running_tasks])
+    |> cast(attrs, [:name, :slug, :max_running_tasks, :runner_log_retention_days])
     |> validate_number(:max_running_tasks, greater_than: 0, message: "use um número positivo")
+    |> validate_required([:runner_log_retention_days])
+    |> validate_number(:runner_log_retention_days,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 90,
+      message: "use de 0 a 90 dias"
+    )
     |> validate_required([:name])
     |> validate_length(:name, max: 80)
     |> put_default_slug()

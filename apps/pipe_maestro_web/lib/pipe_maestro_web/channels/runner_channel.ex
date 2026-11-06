@@ -26,8 +26,12 @@ defmodule PipeMaestroWeb.RunnerChannel do
   offers change while it is online.
 
   A runner that announces it reports its machine's health
-  (`runner:health`, `PipeMaestroProtocol.RunnerHealth`), stored and passed on
-  to the screens following that runner.
+  (`runner:health`, `PipeMaestroProtocol.RunnerHealth`) and its own log
+  (`runner:log`, `PipeMaestroProtocol.RunnerLog`), stored and passed on to
+  the screens following that runner; the join's reply says whether the
+  workspace keeps the log lines. The events in a finished job's report (a
+  setup or a delivery that failed) and a worktree that could not be removed
+  are stored as the runner's events.
 
   Each accepted join opens a session (`PipeMaestro.RunnerTelemetry`), closed
   with the reason the channel ended; a refused join is recorded as a session
@@ -37,7 +41,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   alias PipeMaestro.{Integrations, Jobs, Runners, RunnerTelemetry, Secrets, Tasks}
   alias PipeMaestro.Jobs.Event
-  alias PipeMaestroProtocol.{Hello, Job, Worktree}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerLog, Worktree}
   alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
 
   @impl true
@@ -51,9 +55,14 @@ defmodule PipeMaestroWeb.RunnerChannel do
       session = RunnerTelemetry.open_session(runner)
       send(self(), {:after_join, hello})
 
-      {:ok,
-       %{"runner_id" => runner.id, "name" => runner.name, "workspace" => runner.workspace.name},
-       assign(socket, runner: runner, joined: true, session_id: session.id)}
+      reply = %{
+        "runner_id" => runner.id,
+        "name" => runner.name,
+        "workspace" => runner.workspace.name,
+        "telemetry" => RunnerLog.telemetry_reply(RunnerTelemetry.keep_logs?(runner))
+      }
+
+      {:ok, reply, assign(socket, runner: runner, joined: true, session_id: session.id)}
     else
       false ->
         {:error, %{"reason" => "unauthorized"}}
@@ -144,7 +153,14 @@ defmodule PipeMaestroWeb.RunnerChannel do
   end
 
   def handle_in("job:finished", %{"job_id" => job_id} = payload, socket) do
-    socket.assigns.runner |> Jobs.finish_job(job_id, payload) |> reply_to(socket)
+    runner = socket.assigns.runner
+    result = Jobs.finish_job(runner, job_id, payload)
+
+    with {:ok, _job} <- result,
+         [_ | _] <- RunnerTelemetry.record_job_outcome(runner, job_id, payload),
+         do: RunnerStatus.notify_telemetry(runner.id, :log)
+
+    reply_to(result, socket)
   end
 
   def handle_in("job:telemetry", %{"job_id" => job_id, "records" => records}, socket)
@@ -167,9 +183,16 @@ defmodule PipeMaestroWeb.RunnerChannel do
   end
 
   def handle_in("worktree:removed", %{"task_id" => task_id} = payload, socket) do
-    socket.assigns.runner
-    |> Tasks.worktree_removed(task_id, payload["error"])
-    |> reply_to(socket)
+    runner = socket.assigns.runner
+    result = Tasks.worktree_removed(runner, task_id, payload["error"])
+
+    with {:ok, _task} <- result,
+         error when is_binary(error) <- payload["error"] do
+      RunnerTelemetry.record_worktree_failure(runner, task_id, error)
+      RunnerStatus.notify_telemetry(runner.id, :log)
+    end
+
+    reply_to(result, socket)
   end
 
   def handle_in("worktree:usage", usage, socket) do
@@ -189,6 +212,19 @@ defmodule PipeMaestroWeb.RunnerChannel do
     case RunnerTelemetry.record_health(runner, payload) do
       {:ok, _sample} ->
         RunnerStatus.notify_telemetry(runner.id, :health)
+        {:reply, :ok, socket}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("runner:log", payload, socket) do
+    runner = socket.assigns.runner
+
+    case RunnerTelemetry.record_log(runner, payload) do
+      {:ok, _count} ->
+        RunnerStatus.notify_telemetry(runner.id, :log)
         {:reply, :ok, socket}
 
       {:error, _reason} ->

@@ -9,7 +9,11 @@ defmodule PipeMaestro.RunnerTelemetry do
     * its machine's health (`PipeMaestro.RunnerTelemetry.HealthSample`), a
       sample a minute, as series for charts;
     * how its finished jobs went: failures, setup, queue and gates
-      (`run_stats/2`).
+      (`run_stats/2`);
+    * its own log (`PipeMaestro.RunnerTelemetry.LogLine`), kept for its
+      workspace's `runner_log_retention_days`, and the events that happened
+      to it (`PipeMaestro.RunnerTelemetry.Event`), from its log and from
+      what its jobs reported.
   """
 
   import Ecto.Query
@@ -17,8 +21,10 @@ defmodule PipeMaestro.RunnerTelemetry do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Repo
   alias PipeMaestro.Runners.Runner
-  alias PipeMaestro.RunnerTelemetry.{HealthSample, Session}
-  alias PipeMaestroProtocol.RunnerHealth
+  alias PipeMaestro.RunnerTelemetry.{Event, HealthSample, LogLine, Session}
+  alias PipeMaestro.Tasks.StageRun
+  alias PipeMaestro.Workspaces.Workspace
+  alias PipeMaestroProtocol.{RunnerHealth, RunnerLog}
 
   # ── Connections ───────────────────────────────────────────────────────────
 
@@ -301,6 +307,219 @@ defmodule PipeMaestro.RunnerTelemetry do
 
     Map.new(ids, &{&1, Map.get(counts, &1)})
   end
+
+  # ── Log and events ────────────────────────────────────────────────────────
+
+  @levels ~w(debug info warning error)
+  @events_days 30
+
+  @doc """
+  Whether the workspace of `runner` keeps its runners' log lines (a
+  retention above 0 days); otherwise only their events.
+  """
+  @spec keep_logs?(Runner.t()) :: boolean()
+  def keep_logs?(%Runner{workspace_id: id}) do
+    # Read each time: the setting may change while the runner is connected.
+    Repo.one!(from w in Workspace, where: w.id == ^id, select: w.runner_log_retention_days) > 0
+  end
+
+  @doc """
+  Stores a `runner:log` message of `runner`
+  (`PipeMaestroProtocol.RunnerLog`): its lines, when the workspace keeps
+  them, and the events among them. Returns how many lines it got.
+  """
+  @spec record_log(Runner.t(), term()) :: {:ok, non_neg_integer()} | {:error, String.t()}
+  def record_log(%Runner{} = runner, payload) do
+    with {:ok, lines} <- RunnerLog.parse(payload) do
+      if keep_logs?(runner), do: Repo.insert_all(LogLine, Enum.map(lines, &log_row(runner, &1)))
+
+      for %{"event" => kind} = line <- lines, kind != nil do
+        record_event(runner, kind, line["level"], line["message"],
+          at: line["at"],
+          attrs: line["attrs"],
+          job_id: uuid(line["attrs"]["job_id"])
+        )
+      end
+
+      {:ok, length(lines)}
+    end
+  end
+
+  defp log_row(runner, line) do
+    %{
+      id: Ecto.UUID.generate(),
+      runner_id: runner.id,
+      workspace_id: runner.workspace_id,
+      at: to_usec(line["at"]),
+      level: line["level"],
+      message: line["message"],
+      event: line["event"]
+    }
+  end
+
+  @doc """
+  Stores an event of `runner`: `kind` from `Event.kinds/0`, `level` one of
+  debug, info, warning or error. Options: `:at` (default now), `:attrs`,
+  `:job_id`, `:task_id`.
+  """
+  @spec record_event(Runner.t(), String.t(), String.t(), String.t(), keyword()) :: Event.t()
+  def record_event(%Runner{} = runner, kind, level, message, opts \\ [])
+      when level in @levels do
+    Repo.insert!(%Event{
+      runner_id: runner.id,
+      workspace_id: runner.workspace_id,
+      at: to_usec(Keyword.get_lazy(opts, :at, &DateTime.utc_now/0)),
+      kind: kind,
+      level: level,
+      message: String.slice(message, 0, 4_000),
+      attrs: Keyword.get(opts, :attrs) || %{},
+      job_id: Keyword.get(opts, :job_id),
+      task_id: Keyword.get(opts, :task_id)
+    })
+  end
+
+  @doc """
+  The events in what a job of `runner` reported as it finished (`payload`,
+  as `job:finished` carries it): a setup that failed, and a delivery that
+  failed, as `credential_refused` when git was refused the credential.
+  Works with any runner, the old ones included. Returns the events stored.
+  """
+  @spec record_job_outcome(Runner.t(), Ecto.UUID.t(), map()) :: [Event.t()]
+  def record_job_outcome(%Runner{} = runner, job_id, payload) when is_map(payload) do
+    events =
+      [setup_failure(payload["setup"]), delivery_failure(payload["delivery"])]
+      |> Enum.reject(&is_nil/1)
+
+    if events == [] do
+      []
+    else
+      task_id = task_of(job_id)
+
+      for {kind, level, message, attrs} <- events do
+        record_event(runner, kind, level, message,
+          attrs: attrs,
+          job_id: job_id,
+          task_id: task_id
+        )
+      end
+    end
+  end
+
+  def record_job_outcome(_runner, _job_id, _payload), do: []
+
+  @doc "Stores that `runner` could not remove the worktree of `task_id`."
+  @spec record_worktree_failure(Runner.t(), Ecto.UUID.t(), String.t()) :: Event.t()
+  def record_worktree_failure(%Runner{} = runner, task_id, error) do
+    record_event(runner, "worktree_remove_failed", "warning", "O worktree não saiu: #{error}",
+      task_id: uuid(task_id)
+    )
+  end
+
+  @doc """
+  The runner's events from `since`, newest first, at most `limit`: all of
+  them, or those of a `group` (`Event.group/1`), or `"errors"` for the
+  errors only.
+  """
+  @spec events(Runner.t(), DateTime.t(), String.t() | nil, pos_integer()) :: [Event.t()]
+  def events(%Runner{id: id}, since, group \\ nil, limit \\ 200) do
+    from(e in Event,
+      where: e.runner_id == ^id and e.at >= ^since,
+      order_by: [desc: e.at],
+      limit: ^limit
+    )
+    |> filter_group(group)
+    |> Repo.all()
+  end
+
+  @doc """
+  The runner's latest `limit` log lines at `min_level` or above, oldest
+  first.
+  """
+  @spec log_lines(Runner.t(), String.t(), pos_integer()) :: [LogLine.t()]
+  def log_lines(%Runner{id: id}, min_level \\ "debug", limit \\ 500) do
+    levels = Enum.drop_while(@levels, &(&1 != min_level))
+
+    from(l in LogLine,
+      where: l.runner_id == ^id and l.level in ^levels,
+      order_by: [desc: l.at],
+      limit: ^limit
+    )
+    |> Repo.all()
+    |> Enum.reverse()
+  end
+
+  @doc """
+  Removes the log lines past their workspace's retention, as of `now`, and
+  the events older than #{@events_days} days. Returns how many of each.
+  """
+  @spec prune_logs(DateTime.t()) :: %{lines: non_neg_integer(), events: non_neg_integer()}
+  def prune_logs(now) do
+    {lines, _} =
+      Repo.delete_all(
+        from l in LogLine,
+          join: w in Workspace,
+          on: w.id == l.workspace_id,
+          where:
+            l.at <
+              fragment(
+                "? - make_interval(days => ?)",
+                type(^now, :utc_datetime_usec),
+                w.runner_log_retention_days
+              )
+      )
+
+    {events, _} =
+      Repo.delete_all(from e in Event, where: e.at < ^DateTime.add(now, -@events_days, :day))
+
+    %{lines: lines, events: events}
+  end
+
+  defp filter_group(query, nil), do: query
+  defp filter_group(query, "errors"), do: where(query, [e], e.level == "error")
+  defp filter_group(query, group), do: where(query, [e], e.kind in ^Event.kinds_of(group))
+
+  defp setup_failure(%{"exit_code" => code} = setup) when is_integer(code) and code != 0 do
+    {"setup_failed", "error", "O setup do worktree falhou (saída #{code}).",
+     %{"command" => setup["command"], "exit_code" => code, "output" => tail(setup["output"])}}
+  end
+
+  defp setup_failure(_setup), do: nil
+
+  # git's own words when the host refused the credential.
+  @refused ~r/(Authentication failed|could not read Username|invalid credentials|401|403|denied)/i
+
+  defp delivery_failure(%{"error" => error}) when is_binary(error) and error != "" do
+    if Regex.match?(@refused, error),
+      do: {"credential_refused", "error", "O host recusou a credencial git: #{tail(error)}", %{}},
+      else: {"delivery_failed", "error", "A entrega no git falhou: #{tail(error)}", %{}}
+  end
+
+  defp delivery_failure(_delivery), do: nil
+
+  defp tail(nil), do: nil
+
+  defp tail(text) do
+    if String.length(text) <= 1_000, do: text, else: "…" <> String.slice(text, -1_000, 1_000)
+  end
+
+  defp task_of(job_id) do
+    Repo.one(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: j.id == ^job_id,
+        select: r.task_id
+    )
+  end
+
+  defp uuid(value) when is_binary(value) do
+    case Ecto.UUID.cast(value) do
+      {:ok, uuid} -> uuid
+      :error -> nil
+    end
+  end
+
+  defp uuid(_value), do: nil
 
   defp to_float(nil), do: nil
   defp to_float(%Decimal{} = value), do: Decimal.to_float(value)

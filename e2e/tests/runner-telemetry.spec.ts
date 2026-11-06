@@ -1,6 +1,7 @@
 /**
  * @section Runners
  * @flow A [done] The runner page's "Conexões" tab shows each connection: the one live, a stop that ended it, a join refused for its version; the list shows the runner's uptime over the week
+ * @flow C [done] The "Eventos e logs" tab shows the runner's own log, live, and an event for a task's setup that failed, filtered by group
  * @flow B [done] The "Saúde" tab shows the machine's CPU, memory, load and free disk as the runner reports them, and the week's jobs; the list shows the runner's failures over the week
  */
 import { expect, test } from "@playwright/test";
@@ -9,7 +10,10 @@ import { RunnerProcess } from "../helpers/runnerProcess";
 import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
+import { PipelinesPage } from "../pages/PipelinesPage";
+import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
+import { TasksPage } from "../pages/TasksPage";
 
 test.describe("Runner telemetry", () => {
   // Real CLI processes: the first one may compile the runner app.
@@ -84,7 +88,31 @@ test.describe("Runner telemetry", () => {
 
     await runners.open(workspace.slug);
     await expect(runners.failures(runnerName)).toHaveText("falhas 7d —");
+
+    // Flow C: a task whose setup fails, then the runner's events and log.
+    const projects = new ProjectsPage(app.page);
+    await projects.open(workspace.slug);
+    await projects.create({ name: "App", runner: runnerName, directory: "app", setup: "echo quebrou && exit 3" });
+    const pipelines = new PipelinesPage(app.page);
+    await pipelines.open(workspace.slug);
+    await pipelines.createDefaults();
+    const tasks = new TasksPage(app.page);
+    await tasks.open(workspace.slug);
+    await tasks.create({ title: "Setup quebrado", prompt: "Faça algo.", pipeline: "Prompt único", project: "App" });
+    await expect(tasks.status).toHaveText("Aguardando decisão", { timeout: 60_000 });
+
+    await runners.open(workspace.slug);
+    await expect(runners.failures(runnerName)).not.toHaveText("falhas 7d —");
     await shot(app.page, "runners-list-telemetry");
+
+    await runners.openRunner(workspace.slug, runnerName);
+    await runners.openTab("eventos");
+    await expect(runners.event("setup_failed").first()).toContainText("O setup do worktree falhou");
+    await expect(runners.logLines.filter({ hasText: "Online como" }).first()).toBeVisible();
+    await shot(app.page, "runner-events-log");
+
+    await runners.filterEvents("connection");
+    await expect(runners.event("setup_failed")).toHaveCount(0);
 
     await context.close();
   });

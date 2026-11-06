@@ -6,7 +6,8 @@ defmodule PipeMaestro.RunnerTelemetryTest do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Repo
   alias PipeMaestro.RunnerTelemetry
-  alias PipeMaestro.RunnerTelemetry.{HealthSample, Session}
+  alias PipeMaestro.RunnerTelemetry.{Event, HealthSample, Session}
+  alias PipeMaestroProtocol.RunnerLog
 
   setup do
     workspace = workspace_fixture()
@@ -225,6 +226,122 @@ defmodule PipeMaestro.RunnerTelemetryTest do
       assert_in_delta rates[runner.id], 1 / 3, 0.0001
       assert rates[other.id] == nil
       assert %Job{} = Repo.get_by!(Job, runner_id: runner.id, status: :canceled)
+    end
+  end
+
+  describe "log and events" do
+    defp log(lines), do: %{"lines" => lines}
+
+    defp set_retention(runner, days) do
+      PipeMaestro.Workspaces.Workspace
+      |> Repo.get!(runner.workspace_id)
+      |> Ecto.Changeset.change(runner_log_retention_days: days)
+      |> Repo.update!()
+    end
+
+    test "stores the lines and, apart, the events among them", %{runner: runner} do
+      now = DateTime.utc_now()
+      job_id = Ecto.UUID.generate()
+
+      payload =
+        log([
+          RunnerLog.line(DateTime.add(now, -2), "info", "Online como build-01"),
+          RunnerLog.line(
+            DateTime.add(now, -1),
+            "warning",
+            "Scratch não saiu",
+            "scratch_remove_failed",
+            %{
+              "job_id" => job_id
+            }
+          )
+        ])
+
+      assert {:ok, 2} = RunnerTelemetry.record_log(runner, payload)
+
+      assert [%{message: "Online como build-01"}, %{event: "scratch_remove_failed"}] =
+               RunnerTelemetry.log_lines(runner)
+
+      assert [%{level: "warning"}] = RunnerTelemetry.log_lines(runner, "warning")
+
+      assert [%Event{kind: "scratch_remove_failed", job_id: ^job_id}] =
+               RunnerTelemetry.events(runner, DateTime.add(now, -60))
+
+      assert {:error, _} = RunnerTelemetry.record_log(runner, %{"lines" => "x"})
+    end
+
+    test "a workspace that keeps no log keeps only the events", %{runner: runner} do
+      set_retention(runner, 0)
+      refute RunnerTelemetry.keep_logs?(runner)
+      now = DateTime.utc_now()
+
+      {:ok, 2} =
+        RunnerTelemetry.record_log(
+          runner,
+          log([
+            RunnerLog.line(now, "info", "comum"),
+            RunnerLog.line(now, "error", "falhou", "update_failed", %{"to" => "v2"})
+          ])
+        )
+
+      assert RunnerTelemetry.log_lines(runner) == []
+
+      assert [%Event{kind: "update_failed", attrs: %{"to" => "v2"}}] =
+               RunnerTelemetry.events(runner, DateTime.add(now, -60))
+    end
+
+    test "a finished job's failed setup and delivery become events", %{runner: runner, user: user} do
+      job = job_fixture(runner, user)
+      since = DateTime.add(DateTime.utc_now(), -60)
+
+      assert [] = RunnerTelemetry.record_job_outcome(runner, job.id, %{"status" => "succeeded"})
+
+      assert [%Event{kind: "setup_failed", job_id: job_id}, %Event{kind: "credential_refused"}] =
+               RunnerTelemetry.record_job_outcome(runner, job.id, %{
+                 "setup" => %{"exit_code" => 1, "command" => "mix deps.get", "output" => "erro"},
+                 "delivery" => %{"error" => "push: fatal: Authentication failed for 'https://x'"}
+               })
+
+      assert job_id == job.id
+
+      assert [%Event{kind: "delivery_failed"}] =
+               RunnerTelemetry.record_job_outcome(runner, job.id, %{
+                 "delivery" => %{"error" => "push: rejected (non-fast-forward)"}
+               })
+
+      assert length(RunnerTelemetry.events(runner, since, "git")) == 2
+      assert length(RunnerTelemetry.events(runner, since, "setup")) == 1
+      assert length(RunnerTelemetry.events(runner, since, "errors")) == 3
+      assert RunnerTelemetry.record_job_outcome(runner, job.id, nil) == []
+
+      %Event{kind: "worktree_remove_failed"} =
+        RunnerTelemetry.record_worktree_failure(runner, Ecto.UUID.generate(), "em uso")
+
+      assert Event.group("worktree_remove_failed") == "worktree"
+      assert Event.group("nada") == "other"
+    end
+
+    test "lines go after their workspace's retention, events after 30 days", %{runner: runner} do
+      now = DateTime.utc_now()
+      set_retention(runner, 3)
+
+      {:ok, 2} =
+        RunnerTelemetry.record_log(
+          runner,
+          log([
+            RunnerLog.line(DateTime.add(now, -4, :day), "info", "velha"),
+            RunnerLog.line(DateTime.add(now, -1, :day), "info", "nova")
+          ])
+        )
+
+      RunnerTelemetry.record_event(runner, "connection_lost", "warning", "caiu",
+        at: DateTime.add(now, -31, :day)
+      )
+
+      RunnerTelemetry.record_event(runner, "connection_lost", "warning", "caiu", at: now)
+
+      assert %{lines: 1, events: 1} = RunnerTelemetry.prune_logs(now)
+      assert [%{message: "nova"}] = RunnerTelemetry.log_lines(runner)
     end
   end
 end

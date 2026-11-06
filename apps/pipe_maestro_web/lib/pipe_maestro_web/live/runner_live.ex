@@ -8,6 +8,8 @@ defmodule PipeMaestroWeb.RunnerLive do
       jobs it finished, each leading to its audit;
     * **Saúde** — its machine and how its jobs went, over the last day or
       week (`?periodo=`, `PipeMaestroWeb.RunnerLive.HealthTab`);
+    * **Eventos e logs** — what happened to it and its own log (`?grupo=`,
+      `?nivel=`, `PipeMaestroWeb.RunnerLive.LogTab`);
     * **Conexões** — its uptime and sessions
       (`PipeMaestroWeb.RunnerLive.ConnectionsTab`).
 
@@ -33,12 +35,13 @@ defmodule PipeMaestroWeb.RunnerLive do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.{RunnerActions, RunnerStatus}
-  alias PipeMaestroWeb.RunnerLive.{ConnectionsTab, HealthTab}
+  alias PipeMaestroWeb.RunnerLive.{ConnectionsTab, HealthTab, LogTab}
 
   # The tabs, by their `aba` parameter, in order.
   @tabs [
     {"visao", "Visão geral", "hero-server"},
     {"saude", "Saúde", "hero-heart"},
+    {"eventos", "Eventos e logs", "hero-queue-list"},
     {"conexoes", "Conexões", "hero-signal"}
   ]
   @tab_ids Enum.map(@tabs, &elem(&1, 0))
@@ -55,14 +58,24 @@ defmodule PipeMaestroWeb.RunnerLive do
     end
 
     {:ok,
-     assign(socket, page_title: runner.name, runner_id: runner.id, tab: "visao", period: "24h")}
+     assign(socket,
+       page_title: runner.name,
+       runner_id: runner.id,
+       tab: "visao",
+       period: "24h",
+       group: "tudo",
+       level: "info"
+     )}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
     tab = if params["aba"] in @tab_ids, do: params["aba"], else: "visao"
     period = if params["periodo"] in HealthTab.periods(), do: params["periodo"], else: "24h"
-    {:noreply, socket |> assign(tab: tab, period: period) |> load()}
+    group = if params["grupo"] in LogTab.groups(), do: params["grupo"], else: "tudo"
+    level = if params["nivel"] in LogTab.levels(), do: params["nivel"], else: "info"
+
+    {:noreply, socket |> assign(tab: tab, period: period, group: group, level: level) |> load()}
   end
 
   @impl true
@@ -87,6 +100,9 @@ defmodule PipeMaestroWeb.RunnerLive do
 
   # A sample a minute: only the tab that shows it reloads.
   def handle_info({:runner_telemetry, :health}, %{assigns: %{tab: "saude"}} = socket),
+    do: {:noreply, load(socket)}
+
+  def handle_info({:runner_telemetry, :log}, %{assigns: %{tab: "eventos"}} = socket),
     do: {:noreply, load(socket)}
 
   def handle_info({:runner_telemetry, _kind}, socket), do: {:noreply, socket}
@@ -122,6 +138,11 @@ defmodule PipeMaestroWeb.RunnerLive do
   defp load_tab(socket, "saude", runner, now),
     do: assign(socket, health: HealthTab.load(runner, socket.assigns.period, now))
 
+  defp load_tab(socket, "eventos", runner, now) do
+    %{group: group, level: level} = socket.assigns
+    assign(socket, log: LogTab.load(runner, group, level, now))
+  end
+
   defp load_tab(socket, "conexoes", runner, now),
     do: assign(socket, connections: ConnectionsTab.load(runner, now))
 
@@ -130,6 +151,9 @@ defmodule PipeMaestroWeb.RunnerLive do
 
   defp tab_path(scope, runner_id, tab),
     do: ~p"/w/#{scope.workspace.slug}/runners/#{runner_id}?aba=#{tab}"
+
+  defp log_path(scope, runner_id),
+    do: &~p"/w/#{scope.workspace.slug}/runners/#{runner_id}?aba=eventos&grupo=#{&1}&nivel=#{&2}"
 
   defp period_path(scope, runner_id),
     do: &~p"/w/#{scope.workspace.slug}/runners/#{runner_id}?aba=saude&periodo=#{&1}"
@@ -189,6 +213,7 @@ defmodule PipeMaestroWeb.RunnerLive do
           data={@health}
           path={period_path(@current_scope, @runner.id)}
         />
+        <LogTab.log :if={@tab == "eventos"} data={@log} path={log_path(@current_scope, @runner.id)} />
         <ConnectionsTab.connections :if={@tab == "conexoes"} data={@connections} />
 
         <div :if={@tab == "visao"} class="space-y-6">

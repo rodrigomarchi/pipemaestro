@@ -330,6 +330,61 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
       assert has_element?(view, "[data-testid=runner-health-unsupported]")
     end
 
+    test "events and log: filtered by group and level, live", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+      now = DateTime.utc_now()
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=eventos")
+      assert has_element?(view, "[data-testid=runner-no-events]")
+      assert has_element?(view, "[data-testid=runner-no-log-lines]")
+
+      {:ok, _} =
+        RunnerTelemetry.record_log(runner, %{
+          "lines" => [
+            PipeMaestroProtocol.RunnerLog.line(now, "info", "Online como mac"),
+            PipeMaestroProtocol.RunnerLog.line(
+              now,
+              "warning",
+              "Conexão perdida",
+              "connection_lost",
+              %{}
+            )
+          ]
+        })
+
+      RunnerTelemetry.record_event(runner, "setup_failed", "error", "O setup falhou (saída 1).")
+      PipeMaestroWeb.RunnerStatus.notify_telemetry(runner.id, :log)
+
+      assert render(view) =~ "Online como mac"
+      assert has_element?(view, "[data-testid=runner-event-connection_lost]", "conexão perdida")
+      assert has_element?(view, "[data-testid=runner-event-setup_failed]")
+
+      view |> element("[data-testid=runner-event-group-setup]") |> render_click()
+      assert has_element?(view, "[data-testid=runner-event-setup_failed]")
+      refute has_element?(view, "[data-testid=runner-event-connection_lost]")
+
+      view |> element("[data-testid=runner-log-level-warning]") |> render_click()
+
+      assert_patch(
+        view,
+        ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=eventos&grupo=setup&nivel=warning"
+      )
+
+      assert has_element?(view, "[data-testid=runner-log-line]", "Conexão perdida")
+      refute has_element?(view, "[data-testid=runner-log-line]", "Online como mac")
+
+      workspace
+      |> Ecto.Changeset.change(runner_log_retention_days: 0)
+      |> PipeMaestro.Repo.update!()
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=eventos")
+      assert has_element?(view, "[data-testid=runner-log-not-kept]")
+    end
+
     test "connections: uptime, drops and each session with how it ended", %{
       conn: conn,
       workspace: workspace,

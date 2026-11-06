@@ -148,6 +148,22 @@ export class RunnersPage {
     return this.page.getByTestId(`runner-failures-${name}`);
   }
 
+  /** An event of `kind` (setup_failed, connection_lost...) in the "Eventos e logs" tab. */
+  event(kind: string): Locator {
+    return this.page.getByTestId(`runner-event-${kind}`);
+  }
+
+  /** The lines of the runner's log in the "Eventos e logs" tab, newest first. */
+  get logLines(): Locator {
+    return this.page.getByTestId("runner-log-line");
+  }
+
+  /** Filters the events by a group: tudo, errors, setup, git, update, connection, worktree, doctor. */
+  async filterEvents(group: string) {
+    await this.page.getByTestId(`runner-event-group-${group}`).click();
+    await expect(this.page).toHaveURL(new RegExp(`grupo=${group}`));
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

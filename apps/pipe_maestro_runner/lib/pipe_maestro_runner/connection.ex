@@ -42,6 +42,14 @@ defmodule PipeMaestroRunner.Connection do
   at that interval, and sends it (`runner:health`) while joined; a sample
   taken while disconnected is dropped.
 
+  With `logs: true`, it is the sink of the runner's log
+  (`PipeMaestroRunner.LogCollector`): after every join it attaches to the
+  collector, sending all the lines or, when the join's reply says the
+  workspace keeps no log, only the events; the batches go through the outbox
+  (`runner:log`). It also tells the log when its connection drops
+  (`connection_lost`) and, at most once a minute, when the outbox dropped
+  messages for lack of room (`outbox_dropped`).
+
   Progress is reported to `:notify` (a pid) as `{:runner_connection, event}`
   with `event` one of `{:joined, reply}`, `{:disconnected, reason}`,
   `:rejected`, `{:outdated, refusal}`, `{:job_started, job_id}` and
@@ -51,8 +59,8 @@ defmodule PipeMaestroRunner.Connection do
 
   require Logger
 
-  alias PipeMaestroProtocol.{Hello, Job, RunnerHealth, Worktree}
-  alias PipeMaestroRunner.{Directories, Disk, Health, JobRunner, Outbox}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerHealth, RunnerLog, Worktree}
+  alias PipeMaestroRunner.{Directories, Disk, Health, JobRunner, LogCollector, Outbox}
 
   @doc "Starts the connection with the runner's credentials and hello."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -95,6 +103,8 @@ defmodule PipeMaestroRunner.Connection do
         usage_every: Keyword.get(opts, :usage_every, 300_000),
         usage: nil,
         measuring: nil,
+        logs: Keyword.get(opts, :logs, false),
+        drops_told: {0, nil},
         health_every: Keyword.get(opts, :health_every),
         sampling: nil,
         health_timer: nil,
@@ -170,6 +180,7 @@ defmodule PipeMaestroRunner.Connection do
   @impl Slipstream
   def handle_join(_topic, reply, socket) do
     notify(socket, {:joined, reply})
+    if socket.assigns.logs, do: LogCollector.attach(self(), RunnerLog.logs?(reply))
     # The platform forgets nothing it was told, but this is a new channel
     # process: the next measure is pushed even if unchanged.
     socket = assign(socket, usage: nil, outbox: Outbox.forget_refs(socket.assigns.outbox))
@@ -198,6 +209,11 @@ defmodule PipeMaestroRunner.Connection do
 
   def handle_disconnect(reason, socket) do
     notify(socket, {:disconnected, reason})
+
+    LogCollector.capture(:warning, "Conexão com a plataforma perdida: #{inspect(reason)}", %{
+      runner_event: "connection_lost",
+      event_attrs: %{"reason" => inspect(reason, limit: 5)}
+    })
 
     case reconnect(socket) do
       {:ok, socket} -> {:ok, socket}
@@ -323,8 +339,7 @@ defmodule PipeMaestroRunner.Connection do
   # What the job runner reports goes to the platform through the outbox; while
   # disconnected it waits there for the next join.
   def handle_info({:job_out, event, payload}, socket) do
-    {id, outbox} = Outbox.add(socket.assigns.outbox, event, payload)
-    socket = send_out(assign(socket, outbox: outbox), id, event, payload)
+    socket = add_out(socket, event, payload)
 
     case event do
       "job:started" -> notify(socket, {:job_started, payload["job_id"]})
@@ -333,6 +348,33 @@ defmodule PipeMaestroRunner.Connection do
     end
 
     {:noreply, socket}
+  end
+
+  # The runner's log, in batches (`PipeMaestroRunner.LogCollector`).
+  def handle_info({:runner_log, lines}, socket),
+    do: {:noreply, add_out(socket, RunnerLog.event(), %{"lines" => lines})}
+
+  defp add_out(socket, event, payload) do
+    {id, outbox} = Outbox.add(socket.assigns.outbox, event, payload)
+    socket |> assign(outbox: outbox) |> tell_drops() |> send_out(id, event, payload)
+  end
+
+  # Telling the log takes room in the outbox too: once a minute at most.
+  defp tell_drops(%{assigns: %{outbox: outbox, drops_told: {told, at}}} = socket) do
+    dropped = Outbox.dropped(outbox)
+    now = System.monotonic_time(:millisecond)
+
+    if dropped > told and (at == nil or now - at >= 60_000) do
+      LogCollector.capture(
+        :warning,
+        "A fila de envio encheu: #{dropped - told} mensagens descartadas.",
+        %{runner_event: "outbox_dropped", event_attrs: %{"count" => dropped - told}}
+      )
+
+      assign(socket, drops_told: {dropped, now})
+    else
+      socket
+    end
   end
 
   defp send_out(socket, id, event, payload) do

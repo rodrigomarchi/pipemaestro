@@ -113,8 +113,11 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
   describe "sessions" do
     setup %{token: token} do
       {:ok, socket} = connect(RunnerSocket, params(token))
+      Process.put(:token, token)
       %{socket: socket}
     end
+
+    defp params_for(_runner), do: params(Process.get(:token))
 
     defp join_and_close(socket, runner, before_close) do
       {:ok, _reply, channel} =
@@ -169,6 +172,47 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
 
       ref = push(channel, "runner:health", %{"cpu_pct" => 1})
       assert_reply ref, :error, %{"reason" => "invalid"}
+    end
+
+    test "the runner's log is stored; the join says whether lines are kept", %{
+      socket: socket,
+      runner: runner,
+      workspace: workspace
+    } do
+      {:ok, reply, channel} =
+        subscribe_and_join(
+          socket,
+          RunnerChannel,
+          "runner:" <> runner.id,
+          Hello.to_map(hello_fixture())
+        )
+
+      assert reply["telemetry"] == %{"logs" => true}
+      RunnerStatus.subscribe_telemetry(runner.id)
+
+      line =
+        PipeMaestroProtocol.RunnerLog.line(DateTime.utc_now(), "info", "Online como build-01")
+
+      ref = push(channel, "runner:log", %{"lines" => [line]})
+      assert_reply ref, :ok
+      assert_receive {:runner_telemetry, :log}
+      assert [%{message: "Online como build-01"}] = RunnerTelemetry.log_lines(runner)
+
+      ref = push(channel, "runner:log", %{"lines" => [%{"level" => "info"}]})
+      assert_reply ref, :error, %{"reason" => "invalid"}
+
+      workspace |> Ecto.Changeset.change(runner_log_retention_days: 0) |> Repo.update!()
+      {:ok, socket} = connect(RunnerSocket, params_for(runner))
+
+      {:ok, reply, _channel} =
+        subscribe_and_join(
+          socket,
+          RunnerChannel,
+          "runner:" <> runner.id,
+          Hello.to_map(hello_fixture())
+        )
+
+      assert reply["telemetry"] == %{"logs" => false}
     end
 
     test "an invalid hello is recorded as a refusal", %{socket: socket, runner: runner} do
@@ -331,6 +375,30 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
         "job_id" => ^job_id,
         "git_credential" => %{"password" => "tok"}
       }
+    end
+
+    test "a finished job's failed setup becomes an event of the runner", ctx do
+      channel = join_runner(ctx.socket, ctx.runner)
+      job = job_fixture(ctx.runner, ctx.user)
+      assert_push "job:assign", %{"id" => _id}
+      ref = push(channel, "job:started", %{"job_id" => job.id})
+      assert_reply ref, :ok
+
+      ref =
+        push(channel, "job:finished", %{
+          "job_id" => job.id,
+          "status" => "failed",
+          "exit_code" => 1,
+          "error" => "O setup falhou",
+          "setup" => %{"exit_code" => 2, "command" => "mix deps.get", "output" => "erro"}
+        })
+
+      assert_reply ref, :ok
+
+      assert [%{kind: "setup_failed", job_id: job_id}] =
+               RunnerTelemetry.events(ctx.runner, ~U[2000-01-01 00:00:00Z])
+
+      assert job_id == job.id
     end
 
     test "new and canceled jobs reach the runner; its reports are stored", ctx do

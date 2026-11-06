@@ -51,16 +51,27 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLiveTest do
              |> form("#workspace-form", workspace: %{slug: "Inválido!"})
              |> render_submit() =~ "use letras minúsculas"
 
+      assert view
+             |> form("#workspace-form", workspace: %{runner_log_retention_days: "91"})
+             |> render_submit() =~ "use de 0 a 90 dias"
+
       html =
         view
         |> form("#workspace-form",
-          workspace: %{name: "Renomeado", slug: "renomeado", max_running_tasks: "3"}
+          workspace: %{
+            name: "Renomeado",
+            slug: "renomeado",
+            max_running_tasks: "3",
+            runner_log_retention_days: "0"
+          }
         )
         |> render_submit()
 
       assert_patch(view, ~p"/backoffice/workspaces")
       assert html =~ "Workspace Renomeado atualizado."
-      assert %{slug: "renomeado", max_running_tasks: 3} = Workspaces.get_workspace!(workspace.id)
+
+      assert %{slug: "renomeado", max_running_tasks: 3, runner_log_retention_days: 0} =
+               Workspaces.get_workspace!(workspace.id)
     end
   end
 

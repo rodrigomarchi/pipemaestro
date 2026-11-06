@@ -12,9 +12,9 @@ defmodule PipeMaestroRunner.Outbox do
   runner starts with them, still counts their jobs as running, and sends them
   again. A job's events live only in memory.
 
-  It holds at most `max` messages. Past that, the oldest `job:event`s go
-  first: a job's start and end are what moves the task along, and are never
-  dropped.
+  It holds at most `max` messages. Past that, the oldest of a job's events
+  and telemetry and of the runner's log go first (`dropped/1` counts them): a
+  job's start and end are what moves the task along, and are never dropped.
   """
 
   @default_max 20_000
@@ -26,7 +26,8 @@ defmodule PipeMaestroRunner.Outbox do
             path: Path.t() | nil,
             next: non_neg_integer(),
             entries: :gb_trees.tree(non_neg_integer(), {String.t(), map()}),
-            refs: %{optional(term()) => non_neg_integer()}
+            refs: %{optional(term()) => non_neg_integer()},
+            dropped: non_neg_integer()
           }
 
   @doc """
@@ -43,7 +44,8 @@ defmodule PipeMaestroRunner.Outbox do
       path: path,
       next: length(kept),
       entries: :gb_trees.from_orddict(entries),
-      refs: %{}
+      refs: %{},
+      dropped: 0
     }
   end
 
@@ -90,6 +92,10 @@ defmodule PipeMaestroRunner.Outbox do
   def pending(outbox) do
     for {id, {event, payload}} <- :gb_trees.to_list(outbox.entries), do: {id, event, payload}
   end
+
+  @doc "How many messages it dropped for lack of room, since it was created."
+  @spec dropped(t()) :: non_neg_integer()
+  def dropped(outbox), do: outbox.dropped
 
   @doc "How many messages are still to confirm."
   @spec size(t()) :: non_neg_integer()
@@ -147,12 +153,19 @@ defmodule PipeMaestroRunner.Outbox do
   end
 
   # What can go when full: a job's events and telemetry, never its start or end.
-  @droppable ~w(job:event job:telemetry)
+  @droppable ~w(job:event job:telemetry runner:log)
 
   defp drop_oldest_event(outbox) do
     case Enum.find(pending(outbox), fn {_id, event, _payload} -> event in @droppable end) do
-      nil -> outbox
-      {id, _event, _payload} -> trim(%{outbox | entries: :gb_trees.delete(id, outbox.entries)})
+      nil ->
+        outbox
+
+      {id, _event, _payload} ->
+        trim(%{
+          outbox
+          | entries: :gb_trees.delete(id, outbox.entries),
+            dropped: outbox.dropped + 1
+        })
     end
   end
 end
