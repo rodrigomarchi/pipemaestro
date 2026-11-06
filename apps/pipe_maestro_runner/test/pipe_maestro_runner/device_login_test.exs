@@ -80,7 +80,7 @@ defmodule PipeMaestroRunner.DeviceLoginTest do
     assert run(__MODULE__.Expired, hello, self()) == {:error, :expired}
   end
 
-  test "an outdated runner is told the platform's version and where to download it", %{
+  test "an outdated runner is told the runner's version the platform asks for and where to download it", %{
     hello: hello
   } do
     refusal = %{
@@ -100,7 +100,7 @@ defmodule PipeMaestroRunner.DeviceLoginTest do
 
     message = PipeMaestroRunner.Update.message(refusal)
     assert message =~ "versão 2026-11-04.01"
-    assert message =~ "na 2026-11-04.02"
+    assert message =~ "pede a versão 2026-11-04.02 do runner"
     assert message =~ "https://pipemaestro.app/downloads/runner/"
   end
 
