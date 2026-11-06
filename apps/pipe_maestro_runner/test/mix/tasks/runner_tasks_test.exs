@@ -55,11 +55,13 @@ defmodule Mix.Tasks.RunnerTasksTest do
     assert_raise Mix.Error, ~r/ainda não fez login/, fn -> Status.run([]) end
   end
 
-  test "start and login take --auto-update" do
-    assert_raise Mix.Error, ~r/ainda não fez login/, fn -> Start.run(["--auto-update"]) end
+  for option <- ["--no-auto-update", "--auto-update"] do
+    test "start and login take #{option}" do
+      assert_raise Mix.Error, ~r/ainda não fez login/, fn -> Start.run([unquote(option)]) end
 
-    assert_raise Mix.Error, ~r/Não foi possível falar com/, fn ->
-      Login.run(["--auto-update", "--url", "http://127.0.0.1:1"])
+      assert_raise Mix.Error, ~r/Não foi possível falar com/, fn ->
+        Login.run([unquote(option), "--url", "http://127.0.0.1:1"])
+      end
     end
   end
 
