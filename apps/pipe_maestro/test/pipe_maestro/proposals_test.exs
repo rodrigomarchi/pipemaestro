@@ -278,37 +278,45 @@ defmodule PipeMaestro.ProposalsTest do
       refute Proposals.triaging?(ctx.workspace, url)
     end
 
-    test "triages an issue once, with its body cut, on behalf of who set the trigger up", ctx do
-      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})
+    test "triages a linked issue once, with its body cut, on behalf of the trigger's person",
+         ctx do
+      PipeMaestro.FakeForgejo.start()
 
       {:ok, project} =
-        Projects.update_project(
-          ctx.projects["app"],
-          %{
-            "name" => "App",
-            "copy_paths_text" => "deps\nvendor",
-            "github_repo" => "acme/app",
-            "trigger_label" => "ia",
-            "trigger_pipeline_id" => pipeline.id,
-            "trigger_mode" => "triage"
-          },
-          ctx.user
+        Projects.update_project(ctx.projects["app"], %{"copy_paths_text" => "deps\nvendor"})
+
+      {:ok, repo} =
+        PipeMaestro.Integrations.link_repo(
+          connection_fixture(ctx.workspace),
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => project.id},
+          "https://pm.test/hook"
         )
+
+      repo = PipeMaestro.Repo.preload(repo, :project)
+
+      trigger = %PipeMaestro.Integrations.Trigger{
+        acting_user_id: ctx.user.id,
+        auto_approve: false
+      }
 
       issue = %{
         "title" => "Botão quebrado",
         "body" => String.duplicate("a", 40_000),
-        "html_url" => "https://github.com/acme/app/issues/5"
+        "html_url" => "https://forge.test/acme/app/issues/5",
+        "number" => 5
       }
 
-      assert {:ok, job} = Proposals.triage_issue(ctx.workspace, project, issue)
+      assert {:ok, job} =
+               Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue)
+
       assert job.created_by_user_id == ctx.user.id
-      assert job.prompt =~ "prefira-o"
       assert byte_size(job.prompt) < 20_000
+      assert Proposals.input(job)["issue_number"] == 5
       # The project's own dependency paths go to the disposable worktree.
       assert job.context["setup"] == %{"copy" => ["deps", "vendor"]}
 
-      assert Proposals.triage_issue(ctx.workspace, project, issue) ==
+      assert Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue) ==
                {:error, :already_triaging}
     end
 

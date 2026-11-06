@@ -3,17 +3,17 @@ defmodule PipeMaestro.Secrets do
   A workspace's secrets: values the agents need (an MCP server's token, a
   test account) that should not live in a pipeline or on the runners.
 
-  Each is an environment variable, encrypted at rest (AES-256-GCM with a key
-  from the application's configuration). They are handed to the runner with
-  every job, in memory only (`PipeMaestroProtocol.Job` `env`), so a
-  pipeline's MCP configuration can refer to them as `${NAME}`. Their values
-  are never shown back.
+  Each is an environment variable, encrypted at rest (`PipeMaestro.Vault`).
+  They are handed to the runner with every job, in memory only
+  (`PipeMaestroProtocol.Job` `env`), so a pipeline's MCP configuration can
+  refer to them as `${NAME}`. Their values are never shown back.
   """
 
   import Ecto.Query
 
   alias PipeMaestro.Repo
   alias PipeMaestro.Secrets.Secret
+  alias PipeMaestro.Vault
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.Job
 
@@ -73,18 +73,11 @@ defmodule PipeMaestro.Secrets do
     |> Map.new(&{&1.name, decrypt(&1.encrypted_value)})
   end
 
-  defp encrypt(value) do
-    iv = :crypto.strong_rand_bytes(12)
-    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key(), iv, value, @aad, true)
-    iv <> tag <> ciphertext
-  end
+  defp encrypt(value), do: Vault.encrypt(value, @aad)
 
-  defp decrypt(<<iv::binary-12, tag::binary-16, ciphertext::binary>>),
-    do: :crypto.crypto_one_time_aead(:aes_256_gcm, key(), iv, ciphertext, @aad, tag, false)
-
-  defp key do
-    secret = Application.fetch_env!(:pipe_maestro, __MODULE__)[:key]
-    :crypto.hash(:sha256, secret)
+  defp decrypt(blob) do
+    {:ok, value} = Vault.decrypt(blob, @aad)
+    value
   end
 
   defp now, do: DateTime.utc_now(:second)

@@ -64,39 +64,20 @@ defmodule PipeMaestro.Projects do
   @spec change_project(Project.t(), map()) :: Ecto.Changeset.t()
   def change_project(%Project{} = project, attrs \\ %{}), do: Project.changeset(project, attrs)
 
-  @doc """
-  Creates a project in the workspace; `user` (who sets it up) is whom the
-  tasks its GitHub trigger starts belong to.
-  """
-  @spec create_project(Workspace.t(), map(), User.t() | nil) ::
-          {:ok, Project.t()} | {:error, Ecto.Changeset.t()}
-  def create_project(%Workspace{id: workspace_id}, attrs, user \\ nil) do
-    %Project{workspace_id: workspace_id, trigger_user_id: user && user.id}
+  @doc "Creates a project in the workspace."
+  @spec create_project(Workspace.t(), map()) :: {:ok, Project.t()} | {:error, Ecto.Changeset.t()}
+  def create_project(%Workspace{id: workspace_id}, attrs) do
+    %Project{workspace_id: workspace_id}
     |> Project.changeset(attrs)
     |> Repo.insert()
   end
 
-  @doc """
-  Saves a project. Tasks already started keep their snapshot; `user`, when
-  given, becomes whom the GitHub trigger's tasks belong to.
-  """
-  @spec update_project(Project.t(), map(), User.t() | nil) ::
-          {:ok, Project.t()} | {:error, Ecto.Changeset.t()}
-  def update_project(%Project{} = project, attrs, user \\ nil) do
+  @doc "Saves a project. Tasks already started keep their snapshot."
+  @spec update_project(Project.t(), map()) :: {:ok, Project.t()} | {:error, Ecto.Changeset.t()}
+  def update_project(%Project{} = project, attrs) do
     project
     |> Project.changeset(attrs)
-    |> then(&if(user, do: Ecto.Changeset.put_change(&1, :trigger_user_id, user.id), else: &1))
     |> Repo.update()
-  end
-
-  @doc "The workspace's project for a GitHub repository (`dono/repo`, any case)."
-  @spec for_repo(Workspace.t(), String.t()) :: Project.t() | nil
-  def for_repo(%Workspace{id: workspace_id}, repo) do
-    Repo.one(
-      from p in Project,
-        where: p.workspace_id == ^workspace_id and p.github_repo == ^String.downcase(repo),
-        limit: 1
-    )
   end
 
   @doc """

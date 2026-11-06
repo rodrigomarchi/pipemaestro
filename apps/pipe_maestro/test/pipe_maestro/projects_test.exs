@@ -98,40 +98,4 @@ defmodule PipeMaestro.ProjectsTest do
     assert Projects.get_project(other, project.id) == nil
     assert_raise Ecto.NoResultsError, fn -> Projects.get_project!(other, project.id) end
   end
-
-  describe "the GitHub trigger" do
-    test "a project names its repository, label and pipeline; found by repository", %{
-      workspace: workspace,
-      attrs: attrs
-    } do
-      pipeline = pipeline_fixture(workspace)
-      admin = member_fixture(workspace)
-
-      {:ok, project} =
-        Projects.create_project(
-          workspace,
-          Map.merge(attrs, %{
-            "github_repo" => "acme/retro",
-            "trigger_label" => "claude",
-            "trigger_pipeline_id" => pipeline.id
-          }),
-          admin
-        )
-
-      assert project.trigger_user_id == admin.id
-      assert Projects.for_repo(workspace, "acme/retro").id == project.id
-      assert Projects.for_repo(workspace, "ACME/Retro").id == project.id
-      assert Projects.for_repo(workspace, "outro/repo") == nil
-
-      assert {:error, changeset} =
-               Projects.update_project(project, %{"github_repo" => "não é repo"})
-
-      assert %{github_repo: [_]} = errors_on(changeset)
-
-      assert {:error, changeset} =
-               Projects.update_project(project, %{"trigger_pipeline_id" => nil})
-
-      assert %{trigger_pipeline_id: [_]} = errors_on(changeset)
-    end
-  end
 end

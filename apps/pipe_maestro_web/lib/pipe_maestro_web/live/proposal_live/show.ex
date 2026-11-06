@@ -17,6 +17,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   """
   use PipeMaestroWeb, :live_view
 
+  alias PipeMaestroWeb.IntegrationComponents
+
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.ProposalComponents
 
@@ -205,7 +207,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   def handle_event("save_project", %{"project" => params}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
 
-    case Projects.create_project(workspace, with_place(params, socket), user) do
+    case Projects.create_project(workspace, with_place(params, socket)) do
       {:ok, project} ->
         Audit.record(workspace, user, "project.saved", project)
 
@@ -247,7 +249,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   def handle_event("save_notes", %{"notes" => %{"notes" => notes}}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
 
-    case Projects.update_project(socket.assigns.project, %{"notes" => notes}, user) do
+    case Projects.update_project(socket.assigns.project, %{"notes" => notes}) do
       {:ok, project} ->
         Audit.record(workspace, user, "project.saved", project)
 
@@ -418,6 +420,17 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
                   <span data-testid="proposal-directory">{@input["directory"]}</span>
                 </span>
                 <span :if={@job.runner}>no runner {@job.runner.name}</span>
+                <a
+                  :if={@input["issue_url"]}
+                  href={@input["issue_url"]}
+                  target="_blank"
+                  rel="noopener"
+                  class="flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
+                  data-testid="proposal-issue"
+                >
+                  {IntegrationComponents.issue_label(@input["issue_url"])}
+                  <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                </a>
                 <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>
                 <span :if={@job.duration_ms}>{format_duration(@job.duration_ms)}</span>
                 <.link

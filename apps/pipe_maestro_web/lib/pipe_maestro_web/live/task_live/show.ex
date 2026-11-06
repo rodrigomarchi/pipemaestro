@@ -14,6 +14,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   """
   use PipeMaestroWeb, :live_view
 
+  alias PipeMaestroWeb.IntegrationComponents
+
   import PipeMaestroWeb.JobComponents,
     only: [
       steps: 1,
@@ -642,8 +644,16 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     class="text-primary-600 hover:underline dark:text-primary-400"
                     data-testid="task-issue"
                   >
-                    Issue <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                    {IntegrationComponents.issue_label(@task.issue_url)}
+                    <.icon name="hero-arrow-top-right-on-square" class="size-3" />
                   </a>
+                </dd>
+                <dd
+                  :if={@task.issue_feedback["error"]}
+                  class="mt-1 text-xs text-warning-600 dark:text-warning-400"
+                  data-testid="task-issue-sync-error"
+                >
+                  A issue ainda não mostra o andamento: {@task.issue_feedback["error"]}. A plataforma tenta de novo.
                 </dd>
               </div>
               <div>
@@ -999,7 +1009,11 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     {decision.instructions}
                   </p>
                   <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"} · {Calendar.strftime(
+                    {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"}
+                    <span :if={decision.decided_via} data-testid={"task-decision-via-#{n}"}>
+                      (via {decision.decided_via})
+                    </span>
+                    · {Calendar.strftime(
                       decision.inserted_at,
                       "%d/%m %H:%M"
                     )}

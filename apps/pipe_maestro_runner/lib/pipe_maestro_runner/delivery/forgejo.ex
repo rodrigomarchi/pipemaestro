@@ -7,13 +7,13 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
     convention. Marking it ready is dropping the prefix.
   - **Text:** an open pull request of the branch is adopted, whoever opened
     it; only the platform's block of its description and the draft prefix
-    change (`PipeMaestroRunner.Delivery.PrText`).
+    change (`PipeMaestroProtocol.PrText`).
   - **Credentials:** the same ones `git push` uses for the host
     (`git credential fill`, never prompting), or a `FORGEJO_TOKEN` in the
     environment (a workspace secret).
   """
 
-  alias PipeMaestroRunner.Delivery.PrText
+  alias PipeMaestroProtocol.PrText
 
   @draft_prefix "WIP: "
   @page_size 50
@@ -193,6 +193,12 @@ defmodule PipeMaestroRunner.Delivery.Forgejo do
     if title == pr["title"] and body == pr["body"],
       do: {:ok, pr},
       else: request(repo, :patch, "/pulls/#{pr["number"]}", %{title: title, body: body})
+  end
+
+  @doc ~s(Sets a commit status on `sha`: `%{"context", "state", "description", "target_url"}`.)
+  @spec status(repo(), String.t(), map()) :: :ok | {:error, String.t()}
+  def status(repo, sha, status) do
+    with {:ok, _} <- request(repo, :post, "/statuses/#{sha}", status), do: :ok
   end
 
   @doc "Comments on the issue at `url` (`https://host/owner/name/issues/N`)."

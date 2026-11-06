@@ -8,7 +8,11 @@ defmodule PipeMaestroWeb.RunnerStatus do
   presence diff (`%Phoenix.Socket.Broadcast{event: "presence_diff"}`) when a
   runner connects or drops, and `:runners_changed` when one is renamed,
   revoked or announces new details.
+
+  It is also the domain's `PipeMaestro.Runners.Presence`.
   """
+
+  @behaviour PipeMaestro.Runners.Presence
 
   alias PipeMaestro.Runners.Runner
   alias PipeMaestroWeb.RunnerPresence
@@ -24,6 +28,7 @@ defmodule PipeMaestroWeb.RunnerStatus do
   end
 
   @doc "Ids of the workspace's runners connected right now."
+  @impl PipeMaestro.Runners.Presence
   @spec online_ids(Ecto.UUID.t()) :: MapSet.t(String.t())
   def online_ids(workspace_id) do
     workspace_id |> topic() |> RunnerPresence.list() |> Map.keys() |> MapSet.new()

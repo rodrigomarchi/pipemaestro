@@ -40,8 +40,7 @@ defmodule PipeMaestro.Proposals.ProjectKindTest do
           "runner_id" => runner.id,
           "directory" => "app",
           "copy_paths_text" => "deps"
-        },
-        user
+        }
       )
 
     %{workspace: workspace, user: user, runner: runner, project: project}
@@ -258,29 +257,30 @@ defmodule PipeMaestro.Proposals.ProjectKindTest do
     end
   end
 
-  describe "triage_issue/3" do
+  describe "triage_linked_issue/4" do
     test "triages on the project's runner", ctx do
-      pipeline = pipeline_fixture(ctx.workspace)
+      PipeMaestro.FakeForgejo.start()
+      project = ctx.project
 
-      {:ok, project} =
-        Projects.update_project(
-          ctx.project,
-          %{
-            "github_repo" => "acme/app",
-            "trigger_label" => "ia",
-            "trigger_pipeline_id" => pipeline.id,
-            "trigger_mode" => "triage"
-          },
-          ctx.user
+      {:ok, repo} =
+        PipeMaestro.Integrations.link_repo(
+          connection_fixture(ctx.workspace),
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => project.id},
+          "https://pm.test/hook"
         )
+
+      repo = PipeMaestro.Repo.preload(repo, :project)
+      trigger = %PipeMaestro.Integrations.Trigger{acting_user_id: ctx.user.id}
 
       issue = %{
         "title" => "Botão quebrado",
         "body" => "Nada acontece.",
-        "html_url" => "https://github.com/acme/app/issues/5"
+        "html_url" => "https://forge.test/acme/app/issues/5",
+        "number" => 5
       }
 
-      assert {:ok, job} = Proposals.triage_issue(ctx.workspace, project, issue)
+      assert {:ok, job} = Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue)
       assert job.runner_id == ctx.runner.id
       assert job.project_id == project.id
       assert job.context["directory"] == "app"

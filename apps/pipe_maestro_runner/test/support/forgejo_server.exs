@@ -13,7 +13,8 @@ defmodule PipeMaestroRunner.Test.ForgejoServer do
 
   @doc "Starts serving; returns `%{url: base_url, state: agent}`."
   def start do
-    {:ok, state} = Agent.start_link(fn -> %{pulls: [], comments: [], requests: []} end)
+    {:ok, state} =
+      Agent.start_link(fn -> %{pulls: [], comments: [], requests: [], statuses: []} end)
 
     {:ok, server} =
       Bandit.start_link(
@@ -28,6 +29,7 @@ defmodule PipeMaestroRunner.Test.ForgejoServer do
   end
 
   def pulls(%{state: state}), do: Agent.get(state, & &1.pulls)
+  def statuses(%{state: state}), do: Agent.get(state, &Enum.reverse(&1.statuses))
   def comments(%{state: state}), do: Agent.get(state, &Enum.reverse(&1.comments))
   def requests(%{state: state}), do: Agent.get(state, &Enum.reverse(&1.requests))
 
@@ -62,6 +64,11 @@ defmodule PipeMaestroRunner.Test.ForgejoServer do
     if auth,
       do: route(conn, conn.method, conn.path_info, body, state),
       else: json(conn, 403, %{message: "Only signed in user is allowed to call APIs."})
+  end
+
+  defp route(conn, "POST", ["api", "v1", "repos", "acme", "app", "statuses", sha], body, state) do
+    Agent.update(state, &%{&1 | statuses: [{sha, body} | &1.statuses]})
+    json(conn, 201, body)
   end
 
   defp route(conn, "GET", ["api", "v1", "version"], _body, _state),

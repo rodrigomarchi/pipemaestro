@@ -29,8 +29,7 @@ defmodule PipeMaestro.Tasks.TaskFromProjectTest do
           "setup_command" => "mix deps.get",
           "test_command" => "mix test",
           "copy_paths_text" => "deps"
-        },
-        user
+        }
       )
 
     %{workspace: workspace, user: user, runner: runner, pipeline: pipeline, project: project}
@@ -215,40 +214,50 @@ defmodule PipeMaestro.Tasks.TaskFromProjectTest do
     end
   end
 
-  describe "create_from_issue/3" do
+  describe "create_from_linked_issue/4" do
     setup ctx do
-      {:ok, project} =
-        Projects.update_project(
-          ctx.project,
-          %{
-            "github_repo" => "acme/app",
-            "trigger_label" => "claude",
-            "trigger_pipeline_id" => ctx.pipeline.id
-          },
-          ctx.user
+      PipeMaestro.FakeForgejo.start()
+
+      {:ok, repo} =
+        PipeMaestro.Integrations.link_repo(
+          connection_fixture(ctx.workspace),
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => ctx.project.id},
+          "https://pm.test/hook"
         )
 
-      %{project: project}
+      trigger = %PipeMaestro.Integrations.Trigger{
+        acting_user_id: ctx.user.id,
+        pipeline_id: ctx.pipeline.id,
+        mode: "task"
+      }
+
+      %{repo: Repo.preload(repo, :project), trigger: trigger}
     end
 
     @issue %{
       "title" => "Botão quebrado",
       "body" => "Nada acontece.",
-      "html_url" => "https://github.com/acme/app/issues/9"
+      "html_url" => "https://forge.test/acme/app/issues/9",
+      "number" => 9
     }
 
     test "starts the task on the project's runner", ctx do
-      assert {:ok, task} = Tasks.create_from_issue(ctx.workspace, ctx.project, @issue)
+      assert {:ok, task} =
+               Tasks.create_from_linked_issue(ctx.workspace, ctx.repo, ctx.trigger, @issue)
+
       assert task.project_id == ctx.project.id
       assert task.runner_id == ctx.runner.id
-      assert task.issue_url == "https://github.com/acme/app/issues/9"
+      assert task.issue_url == "https://forge.test/acme/app/issues/9"
     end
 
     test "a project without a runner cannot start it", ctx do
       Repo.delete!(ctx.runner)
-      project = Projects.get_project!(ctx.workspace, ctx.project.id)
+      repo = Repo.preload(ctx.repo, :project, force: true)
 
-      assert {:error, changeset} = Tasks.create_from_issue(ctx.workspace, project, @issue)
+      assert {:error, changeset} =
+               Tasks.create_from_linked_issue(ctx.workspace, repo, ctx.trigger, @issue)
+
       assert %{project_id: ["o projeto precisa de um runner"]} = errors_on(changeset)
     end
   end

@@ -13,11 +13,8 @@ defmodule PipeMaestro.Projects.Project do
   project never changes a task already running. Prompts reach it as
   `{{projeto.*}}` (`PipeMaestro.Pipelines.Prompt`).
 
-  With a `github_repo` (`dono/repo`) and a `trigger_label`, a GitHub webhook
-  starts a task with the `trigger_pipeline` when an issue of the repository
-  gets the label, on behalf of `trigger_user` (who set the trigger up). With
-  `trigger_mode` `"triage"`, the agent writes the task from the issue first
-  (`PipeMaestro.Proposals`), for a person to review before it starts.
+  The git host's repositories linked to it, whose issues become its tasks,
+  are an integration's (`PipeMaestro.Integrations.LinkedRepo`).
   """
   use PipeMaestro.Schema
 
@@ -39,11 +36,6 @@ defmodule PipeMaestro.Projects.Project do
           copy_paths: [String.t()],
           copy_paths_text: String.t() | nil,
           notes: String.t() | nil,
-          github_repo: String.t() | nil,
-          trigger_label: String.t() | nil,
-          trigger_mode: String.t(),
-          trigger_pipeline_id: Ecto.UUID.t() | nil,
-          trigger_user_id: Ecto.UUID.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
           runner_id: Ecto.UUID.t() | nil,
@@ -63,21 +55,12 @@ defmodule PipeMaestro.Projects.Project do
     field :copy_paths, {:array, :string}, default: []
     field :copy_paths_text, :string, virtual: true
     field :notes, :string
-    field :github_repo, :string
-    field :trigger_label, :string
-    field :trigger_mode, :string, default: "task"
-    field :trigger_pipeline_id, :binary_id
-    field :trigger_user_id, :binary_id
 
     belongs_to :workspace, Workspace
     belongs_to :runner, Runner
 
     timestamps()
   end
-
-  @doc ~s(What a labeled issue does: "task" starts one, "triage" has the agent write it first.)
-  @spec trigger_modes() :: [String.t()]
-  def trigger_modes, do: ~w(task triage)
 
   @doc """
   Changeset for a project. The paths to clone may come as one per line
@@ -96,17 +79,8 @@ defmodule PipeMaestro.Projects.Project do
       :lint_command,
       :copy_paths,
       :copy_paths_text,
-      :notes,
-      :github_repo,
-      :trigger_label,
-      :trigger_mode,
-      :trigger_pipeline_id
+      :notes
     ])
-    |> validate_inclusion(:trigger_mode, trigger_modes())
-    |> update_change(:github_repo, &String.downcase(String.trim(&1)))
-    |> validate_format(:github_repo, ~r{^[\w.-]+/[\w.-]+$}, message: "use dono/repositório")
-    |> validate_length(:trigger_label, max: 50)
-    |> validate_trigger()
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome ao projeto")
     |> validate_required([:runner_id], message: "escolha o runner do projeto")
@@ -135,14 +109,6 @@ defmodule PipeMaestro.Projects.Project do
     |> unsafe_validate_unique([:workspace_id, :runner_id, :directory], Repo,
       message: "esse runner já tem um projeto nessa pasta",
       error_key: :directory
-    )
-    |> unique_constraint(:github_repo,
-      name: :projects_workspace_id_github_repo_index,
-      message: "outro projeto já usa esse repositório"
-    )
-    |> unsafe_validate_unique([:workspace_id, :github_repo], Repo,
-      message: "outro projeto já usa esse repositório",
-      error_key: :github_repo
     )
   end
 
@@ -179,16 +145,6 @@ defmodule PipeMaestro.Projects.Project do
   end
 
   # A blank text (cast to nil) clears the paths; no text leaves them alone.
-  # A trigger needs the repository, the label and the pipeline together.
-  defp validate_trigger(changeset) do
-    if get_field(changeset, :github_repo) || get_field(changeset, :trigger_label),
-      do:
-        validate_required(changeset, [:github_repo, :trigger_label, :trigger_pipeline_id],
-          message: "o gatilho do GitHub precisa do repositório, da label e do pipeline"
-        ),
-      else: changeset
-  end
-
   defp parse_copy_paths(changeset) do
     case changeset.params do
       %{"copy_paths_text" => text} ->

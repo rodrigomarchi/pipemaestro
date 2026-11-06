@@ -38,7 +38,7 @@ defmodule PipeMaestro.AuthorizationTest do
       %Scope{user: user, workspace: workspace, role: Workspaces.role(workspace, user)}
     end
 
-    for action <- [:manage_pipelines, :manage_projects, :manage_runners] do
+    for action <- [:manage_pipelines, :manage_projects, :manage_runners, :manage_integrations] do
       assert Authorization.can?(as.(admin), action)
       refute Authorization.can?(as.(member), action)
     end

@@ -39,7 +39,7 @@ defmodule PipeMaestro.Projects.ProjectRunnerTest do
 
   defp project(ctx, runner \\ nil, extra \\ %{}) do
     {:ok, project} =
-      Projects.create_project(ctx.workspace, attrs(runner || ctx.mac, extra), ctx.user)
+      Projects.create_project(ctx.workspace, attrs(runner || ctx.mac, extra))
 
     project
   end
@@ -47,7 +47,7 @@ defmodule PipeMaestro.Projects.ProjectRunnerTest do
   describe "a project is a runner and a directory it offers" do
     test "is created with a runner of the workspace that offers the directory", ctx do
       assert {:ok, %Project{} = project} =
-               Projects.create_project(ctx.workspace, attrs(ctx.mac), ctx.user)
+               Projects.create_project(ctx.workspace, attrs(ctx.mac))
 
       assert project.runner_id == ctx.mac.id
       assert project.directory == "app"
@@ -93,23 +93,6 @@ defmodule PipeMaestro.Projects.ProjectRunnerTest do
                Projects.create_project(ctx.workspace, attrs(ctx.mac, %{"name" => "Outro"}))
 
       assert %{directory: ["esse runner já tem um projeto nessa pasta"]} = errors_on(changeset)
-    end
-
-    test "a GitHub repository triggers one project of the workspace", ctx do
-      pipeline = pipeline_fixture(ctx.workspace)
-
-      trigger = %{
-        "github_repo" => "acme/app",
-        "trigger_label" => "claude",
-        "trigger_pipeline_id" => pipeline.id
-      }
-
-      _on_mac = project(ctx, ctx.mac, trigger)
-
-      assert {:error, changeset} =
-               Projects.create_project(ctx.workspace, attrs(ctx.server, trigger))
-
-      assert %{github_repo: ["outro projeto já usa esse repositório"]} = errors_on(changeset)
     end
   end
 

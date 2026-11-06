@@ -1,7 +1,9 @@
 defmodule PipeMaestroWeb.RunnerChannelTest do
   use PipeMaestroWeb.ChannelCase, async: false
 
-  alias PipeMaestro.{Jobs, Runners}
+  alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Repo, Runners, Tasks}
+  alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Runners.Runner
   alias PipeMaestroProtocol.Hello
   alias PipeMaestroWeb.{RunnerChannel, RunnerSocket, RunnerStatus}
 
@@ -114,6 +116,48 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       %{socket: socket, user: member_fixture(workspace)}
     end
 
+    # A task from an issue of a linked repository, on a runner joined with `hello`.
+    defp linked_task(ctx, hello) do
+      FakeForgejo.start()
+      connection = connection_fixture(ctx.workspace)
+
+      channel =
+        join_runner(
+          ctx.socket,
+          ctx.runner,
+          Map.put(hello, :directories, [%{"name" => "app", "git" => true}])
+        )
+
+      Process.put(:channel_pid, channel.channel_pid)
+      project = project_fixture(Repo.get!(Runner, ctx.runner.id), "app")
+
+      {:ok, repo} =
+        Integrations.link_repo(
+          connection,
+          ctx.user,
+          %{"full_name" => "acme/app", "project_id" => project.id},
+          "https://pm.test/hook"
+        )
+
+      {:ok, task} =
+        Tasks.create_task(
+          ctx.user,
+          ctx.workspace,
+          %{
+            "title" => "Corrige",
+            "prompt" => "Corrija",
+            "pipeline_id" => pipeline_fixture(ctx.workspace).id,
+            "project_id" => project.id
+          },
+          issue: %{linked_repo_id: repo.id, issue_number: 1}
+        )
+
+      task
+    end
+
+    defp stage_jobs(task),
+      do: Enum.filter(Repo.all(Job), &(&1.workspace_id == task.workspace_id))
+
     defp join_runner(socket, runner, hello_attrs \\ %{}) do
       RunnerStatus.subscribe(runner.workspace_id)
       hello = Hello.to_map(hello_fixture(hello_attrs))
@@ -184,6 +228,42 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       assert id == job.id
       refute Map.has_key?(pushed, "env")
       refute Map.has_key?(pushed, "proposal")
+    end
+
+    test "a stage job of a linked task takes the connection's git credential to a runner that knows it",
+         ctx do
+      task = linked_task(ctx, %{capabilities: ["git_credential"]})
+
+      assert_push "job:assign", %{"git_credential" => credential}
+
+      assert credential == %{
+               "host" => "forge.test",
+               "username" => "pipemaestro-bot",
+               "password" => "tok"
+             }
+
+      [job] = stage_jobs(task)
+      refute Map.has_key?(job.context, "git_credential")
+    end
+
+    test "a runner that does not know the credential takes the job without it", ctx do
+      linked_task(ctx, %{})
+      assert_push "job:assign", pushed
+      refute Map.has_key?(pushed, "git_credential")
+    end
+
+    test "renews the credential of a running job", ctx do
+      task = linked_task(ctx, %{capabilities: ["git_credential"]})
+      assert_push "job:assign", %{"id" => job_id}
+      [job] = stage_jobs(task)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      send(Process.get(:channel_pid), {:renew_credential, job_id})
+
+      assert_push "job:credential", %{
+        "job_id" => ^job_id,
+        "git_credential" => %{"password" => "tok"}
+      }
     end
 
     test "new and canceled jobs reach the runner; its reports are stored", ctx do
@@ -306,7 +386,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       pipeline = pipeline_fixture(ctx.workspace)
 
       {:ok, task} =
-        PipeMaestro.Tasks.create_task(ctx.user, ctx.workspace, %{
+        Tasks.create_task(ctx.user, ctx.workspace, %{
           "title" => "Tarefa",
           "prompt" => "faça",
           "pipeline_id" => pipeline.id,
@@ -327,7 +407,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       runner = with_directories(ctx.runner, [%{"name" => "app", "git" => true}])
 
       {:ok, task} =
-        PipeMaestro.Tasks.create_task(ctx.user, ctx.workspace, %{
+        Tasks.create_task(ctx.user, ctx.workspace, %{
           "title" => "Tarefa",
           "prompt" => "faça",
           "pipeline_id" => pipeline_fixture(ctx.workspace).id,

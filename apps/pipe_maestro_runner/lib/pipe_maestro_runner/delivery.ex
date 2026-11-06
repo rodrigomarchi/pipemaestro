@@ -10,9 +10,10 @@ defmodule PipeMaestroRunner.Delivery do
        nothing to do when the agent already pushed);
     2. opens the task's draft pull request, or adopts the open one, writing
        only the platform's block of its description
-       (`PipeMaestroRunner.Delivery.PrText`), and marks it ready when asked
+       (`PipeMaestroProtocol.PrText`), and marks it ready when asked
        (the last stage);
-    3. comments on the task's issue.
+    3. comments on the task's issue;
+    4. sets the stage's commit status on what it pushed (a Forgejo only).
 
   Steps 2 and 3 go where the repository lives:
 
@@ -26,7 +27,8 @@ defmodule PipeMaestroRunner.Delivery do
   skipped; nothing raises.
   """
 
-  alias PipeMaestroRunner.Delivery.{Forgejo, PrText}
+  alias PipeMaestroProtocol.PrText
+  alias PipeMaestroRunner.Delivery.Forgejo
 
   @doc """
   Delivers in the worktree `dir`. Options: `:gh` (the GitHub CLI's path),
@@ -48,6 +50,7 @@ defmodule PipeMaestroRunner.Delivery do
     |> step(fn report -> if delivery["push"], do: push(ctx, report), else: {:ok, report} end)
     |> step(fn report -> pull_request(ctx, delivery["pr"], report) end)
     |> step(fn report -> comment(ctx, delivery["issue_comment"], report) end)
+    |> step(fn report -> status(ctx, delivery["status"], report) end)
   end
 
   # Each step either goes on or stops the ones after it with an error.
@@ -139,6 +142,19 @@ defmodule PipeMaestroRunner.Delivery do
 
     with {:ok, output} <- run(ctx, ctx.gh, args),
          do: {:ok, output |> String.split() |> List.last()}
+  end
+
+  # The stage's commit status, on what was pushed (a Forgejo only).
+  defp status(_ctx, nil, report), do: {:ok, report}
+
+  defp status(ctx, status, report) do
+    with {:ok, repo} <- origin_forgejo(ctx),
+         :ok <- Forgejo.status(repo, report["commit"], status) do
+      {:ok, report}
+    else
+      :not_forgejo -> {:ok, report}
+      {:error, output} -> {:error, "status do commit: #{output}"}
+    end
   end
 
   defp comment(_ctx, nil, report), do: {:ok, report}

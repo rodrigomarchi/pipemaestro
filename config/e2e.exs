@@ -46,6 +46,24 @@ config :phoenix_live_view, enable_expensive_runtime_checks: true
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.
 config :pipe_maestro, PipeMaestro.Secrets, key: "e2e_only_secrets_key"
 
+config :pipe_maestro, PipeMaestro.Integrations,
+  allow_private_hosts: true,
+  public_url: "http://localhost:#{e2e_http_port}"
+
+# The platform's GitHub App, against the suite's fake GitHub (e2e/helpers/fakeGitHub.ts).
+github_url = "http://localhost:#{System.get_env("E2E_GITHUB_PORT", "4014")}"
+github_key = :public_key.generate_key({:rsa, 2048, 65_537})
+
+config :pipe_maestro, PipeMaestro.Integrations.GitHub,
+  app_id: "4242",
+  slug: "pipemaestro-e2e",
+  client_id: "Iv1.e2e",
+  client_secret: "e2e-client-secret",
+  private_key: :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPrivateKey, github_key)]),
+  webhook_secret: "e2e-app-secret",
+  api_url: github_url,
+  web_url: github_url
+
 # The runner under Mix never updates itself (no single binary, no terminal).
 # Here it asks as a single binary in a terminal would (PipeMaestroRunner.Update),
 # for a binary that is only a path: the specs answer "no".

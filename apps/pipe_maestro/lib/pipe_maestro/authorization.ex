@@ -4,15 +4,21 @@ defmodule PipeMaestro.Authorization do
 
     * everyone runs tasks: starts them, talks to them, decides when they wait,
       and cancels their own;
-    * admins also manage the workspace's pipelines, projects and runners
-      (approve, rename, revoke) and cancel anyone's task.
+    * admins also manage the workspace's pipelines, projects, runners
+      (approve, rename, revoke) and integrations with git hosts, and cancel
+      anyone's task.
   """
 
   alias PipeMaestro.Accounts.Scope
   alias PipeMaestro.Tasks.Task
 
   @type action ::
-          :run_tasks | :manage_pipelines | :manage_projects | :manage_runners | :cancel_task
+          :run_tasks
+          | :manage_pipelines
+          | :manage_projects
+          | :manage_runners
+          | :manage_integrations
+          | :cancel_task
 
   @doc "Whether the scope's user may do `action` (on `subject`, when it matters)."
   @spec can?(Scope.t(), action(), term()) :: boolean()

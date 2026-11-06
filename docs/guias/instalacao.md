@@ -28,8 +28,10 @@ como desatualizado (seção 4).
 |---|---|
 | `DATABASE_URL` | Postgres 16: `ecto://usuario:senha@host/banco` |
 | `SECRET_KEY_BASE` | assina sessões e cookies (`mix phx.gen.secret`) |
-| `SECRETS_KEY` | cifra os segredos dos workspaces. **Trocá-la torna os segredos guardados ilegíveis** |
-| `PHX_HOST` | o nome público (ex.: `plataforma.exemplo.com`): entra nas URLs que o runner mostra no login |
+| `SECRETS_KEY` | cifra os segredos dos workspaces e as credenciais das integrações. **Trocá-la torna os segredos e as credenciais guardados ilegíveis** |
+| `PHX_HOST` | o nome público (ex.: `plataforma.exemplo.com`): entra nas URLs que o runner mostra no login, nos webhooks e nos links que a plataforma escreve nas issues |
+| `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET` | opcionais: o GitHub App da plataforma ([`github-app.md`](github-app.md)). Sem elas, só o Forgejo se conecta ([`integracoes-forgejo.md`](integracoes-forgejo.md)) |
+| `INTEGRATIONS_ALLOW_PRIVATE_HOSTS` | `true` para conectar um Forgejo numa rede interna (plataforma self-hosted ao lado dele) |
 | `PORT` | a porta HTTP (padrão 4000) |
 | `POOL_SIZE` | conexões com o banco (padrão 10) |
 

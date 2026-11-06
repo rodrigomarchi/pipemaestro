@@ -39,6 +39,49 @@ defmodule PipeMaestroRunner.JobRunnerTest do
     end
   end
 
+  test "a job's git credential reaches git through the helper, and goes when the job ends",
+       %{tmp_dir: dir} do
+    workdir = Path.join(dir, "workdir")
+    runner = start_runner(workdir)
+    credential = %{"host" => "forge.test", "username" => "pipemaestro-bot", "password" => "tok"}
+
+    JobRunner.enqueue(runner, %Job{id: "jc", prompt: "diga oi", git_credential: credential})
+    {_messages, finished} = collect_until_finished("jc")
+
+    assert finished["status"] == "succeeded"
+    seen = File.read!(Path.join(workdir, "credencial-vista.txt"))
+    assert seen =~ "username=pipemaestro-bot"
+    assert seen =~ "password=tok"
+    refute File.exists?(Path.join([workdir, "credentials", "jc"]))
+  end
+
+  test "a renewed credential rewrites the file of the running job", %{tmp_dir: dir} do
+    workdir = Path.join(dir, "workdir")
+    runner = start_runner(workdir)
+    credential = %{"host" => "forge.test", "username" => "oauth2", "password" => "velho"}
+
+    JobRunner.enqueue(runner, %Job{id: "jr", prompt: "espere [lento]", git_credential: credential})
+
+    assert_receive {:job_out, "job:started", %{"job_id" => "jr"}}, 5_000
+    path = Path.join([workdir, "credentials", "jr"])
+    wait_until(fn -> File.exists?(path) end)
+
+    JobRunner.renew_credential(runner, "jr", %{credential | "password" => "novo"})
+    wait_until(fn -> File.read!(path) =~ "password=novo" end)
+
+    JobRunner.cancel(runner, "jr")
+    collect_until_finished("jr")
+    refute File.exists?(path)
+  end
+
+  defp wait_until(fun, tries \\ 50) do
+    cond do
+      fun.() -> :ok
+      tries == 0 -> flunk("the condition never held")
+      true -> Process.sleep(50) && wait_until(fun, tries - 1)
+    end
+  end
+
   test "runs a job in the workdir and reports its events and outcome", %{tmp_dir: dir} do
     workdir = Path.join(dir, "workdir")
     runner = start_runner(workdir)

@@ -31,9 +31,9 @@ defmodule PipeMaestro.Proposals do
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
+  alias PipeMaestro.Integrations.{Feedback, LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
-  alias PipeMaestro.Pipelines
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
 
@@ -275,35 +275,50 @@ defmodule PipeMaestro.Proposals do
   end
 
   @doc """
-  Has the agent write the task for a GitHub issue (`"title"`, `"body"`,
-  `"html_url"`) of `project`, whose trigger triages (`trigger_mode`
-  `"triage"`), on the project's runner (waiting for it when offline), on
-  behalf of whoever set the trigger up. The trigger's pipeline is suggested
-  to the agent.
+  Has the agent write the task for an issue of a linked repository
+  (`%{"title", "body", "html_url", "number"}`), on the project the repository
+  is linked to (its runner, waiting for it when offline), on behalf of the
+  trigger's person. The trigger's pipeline, if any, is the one the task
+  uses; with `auto_approve`, the task is created as the job ends. The task
+  keeps the link to the issue.
   """
-  @spec triage_issue(Workspace.t(), Project.t(), map()) ::
-          {:ok, Job.t()} | {:error, Changeset.t() | :no_trigger_user | :already_triaging}
-  def triage_issue(%Workspace{} = workspace, %Project{} = project, issue) do
-    case project.trigger_user_id && Repo.get(User, project.trigger_user_id) do
-      %User{} = user -> triage(workspace, project, issue, user)
-      _nobody -> {:error, :no_trigger_user}
+  @spec triage_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map()) ::
+          {:ok, Job.t()} | {:error, Changeset.t() | :no_acting_user | :already_triaging}
+  def triage_linked_issue(
+        %Workspace{} = workspace,
+        %LinkedRepo{} = repo,
+        %Trigger{} = trigger,
+        issue
+      ) do
+    case trigger.acting_user_id && Repo.get(User, trigger.acting_user_id) do
+      %User{} = user ->
+        triage(workspace, user, issue, %{
+          "project_id" => repo.project_id,
+          "pipeline_id" => trigger.pipeline_id,
+          "auto_approve" => trigger.auto_approve,
+          "linked_repo_id" => repo.id,
+          "issue_number" => issue["number"]
+        })
+
+      _nobody ->
+        {:error, :no_acting_user}
     end
   end
 
-  # One triage per issue at a time: GitHub may deliver the same label twice,
+  # One triage per issue at a time: a host may deliver the same event twice,
   # so the check and the insert run under a lock on the issue.
-  defp triage(workspace, project, issue, user) do
+  defp triage(workspace, user, issue, attrs) do
     url = issue["html_url"]
 
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1))", ["triage:" <> url])
       if triaging?(workspace, url), do: Repo.rollback(:already_triaging)
 
-      attrs = %{
-        "project_id" => project.id,
-        "request" => triage_request(workspace, project, issue),
-        "issue_url" => url
-      }
+      attrs =
+        attrs
+        |> Map.put("request", triage_request(issue))
+        |> Map.put("issue_url", url)
+        |> Map.reject(fn {_key, value} -> is_nil(value) end)
 
       case request("task", user, workspace, attrs) do
         {:ok, job} ->
@@ -316,16 +331,12 @@ defmodule PipeMaestro.Proposals do
     end)
   end
 
-  # The issue's body is cut: GitHub allows far more than a request takes.
-  defp triage_request(workspace, project, issue) do
-    pipeline =
-      Enum.find(Pipelines.list_pipelines(workspace), &(&1.id == project.trigger_pipeline_id))
-
+  # The issue's body is cut: a host allows far more than a request takes.
+  defp triage_request(issue) do
     """
     # #{issue["title"]}
 
     #{Instructions.cut(issue["body"] || "", @issue_body_bytes)}
-    #{if pipeline, do: "\nO gatilho deste projeto usa o pipeline **#{pipeline.name}**; prefira-o se servir.\n"}
     """
   end
 
@@ -471,10 +482,14 @@ defmodule PipeMaestro.Proposals do
   the reason is kept with it. Other proposals are left alone.
   """
   @spec job_finished(Job.t()) :: :ok
-  def job_finished(%Job{status: :succeeded, context: %{"proposal" => %{"kind" => "task"}}} = job) do
-    if input(job)["auto_approve"] == true and is_nil(created_task_id(job)),
-      do: auto_create(job),
-      else: :ok
+  def job_finished(%Job{context: %{"proposal" => %{"kind" => "task"}}} = job) do
+    if job.status == :succeeded and input(job)["auto_approve"] == true and
+         is_nil(created_task_id(job)),
+       do: auto_create(job)
+
+    # A triage of a linked issue tells the issue how it ended.
+    Feedback.triage_finished(job)
+    :ok
   end
 
   def job_finished(%Job{}), do: :ok

@@ -18,6 +18,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
   @behaviour PipeMaestro.Proposals.Kind
 
   alias Ecto.Changeset
+  alias PipeMaestro.Integrations.IssueUrl
   alias PipeMaestro.Pipelines
   alias PipeMaestro.Proposals
   alias PipeMaestro.Proposals.Instructions
@@ -31,7 +32,9 @@ defmodule PipeMaestro.Proposals.TaskKind do
     issue_url: :string,
     feedback: :string,
     pipeline_id: :binary_id,
-    auto_approve: :boolean
+    auto_approve: :boolean,
+    linked_repo_id: :binary_id,
+    issue_number: :integer
   }
 
   @impl true
@@ -51,9 +54,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
     |> Changeset.validate_required([:request], message: "conte a ideia da tarefa")
     |> Changeset.validate_length(:request, max: 16_000)
     |> Changeset.validate_length(:feedback, max: 4_000)
-    |> Changeset.validate_format(:issue_url, ~r{^https://github\.com/[^/]+/[^/]+/issues/\d+$},
-      message: "use o link de uma issue do GitHub"
-    )
+    |> Changeset.validate_format(:issue_url, IssueUrl.regex(), message: IssueUrl.message())
     |> validate_pipeline(workspace)
   end
 

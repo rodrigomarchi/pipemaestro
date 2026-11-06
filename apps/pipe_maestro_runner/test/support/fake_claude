@@ -63,6 +63,11 @@ kind=$(printf '%s' "$schema" | sed -n 's/.*"\$comment":"pipemaestro-kind:\([a-z]
 
 echo "fake_claude: aviso de exemplo" >&2
 
+# A job with a git credential: what git would read for the host, as the agent sees it.
+if [ -n "$PIPEMAESTRO_GIT_CREDENTIAL_FILE" ]; then
+  printf 'protocol=https\nhost=forge.test\n\n' | git credential fill > credencial-vista.txt 2>&1
+fi
+
 echo '{"type":"system","subtype":"init","cwd":"'"$PWD"'","session_id":"fake-session","model":"fake-model","claude_code_version":"0.0.0-fake","apiKeySource":"none","permissionMode":"bypassPermissions","output_style":"default","tools":["Bash","Read","Write"],"mcp_servers":[{"name":"grafana","status":"connected"}],"agents":["Explore"],"skills":[],"slash_commands":["compact"],"plugins":[]}'
 case "$prompt" in
   *"[limite]"*)

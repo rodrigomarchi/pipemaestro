@@ -11,7 +11,10 @@ defmodule PipeMaestro.Tasks.Task do
   `running` while a stage runs, `awaiting_decision` when a person must say
   how to go on, and ends `succeeded`, `failed` or `canceled`.
 
-  It may come from a GitHub issue (`issue_url`), and from a task proposal
+  It may come from an issue (`issue_url`; of a repository linked by an
+  integration, also `linked_repo` and `issue_number`, with what the platform
+  already reflected on the host in `issue_feedback` and the last commit pushed
+  in `head_sha`), and from a task proposal
   (`proposal_job`, `PipeMaestro.Proposals.TaskKind`): one proposal becomes
   one task at most. With a pipeline that delivers
   (`PipeMaestro.Pipelines.Pipeline` `delivery`), its draft pull request
@@ -38,6 +41,7 @@ defmodule PipeMaestro.Tasks.Task do
   import Ecto.Changeset
 
   alias PipeMaestro.Accounts.User
+  alias PipeMaestro.Integrations.{IssueUrl, LinkedRepo}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines.{Pipeline, Stage}
   alias PipeMaestro.Runners.Runner
@@ -64,6 +68,11 @@ defmodule PipeMaestro.Tasks.Task do
           issue_url: String.t() | nil,
           pr_url: String.t() | nil,
           pending_issue_comment: String.t() | nil,
+          issue_number: pos_integer() | nil,
+          issue_feedback: map(),
+          head_sha: String.t() | nil,
+          linked_repo_id: Ecto.UUID.t() | nil,
+          linked_repo: LinkedRepo.t() | Ecto.Association.NotLoaded.t() | nil,
           pause_requested: boolean(),
           status: status(),
           current_stage: non_neg_integer(),
@@ -107,6 +116,9 @@ defmodule PipeMaestro.Tasks.Task do
     field :issue_url, :string
     field :pr_url, :string
     field :pending_issue_comment, :string
+    field :issue_number, :integer
+    field :issue_feedback, :map, default: %{}
+    field :head_sha, :string
     field :pause_requested, :boolean, default: false
 
     field :status, Ecto.Enum,
@@ -133,6 +145,7 @@ defmodule PipeMaestro.Tasks.Task do
     belongs_to :decision_owner, User
     belongs_to :decision_analysis_job, Job
     belongs_to :proposal_job, Job
+    belongs_to :linked_repo, LinkedRepo
     has_many :stage_runs, StageRun
     has_many :decisions, Decision
 
@@ -158,9 +171,7 @@ defmodule PipeMaestro.Tasks.Task do
   def create_changeset(task, attrs) do
     task
     |> cast(attrs, [:title, :prompt, :pipeline_id, :project_id, :issue_url])
-    |> validate_format(:issue_url, ~r{^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$},
-      message: "use o link de uma issue do GitHub (https://github.com/dono/repo/issues/N)"
-    )
+    |> validate_format(:issue_url, IssueUrl.regex(), message: IssueUrl.message())
     |> update_change(:title, &String.trim/1)
     |> validate_required([:title], message: "dê um título à tarefa")
     |> validate_required([:prompt], message: "descreva o que deve ser feito")

@@ -1,0 +1,43 @@
+{
+  "action": "reviewed",
+  "number": 7,
+  "pull_request": {
+    "id": 9001,
+    "number": 7,
+    "title": "WIP: Corrige login",
+    "body": "",
+    "state": "open",
+    "merged": false,
+    "html_url": "https://forge.test/acme/app/pulls/7",
+    "head": {
+      "ref": "cp/login-1a2b3c4d",
+      "sha": "abc123"
+    },
+    "base": {
+      "ref": "main"
+    },
+    "user": {
+      "login": "pipemaestro-bot",
+      "id": 7
+    }
+  },
+  "repository": {
+    "id": 42,
+    "owner": {
+      "login": "acme",
+      "id": 2
+    },
+    "name": "app",
+    "full_name": "acme/app",
+    "default_branch": "main",
+    "html_url": "https://forge.test/acme/app"
+  },
+  "sender": {
+    "login": "bia",
+    "id": 12
+  },
+  "review": {
+    "type": "pull_request_review_approved",
+    "content": "Boa!"
+  }
+}

@@ -3,6 +3,31 @@ import Config
 # Tests run the housekeeping themselves.
 config :pipe_maestro, PipeMaestro.Maintenance, false
 
+# Tests run the integrations' reconciliation themselves.
+config :pipe_maestro, PipeMaestro.Integrations.Reconciler, false
+
+# The git hosts answer from PipeMaestro.FakeForgejo, through Req.Test.
+config :pipe_maestro, PipeMaestro.Integrations,
+  req_options: [plug: {Req.Test, PipeMaestro.Integrations}, retry: false],
+  public_url: "https://pm.test",
+  allow_private_hosts: true
+
+# The platform's GitHub App, against the fake GitHub (PipeMaestro.FakeGitHub).
+github_key = :public_key.generate_key({:rsa, 2048, 65_537})
+
+config :pipe_maestro, PipeMaestro.Integrations.GitHub,
+  app_id: "4242",
+  slug: "pipemaestro-test",
+  client_id: "Iv1.teste",
+  client_secret: "segredo-do-cliente",
+  private_key: :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPrivateKey, github_key)]),
+  webhook_secret: "segredo-do-app",
+  api_url: "https://api.github.test",
+  web_url: "https://github.test"
+
+# Tests reflect a task on its issue themselves (PipeMaestro.Integrations.Feedback).
+config :pipe_maestro, PipeMaestro.Integrations.FeedbackWorker, false
+
 # A git worktree gets its own database (config/worktree.exs);
 # MIX_TEST_PARTITION splits it further (`mix help test`).
 {worktree, _binding} = Code.eval_file("worktree.exs", __DIR__)

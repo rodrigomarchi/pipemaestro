@@ -41,8 +41,7 @@ defmodule PipeMaestroWeb.ProjectLiveRunnerTest do
     {:ok, project} =
       Projects.create_project(
         ctx.workspace,
-        Map.merge(%{"name" => "App", "runner_id" => runner.id, "directory" => "app"}, attrs),
-        ctx.user
+        Map.merge(%{"name" => "App", "runner_id" => runner.id, "directory" => "app"}, attrs)
       )
 
     project

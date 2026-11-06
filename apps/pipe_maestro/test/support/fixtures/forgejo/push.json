@@ -1,0 +1,21 @@
+{
+  "ref": "refs/heads/main",
+  "before": "a",
+  "after": "b",
+  "commits": [],
+  "repository": {
+    "id": 42,
+    "owner": {
+      "login": "acme",
+      "id": 2
+    },
+    "name": "app",
+    "full_name": "acme/app",
+    "default_branch": "main",
+    "html_url": "https://forge.test/acme/app"
+  },
+  "sender": {
+    "login": "ana",
+    "id": 11
+  }
+}

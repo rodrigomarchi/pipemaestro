@@ -193,4 +193,30 @@ defmodule PipeMaestro.RunnersTest do
     assert Runners.authorization_ttl_seconds() > Runners.poll_interval_seconds()
     assert Runners.format_user_code("WDJBMJHT") == "WDJB-MJHT"
   end
+
+  describe "online_ids/2" do
+    setup %{workspace: workspace, user: user} do
+      {mac, _token} = runner_fixture(workspace, user, %{name: "mac"})
+      mac = with_directories(mac, [%{"name" => "app", "git" => true}])
+      {linux, _token} = runner_fixture(workspace, user, %{name: "linux"})
+      linux = with_directories(linux, [%{"name" => "app", "git" => false}, %{"name" => "notas"}])
+      %{mac: mac, linux: linux}
+    end
+
+    test "asks the presence given, as a module or a function", ctx do
+      online = MapSet.new([ctx.mac.id])
+
+      assert Runners.online_ids(ctx.workspace.id, presence: fn _id -> online end) == online
+      assert Runners.online_ids(ctx.workspace.id, presence: __MODULE__.Online) == online_all()
+      assert Runners.online_ids(ctx.workspace.id, presence: nil) == MapSet.new()
+    end
+
+    defp online_all, do: MapSet.new(["todos"])
+  end
+
+  defmodule Online do
+    @behaviour PipeMaestro.Runners.Presence
+    @impl true
+    def online_ids(_workspace_id), do: MapSet.new(["todos"])
+  end
 end

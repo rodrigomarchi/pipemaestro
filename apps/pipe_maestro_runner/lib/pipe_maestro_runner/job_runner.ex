@@ -51,6 +51,7 @@ defmodule PipeMaestroRunner.JobRunner do
     Claude,
     Delivery,
     Gates,
+    GitCredential,
     RepoState,
     Setup,
     Shell,
@@ -84,6 +85,11 @@ defmodule PipeMaestroRunner.JobRunner do
   @spec enqueue(GenServer.server(), Job.t()) :: :ok
   def enqueue(server, %Job{} = job), do: GenServer.cast(server, {:enqueue, job})
 
+  @doc "Takes the renewed git credential of a waiting or running job."
+  @spec renew_credential(GenServer.server(), String.t(), map()) :: :ok
+  def renew_credential(server, job_id, credential),
+    do: GenServer.cast(server, {:credential, job_id, credential})
+
   @doc "Drops a waiting job or stops the running one."
   @spec cancel(GenServer.server(), String.t()) :: :ok
   def cancel(server, job_id), do: GenServer.cast(server, {:cancel, job_id})
@@ -107,6 +113,7 @@ defmodule PipeMaestroRunner.JobRunner do
     workdir = Keyword.fetch!(opts, :workdir)
     File.mkdir_p!(workdir)
     :ok = Workspace.clear_scratch(workdir)
+    :ok = GitCredential.clear(workdir)
 
     endpoint =
       if Keyword.get(opts, :telemetry, false) do
@@ -149,6 +156,29 @@ defmodule PipeMaestroRunner.JobRunner do
     else
       remove_in_background(state, task_id, directory)
     end
+
+    {:noreply, state}
+  end
+
+  def handle_cast({:credential, id, credential}, state) do
+    state =
+      cond do
+        Map.has_key?(state.running, id) ->
+          GitCredential.write(state.workdir, id, credential)
+          state
+
+        Enum.any?(state.queue, &(&1.id == id)) ->
+          queue =
+            Enum.map(
+              state.queue,
+              &if(&1.id == id, do: %{&1 | git_credential: credential}, else: &1)
+            )
+
+          %{state | queue: queue}
+
+        true ->
+          state
+      end
 
     {:noreply, state}
   end
@@ -257,10 +287,11 @@ defmodule PipeMaestroRunner.JobRunner do
     end
   end
 
-  # Of the job's secrets, only the one the delivery signs in to a Forgejo
-  # with, when git has no credential for it.
+  # Of the job's variables, those the delivery signs in with: the job's git
+  # credential (ADR 0037), or a Forgejo token among the workspace's secrets.
   defp delivery_env(job) do
-    for {"FORGEJO_TOKEN" = name, value} <- job.env || %{}, do: {name, value}
+    token = for {"FORGEJO_TOKEN" = name, value} <- job.env || %{}, do: {name, value}
+    token ++ GitCredential.git_env(job)
   end
 
   # After the agent, off this process (they take a while): the platform's
@@ -291,7 +322,7 @@ defmodule PipeMaestroRunner.JobRunner do
   # none.
   defp verify(dir, job, tracking, {checks, gates}, on_os_pid) do
     exclude = (tracking && tracking[:exclude]) || []
-    checked = Checks.run(dir, checks, env: Map.to_list(job.env || %{}), exclude: exclude)
+    checked = Checks.run(dir, checks, env: GitCredential.secrets(job), exclude: exclude)
 
     gated =
       if gates == [] or not Enum.all?(checked, & &1["passed"]),
@@ -377,6 +408,7 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   defp start(state, job) do
+    job = GitCredential.prepare(job, state.workdir)
     out(state, Job.started_event(), %{"job_id" => job.id})
     runner = self()
     %{root: root, workdir: workdir, executable: executable} = state
@@ -441,7 +473,7 @@ defmodule PipeMaestroRunner.JobRunner do
       File.write!(file, content)
     end
 
-    if job.sync, do: RepoState.sync(dir, branch)
+    if job.sync, do: RepoState.sync(dir, branch, GitCredential.git_env(job))
   end
 
   defp before_agent(_job, _dir), do: nil
@@ -639,6 +671,7 @@ defmodule PipeMaestroRunner.JobRunner do
           do: {key, value}
 
     out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+    GitCredential.remove(state.workdir, current.job.id)
     discard_scratch(state, current.job)
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
   end

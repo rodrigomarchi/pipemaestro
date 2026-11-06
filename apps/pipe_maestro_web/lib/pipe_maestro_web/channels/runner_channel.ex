@@ -13,7 +13,9 @@ defmodule PipeMaestroWeb.RunnerChannel do
   the agent is writing (`job:delta`). A job of a task's
   stage carries its context (directory, worktree, schema, artifact path), and
   every job but a proposal the workspace's secrets (`PipeMaestro.Secrets`),
-  added only on the way out.
+  added only on the way out, and, from a task of a linked repository, the
+  git credential of its connection, renewed with `job:credential` before it
+  expires (ADR 0037).
 
   So do the task worktrees (`PipeMaestroProtocol.Worktree`): the channel
   pushes `worktree:remove` when someone asks for a task's worktree to go, and
@@ -25,7 +27,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
   """
   use Phoenix.Channel
 
-  alias PipeMaestro.{Jobs, Runners, Secrets, Tasks}
+  alias PipeMaestro.{Integrations, Jobs, Runners, Secrets, Tasks}
   alias PipeMaestro.Jobs.Event
   alias PipeMaestroProtocol.{Hello, Job, Worktree}
   alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
@@ -76,6 +78,17 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   def handle_info({:job_assign, job}, socket) do
     push_assign(socket, job)
+    {:noreply, socket}
+  end
+
+  # A running job's credential, renewed before it expires.
+  def handle_info({:renew_credential, job_id}, socket) do
+    with %{} = job <- Jobs.get(job_id),
+         %{} = credential <- Integrations.git_credential_for_job(job) do
+      push(socket, Job.credential_event(), %{"job_id" => job_id, "git_credential" => credential})
+      schedule_renewal(job_id, credential)
+    end
+
     {:noreply, socket}
   end
 
@@ -162,17 +175,40 @@ defmodule PipeMaestroWeb.RunnerChannel do
   # The workspace's secrets join the job only on its way to the runner, and
   # never a proposal's: it reads untrusted text (an issue's body) with every
   # permission, and needs no secret to study a project.
+  # So does the git credential of a task from a linked repository, to a
+  # runner that knows it (ADR 0037).
   defp push_assign(socket, job) do
     env = if proposal?(job), do: %{}, else: Secrets.env(job.workspace_id)
+    credential = git_credential(socket.assigns.runner, job)
 
     {:ok, wire} =
       job.context
       |> Map.merge(%{"id" => job.id, "prompt" => job.prompt})
       |> then(&if(env == %{}, do: &1, else: Map.put(&1, "env", env)))
+      |> then(&if(credential, do: Map.put(&1, "git_credential", credential), else: &1))
       |> Job.new()
 
     push(socket, Job.assign_event(), Job.to_map(wire))
+    if credential, do: schedule_renewal(job.id, credential)
   end
+
+  defp git_credential(runner, job) do
+    if not proposal?(job) and Runners.capable?(runner, "git_credential"),
+      do: Integrations.git_credential_for_job(job)
+  end
+
+  # Five minutes before it expires, at least a minute from now.
+  defp schedule_renewal(job_id, %{"expires_at" => expires_at}) when is_binary(expires_at) do
+    with {:ok, at, _offset} <- DateTime.from_iso8601(expires_at) do
+      ms = max(DateTime.diff(at, DateTime.utc_now(), :millisecond) - renewal_margin(), 60_000)
+      Process.send_after(self(), {:renew_credential, job_id}, ms)
+    end
+  end
+
+  defp schedule_renewal(_job_id, _credential), do: nil
+
+  defp renewal_margin,
+    do: Application.get_env(:pipe_maestro_web, __MODULE__, [])[:renewal_margin_ms] || 300_000
 
   defp proposal?(job), do: is_map(job.context) and Map.has_key?(job.context, "proposal")
 

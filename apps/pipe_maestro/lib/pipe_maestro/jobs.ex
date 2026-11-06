@@ -210,6 +210,10 @@ defmodule PipeMaestro.Jobs do
     end)
   end
 
+  @doc "A job by id, of any workspace, or `nil`."
+  @spec get(Ecto.UUID.t()) :: Job.t() | nil
+  def get(id), do: Repo.get(Job, id)
+
   @doc "One of the workspace's jobs. Raises when it is not there."
   @spec get_job!(Workspace.t(), Ecto.UUID.t()) :: Job.t()
   def get_job!(%Workspace{id: workspace_id}, id) do

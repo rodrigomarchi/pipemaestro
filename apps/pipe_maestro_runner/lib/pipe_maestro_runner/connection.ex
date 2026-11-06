@@ -229,6 +229,17 @@ defmodule PipeMaestroRunner.Connection do
     {:ok, socket}
   end
 
+  def handle_message(
+        _topic,
+        "job:credential",
+        %{"job_id" => id, "git_credential" => %{"username" => _, "password" => _} = credential},
+        %{assigns: %{job_runner: pid}} = socket
+      )
+      when is_pid(pid) do
+    JobRunner.renew_credential(pid, id, credential)
+    {:ok, socket}
+  end
+
   def handle_message(_topic, "worktree:remove", payload, %{assigns: %{job_runner: pid}} = socket)
       when is_pid(pid) do
     case Worktree.parse_remove(payload) do
