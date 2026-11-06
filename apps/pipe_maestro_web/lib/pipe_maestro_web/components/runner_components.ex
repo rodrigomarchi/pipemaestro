@@ -68,6 +68,18 @@ defmodule PipeMaestroWeb.RunnerComponents do
     end
   end
 
+  @doc ~s(A share of time connected, with one decimal and a comma: "97,8%"; "—" for none.)
+  @spec format_uptime(float() | nil) :: String.t()
+  def format_uptime(nil), do: "—"
+
+  def format_uptime(share) do
+    (share * 100)
+    |> Float.round(1)
+    |> :erlang.float_to_binary(decimals: 1)
+    |> String.replace(".", ",")
+    |> Kernel.<>("%")
+  end
+
   @doc ~s(A size in bytes, short, with a decimal comma: "1,5 GB", "50 GB", "0 B".)
   @spec format_bytes(non_neg_integer()) :: String.t()
   def format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"

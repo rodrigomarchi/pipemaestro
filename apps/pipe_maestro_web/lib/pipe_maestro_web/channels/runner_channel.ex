@@ -24,10 +24,14 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   The runner also sends `runner:directories` when the code directories it
   offers change while it is online.
+
+  Each accepted join opens a session (`PipeMaestro.RunnerTelemetry`), closed
+  with the reason the channel ended; a refused join is recorded as a session
+  that ends as it starts (ADR 0039).
   """
   use Phoenix.Channel
 
-  alias PipeMaestro.{Integrations, Jobs, Runners, Secrets, Tasks}
+  alias PipeMaestro.{Integrations, Jobs, Runners, RunnerTelemetry, Secrets, Tasks}
   alias PipeMaestro.Jobs.Event
   alias PipeMaestroProtocol.{Hello, Job, Worktree}
   alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
@@ -40,17 +44,31 @@ defmodule PipeMaestroWeb.RunnerChannel do
          {:ok, hello} <- Hello.from_map(payload),
          :ok <- Runners.version_check(hello.runner_version) do
       {:ok, runner} = Runners.record_hello(runner, hello)
+      session = RunnerTelemetry.open_session(runner)
       send(self(), {:after_join, hello})
 
       {:ok,
        %{"runner_id" => runner.id, "name" => runner.name, "workspace" => runner.workspace.name},
-       assign(socket, runner: runner, joined: true)}
+       assign(socket, runner: runner, joined: true, session_id: session.id)}
     else
-      false -> {:error, %{"reason" => "unauthorized"}}
-      {:error, reason} -> {:error, %{"reason" => "invalid_hello", "detail" => reason}}
-      # Nothing is recorded: the runner stays offline until it runs the current version.
-      {:outdated, expected} -> {:error, RunnerUpdate.refusal(payload["runner_version"], expected)}
+      false ->
+        {:error, %{"reason" => "unauthorized"}}
+
+      {:error, reason} ->
+        refused(runner, "invalid_hello", payload)
+        {:error, %{"reason" => "invalid_hello", "detail" => reason}}
+
+      # Only the refusal is recorded: the runner stays offline until it runs
+      # the current version.
+      {:outdated, expected} ->
+        refused(runner, "outdated", payload)
+        {:error, RunnerUpdate.refusal(payload["runner_version"], expected)}
     end
+  end
+
+  defp refused(runner, reason, payload) do
+    version = if is_map(payload), do: payload["runner_version"]
+    RunnerTelemetry.record_refusal(runner, reason, version)
   end
 
   @impl true
@@ -215,10 +233,19 @@ defmodule PipeMaestroWeb.RunnerChannel do
   # Phoenix calls terminate after a refused join too; only a runner that was
   # actually online has a "last seen" to record.
   @impl true
-  def terminate(_reason, %{assigns: %{joined: true, runner: runner}}) do
+  def terminate(reason, %{assigns: %{joined: true, runner: runner, session_id: session_id}}) do
     Runners.touch_last_seen(runner)
-    :ok
+    RunnerTelemetry.close_session(session_id, end_reason(runner, reason))
   end
 
   def terminate(_reason, _socket), do: :ok
+
+  # A revoked runner's connection is closed by the control plane itself.
+  defp end_reason(runner, reason) do
+    cond do
+      Runners.revoked?(runner.id) -> "revoked"
+      match?({:shutdown, _}, reason) or reason == :normal -> "closed"
+      true -> "crashed"
+    end
+  end
 end

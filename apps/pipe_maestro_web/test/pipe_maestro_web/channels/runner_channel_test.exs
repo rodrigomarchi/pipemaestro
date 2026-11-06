@@ -1,7 +1,7 @@
 defmodule PipeMaestroWeb.RunnerChannelTest do
   use PipeMaestroWeb.ChannelCase, async: false
 
-  alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Repo, Runners, Tasks}
+  alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Repo, Runners, RunnerTelemetry, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Runners.Runner
   alias PipeMaestroProtocol.Hello
@@ -107,6 +107,50 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       ref = Process.monitor(channel.channel_pid)
       close(channel)
       assert_receive {:DOWN, ^ref, _, _, _}
+    end
+  end
+
+  describe "sessions" do
+    setup %{token: token} do
+      {:ok, socket} = connect(RunnerSocket, params(token))
+      %{socket: socket}
+    end
+
+    defp join_and_close(socket, runner, before_close) do
+      {:ok, _reply, channel} =
+        subscribe_and_join(
+          socket,
+          RunnerChannel,
+          "runner:" <> runner.id,
+          Hello.to_map(hello_fixture())
+        )
+
+      before_close.()
+      Process.unlink(channel.channel_pid)
+      ref = Process.monitor(channel.channel_pid)
+      close(channel)
+      assert_receive {:DOWN, ^ref, _, _, _}
+    end
+
+    defp sessions(runner), do: RunnerTelemetry.sessions(runner, ~U[2000-01-01 00:00:00Z])
+
+    test "a join opens a session and its end closes it", %{socket: socket, runner: runner} do
+      join_and_close(socket, runner, fn ->
+        assert [%{ended_at: nil, runner_version: version}] = sessions(runner)
+        assert version == hello_fixture().runner_version
+      end)
+
+      assert [%{end_reason: "closed"}] = sessions(runner)
+    end
+
+    test "a revoked runner's session ends as revoked", %{socket: socket, runner: runner} do
+      join_and_close(socket, runner, fn -> {:ok, _} = Runners.revoke_runner(runner) end)
+      assert [%{end_reason: "revoked"}] = sessions(runner)
+    end
+
+    test "an invalid hello is recorded as a refusal", %{socket: socket, runner: runner} do
+      assert {:error, _} = subscribe_and_join(socket, RunnerChannel, "runner:" <> runner.id, %{})
+      assert [%{end_reason: "invalid_hello", ended_at: %DateTime{}}] = sessions(runner)
     end
   end
 

@@ -3,7 +3,7 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Jobs, Runners, Tasks}
+  alias PipeMaestro.{Jobs, Runners, RunnerTelemetry, Tasks}
 
   setup :register_and_log_in_member
 
@@ -243,6 +243,66 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
 
       refute has_element?(view, "[data-testid=runner-recent-job-#{job.id}]")
       assert has_element?(view, "[data-testid=runner-no-recent-jobs]")
+    end
+  end
+
+  describe "tabs" do
+    test "the overview is the default; the tabs switch by the URL", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}")
+      assert has_element?(view, "[data-testid=runner-recent-jobs]")
+      refute has_element?(view, "[data-testid=runner-connections]")
+
+      view |> element("[data-testid=runner-tab-conexoes]") |> render_click()
+      assert_patch(view, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=conexoes")
+      assert has_element?(view, "[data-testid=runner-connections]")
+      refute has_element?(view, "[data-testid=runner-recent-jobs]")
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=nada")
+      assert has_element?(view, "[data-testid=runner-recent-jobs]")
+    end
+
+    test "connections: uptime, drops and each session with how it ended", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+      now = DateTime.utc_now()
+
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=conexoes")
+
+      assert has_element?(view, "[data-testid=runner-no-sessions]")
+
+      session = RunnerTelemetry.open_session(runner, DateTime.add(now, -2, :hour))
+      RunnerTelemetry.close_session(session.id, "crashed", DateTime.add(now, -1, :hour))
+
+      RunnerTelemetry.record_refusal(
+        runner,
+        "outdated",
+        "2026-01-01.01",
+        DateTime.add(now, -30, :minute)
+      )
+
+      RunnerTelemetry.open_session(runner, DateTime.add(now, -10, :minute))
+
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}?aba=conexoes")
+
+      assert has_element?(view, "[data-testid=runner-drops-day]", "1")
+      assert has_element?(view, "[data-testid=runner-session-reason]", "erro no canal")
+      assert has_element?(view, "[data-testid=runner-session-reason]", "recusado: versão")
+      assert has_element?(view, "[data-testid=runner-session-reason]", "conectado")
+      assert view |> element("[data-testid=runner-uptime-day]") |> render() =~ "%"
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+      assert has_element?(view, "[data-testid=runner-uptime-mac]", "uptime 7d")
     end
   end
 

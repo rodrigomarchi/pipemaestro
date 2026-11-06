@@ -1,9 +1,15 @@
 defmodule PipeMaestroWeb.RunnerLive do
   @moduledoc """
-  One runner: its agent and how it signs in, the directories it offers, its
-  task worktrees and disk, how near its account is to its usage limits, the
-  jobs it is running or has waiting, and the latest jobs it finished, each
-  leading to its audit. Updated live.
+  One runner, in tabs (`?aba=`):
+
+    * **Visão geral** — its agent and how it signs in, the directories it
+      offers, its task worktrees and disk, how near its account is to its
+      usage limits, the jobs it is running or has waiting, and the latest
+      jobs it finished, each leading to its audit;
+    * **Conexões** — its uptime and sessions
+      (`PipeMaestroWeb.RunnerLive.ConnectionsTab`).
+
+  Updated live.
   """
   use PipeMaestroWeb, :live_view
 
@@ -25,6 +31,11 @@ defmodule PipeMaestroWeb.RunnerLive do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.{RunnerActions, RunnerStatus}
+  alias PipeMaestroWeb.RunnerLive.ConnectionsTab
+
+  # The tabs, by their `aba` parameter, in order.
+  @tabs [{"visao", "Visão geral", "hero-server"}, {"conexoes", "Conexões", "hero-signal"}]
+  @tab_ids Enum.map(@tabs, &elem(&1, 0))
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -36,7 +47,13 @@ defmodule PipeMaestroWeb.RunnerLive do
       Jobs.subscribe({:workspace, workspace.id})
     end
 
-    {:ok, socket |> assign(page_title: runner.name, runner_id: runner.id) |> load()}
+    {:ok, assign(socket, page_title: runner.name, runner_id: runner.id, tab: "visao")}
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    tab = if params["aba"] in @tab_ids, do: params["aba"], else: "visao"
+    {:noreply, socket |> assign(tab: tab) |> load()}
   end
 
   @impl true
@@ -69,14 +86,32 @@ defmodule PipeMaestroWeb.RunnerLive do
     workspace = socket.assigns.current_scope.workspace
     runner = Runners.get_runner!(workspace, socket.assigns.runner_id)
 
-    assign(socket,
+    now = DateTime.utc_now()
+
+    socket
+    |> assign(
       runner: runner,
       online: MapSet.member?(RunnerStatus.online_ids(workspace.id), runner.id),
       jobs: Jobs.active_for_runner(runner),
-      recent_jobs: Jobs.recent_for_runner(workspace, runner),
-      now: DateTime.utc_now()
+      now: now
     )
+    |> load_tab(socket.assigns.tab, runner, now)
   end
+
+  # Only the open tab's data is read.
+  defp load_tab(socket, "visao", runner, _now) do
+    workspace = socket.assigns.current_scope.workspace
+    assign(socket, recent_jobs: Jobs.recent_for_runner(workspace, runner))
+  end
+
+  defp load_tab(socket, "conexoes", runner, now),
+    do: assign(socket, connections: ConnectionsTab.load(runner, now))
+
+  defp tab_path(scope, runner_id, "visao"),
+    do: ~p"/w/#{scope.workspace.slug}/runners/#{runner_id}"
+
+  defp tab_path(scope, runner_id, tab),
+    do: ~p"/w/#{scope.workspace.slug}/runners/#{runner_id}?aba=#{tab}"
 
   @impl true
   def render(assigns) do
@@ -115,175 +150,194 @@ defmodule PipeMaestroWeb.RunnerLive do
       </:actions>
 
       <div class="space-y-6">
-        <.card variant="outline">
-          <.card_content>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <p class="font-mono text-sm text-gray-600 dark:text-gray-300">
-                {@runner.hostname} · {@runner.os}/{@runner.arch} · runner
-                <.runner_version
-                  runner={@runner}
-                  version_testid="runner-detail-version"
-                  outdated_testid="runner-detail-outdated"
-                />
+        <.tabs variant="underline" class="overflow-x-auto" data-testid="runner-tabs">
+          <.tab
+            :for={{id, label, icon} <- tabs()}
+            link_type="live_patch"
+            to={tab_path(@current_scope, @runner.id, id)}
+            is_active={@tab == id}
+            variant="underline"
+            data-testid={"runner-tab-#{id}"}
+          >
+            <.icon name={icon} class="mr-1.5 size-4" /> {label}
+          </.tab>
+        </.tabs>
+
+        <ConnectionsTab.connections :if={@tab == "conexoes"} data={@connections} />
+
+        <div :if={@tab == "visao"} class="space-y-6">
+          <.card variant="outline">
+            <.card_content>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="font-mono text-sm text-gray-600 dark:text-gray-300">
+                  {@runner.hostname} · {@runner.os}/{@runner.arch} · runner
+                  <.runner_version
+                    runner={@runner}
+                    version_testid="runner-detail-version"
+                    outdated_testid="runner-detail-outdated"
+                  />
+                </p>
+                <.runner_status online={@online} />
+              </div>
+              <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Agente</dt>
+                  <dd class="text-gray-900 dark:text-white" data-testid="runner-detail-agent">
+                    <span :if={!@runner.agent}>—</span>
+                    <span :if={@runner.agent} class="font-mono">
+                      claude {@runner.agent["cli_version"] || "não encontrado"}
+                    </span>
+                    <span :if={@runner.agent}>
+                      · {if @runner.agent["auth"] == "api_key",
+                        do: "chave de API do runner",
+                        else: "login pessoal"}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Capacidade</dt>
+                  <dd class="text-gray-900 dark:text-white">
+                    {length(Enum.filter(@jobs, &(&1.status == :running)))}/{@runner.capacity} em execução
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Worktrees</dt>
+                  <dd class="text-gray-900 dark:text-white" data-testid="runner-detail-worktrees">
+                    {worktrees(@runner.worktree_usage)}
+                  </dd>
+                </div>
+              </dl>
+              <div :if={@runner.rate_limit} class="mt-4 max-w-md">
+                <p class="mb-2 text-sm text-gray-500 dark:text-gray-400">Limites da conta</p>
+                <.rate_limit runner={@runner} testid="runner-rate-limit" />
+              </div>
+            </.card_content>
+          </.card>
+
+          <.card variant="outline">
+            <.card_header title="Jobs em execução e na fila" />
+            <.card_content>
+              <p
+                :if={@jobs == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="runner-no-jobs"
+              >
+                Nada rodando nem esperando.
               </p>
-              <.runner_status online={@online} />
-            </div>
-            <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-3">
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Agente</dt>
-                <dd class="text-gray-900 dark:text-white" data-testid="runner-detail-agent">
-                  <span :if={!@runner.agent}>—</span>
-                  <span :if={@runner.agent} class="font-mono">
-                    claude {@runner.agent["cli_version"] || "não encontrado"}
-                  </span>
-                  <span :if={@runner.agent}>
-                    · {if @runner.agent["auth"] == "api_key",
-                      do: "chave de API do runner",
-                      else: "login pessoal"}
-                  </span>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Capacidade</dt>
-                <dd class="text-gray-900 dark:text-white">
-                  {length(Enum.filter(@jobs, &(&1.status == :running)))}/{@runner.capacity} em execução
-                </dd>
-              </div>
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Worktrees</dt>
-                <dd class="text-gray-900 dark:text-white" data-testid="runner-detail-worktrees">
-                  {worktrees(@runner.worktree_usage)}
-                </dd>
-              </div>
-            </dl>
-            <div :if={@runner.rate_limit} class="mt-4 max-w-md">
-              <p class="mb-2 text-sm text-gray-500 dark:text-gray-400">Limites da conta</p>
-              <.rate_limit runner={@runner} testid="runner-rate-limit" />
-            </div>
-          </.card_content>
-        </.card>
-
-        <.card variant="outline">
-          <.card_header title="Jobs em execução e na fila" />
-          <.card_content>
-            <p
-              :if={@jobs == []}
-              class="text-sm text-gray-500 dark:text-gray-400"
-              data-testid="runner-no-jobs"
-            >
-              Nada rodando nem esperando.
-            </p>
-            <ul :if={@jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
-              <li
-                :for={job <- @jobs}
-                class="flex items-center justify-between gap-3 py-2 text-sm"
-                data-testid={"runner-job-#{job.id}"}
-              >
-                <.link
-                  navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
-                  class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
+              <ul :if={@jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
+                <li
+                  :for={job <- @jobs}
+                  class="flex items-center justify-between gap-3 py-2 text-sm"
+                  data-testid={"runner-job-#{job.id}"}
                 >
-                  {prompt_summary(job.prompt)}
-                </.link>
-                <span class="flex shrink-0 items-center gap-2">
-                  <.job_status job={job} />
-                  <span class="text-xs text-gray-500 dark:text-gray-400">
-                    {time_ago(job.started_at || job.inserted_at, @now)}
-                  </span>
-                </span>
-              </li>
-            </ul>
-          </.card_content>
-        </.card>
-
-        <.card variant="outline" data-testid="runner-recent-jobs">
-          <.card_header
-            title="Últimas execuções"
-            description="As mais recentes que este runner terminou; cada uma leva à auditoria."
-          />
-          <.card_content>
-            <p
-              :if={@recent_jobs == []}
-              class="text-sm text-gray-500 dark:text-gray-400"
-              data-testid="runner-no-recent-jobs"
-            >
-              Este runner ainda não terminou nenhuma execução.
-            </p>
-            <ul :if={@recent_jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
-              <li
-                :for={job <- @recent_jobs}
-                id={"runner-recent-job-#{job.id}"}
-                class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm"
-                data-testid={"runner-recent-job-#{job.id}"}
-              >
-                <span class="flex min-w-0 items-center gap-2">
-                  <.job_status job={job} data-testid={"runner-recent-job-status-#{job.id}"} />
                   <.link
                     navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
                     class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
-                    data-testid={"runner-recent-job-link-#{job.id}"}
                   >
-                    {job_label(job)}
+                    {prompt_summary(job.prompt)}
                   </.link>
-                </span>
-                <dl class="flex shrink-0 items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                  <div class="flex gap-1" title="Duração">
-                    <dt class="sr-only">Duração</dt>
-                    <.icon name="hero-clock" class="size-4" />
-                    <dd data-testid={"runner-recent-job-duration-#{job.id}"}>
-                      {format_duration(job.duration_ms || job.wall_ms)}
-                    </dd>
-                  </div>
-                  <div class="flex gap-1" title="Custo">
-                    <dt class="sr-only">Custo</dt>
-                    <dd class="font-mono" data-testid={"runner-recent-job-cost-#{job.id}"}>
-                      {format_cost(job.cost_usd)}
-                    </dd>
-                  </div>
-                  <div class="flex gap-1" title="Tokens">
-                    <dt class="sr-only">Tokens</dt>
-                    <dd data-testid={"runner-recent-job-tokens-#{job.id}"}>{tokens(job)}</dd>
-                    <span aria-hidden="true">tokens</span>
-                  </div>
-                  <div class="flex gap-1" title="Do cache">
-                    <dt class="sr-only">Do cache</dt>
-                    <dd data-testid={"runner-recent-job-cache-#{job.id}"}>
-                      {format_percent(Job.cache_hit(job))}
-                    </dd>
-                    <span aria-hidden="true">cache</span>
-                  </div>
-                </dl>
-              </li>
-            </ul>
-          </.card_content>
-        </.card>
+                  <span class="flex shrink-0 items-center gap-2">
+                    <.job_status job={job} />
+                    <span class="text-xs text-gray-500 dark:text-gray-400">
+                      {time_ago(job.started_at || job.inserted_at, @now)}
+                    </span>
+                  </span>
+                </li>
+              </ul>
+            </.card_content>
+          </.card>
 
-        <.card variant="outline">
-          <.card_header
-            title="Diretórios"
-            description="Os subdiretórios da raiz com que o runner foi iniciado."
-          />
-          <.card_content>
-            <p :if={@runner.directories == []} class="text-sm text-gray-500 dark:text-gray-400">
-              Nenhum: o runner foi iniciado sem raiz (make runner.start ROOT=~/src).
-            </p>
-            <ul
-              :if={@runner.directories != []}
-              class="grid gap-x-6 gap-y-1 font-mono text-sm sm:grid-cols-3"
-              data-testid="runner-detail-directories"
-            >
-              <li :for={dir <- @runner.directories} class="flex items-center gap-2">
-                <.icon name="hero-folder" class="size-4 text-gray-400" />
-                <span class="text-gray-900 dark:text-white">{dir["name"]}</span>
-                <span :if={!dir["git"]} class="text-xs text-gray-500">sem git</span>
-              </li>
-            </ul>
-          </.card_content>
-        </.card>
+          <.card variant="outline" data-testid="runner-recent-jobs">
+            <.card_header
+              title="Últimas execuções"
+              description="As mais recentes que este runner terminou; cada uma leva à auditoria."
+            />
+            <.card_content>
+              <p
+                :if={@recent_jobs == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="runner-no-recent-jobs"
+              >
+                Este runner ainda não terminou nenhuma execução.
+              </p>
+              <ul :if={@recent_jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
+                <li
+                  :for={job <- @recent_jobs}
+                  id={"runner-recent-job-#{job.id}"}
+                  class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm"
+                  data-testid={"runner-recent-job-#{job.id}"}
+                >
+                  <span class="flex min-w-0 items-center gap-2">
+                    <.job_status job={job} data-testid={"runner-recent-job-status-#{job.id}"} />
+                    <.link
+                      navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
+                      class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
+                      data-testid={"runner-recent-job-link-#{job.id}"}
+                    >
+                      {job_label(job)}
+                    </.link>
+                  </span>
+                  <dl class="flex shrink-0 items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <div class="flex gap-1" title="Duração">
+                      <dt class="sr-only">Duração</dt>
+                      <.icon name="hero-clock" class="size-4" />
+                      <dd data-testid={"runner-recent-job-duration-#{job.id}"}>
+                        {format_duration(job.duration_ms || job.wall_ms)}
+                      </dd>
+                    </div>
+                    <div class="flex gap-1" title="Custo">
+                      <dt class="sr-only">Custo</dt>
+                      <dd class="font-mono" data-testid={"runner-recent-job-cost-#{job.id}"}>
+                        {format_cost(job.cost_usd)}
+                      </dd>
+                    </div>
+                    <div class="flex gap-1" title="Tokens">
+                      <dt class="sr-only">Tokens</dt>
+                      <dd data-testid={"runner-recent-job-tokens-#{job.id}"}>{tokens(job)}</dd>
+                      <span aria-hidden="true">tokens</span>
+                    </div>
+                    <div class="flex gap-1" title="Do cache">
+                      <dt class="sr-only">Do cache</dt>
+                      <dd data-testid={"runner-recent-job-cache-#{job.id}"}>
+                        {format_percent(Job.cache_hit(job))}
+                      </dd>
+                      <span aria-hidden="true">cache</span>
+                    </div>
+                  </dl>
+                </li>
+              </ul>
+            </.card_content>
+          </.card>
+
+          <.card variant="outline">
+            <.card_header
+              title="Diretórios"
+              description="Os subdiretórios da raiz com que o runner foi iniciado."
+            />
+            <.card_content>
+              <p :if={@runner.directories == []} class="text-sm text-gray-500 dark:text-gray-400">
+                Nenhum: o runner foi iniciado sem raiz (make runner.start ROOT=~/src).
+              </p>
+              <ul
+                :if={@runner.directories != []}
+                class="grid gap-x-6 gap-y-1 font-mono text-sm sm:grid-cols-3"
+                data-testid="runner-detail-directories"
+              >
+                <li :for={dir <- @runner.directories} class="flex items-center gap-2">
+                  <.icon name="hero-folder" class="size-4 text-gray-400" />
+                  <span class="text-gray-900 dark:text-white">{dir["name"]}</span>
+                  <span :if={!dir["git"]} class="text-xs text-gray-500">sem git</span>
+                </li>
+              </ul>
+            </.card_content>
+          </.card>
+        </div>
       </div>
     </Layouts.app>
     """
   end
+
+  defp tabs, do: @tabs
 
   # A pipeline stage's job reads as its task and stage; any other, as its prompt.
   defp job_label(%Job{stage_run: %StageRun{task: task, name: name, attempt: attempt}}) do

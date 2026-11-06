@@ -99,6 +99,35 @@ export class RunnersPage {
     return this.page.getByTestId(part ? `runner-recent-job-${part}-${jobId}` : `runner-recent-job-${jobId}`);
   }
 
+  /** The runner's uptime over the last 7 days, in the list. */
+  uptime(name: string): Locator {
+    return this.page.getByTestId(`runner-uptime-${name}`);
+  }
+
+  /** On the runner's page, opens a tab by its `aba` id (visao, conexoes...). */
+  async openTab(tab: string) {
+    await this.page.getByTestId(`runner-tab-${tab}`).click();
+    await expect(this.page).toHaveURL(tab === "visao" ? /\/runners\/[^?]+$/ : new RegExp(`aba=${tab}`));
+  }
+
+  /** The "Conexões" tab. */
+  get connections(): Locator {
+    return this.page.getByTestId("runner-connections");
+  }
+
+  /** How each session listed in the "Conexões" tab ended, newest first. */
+  get sessionReasons(): Locator {
+    return this.page.getByTestId("runner-session-reason");
+  }
+
+  get uptimeDay(): Locator {
+    return this.page.getByTestId("runner-uptime-day");
+  }
+
+  get dropsDay(): Locator {
+    return this.page.getByTestId("runner-drops-day");
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

@@ -11,6 +11,7 @@ defmodule PipeMaestroWeb.RunnersLive do
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.Audit
   alias PipeMaestro.Runners
+  alias PipeMaestro.RunnerTelemetry
   alias PipeMaestro.Version
   alias PipeMaestroWeb.{RunnerActions, RunnerComponents, RunnerStatus}
 
@@ -99,10 +100,14 @@ defmodule PipeMaestroWeb.RunnersLive do
   defp load_runners(socket) do
     workspace = socket.assigns.current_scope.workspace
 
+    runners = Runners.list_runners(workspace)
+    now = DateTime.utc_now()
+
     assign(socket,
-      runners: Runners.list_runners(workspace),
+      runners: runners,
       online: RunnerStatus.online_ids(workspace.id),
-      now: DateTime.utc_now()
+      uptimes: RunnerTelemetry.uptimes(runners, DateTime.add(now, -7, :day), now),
+      now: now
     )
   end
 
@@ -179,6 +184,13 @@ defmodule PipeMaestroWeb.RunnersLive do
                 class="mt-1 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
               >
                 visto {time_ago(runner.last_seen_at, @now)}
+              </p>
+              <p
+                class="mt-1 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"
+                title="Tempo conectado nos últimos 7 dias"
+                data-testid={"runner-uptime-#{runner.name}"}
+              >
+                uptime 7d {format_uptime(@uptimes[runner.id])}
               </p>
             </:col>
             <:col :let={runner} label="Labels">
