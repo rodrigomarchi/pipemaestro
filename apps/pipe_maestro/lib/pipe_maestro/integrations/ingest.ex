@@ -466,7 +466,7 @@ defmodule PipeMaestro.Integrations.Ingest do
   # runner, or whose runner no longer offers the directory, takes no work: the
   # delivery waits, for the reconciliation to try again once it is fixed.
   defp project_ready(_connection, _client, %LinkedRepo{project: nil}, _issue, _opts),
-    do: {:ignored, "o repositório não está ligado a um projeto"}
+    do: {:waiting_runner, "o repositório não está ligado a um projeto: escolha um na integração"}
 
   defp project_ready(connection, client, repo, issue, opts) do
     project = repo.project

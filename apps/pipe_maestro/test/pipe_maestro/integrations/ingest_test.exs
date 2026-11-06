@@ -1,10 +1,11 @@
 defmodule PipeMaestro.Integrations.IngestTest do
   use PipeMaestro.DataCase, async: true
 
+  import Ecto.Query
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Proposals, Repo, Runners, Tasks}
-  alias PipeMaestro.Integrations.{Connection, Delivery, Feedback, Ingest, IssueState}
+  alias PipeMaestro.Integrations.{Connection, Delivery, Feedback, Ingest, IssueState, LinkedRepo}
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Tasks.Task
 
@@ -329,6 +330,24 @@ defmodule PipeMaestro.Integrations.IngestTest do
   end
 
   describe "where the work runs" do
+    test "a repository left without a project waits, without spending the label", ctx do
+      trigger(ctx, %{"kind" => "label", "label" => "pipemaestro"})
+      project_id = ctx.repo.project_id
+      Repo.update_all(from(r in LinkedRepo, where: r.id == ^ctx.repo.id), set: [project_id: nil])
+
+      {headers, body} = signed(ctx, "issue_label", "d-sem-projeto", payload("issue_label"))
+      {:ok, delivery} = Ingest.record_webhook(ctx.connection.id, headers, body)
+
+      assert %Delivery{status: "waiting_runner", outcome: "o repositório não está ligado" <> _} =
+               Ingest.process(delivery, ctx.opts)
+
+      Repo.update_all(from(r in LinkedRepo, where: r.id == ^ctx.repo.id),
+        set: [project_id: project_id]
+      )
+
+      assert %Delivery{status: "processed"} = Ingest.process(Repo.reload!(delivery), ctx.opts)
+    end
+
     test "the project's runner offline is no reason to wait: the job waits for it", ctx do
       trigger(ctx, %{"kind" => "label", "label" => "pipemaestro"})
 

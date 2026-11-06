@@ -235,7 +235,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
                 icon="hero-folder"
                 type="select"
                 label="Projeto"
-                prompt="Sem projeto"
+                prompt="Escolha o projeto"
                 options={Enum.map(@projects, &{"#{&1.name} (#{&1.directory})", &1.id})}
                 data-testid="repo-project"
               />

@@ -119,7 +119,11 @@ defmodule PipeMaestro.Integrations.SchemasTest do
 
   describe "LinkedRepo.changeset/2" do
     test "splits and downcases the full name" do
-      changeset = LinkedRepo.changeset(%LinkedRepo{}, %{"full_name" => " Acme/App "})
+      changeset =
+        LinkedRepo.changeset(%LinkedRepo{}, %{
+          "full_name" => " Acme/App ",
+          "project_id" => Ecto.UUID.generate()
+        })
 
       assert changeset.valid?
       repo = Ecto.Changeset.apply_changes(changeset)
