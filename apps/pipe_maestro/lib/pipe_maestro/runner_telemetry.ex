@@ -15,7 +15,8 @@ defmodule PipeMaestro.RunnerTelemetry do
       to it (`PipeMaestro.RunnerTelemetry.Event`), from its log and from
       what its jobs reported;
     * its latest diagnosis (`record_doctor/2`, kept on the runner), and an
-      event each time a check changes status.
+      event each time a check changes status;
+    * from all of that, whether it is degraded and why (`degraded/2`).
   """
 
   import Ecto.Query
@@ -475,6 +476,103 @@ defmodule PipeMaestro.RunnerTelemetry do
 
     %{lines: lines, events: events}
   end
+
+  # ── Degraded ──────────────────────────────────────────────────────────────
+
+  @typedoc """
+  Why a runner is degraded: little free disk (the bytes left), memory
+  nearly full for its last samples, dropped connections in the last hour
+  (how many), too many failed jobs in the last day (the share), or checks
+  of its diagnosis in error (their names).
+  """
+  @type reason ::
+          {:disk, non_neg_integer()}
+          | :memory
+          | {:drops, pos_integer()}
+          | {:failures, float()}
+          | {:doctor, [String.t()]}
+
+  @low_disk_share 0.10
+  @low_disk_bytes 5 * 1024 * 1024 * 1024
+  @full_memory_share 0.95
+  @memory_samples 5
+  @max_drops_hour 3
+  @max_failure_rate 0.30
+  @min_runs 5
+  # An older sample says nothing about the machine now.
+  @fresh_sample_seconds 600
+
+  @doc """
+  Why `runner` is degraded as of `now`, or `[]`: free disk under 10% or
+  5 GiB, memory over 95% in its last five samples, #{@max_drops_hour} or more
+  dropped connections in the last hour, more than 30% of its jobs failed in
+  the last day (with at least #{@min_runs}), or a check of its diagnosis in
+  error. Only samples from the last ten minutes count.
+  """
+  @spec degraded(Runner.t(), DateTime.t()) :: [reason()]
+  def degraded(%Runner{} = runner, now \\ DateTime.utc_now()) do
+    samples =
+      runner
+      |> recent_health(@memory_samples)
+      |> Enum.filter(&(DateTime.diff(now, &1.at) <= @fresh_sample_seconds))
+
+    Enum.reject(
+      [
+        disk_reason(List.first(samples)),
+        memory_reason(samples),
+        drops_reason(drops(runner, DateTime.add(now, -1, :hour), now)),
+        failures_reason(run_stats(runner, DateTime.add(now, -1, :day))),
+        doctor_reason(runner.doctor)
+      ],
+      &is_nil/1
+    )
+  end
+
+  @doc """
+  The degraded runners among `runners`, as `{:runner_degraded, runner,
+  reasons}`, for the board's alerts.
+  """
+  @spec degraded_alerts([Runner.t()], DateTime.t()) :: [
+          {:runner_degraded, Runner.t(), [reason()]}
+        ]
+  def degraded_alerts(runners, now \\ DateTime.utc_now()) do
+    for runner <- runners,
+        reasons = degraded(runner, now),
+        reasons != [],
+        do: {:runner_degraded, runner, reasons}
+  end
+
+  defp disk_reason(%HealthSample{disk_free_bytes: free} = sample) when is_integer(free) do
+    share = HealthSample.disk_free_share(sample)
+    if free < @low_disk_bytes or (share && share < @low_disk_share), do: {:disk, free}
+  end
+
+  defp disk_reason(_sample), do: nil
+
+  defp memory_reason(samples) when length(samples) == @memory_samples do
+    shares = Enum.map(samples, &HealthSample.mem_share/1)
+    if Enum.all?(shares, &(is_float(&1) and &1 > @full_memory_share)), do: :memory
+  end
+
+  defp memory_reason(_samples), do: nil
+
+  defp drops_reason(count) when count >= @max_drops_hour, do: {:drops, count}
+  defp drops_reason(_count), do: nil
+
+  defp failures_reason(%{runs: runs, failure_rate: rate})
+       when runs >= @min_runs and rate > @max_failure_rate,
+       do: {:failures, rate}
+
+  defp failures_reason(_stats), do: nil
+
+  defp doctor_reason(%{"checks" => checks}) when is_list(checks) do
+    case for(%{"status" => "error", "name" => name} <- checks, do: name) do
+      [] -> nil
+      names -> {:doctor, names}
+    end
+  end
+
+  defp doctor_reason(_doctor), do: nil
 
   # ── Diagnosis ──────────────────────────────────────────────────────────────
 

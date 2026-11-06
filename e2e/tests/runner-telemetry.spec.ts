@@ -3,6 +3,7 @@
  * @flow A [done] The runner page's "Conexões" tab shows each connection: the one live, a stop that ended it, a join refused for its version; the list shows the runner's uptime over the week
  * @flow C [done] The "Eventos e logs" tab shows the runner's own log, live, and an event for a task's setup that failed, filtered by group
  * @flow D [done] The "Diagnóstico" tab shows the doctor the runner ran as it connected, and a member runs it again from the page
+ * @flow E [done] A runner whose agent CLI is missing is degraded: its diagnosis is in error, the list marks it and the board alerts on it
  * @flow B [done] The "Saúde" tab shows the machine's CPU, memory, load and free disk as the runner reports them, and the week's jobs; the list shows the runner's failures over the week
  */
 import { expect, test } from "@playwright/test";
@@ -124,6 +125,20 @@ test.describe("Runner telemetry", () => {
     await expect(runners.runDoctor).toHaveText(/Rodando/);
     await expect(runners.runDoctor).toHaveText(/Rodar agora/, { timeout: 30_000 });
     await shot(app.page, "runner-doctor");
+
+    // Flow E: started without its agent CLI, the runner's diagnosis fails.
+    runner.stop();
+    await runner.waitForExit();
+    runner.useClaudeBin("/nonexistent/claude");
+    runner.start("runner.start", ["--root", root]);
+    await runner.waitFor(/Online como/);
+
+    await app.openBoard(workspace.slug);
+    await expect(app.degradedAlert(runnerName)).toContainText("diagnóstico com erro", { timeout: 30_000 });
+    await shot(app.page, "board-runner-degraded");
+
+    await runners.open(workspace.slug);
+    await expect(runners.degraded(runnerName)).toBeVisible();
 
     await context.close();
   });

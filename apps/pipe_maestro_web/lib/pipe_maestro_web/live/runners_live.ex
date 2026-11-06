@@ -108,6 +108,7 @@ defmodule PipeMaestroWeb.RunnersLive do
       online: RunnerStatus.online_ids(workspace.id),
       uptimes: RunnerTelemetry.uptimes(runners, DateTime.add(now, -7, :day), now),
       failure_rates: RunnerTelemetry.failure_rates(runners, DateTime.add(now, -7, :day)),
+      degraded: Map.new(runners, &{&1.id, RunnerTelemetry.degraded(&1, now)}),
       now: now
     )
   end
@@ -176,10 +177,16 @@ defmodule PipeMaestroWeb.RunnersLive do
               </p>
             </:col>
             <:col :let={runner} label="Status">
-              <.runner_status
-                online={MapSet.member?(@online, runner.id)}
-                data-testid={"runner-status-#{runner.name}"}
-              />
+              <div class="flex flex-wrap items-center gap-1">
+                <.runner_status
+                  online={MapSet.member?(@online, runner.id)}
+                  data-testid={"runner-status-#{runner.name}"}
+                />
+                <.health_badge
+                  reasons={@degraded[runner.id]}
+                  data-testid={"runner-degraded-#{runner.name}"}
+                />
+              </div>
               <p
                 :if={!MapSet.member?(@online, runner.id)}
                 class="mt-1 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400"

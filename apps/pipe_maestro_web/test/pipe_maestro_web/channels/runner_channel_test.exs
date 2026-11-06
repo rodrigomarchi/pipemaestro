@@ -172,6 +172,19 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
 
       ref = push(channel, "runner:health", %{"cpu_pct" => 1})
       assert_reply ref, :error, %{"reason" => "invalid"}
+
+      # Turning degraded reloads the workspace's screens.
+      RunnerStatus.subscribe(runner.workspace_id)
+
+      full = %{
+        "at" => DateTime.utc_now() |> DateTime.add(1) |> DateTime.to_iso8601(),
+        "disk_free_bytes" => 1,
+        "disk_total_bytes" => 100
+      }
+
+      ref = push(channel, "runner:health", full)
+      assert_reply ref, :ok
+      assert_receive :runners_changed
     end
 
     test "the runner's log is stored; the join says whether lines are kept", %{

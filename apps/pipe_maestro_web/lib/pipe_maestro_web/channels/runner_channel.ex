@@ -34,7 +34,9 @@ defmodule PipeMaestroWeb.RunnerChannel do
   are stored as the runner's events. The runner's diagnosis
   (`runner:doctor`, `PipeMaestroProtocol.RunnerDoctor`) is stored as its
   latest, and a screen asking for a new one (`RunnerStatus.request_doctor/1`)
-  reaches the runner through this channel.
+  reaches the runner through this channel. When what it reports changes
+  whether the runner is degraded (`RunnerTelemetry.degraded/2`), the
+  workspace's screens reload, the board's alerts with them.
 
   Each accepted join opens a session (`PipeMaestro.RunnerTelemetry`), closed
   with the reason the channel ended; a refused join is recorded as a session
@@ -66,7 +68,15 @@ defmodule PipeMaestroWeb.RunnerChannel do
         "telemetry" => RunnerLog.telemetry_reply(RunnerTelemetry.keep_logs?(runner))
       }
 
-      {:ok, reply, assign(socket, runner: runner, joined: true, session_id: session.id)}
+      socket =
+        assign(socket,
+          runner: runner,
+          joined: true,
+          session_id: session.id,
+          degraded: RunnerTelemetry.degraded(runner)
+        )
+
+      {:ok, reply, socket}
     else
       false ->
         {:error, %{"reason" => "unauthorized"}}
@@ -172,6 +182,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
          [_ | _] <- RunnerTelemetry.record_job_outcome(runner, job_id, payload),
          do: RunnerStatus.notify_telemetry(runner.id, :log)
 
+    socket = if match?({:ok, _job}, result), do: check_degraded(socket), else: socket
     reply_to(result, socket)
   end
 
@@ -224,7 +235,7 @@ defmodule PipeMaestroWeb.RunnerChannel do
     case RunnerTelemetry.record_health(runner, payload) do
       {:ok, _sample} ->
         RunnerStatus.notify_telemetry(runner.id, :health)
-        {:reply, :ok, socket}
+        {:reply, :ok, check_degraded(socket)}
 
       {:error, _reason} ->
         {:reply, {:error, %{"reason" => "invalid"}}, socket}
@@ -235,9 +246,9 @@ defmodule PipeMaestroWeb.RunnerChannel do
     runner = socket.assigns.runner
 
     case RunnerTelemetry.record_doctor(runner, payload) do
-      {:ok, _runner} ->
+      {:ok, runner} ->
         RunnerStatus.notify_telemetry(runner.id, :doctor)
-        {:reply, :ok, socket}
+        {:reply, :ok, check_degraded(assign(socket, runner: runner))}
 
       {:error, _reason} ->
         {:reply, {:error, %{"reason" => "invalid"}}, socket}
@@ -259,6 +270,20 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   def handle_in(_event, _payload, socket),
     do: {:reply, {:error, %{"reason" => "unknown_message"}}, socket}
+
+  # A job that failed, a full disk, a check in error: the workspace's screens
+  # (and the board's alerts) reload when the runner turns degraded or back.
+  defp check_degraded(socket) do
+    %{runner: runner, degraded: before} = socket.assigns
+    now = RunnerTelemetry.degraded(runner)
+
+    if now != before do
+      RunnerStatus.notify_changed(runner.workspace_id)
+      assign(socket, degraded: now)
+    else
+      socket
+    end
+  end
 
   defp reply_to({:ok, _result}, socket), do: {:reply, :ok, socket}
 

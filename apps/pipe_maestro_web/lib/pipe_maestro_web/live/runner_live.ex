@@ -33,7 +33,7 @@ defmodule PipeMaestroWeb.RunnerLive do
     ]
 
   alias Phoenix.Socket.Broadcast
-  alias PipeMaestro.{Jobs, Runners}
+  alias PipeMaestro.{Jobs, Runners, RunnerTelemetry}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.{RunnerActions, RunnerStatus}
@@ -161,6 +161,7 @@ defmodule PipeMaestroWeb.RunnerLive do
       runner: runner,
       online: MapSet.member?(RunnerStatus.online_ids(workspace.id), runner.id),
       jobs: Jobs.active_for_runner(runner),
+      degraded: RunnerTelemetry.degraded(runner, now),
       now: now
     )
     |> load_tab(socket.assigns.tab, runner, now)
@@ -271,8 +272,18 @@ defmodule PipeMaestroWeb.RunnerLive do
                     outdated_testid="runner-detail-outdated"
                   />
                 </p>
-                <.runner_status online={@online} />
+                <span class="flex items-center gap-2">
+                  <.health_badge reasons={@degraded} data-testid="runner-detail-degraded" />
+                  <.runner_status online={@online} />
+                </span>
               </div>
+              <ul
+                :if={@degraded != []}
+                class="mt-3 list-inside list-disc text-sm text-danger-700 dark:text-danger-400"
+                data-testid="runner-detail-degraded-reasons"
+              >
+                <li :for={reason <- @degraded}>{reason_label(reason)}</li>
+              </ul>
               <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-3">
                 <div>
                   <dt class="text-gray-500 dark:text-gray-400">Agente</dt>

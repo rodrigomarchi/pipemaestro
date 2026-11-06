@@ -147,6 +147,33 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       Process.exit(back, :kill)
     end
 
+    test "alerts on an online runner that is degraded, and why, live", ctx do
+      tracker = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, _ref} = RunnerStatus.track(tracker, ctx.runner)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      refute has_element?(view, "[data-testid=board-alert-degraded-mac]")
+
+      {:ok, _} =
+        PipeMaestro.RunnerTelemetry.record_health(ctx.runner, %{
+          "at" => DateTime.to_iso8601(DateTime.utc_now()),
+          "disk_free_bytes" => 1024 ** 3,
+          "disk_total_bytes" => 100 * 1024 ** 3
+        })
+
+      RunnerStatus.notify_changed(ctx.workspace.id)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-alert-degraded-mac]", "pouco disco livre")
+             end)
+
+      Process.exit(tracker, :kill)
+
+      assert eventually(fn ->
+               not has_element?(view, "[data-testid=board-alert-degraded-mac]")
+             end)
+    end
+
     test "the limit alert shows as soon as a rate_limit is recorded, live", ctx do
       task = create_task(ctx, "Perto do limite ao vivo")
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")

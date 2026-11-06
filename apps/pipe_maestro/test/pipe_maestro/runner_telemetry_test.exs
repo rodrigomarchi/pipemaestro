@@ -382,12 +382,97 @@ defmodule PipeMaestro.RunnerTelemetryTest do
 
       assert runner.doctor["request_id"] == "r1"
 
-      assert [%Event{level: "error", attrs: %{"key" => "git", "was" => "ok"}} = event | _] =
-               RunnerTelemetry.events(runner, since)
-
-      assert event.message =~ "passou de ok a erro"
+      # Both in the same second: found by the check, not by the order.
+      git = Enum.find(RunnerTelemetry.events(runner, since), &(&1.attrs["key"] == "git"))
+      assert %Event{level: "error", attrs: %{"was" => "ok"}} = git
+      assert git.message =~ "passou de ok a erro"
       assert length(RunnerTelemetry.events(runner, since, "doctor")) == 2
       assert {:error, _} = RunnerTelemetry.record_doctor(runner, %{})
+    end
+  end
+
+  describe "degraded" do
+    defp health(runner, at, attrs) do
+      base = %{
+        "at" => DateTime.to_iso8601(at),
+        "disk_free_bytes" => 500 * 1024 ** 3,
+        "disk_total_bytes" => 1000 * 1024 ** 3
+      }
+
+      {:ok, _} = RunnerTelemetry.record_health(runner, Map.merge(base, attrs))
+    end
+
+    test "a healthy runner is not degraded", %{runner: runner} do
+      health(runner, DateTime.utc_now(), %{})
+      assert RunnerTelemetry.degraded(runner) == []
+      assert RunnerTelemetry.degraded_alerts([runner]) == []
+    end
+
+    test "little free disk, by share or by size; an old sample does not count", %{runner: runner} do
+      now = DateTime.utc_now()
+      health(runner, DateTime.add(now, -1, :hour), %{"disk_free_bytes" => 1})
+      assert RunnerTelemetry.degraded(runner, now) == []
+
+      health(runner, now, %{"disk_free_bytes" => 50 * 1024 ** 3})
+      assert [{:disk, _free}] = RunnerTelemetry.degraded(runner, now)
+
+      health(runner, DateTime.add(now, 1), %{
+        "disk_free_bytes" => 4 * 1024 ** 3,
+        "disk_total_bytes" => 8 * 1024 ** 3
+      })
+
+      assert [{:disk, free}] = RunnerTelemetry.degraded(runner, DateTime.add(now, 1))
+      assert free == 4 * 1024 ** 3
+    end
+
+    test "memory full in each of the last five samples", %{runner: runner} do
+      now = DateTime.utc_now()
+      full = %{"mem_used_bytes" => 99, "mem_total_bytes" => 100}
+
+      for n <- 1..4, do: health(runner, DateTime.add(now, -n), full)
+      assert RunnerTelemetry.degraded(runner, now) == []
+
+      health(runner, now, full)
+      assert [:memory] = RunnerTelemetry.degraded(runner, now)
+    end
+
+    test "connections that dropped, jobs that failed, a diagnosis in error", %{
+      runner: runner,
+      user: user
+    } do
+      now = DateTime.utc_now()
+
+      for n <- 1..3 do
+        session = RunnerTelemetry.open_session(runner, DateTime.add(now, -n * 10, :minute))
+
+        RunnerTelemetry.close_session(
+          session.id,
+          "closed",
+          DateTime.add(now, -n * 10 + 1, :minute)
+        )
+      end
+
+      for status <- [:failed, :failed, :succeeded, :failed, :succeeded] do
+        job_fixture(runner, user)
+        |> Ecto.Changeset.change(status: status, finished_at: DateTime.utc_now(:second))
+        |> Repo.update!()
+      end
+
+      checks = [%{key: "git", name: "git", status: :error, detail: "não encontrado"}]
+
+      {:ok, runner} =
+        RunnerTelemetry.record_doctor(
+          runner,
+          RunnerDoctor.to_map(checks, DateTime.utc_now(:second))
+        )
+
+      assert [{:drops, 3}, {:failures, rate}, {:doctor, ["git"]}] =
+               RunnerTelemetry.degraded(runner, now)
+
+      assert_in_delta rate, 0.6, 0.001
+
+      assert [{:runner_degraded, ^runner, [_, _, _]}] =
+               RunnerTelemetry.degraded_alerts([runner], now)
     end
   end
 end

@@ -174,6 +174,11 @@ export class RunnersPage {
     return this.page.getByTestId("runner-doctor-run");
   }
 
+  /** The "degradado" badge of a runner in the list. */
+  degraded(name: string): Locator {
+    return this.page.getByTestId(`runner-degraded-${name}`);
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

@@ -312,6 +312,37 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
       assert has_element?(view, "[data-testid=runner-health-cpu-value]", "30%")
     end
 
+    test "a degraded runner says why, on its page and in the list", %{
+      conn: conn,
+      workspace: workspace,
+      user: user
+    } do
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}")
+      refute has_element?(view, "[data-testid=runner-detail-degraded]")
+
+      checks = [%{key: "git", name: "git", status: :error, detail: "não encontrado"}]
+
+      {:ok, _} =
+        RunnerTelemetry.record_doctor(
+          runner,
+          PipeMaestroProtocol.RunnerDoctor.to_map(checks, DateTime.utc_now(:second))
+        )
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners/#{runner.id}")
+      assert has_element?(view, "[data-testid=runner-detail-degraded]", "degradado")
+
+      assert has_element?(
+               view,
+               "[data-testid=runner-detail-degraded-reasons]",
+               "diagnóstico com erro em git"
+             )
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/runners")
+      assert has_element?(view, "[data-testid=runner-degraded-mac]")
+    end
+
     test "health: a runner that does not send it is asked to update", %{
       conn: conn,
       workspace: workspace,

@@ -1,7 +1,7 @@
 defmodule PipeMaestroWeb.RunnerComponents do
   @moduledoc """
-  Pieces every runner screen shares: status, last seen, how to connect, and
-  how near its account is to its usage limits.
+  Pieces every runner screen shares: status, health, last seen, how to
+  connect, and how near its account is to its usage limits.
   """
   use PipeMaestroWeb, :html
 
@@ -20,6 +20,38 @@ defmodule PipeMaestroWeb.RunnerComponents do
     <.badge :if={!@online} size="sm" variant="soft" color="gray" dot label="Offline" {@rest} />
     """
   end
+
+  @doc """
+  A degraded runner's badge, its reasons in the title
+  (`PipeMaestro.RunnerTelemetry.degraded/2`); nothing for a healthy one.
+  """
+  attr :reasons, :list, required: true
+  attr :rest, :global
+
+  @spec health_badge(map()) :: Phoenix.LiveView.Rendered.t()
+  def health_badge(assigns) do
+    assigns = assign(assigns, :title, Enum.map_join(assigns.reasons, "; ", &reason_label/1))
+
+    ~H"""
+    <.badge
+      :if={@reasons != []}
+      size="xs"
+      variant="soft"
+      color="danger"
+      label="degradado"
+      title={@title}
+      {@rest}
+    />
+    """
+  end
+
+  @doc "Why a runner is degraded, in Portuguese."
+  @spec reason_label(PipeMaestro.RunnerTelemetry.reason()) :: String.t()
+  def reason_label({:disk, free}), do: "pouco disco livre (#{format_bytes(free)})"
+  def reason_label(:memory), do: "memória quase cheia"
+  def reason_label({:drops, count}), do: "#{count} quedas de conexão na última hora"
+  def reason_label({:failures, rate}), do: "#{round(rate * 100)}% dos jobs falharam em 24 h"
+  def reason_label({:doctor, names}), do: "diagnóstico com erro em #{Enum.join(names, ", ")}"
 
   @doc """
   The version a runner announced, with a "desatualizado" badge when it is a
