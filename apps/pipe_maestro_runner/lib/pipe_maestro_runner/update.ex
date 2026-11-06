@@ -6,10 +6,11 @@ defmodule PipeMaestroRunner.Update do
 
   As a single binary (Burrito's `__BURRITO_BIN_PATH`) it offers to download
   and install that version in its place, and runs the same command
-  again (`PipeMaestroRunner.SelfUpdate`): it asks in a terminal, and does it
-  without asking with `--auto-update` (the service). Otherwise (Mix, a
-  release, no terminal, a "no") it says which version it runs, which one the
-  platform wants, and where to download it.
+  again (`PipeMaestroRunner.SelfUpdate`), without asking, in a terminal or
+  not (the service). With `--no-auto-update` it asks in a terminal instead.
+  Otherwise (Mix, a release, `--no-auto-update` without a terminal, a "no")
+  it says which version it runs, which one the platform wants, and where to
+  download it.
   """
 
   alias PipeMaestroRunner.{Output, SelfUpdate}
@@ -62,7 +63,9 @@ defmodule PipeMaestroRunner.Update do
   (returning what `:relaunch` returns), or returns `{:fail, message}` for the
   command to stop with.
 
-  Options: `:argv` (the command, to run again), `:auto_update`,
+  Options: `:argv` (the command, to run again), `:auto_update` (`false`,
+  from `--no-auto-update`, asks in a terminal and otherwise gives the message;
+  omitted or `true`, it updates without asking),
   `:platform_url` (where the runner connects; the binary comes only from its
   origin), and what comes from the environment by default: `:env`
   (`System.get_env/0`), `:tty?` (`Output.tty?/0`), `:gets` (reads the answer
@@ -101,7 +104,7 @@ defmodule PipeMaestroRunner.Update do
 
   defp consent(refusal, opts) do
     cond do
-      opts[:auto_update] == true -> {:ok, if(opts[:tty?], do: :interactive, else: :service)}
+      opts[:auto_update] != false -> {:ok, if(opts[:tty?], do: :interactive, else: :service)}
       opts[:tty?] != true -> :refused
       yes?(opts[:gets].(prompt(refusal))) -> {:ok, :interactive}
       true -> :refused

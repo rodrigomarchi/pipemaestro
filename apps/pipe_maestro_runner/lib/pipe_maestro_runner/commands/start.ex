@@ -2,16 +2,16 @@ defmodule PipeMaestroRunner.Commands.Start do
   @moduledoc """
   Connects with the saved credentials and stays online until stopped (Ctrl+C):
 
-      pipemaestro start [--root ~/src] [--auto-update]
+      pipemaestro start [--root ~/src] [--no-auto-update]
 
   `--root` is where the code directories it offers are (every directory at its
   first level); it is saved with the credentials, so later starts reuse it.
 
   Reconnects on its own when the network drops. Stops when the platform
   refuses the runner (revoked), since retrying could not help. Refused for
-  not being on the platform's version, the single binary offers to update
-  itself and start again (`PipeMaestroRunner.Update`); `--auto-update` does it
-  without asking, as the service does.
+  not being on the platform's version, the single binary updates itself and
+  starts again without asking (`PipeMaestroRunner.Update`), as the service
+  does; with `--no-auto-update` it asks in a terminal instead.
 
   Runs the jobs the platform sends with the agent CLI (`claude`, or
   `$CLAUDE_BIN`), up to the runner's capacity at once
