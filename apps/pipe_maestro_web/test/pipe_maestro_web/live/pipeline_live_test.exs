@@ -294,6 +294,21 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       assert meta =~ "2 etapas"
     end
 
+    test "the list previews each pipeline as a small diagram", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
+
+      assert has_element?(
+               view,
+               "[data-testid=pipeline-Editor] [data-testid=pipeline-diagram] [data-testid=diagram-stage-0]"
+             )
+
+      refute has_element?(view, "[data-testid=pipeline-Editor] [data-testid=diagram-rail]")
+      refute has_element?(view, "[data-testid=pipeline-Editor] [phx-click=select_node]")
+    end
+
     test "the form says an empty cost cap is no limit", %{conn: conn, workspace: workspace} do
       {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
       html = render(view)

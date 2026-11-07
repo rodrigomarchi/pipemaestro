@@ -1,6 +1,8 @@
 defmodule PipeMaestroWeb.PipelineLive.Index do
   @moduledoc """
-  The workspace's pipelines, with their stages and version. An empty
+  The workspace's pipelines, each with its version and a small diagram of
+  its stages (`PipeMaestroWeb.PipelineComponents.pipeline_diagram/1`); the
+  name leads to the pipeline's page. An empty
   workspace starts from the ready-made ones. A pipeline exports as YAML, and
   YAML imports as a new pipeline (`PipeMaestro.Pipelines.Yaml`). An admin
   also asks the agent (`PipeMaestro.Proposals`, through
@@ -11,10 +13,11 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
 
   alias PipeMaestro.Audit
   alias PipeMaestro.Pipelines
+  alias PipeMaestroWeb.PipelineDiagram
   alias PipeMaestroWeb.ProposalRequest
 
   import PipeMaestroWeb.PipelineComponents,
-    only: [budget_label: 1, delivery_icon: 1, delivery_label: 1]
+    only: [budget_label: 1, delivery_icon: 1, delivery_label: 1, pipeline_diagram: 1]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -232,7 +235,7 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
         </.card_content>
       </.card>
 
-      <div class="grid gap-4 lg:grid-cols-2">
+      <div class="space-y-4">
         <.card
           :for={pipeline <- @pipelines}
           variant="outline"
@@ -282,31 +285,11 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
                 <dd>{stages_label(length(pipeline.stages))}</dd>
               </div>
             </dl>
-            <ol class="mt-4 flex-1 space-y-1.5">
-              <li
-                :for={{stage, index} <- Enum.with_index(pipeline.stages)}
-                class="flex items-center gap-2.5 text-sm"
-              >
-                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700 dark:bg-primary-950 dark:text-primary-300">
-                  {index + 1}
-                </span>
-                <span class="min-w-0 truncate text-gray-700 dark:text-gray-200">{stage.name}</span>
-                <span class="ml-auto flex shrink-0 items-center gap-1.5 text-gray-400 dark:text-gray-500">
-                  <span :if={stage.group} title={"Em paralelo: #{stage.group}"}>
-                    <.icon name="hero-squares-2x2" class="size-4" />
-                  </span>
-                  <span :if={stage.gates != []} title={"#{length(stage.gates)} gates"}>
-                    <.icon name="hero-shield-check" class="size-4" />
-                  </span>
-                  <span :if={stage.rules != []} title="Pede ajuda quando uma regra casa">
-                    <.icon name="hero-hand-raised" class="size-4" />
-                  </span>
-                  <span :if={stage.model} title={"Modelo #{stage.model}"}>
-                    <.icon name="hero-sparkles" class="size-4" />
-                  </span>
-                </span>
-              </li>
-            </ol>
+            <.pipeline_diagram
+              diagram={PipelineDiagram.build(pipeline)}
+              mode={:compact}
+              class="mt-4 flex-1"
+            />
             <div class="mt-4 flex justify-end gap-1 border-t border-gray-100 pt-3 dark:border-gray-800">
               <.button
                 size="xs"

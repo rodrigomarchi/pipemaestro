@@ -49,6 +49,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
     default: nil,
     doc: "`:entry`, `{:stage, index}` or nil: the node whose panel is open"
 
+  attr :class, :any, default: nil
   attr :rest, :global
 
   @doc "A pipeline as connected nodes, over the rail of a person's decisions."
@@ -64,7 +65,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
       )
 
     ~H"""
-    <div class="overflow-x-auto" data-testid="pipeline-diagram" {@rest}>
+    <div class={["overflow-x-auto", @class]} data-testid="pipeline-diagram" {@rest}>
       <div
         class={[
           "grid min-w-max items-center",
