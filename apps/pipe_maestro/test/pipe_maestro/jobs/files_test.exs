@@ -3,8 +3,8 @@ defmodule PipeMaestro.Jobs.FilesTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Repo, Tasks}
   alias PipeMaestro.Jobs.{Files, JobFile}
+  alias PipeMaestro.{Repo, Tasks}
   alias PipeMaestroProtocol.JobFiles
 
   # A PNG of 1×1 pixel.

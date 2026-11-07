@@ -35,12 +35,14 @@ defmodule PipeMaestro.Jobs.Files do
     with {:ok, id} <- cast_id(job_id),
          true <- JobFiles.valid_path?(path) || {:error, :invalid_path},
          true <- byte_size(content) <= JobFiles.max_file_bytes() || {:error, :too_large} do
-      Repo.transact(fn ->
-        with %Job{} = job <- lock_job(id, runner_id) || {:error, :not_found},
-             :ok <- within_job_limits(job.id, path, byte_size(content)) do
-          insert(job, path, content)
-        end
-      end)
+      Repo.transact(fn -> store_locked(id, runner_id, path, content) end)
+    end
+  end
+
+  defp store_locked(id, runner_id, path, content) do
+    with %Job{} = job <- lock_job(id, runner_id) || {:error, :not_found},
+         :ok <- within_job_limits(job.id, path, byte_size(content)) do
+      insert(job, path, content)
     end
   end
 

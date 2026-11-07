@@ -1,8 +1,8 @@
 defmodule PipeMaestroWeb.RunnerFileControllerTest do
   use PipeMaestroWeb.ConnCase, async: true
 
-  alias PipeMaestro.{Repo, Runners, Tasks}
   alias PipeMaestro.Jobs.{Files, JobFile}
+  alias PipeMaestro.{Repo, Runners, Tasks}
   alias PipeMaestroProtocol.JobFiles
 
   # A PNG of 1×1 pixel.

@@ -1,8 +1,8 @@
 defmodule PipeMaestroWeb.JobFileControllerTest do
   use PipeMaestroWeb.ConnCase, async: true
 
-  alias PipeMaestro.Tasks
   alias PipeMaestro.Jobs.Files
+  alias PipeMaestro.Tasks
 
   # A PNG of 1×1 pixel.
   @png Base.decode64!(
