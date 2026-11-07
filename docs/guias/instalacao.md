@@ -155,7 +155,7 @@ caiu e por quê.
   Com 0, a plataforma não guarda nenhuma linha e o runner só envia os eventos.
 - **Runner degradado:** com pouco disco livre, memória cheia, quedas seguidas, muitos
   jobs falhando ou um erro no diagnóstico, o runner ganha o selo "degradado" na lista e
-  um alerta no Board.
+  um alerta na Visão geral do Board (`/w/:slug`).
 
 ## 3. O primeiro projeto e o primeiro pipeline
 
