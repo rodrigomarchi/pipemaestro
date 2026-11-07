@@ -616,7 +616,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             testid="proposal-feedback"
             rows={5}
           />
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button type="button" variant="ghost" color="gray" phx-click="close_feedback">
               Cancelar
             </.button>
