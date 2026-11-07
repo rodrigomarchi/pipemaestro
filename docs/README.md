@@ -64,6 +64,8 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0037 | [Credencial git por job](adr/0037-credencial-git-por-job.md) | Aceita |
 | 0038 | [Atualização automática por padrão](adr/0038-atualizacao-automatica-por-padrao.md) | Aceita |
 | 0039 | [Telemetria do runner](adr/0039-telemetria-do-runner.md) | Aceita |
+| 0040 | [O diagrama é a visão padrão do pipeline](adr/0040-diagrama-do-pipeline.md) | Aceita |
+| 0041 | [Arquivos gerados pela etapa sobem como anexos](adr/0041-arquivos-gerados-pela-etapa.md) | Aceita |
 
 ## Specs
 
