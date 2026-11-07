@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
 import { RunnerProcess } from "../helpers/runnerProcess";
+import { expectFitsPhone } from "../helpers/phone";
 import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
@@ -113,6 +114,7 @@ test.describe("Job execution", () => {
     await jobs.openTab("resultado");
     await expect(jobs.result).toContainText("fake-claude.txt");
     await shot(app.page, "job-result");
+    await expectFitsPhone(app.page, "job-result");
     await jobs.openTab("prompt");
     await expect(app.page.getByTestId("job-prompt-text")).toBeVisible();
     await shot(app.page, "job-prompt");

@@ -204,7 +204,7 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
             help_text="Quanto tempo o log que os runners enviam fica guardado. Com 0, nenhuma linha é guardada, só os eventos."
             data-testid="workspace-runner-log-retention"
           />
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button
               to={~p"/backoffice/workspaces"}
               link_type="live_patch"
