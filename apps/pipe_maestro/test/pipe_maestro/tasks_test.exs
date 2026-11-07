@@ -341,7 +341,7 @@ defmodule PipeMaestro.TasksTest do
       assert %Task{status: :canceled} = task
     end
 
-    test "a job lost by a restarted runner counts as a failed attempt", ctx do
+    test "a job lost by a restarted runner runs the stage again, in the same attempt", ctx do
       task = create_task(ctx)
       {:ok, _} = Jobs.mark_started(ctx.runner, current_job(task).id)
 
@@ -349,7 +349,7 @@ defmodule PipeMaestro.TasksTest do
 
       task = Tasks.get_task!(ctx.workspace, task.id)
 
-      assert [%StageRun{status: :failed, error: "O runner reiniciou" <> _}, %StageRun{attempt: 2}] =
+      assert [%StageRun{status: :lost, attempt: 1}, %StageRun{status: :running, attempt: 1}] =
                task.stage_runs
     end
   end

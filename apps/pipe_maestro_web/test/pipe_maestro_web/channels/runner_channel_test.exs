@@ -425,6 +425,77 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       }
     end
 
+    test "after a restart of the server, a job still running gets its credential again at once",
+         ctx do
+      task = linked_task(ctx, %{capabilities: ["git_credential"]})
+      assert_push "job:assign", %{"id" => job_id}
+      [job] = stage_jobs(task)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      # The channel goes with the server, and with it the renewal it had scheduled.
+      old = Process.get(:channel_pid)
+      ref = Process.monitor(old)
+      Process.unlink(old)
+      Process.exit(old, :kill)
+      assert_receive {:DOWN, ^ref, :process, _pid, :killed}
+
+      {:ok, socket} = connect(RunnerSocket, params(ctx.token))
+
+      join_runner(socket, ctx.runner, %{
+        capabilities: ["git_credential"],
+        directories: [%{"name" => "app", "git" => true}],
+        running_job_ids: [job_id]
+      })
+
+      assert_push "job:credential", %{
+        "job_id" => ^job_id,
+        "git_credential" => %{"password" => "tok"}
+      }
+
+      refute_push "job:assign", _
+      assert Jobs.get_job!(ctx.workspace, job_id).status == :running
+    end
+
+    test "a cancel asked while the runner was away reaches it when it rejoins", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      {:ok, job} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, _job} = Jobs.request_cancel(job)
+
+      join_runner(ctx.socket, ctx.runner, %{running_job_ids: [job.id]})
+
+      job_id = job.id
+      assert_push "job:cancel", %{"job_id" => ^job_id}
+      assert Jobs.get_job!(ctx.workspace, job_id).status == :running
+    end
+
+    test "a stage job lost in a restart of the runner runs again, to the same runner", ctx do
+      task = linked_task(ctx, %{capabilities: ["git_credential"]})
+      assert_push "job:assign", %{"id" => lost_id}
+      [job] = stage_jobs(task)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      old = Process.get(:channel_pid)
+      ref = Process.monitor(old)
+      Process.unlink(old)
+      Process.exit(old, :kill)
+      assert_receive {:DOWN, ^ref, :process, _pid, :killed}
+
+      {:ok, socket} = connect(RunnerSocket, params(ctx.token))
+
+      join_runner(socket, ctx.runner, %{
+        capabilities: ["git_credential"],
+        directories: [%{"name" => "app", "git" => true}]
+      })
+
+      assert_push "job:assign", %{"id" => again_id}
+      assert again_id != lost_id
+
+      since = DateTime.add(DateTime.utc_now(), -60)
+
+      assert [%{kind: "job_lost", job_id: ^lost_id}] =
+               RunnerTelemetry.events(Repo.get!(Runner, ctx.runner.id), since, "connection")
+    end
+
     test "a finished job's failed setup becomes an event of the runner", ctx do
       channel = join_runner(ctx.socket, ctx.runner)
       job = job_fixture(ctx.runner, ctx.user)

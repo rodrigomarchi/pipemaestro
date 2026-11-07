@@ -79,6 +79,19 @@ export class TasksPage {
   }
 
   /**
+   * The status of an attempt run again after a loss of its runner: the same
+   * attempt, the `requeue`-th time (`-r1`, `-r2`...).
+   */
+  requeuedRunStatus(key: string, attempt: number, requeue: number): Locator {
+    return this.page.getByTestId(`stage-run-status-${key}-${attempt}-r${requeue}`);
+  }
+
+  /** Why an attempt was lost (its runner restarted or was updated in the middle of it). */
+  stageRunLost(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-lost-${key}-${attempt}`);
+  }
+
+  /**
    * Opens the details folded under an ended attempt's artifact (summary,
    * gates, commit, files, steps); an attempt without them shows all already.
    */

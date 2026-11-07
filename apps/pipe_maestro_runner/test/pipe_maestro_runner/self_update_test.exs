@@ -259,4 +259,113 @@ defmodule PipeMaestroRunner.SelfUpdateTest do
                )
     end
   end
+
+  describe "mode/2" do
+    test "a service the platform installed says so in its environment" do
+      assert SelfUpdate.mode(%{"PIPEMAESTRO_SERVICE" => "1"}, false) == :service
+      assert SelfUpdate.mode(%{"PIPEMAESTRO_SERVICE" => "1"}, true) == :service
+    end
+
+    test "a service installed before the mark is recognized by its manager" do
+      assert SelfUpdate.mode(%{"XPC_SERVICE_NAME" => "com.pipemaestro.runner"}, false) ==
+               :service
+
+      assert SelfUpdate.mode(%{"INVOCATION_ID" => "8f1c0e"}, false) == :service
+    end
+
+    test "systemd's mark alone, in a terminal, is not a service" do
+      assert SelfUpdate.mode(%{"INVOCATION_ID" => "8f1c0e"}, true) == :interactive
+    end
+
+    test "another launchd job is not the runner's service" do
+      assert SelfUpdate.mode(%{"XPC_SERVICE_NAME" => "com.apple.Terminal"}, false) == :detached
+    end
+
+    test "the child of a runner that waits for it hands the relaunch back" do
+      assert SelfUpdate.mode(%{"PIPEMAESTRO_RELAUNCH_PARENT" => "1"}, true) == :handoff
+      assert SelfUpdate.mode(%{"PIPEMAESTRO_RELAUNCH_PARENT" => "1"}, false) == :handoff
+    end
+
+    test "a terminal relaunches in it; anything else (nohup, a pipe) starts on its own" do
+      assert SelfUpdate.mode(%{}, true) == :interactive
+      assert SelfUpdate.mode(%{}, false) == :detached
+    end
+  end
+
+  describe "relaunch: nothing ends without the new binary running" do
+    test "handoff: exits with 75 for the waiting parent to run the new binary" do
+      test = self()
+      halt = fn status -> send(test, {:halt, status}) end
+
+      SelfUpdate.relaunch("/opt/pipemaestro", ["start"], :handoff, halt: halt)
+      assert_received {:halt, 75}
+    end
+
+    test "detached: starts the new binary on its own, then exits 0" do
+      test = self()
+      spawn = fn bin, argv -> send(test, {:spawn, bin, argv}) && :ok end
+      halt = fn status -> send(test, {:halt, status}) end
+
+      SelfUpdate.relaunch("/opt/pipemaestro", ["start", "--root", "/x"], :detached,
+        spawn: spawn,
+        halt: halt
+      )
+
+      assert_received {:spawn, "/opt/pipemaestro", ["start", "--root", "/x"]}
+      assert_received {:halt, 0}
+    end
+
+    test "detached: the new binary runs apart, with the same arguments and none of the old release",
+         %{tmp_dir: tmp} do
+      out = Path.join(tmp, "out")
+      bin = Path.join(tmp, "pipemaestro")
+
+      File.write!(bin, """
+      #!/bin/sh
+      echo "$* [${RELEASE_ROOT:-}]" > "#{out}.tmp" && mv "#{out}.tmp" "#{out}"
+      """)
+
+      File.chmod!(bin, 0o755)
+      test = self()
+
+      SelfUpdate.relaunch(bin, ["start", "--root", "/x"], :detached,
+        halt: fn status -> send(test, {:halt, status}) end
+      )
+
+      assert_received {:halt, 0}
+      assert wait_for(out) == "start --root /x []\n"
+    end
+
+    test "interactive: the parent stays, running the new binary again while it hands back 75",
+         %{tmp_dir: tmp} do
+      runs = Path.join(tmp, "runs")
+      bin = Path.join(tmp, "pipemaestro")
+
+      File.write!(bin, """
+      #!/bin/sh
+      echo "$* ${PIPEMAESTRO_RELAUNCH_PARENT:-}" >> "#{runs}"
+      if [ "$(wc -l < "#{runs}")" -lt 3 ]; then exit 75; fi
+      exit 4
+      """)
+
+      File.chmod!(bin, 0o755)
+
+      assert SelfUpdate.relaunch(bin, ["start"], :interactive) == 4
+      assert File.read!(runs) == "start 1\nstart 1\nstart 1\n"
+    end
+  end
+
+  defp wait_for(path, tries \\ 50) do
+    case File.read(path) do
+      {:ok, content} ->
+        content
+
+      {:error, :enoent} when tries > 0 ->
+        Process.sleep(100)
+        wait_for(path, tries - 1)
+
+      {:error, reason} ->
+        flunk("#{path} never appeared: #{reason}")
+    end
+  end
 end

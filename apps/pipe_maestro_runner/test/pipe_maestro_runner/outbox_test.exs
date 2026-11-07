@@ -90,4 +90,32 @@ defmodule PipeMaestroRunner.OutboxTest do
     File.write!(path, "lixo")
     assert Outbox.pending(Outbox.new(20_000, path)) == []
   end
+
+  @tag :tmp_dir
+  test "before an update, everything still to confirm goes to the file, in order",
+       %{tmp_dir: dir} do
+    path = Path.join(dir, "outbox.bin")
+
+    outbox =
+      add_all(Outbox.new(20_000, path), [
+        {"job:started", %{"job_id" => "j1"}},
+        {"job:event", %{"job_id" => "j1", "seq" => 1}},
+        {"job:telemetry", %{"job_id" => "j1", "records" => []}},
+        {"job:finished", %{"job_id" => "j1", "status" => "succeeded"}}
+      ])
+
+    assert Outbox.persist_all(outbox) == :ok
+
+    restarted = Outbox.new(20_000, path)
+
+    assert Enum.map(Outbox.pending(restarted), fn {_id, event, _p} -> event end) ==
+             ["job:started", "job:event", "job:telemetry", "job:finished"]
+
+    assert Outbox.job_ids(restarted) == ["j1"]
+  end
+
+  test "persist_all/1 without a file has nothing to do" do
+    outbox = add_all(Outbox.new(), [{"job:event", %{"job_id" => "j1", "seq" => 1}}])
+    assert Outbox.persist_all(outbox) == :ok
+  end
 end

@@ -61,4 +61,17 @@ defmodule PipeMaestroProtocol.RunnerLogTest do
     assert RunnerLog.logs?(%{"telemetry" => RunnerLog.telemetry_reply(true)})
     assert RunnerLog.logs?(%{"runner_id" => "r1"})
   end
+
+  test "a runner draining its jobs before updating is an event" do
+    assert "update_draining" in RunnerLog.events()
+
+    line =
+      RunnerLog.line(@at, "info", "Terminando 1 job antes de atualizar", "update_draining", %{
+        jobs: 1,
+        timeout_ms: 1_800_000
+      })
+
+    assert {:ok, [%{"event" => "update_draining", "attrs" => %{"jobs" => 1}}]} =
+             RunnerLog.parse(%{"lines" => [line]})
+  end
 end

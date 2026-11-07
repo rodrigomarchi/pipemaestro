@@ -1,7 +1,7 @@
 defmodule PipeMaestroRunner.ServiceTest do
   use ExUnit.Case, async: true
 
-  alias PipeMaestroRunner.Service
+  alias PipeMaestroRunner.{SelfUpdate, Service}
 
   @opts [
     runner_dir: "/home/ana/pipe_maestro/apps/pipe_maestro_runner",
@@ -82,5 +82,20 @@ defmodule PipeMaestroRunner.ServiceTest do
              ["systemctl", "--user", "daemon-reload"],
              ["systemctl", "--user", "enable", "--now", "pipemaestro-runner.service"]
            ]
+  end
+
+  test "the service marks its environment, for the runner to leave its relaunch to the manager" do
+    %{content: plist} = Service.definition({:unix, :darwin}, @opts)
+
+    assert plist =~
+             "<key>PIPEMAESTRO_SERVICE</key>\n    <string>1</string>"
+
+    %{content: unit} = Service.definition({:unix, :linux}, @opts)
+    assert unit =~ "Environment=PIPEMAESTRO_SERVICE=1\n"
+    assert unit =~ "Restart=always"
+  end
+
+  test "a runner under the service it defines relaunches as a service" do
+    assert SelfUpdate.mode(%{"PIPEMAESTRO_SERVICE" => "1"}, false) == :service
   end
 end
