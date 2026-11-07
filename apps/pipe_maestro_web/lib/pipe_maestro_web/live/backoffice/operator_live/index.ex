@@ -188,7 +188,7 @@ defmodule PipeMaestroWeb.Backoffice.OperatorLive.Index do
             viewable
             data-testid="operator-form-password"
           />
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button
               to={~p"/backoffice/operators"}
               link_type="live_patch"

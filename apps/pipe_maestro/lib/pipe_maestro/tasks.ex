@@ -18,6 +18,11 @@ defmodule PipeMaestro.Tasks do
   answers them (`answer/4`) and the next attempt gets the answers in its
   prompt; the manual decision stays available all along.
 
+  A stage's job lost by its runner (a restart, an update, a crash) is not an
+  attempt (`job_lost/1`): its run becomes `lost` and the stage runs again in
+  the same attempt, up to `max_lost_requeues` times (config of
+  `:pipe_maestro`, 3 by default); past that, the task waits for a person.
+
   A task's worktree stays on the runner after the task ends, until someone
   asks for it to go (`remove_worktree/1`): the runner's channel gets
   `{:worktree_remove, removal}` and the runner confirms
@@ -51,17 +56,20 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals
   alias PipeMaestro.Proposals.AnalysisKind
-  alias PipeMaestro.{Repo, Runners}
+  alias PipeMaestro.{Repo, Runners, RunnerTelemetry}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{Contract, Decision, Engine, Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces
   alias PipeMaestro.Workspaces.Workspace
+  alias PipeMaestroProtocol.JobFiles
 
   @pubsub PipeMaestro.PubSub
   @list_limit 100
   @max_artifact_bytes 65_536
   # How long a decision may wait before it is overdue.
   @decision_hours 24
+  # How many times a stage's attempt runs again after its job was lost.
+  @max_lost_requeues 3
 
   @typedoc "What a PubSub subscription is about."
   @type subject ::
@@ -190,7 +198,8 @@ defmodule PipeMaestro.Tasks do
     )
   end
 
-  defp attempts_query, do: from(r in StageRun, order_by: [asc: r.index, asc: r.attempt])
+  defp attempts_query,
+    do: from(r in StageRun, order_by: [asc: r.index, asc: r.attempt, asc: r.requeue])
 
   @doc """
   The workspace in numbers: tasks running and waiting now, tasks that
@@ -241,7 +250,7 @@ defmodule PipeMaestro.Tasks do
   end
 
   defp preload(task) do
-    runs = from r in StageRun, order_by: [asc: r.index, asc: r.attempt], preload: :job
+    runs = from r in attempts_query(), preload: :job
 
     Repo.preload(task, [:runner, :created_by_user, :decision_owner, stage_runs: runs],
       force: true
@@ -438,17 +447,46 @@ defmodule PipeMaestro.Tasks do
     stage = Enum.at(task.stages, index)
     instructions = join_instructions([instructions, task.pending_instructions])
 
-    stage_run =
-      Repo.insert!(%StageRun{
-        task_id: task.id,
-        index: index,
-        key: stage.key,
-        name: stage.name,
-        attempt: attempt,
-        instructions: blank_to_nil(instructions),
-        feedback: if(attempt > 1, do: previous_feedback(task, index)),
-        answers: answers
-      })
+    task
+    |> run_stage(%StageRun{
+      task_id: task.id,
+      index: index,
+      key: stage.key,
+      name: stage.name,
+      attempt: attempt,
+      instructions: blank_to_nil(instructions),
+      feedback: if(attempt > 1, do: previous_feedback(task, index)),
+      answers: answers
+    })
+    # Written even when the struct already says nil (a step clears it first).
+    |> Ecto.Changeset.force_change(:pending_instructions, nil)
+    |> Repo.update!()
+  end
+
+  # Runs a lost run's stage again: the same attempt, instructions, answers
+  # and feedback, one more requeue. Instructions a person left for later stay
+  # for later.
+  defp requeue_stage(%Task{} = task, %StageRun{} = lost) do
+    task
+    |> run_stage(%StageRun{
+      task_id: task.id,
+      index: lost.index,
+      key: lost.key,
+      name: lost.name,
+      attempt: lost.attempt,
+      requeue: lost.requeue + 1,
+      instructions: lost.instructions,
+      feedback: lost.feedback,
+      answers: lost.answers
+    })
+    |> Repo.update!()
+  end
+
+  # Inserts `stage_run` and its job, with the prompt and context the runner
+  # needs; returns the change that marks the task running at its stage.
+  defp run_stage(%Task{} = task, %StageRun{index: index} = new_run) do
+    stage = Enum.at(task.stages, index)
+    stage_run = Repo.insert!(new_run)
 
     prompt =
       Prompt.build(stage, %{
@@ -462,7 +500,8 @@ defmodule PipeMaestro.Tasks do
         instructions: stage_run.instructions,
         feedback: stage_run.feedback,
         answers: stage_run.answers,
-        contract: if(place = contract_place(task, index), do: Contract.prompt(place))
+        contract: if(place = contract_place(task, index), do: Contract.prompt(place)),
+        files: uploads_files?(task)
       })
 
     Jobs.create_stage_job(%{
@@ -487,9 +526,19 @@ defmodule PipeMaestro.Tasks do
       pending_issue_comment: nil,
       finished_at: nil
     )
-    # Written even when the struct already says nil (a step clears it first).
-    |> Ecto.Changeset.force_change(:pending_instructions, nil)
-    |> Repo.update!()
+  end
+
+  # Whether the task's runner, as of its latest hello, sends a job's files.
+  defp uploads_files?(%Task{runner: %Runner{} = runner}),
+    do: Runners.capable?(runner, JobFiles.capability())
+
+  defp uploads_files?(%Task{runner_id: nil}), do: false
+
+  defp uploads_files?(%Task{runner_id: runner_id}) do
+    case Repo.get(Runner, runner_id) do
+      %Runner{} = runner -> Runners.capable?(runner, JobFiles.capability())
+      nil -> false
+    end
   end
 
   defp join_instructions(texts) do
@@ -504,8 +553,8 @@ defmodule PipeMaestro.Tasks do
     previous =
       Repo.one(
         from r in StageRun,
-          where: r.task_id == ^task.id and r.index == ^index,
-          order_by: [desc: r.attempt],
+          where: r.task_id == ^task.id and r.index == ^index and r.status != :lost,
+          order_by: [desc: r.attempt, desc: r.requeue],
           limit: 1,
           preload: :job
       )
@@ -540,7 +589,49 @@ defmodule PipeMaestro.Tasks do
       "sync" => if(task.git, do: true),
       "artifacts" => earlier_artifacts(task, index)
     }
+    |> Map.merge(session_context(task, stage, index))
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  # The agent's session: kept when the next stage continues it, resumed when
+  # this stage continues the one before.
+  defp session_context(task, stage, index) do
+    if resumable?(task) do
+      %{
+        "persist_session" => if(continued?(task, index + 1), do: true),
+        "resume_session_id" =>
+          if(stage.context == "continue", do: previous_session_id(task, index))
+      }
+    else
+      %{}
+    end
+  end
+
+  # Whether the task's runner keeps and resumes the agent's sessions (ADR
+  # 0041): one that does not runs every stage from scratch.
+  defp resumable?(%Task{runner_id: nil}), do: false
+
+  defp resumable?(%Task{runner_id: runner_id}) do
+    case Repo.get(Runner, runner_id) do
+      %Runner{} = runner -> Runners.capable?(runner, "resume_session")
+      nil -> false
+    end
+  end
+
+  defp continued?(task, index),
+    do: match?(%Stage{context: "continue"}, Enum.at(task.stages, index))
+
+  # The session of the stage before, as its last passed attempt reported it:
+  # a new attempt of this stage resumes the same one.
+  defp previous_session_id(task, index) do
+    Repo.one(
+      from r in StageRun,
+        join: j in assoc(r, :job),
+        where: r.task_id == ^task.id and r.index == ^(index - 1) and r.status == :passed,
+        order_by: [desc: r.attempt],
+        limit: 1,
+        select: j.session_id
+    )
   end
 
   # Where a stage held to the platform's contract (`Contract`) is in its task:
@@ -575,7 +666,7 @@ defmodule PipeMaestro.Tasks do
           where:
             r.task_id == ^task.id and r.index < ^first and r.status == :passed and
               not is_nil(r.artifact),
-          order_by: [asc: r.index, desc: r.attempt],
+          order_by: [asc: r.index, desc: r.attempt, desc: r.requeue],
           distinct: r.index,
           select: {r.index, r.key, r.artifact}
       )
@@ -721,6 +812,83 @@ defmodule PipeMaestro.Tasks do
     end
 
     :ok
+  end
+
+  @doc """
+  A stage's job was lost by its runner: it restarted, updated or crashed
+  while running it (`PipeMaestro.Jobs.reconcile/2`), or stopped it on its own.
+  Not an attempt and no gate: the run becomes `lost` and the stage runs again
+  in the same attempt, on the same runner and worktree, up to
+  `max_lost_requeues` times; past that the task waits for a person, with no
+  analysis (the agent did nothing wrong). Each loss is an event of the runner
+  (`job_lost`). A loss already told is ignored.
+  """
+  @spec job_lost(Job.t()) :: :ok
+  def job_lost(%Job{stage_run_id: stage_run_id} = job) when is_binary(stage_run_id) do
+    stage_run = Repo.get!(StageRun, stage_run_id)
+    task = Repo.get!(Task, stage_run.task_id)
+
+    if Task.active?(task) and stage_run.status == :running do
+      stage_run =
+        stage_run
+        |> Ecto.Changeset.change(
+          status: :lost,
+          error: "Perdida: o runner reiniciou ou caiu durante a execução."
+        )
+        |> Repo.update!()
+
+      record_loss(job, task, stage_run)
+
+      task
+      |> after_loss(stage_run)
+      |> preload()
+      |> notify()
+    end
+
+    :ok
+  end
+
+  defp record_loss(%Job{runner_id: runner_id} = job, task, stage_run) do
+    case Repo.get(Runner, runner_id) do
+      nil ->
+        :ok
+
+      runner ->
+        RunnerTelemetry.record_event(
+          runner,
+          "job_lost",
+          "warning",
+          "O job da etapa \"#{stage_run.name}\" foi perdido: o runner reiniciou ou caiu.",
+          job_id: job.id,
+          task_id: task.id
+        )
+
+        :ok
+    end
+  end
+
+  defp after_loss(task, stage_run) do
+    max = Application.get_env(:pipe_maestro, :max_lost_requeues, @max_lost_requeues)
+    first = step_first(task, stage_run.index)
+
+    cond do
+      stage_run.requeue < max ->
+        task |> requeue_stage(stage_run) |> keep_current(first)
+
+      not grouped?(task, stage_run.index) ->
+        await(task, lost_reason(stage_run))
+
+      Enum.any?(latest_runs(task, first), &(&1.status == :running)) ->
+        task
+
+      true ->
+        close_step(task, first)
+    end
+  end
+
+  defp lost_reason(stage_run) do
+    "A etapa \"#{stage_run.name}\" foi interrompida #{stage_run.requeue + 1} vezes " <>
+      "por queda ou reinício do runner."
   end
 
   defp record_stage_run(stage_run, job, outcome) do
@@ -917,12 +1085,7 @@ defmodule PipeMaestro.Tasks do
   defp close_step(task, first) do
     runs = latest_runs(task, first)
 
-    problems =
-      for run <- runs, run.status in [:blocked, :failed] do
-        if run.status == :blocked,
-          do: "A etapa \"#{run.name}\" está bloqueada: #{run.summary}",
-          else: "A etapa \"#{run.name}\" falhou: #{run.error}"
-      end
+    problems = for run <- runs, run.status in [:blocked, :failed, :lost], do: problem(run)
 
     pauses =
       for run <- runs,
@@ -932,12 +1095,27 @@ defmodule PipeMaestro.Tasks do
           do: "A etapa \"#{stage.name}\" terminou, mas #{reason}."
 
     cond do
-      problems != [] -> await(task, Enum.join(problems, " "), group_asking(runs))
+      problems != [] -> await(task, Enum.join(problems, " "), step_asking(runs))
       pauses != [] -> await(task, Enum.join(pauses, " "))
       Enum.any?(runs, &(&1.status == :canceled)) -> await(task, "O passo foi interrompido.")
       task.pause_requested -> await(task, "Alguém pediu uma pausa depois deste passo.")
       true -> next_or_finish(task, step_last(task, first) + 1, nil)
     end
+  end
+
+  defp problem(%StageRun{status: :blocked} = run),
+    do: "A etapa \"#{run.name}\" está bloqueada: #{run.summary}"
+
+  defp problem(%StageRun{status: :failed} = run),
+    do: "A etapa \"#{run.name}\" falhou: #{run.error}"
+
+  defp problem(%StageRun{status: :lost} = run), do: lost_reason(run)
+
+  # A stage lost past the limit is no fault of the agent's: nothing to analyse.
+  defp step_asking(runs) do
+    if Enum.any?(runs, &(&1.status in [:blocked, :failed])),
+      do: group_asking(runs),
+      else: :none
   end
 
   # The questions of the group's blocked stages, put together, each marked
@@ -1287,7 +1465,7 @@ defmodule PipeMaestro.Tasks do
   """
   @spec history(Pipeline.t(), pos_integer()) :: [Task.t()]
   def history(%Pipeline{id: pipeline_id}, limit \\ 20) do
-    runs = from r in StageRun, order_by: [asc: r.index, asc: r.attempt], preload: :job
+    runs = from r in attempts_query(), preload: :job
     decisions = from d in Decision, order_by: [asc: d.inserted_at]
 
     Repo.all(
@@ -1785,7 +1963,7 @@ defmodule PipeMaestro.Tasks do
     Repo.one(
       from r in StageRun,
         where: r.task_id == ^task.id and r.index == ^index,
-        order_by: [desc: r.attempt],
+        order_by: [desc: r.attempt, desc: r.requeue],
         limit: 1
     )
   end

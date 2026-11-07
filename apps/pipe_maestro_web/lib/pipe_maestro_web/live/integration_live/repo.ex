@@ -453,7 +453,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
                 label="Ligado"
                 data-testid="trigger-enabled"
               />
-              <div class="flex justify-end gap-2">
+              <div class="flex flex-wrap justify-end gap-2">
                 <.button
                   type="button"
                   size="sm"

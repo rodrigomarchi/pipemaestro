@@ -90,6 +90,40 @@ defmodule PipeMaestroProtocol.JobTest do
       assert {:error, "scratch" <> _} = Job.new(Map.put(base, :scratch, "yes"))
     end
 
+    test "keeps the CLI's session for the next stage, or resumes the previous stage's" do
+      base = %{id: "j", prompt: "p", directory: "app"}
+
+      assert {:ok, keep} = Job.new(Map.put(base, :persist_session, true))
+      assert Map.get(keep, :persist_session) == true
+      assert Job.to_map(keep)["persist_session"] == true
+      assert Job.from_map(Job.to_map(keep)) == {:ok, keep}
+
+      id = "0d6f1c2e-6a4b-4c1e-9d3a-2b5f7e8c9a10"
+      assert {:ok, resume} = Job.new(Map.put(base, :resume_session_id, id))
+      assert Map.get(resume, :resume_session_id) == id
+      assert Job.to_map(resume)["resume_session_id"] == id
+      assert Job.from_map(Job.to_map(resume)) == {:ok, resume}
+
+      refute Job.new(base) |> elem(1) |> Job.to_map() |> Map.has_key?("persist_session")
+
+      assert {:error, "persist_session" <> _} = Job.new(Map.put(base, :persist_session, "sim"))
+      assert {:error, "resume_session_id" <> _} = Job.new(Map.put(base, :resume_session_id, ""))
+
+      assert {:error, "resume_session_id" <> _} =
+               Job.new(Map.put(base, :resume_session_id, "../sessao"))
+
+      assert {:error, "resume_session_id" <> _} =
+               Job.new(Map.put(base, :resume_session_id, "com espaço"))
+
+      assert {:error, "resume_session_id" <> _} =
+               Job.new(Map.put(base, :resume_session_id, String.duplicate("a", 101)))
+
+      assert {:error, "resume_session_id" <> _} = Job.new(Map.put(base, :resume_session_id, 1))
+
+      assert {:error, "scratch" <> _} =
+               Job.new(Map.merge(base, %{scratch: true, resume_session_id: id}))
+    end
+
     test "rejects a bad context" do
       base = %{id: "j", prompt: "p"}
       assert {:error, "directory" <> _} = Job.new(Map.put(base, :directory, "../etc"))
@@ -126,6 +160,7 @@ defmodule PipeMaestroProtocol.JobTest do
 
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"lower" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"PATH" => "x"}))
+      assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"CP_FILES_DIR" => "/tmp"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"OK" => 1}))
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, "mix test"))
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, [%{"command" => "x"}]))

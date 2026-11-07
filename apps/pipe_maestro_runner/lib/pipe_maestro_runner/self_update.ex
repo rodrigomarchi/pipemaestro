@@ -9,6 +9,11 @@ defmodule PipeMaestroRunner.SelfUpdate do
   current one, checked against `SHA256SUMS` and renamed over it: an
   interrupted download, a wrong checksum or a directory it cannot write to
   leave the current binary as it was.
+
+  How the new binary runs (`mode/2`, `relaunch/4`) never depends on someone
+  starting it again by hand: the service manager starts it (`:service`), the
+  runner waiting in the terminal does (`:interactive` and `:handoff`), or it
+  starts on its own (`:detached`).
   """
 
   alias PipeMaestroProtocol.Downloads
@@ -16,8 +21,12 @@ defmodule PipeMaestroRunner.SelfUpdate do
   @typedoc "Where the binary and its checksums are."
   @type urls :: %{binary: String.t(), checksums: String.t()}
 
-  @typedoc "How the new binary runs: in this terminal, or by the service manager."
-  @type mode :: :interactive | :service
+  @typedoc """
+  How the new binary runs: by the service manager (`:service`), as a child
+  of this runner, which stays in the terminal (`:interactive`), by the
+  runner waiting for this one (`:handoff`), or on its own (`:detached`).
+  """
+  @type mode :: :service | :interactive | :handoff | :detached
 
   @type error ::
           :checksum_mismatch
@@ -28,6 +37,20 @@ defmodule PipeMaestroRunner.SelfUpdate do
           | {:download, String.t(), Exception.t()}
 
   @loopback ["localhost", "127.0.0.1", "::1"]
+
+  # Set by the service the runner installs (`PipeMaestroRunner.Service`).
+  @service_env "PIPEMAESTRO_SERVICE"
+  # Set for the child of a runner that waits in the terminal.
+  @parent_env "PIPEMAESTRO_RELAUNCH_PARENT"
+  # The child's status that asks the waiting runner to run the binary again.
+  @handoff_status 75
+  @launchd_label "com.pipemaestro.runner"
+
+  # Starts the new binary apart, keeping this one's stdout and stderr (its
+  # log), deaf to the hangup of a terminal that closes; the shell closes the
+  # port's pipes first, so nothing holds them. Not `nohup`, which would send
+  # the output to `nohup.out` when it is a terminal.
+  @detach ~S(exec 3>&- 4>&-; trap "" HUP; "$0" "$@" & exit 0)
 
   # What the old binary's environment carries about its unpacked release, which
   # the new binary has to unpack and point at on its own.
@@ -249,23 +272,79 @@ defmodule PipeMaestroRunner.SelfUpdate do
   end
 
   @doc """
-  Runs the updated `bin` with the same `argv`.
+  How the new binary runs, from the environment (`env`) and whether there is
+  a terminal (`tty?`):
 
-  `:interactive`: as a child that takes over this terminal (it inherits stdin,
-  stdout and stderr); returns its exit status once it ends. `:service`: exits
-  with 0 (option `:halt`, `System.halt/1` by default), and the service manager
-  starts the new binary in its place.
+    * `:service` under the service the runner installs (`PIPEMAESTRO_SERVICE`),
+      or one installed before it said so: launchd's job of the runner, or
+      systemd's (`INVOCATION_ID`) without a terminal;
+    * `:handoff` as the child of a runner waiting in the terminal;
+    * `:interactive` in a terminal;
+    * `:detached` otherwise (`nohup`, a pipe, another supervisor).
+  """
+  @spec mode(%{optional(String.t()) => String.t()}, boolean()) :: mode()
+  def mode(env, tty?) do
+    cond do
+      env[@service_env] == "1" -> :service
+      env[@parent_env] == "1" -> :handoff
+      env["XPC_SERVICE_NAME"] == @launchd_label -> :service
+      is_binary(env["INVOCATION_ID"]) and not tty? -> :service
+      tty? -> :interactive
+      true -> :detached
+    end
+  end
+
+  @doc """
+  Runs the updated `bin` with the same `argv` (`mode/2` says how):
+
+    * `:interactive`: as a child that takes over this terminal (it inherits
+      stdin, stdout and stderr). This runner stays, waiting: while the child
+      exits with #{@handoff_status} (it updated, `:handoff`), it runs `bin`
+      again; returns the status of the child that exits otherwise. However
+      many updates, there are two runners at most;
+    * `:handoff`: exits with #{@handoff_status}, for the waiting runner;
+    * `:service`: exits with 0, and the service manager starts the new
+      binary in its place;
+    * `:detached`: starts it apart (option `:spawn`, `fn bin, argv`), with
+      this one's stdout and stderr, then exits with 0.
+
+  Exiting is option `:halt` (`System.halt/1` by default). A detached start
+  that fails returns `{:error, reason}`, and this runner goes on.
   """
   @spec relaunch(Path.t(), [String.t()], mode(), keyword()) :: term()
   def relaunch(bin, argv, mode, opts \\ [])
 
   def relaunch(bin, argv, :interactive, _opts) do
+    case run_child(bin, argv) do
+      @handoff_status -> relaunch(bin, argv, :interactive)
+      status -> status
+    end
+  end
+
+  def relaunch(_bin, _argv, :handoff, opts), do: halt(opts, @handoff_status)
+  def relaunch(_bin, _argv, :service, opts), do: halt(opts, 0)
+
+  def relaunch(bin, argv, :detached, opts) do
+    spawn = opts[:spawn] || (&spawn_detached/2)
+
+    case spawn.(bin, argv) do
+      :ok -> halt(opts, 0)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp halt(opts, status) do
+    halt = opts[:halt] || (&System.halt/1)
+    halt.(status)
+  end
+
+  defp run_child(bin, argv) do
     port =
       Port.open({:spawn_executable, bin}, [
         :nouse_stdio,
         :exit_status,
         args: argv,
-        env: child_env(System.get_env())
+        env: [{String.to_charlist(@parent_env), ~c"1"} | child_env(System.get_env())]
       ])
 
     receive do
@@ -273,9 +352,27 @@ defmodule PipeMaestroRunner.SelfUpdate do
     end
   end
 
-  def relaunch(_bin, _argv, :service, opts) do
-    halt = opts[:halt] || (&System.halt/1)
-    halt.(0)
+  @doc """
+  Starts `bin` with `argv` apart from this runner, which may exit: adopted by
+  the system, with this one's stdout and stderr and none of its release.
+  """
+  @spec spawn_detached(Path.t(), [String.t()]) :: :ok | {:error, String.t()}
+  def spawn_detached(bin, argv) do
+    port =
+      Port.open({:spawn_executable, "/bin/sh"}, [
+        :nouse_stdio,
+        :exit_status,
+        args: ["-c", @detach, bin | argv],
+        env: [{String.to_charlist(@parent_env), false} | child_env(System.get_env())]
+      ])
+
+    receive do
+      {^port, {:exit_status, 0}} ->
+        :ok
+
+      {^port, {:exit_status, status}} ->
+        {:error, "o shell que inicia o binário saiu com #{status}"}
+    end
   end
 
   @doc """

@@ -438,7 +438,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                     options={Enum.map(@projects, &{"#{&1.name} (#{&1.directory})", &1.id})}
                     data-testid="repo-project"
                   />
-                  <div class="flex justify-end gap-2">
+                  <div class="flex flex-wrap justify-end gap-2">
                     <.button
                       type="button"
                       size="sm"

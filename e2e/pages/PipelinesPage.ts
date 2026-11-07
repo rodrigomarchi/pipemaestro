@@ -80,6 +80,21 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-gates-${index}`);
   }
 
+  /** Opens a stage's "Avançado" block in the form, where its agent, group and context are. */
+  async openAdvanced(index: number) {
+    await this.page.getByTestId(`stage-advanced-${index}`).click();
+    await expect(this.stageContext(index)).toBeVisible();
+  }
+
+  /** How a stage starts: "fresh" (from zero) or "continue" (the previous stage's session). */
+  stageContext(index: number): Locator {
+    return this.page.getByTestId(`stage-context-${index}`);
+  }
+
+  stageCard(index: number): Locator {
+    return this.page.getByTestId(`stage-card-${index}`);
+  }
+
   /** Saves, lands on the pipeline's page, and goes back to the list. */
   async save() {
     await this.page.getByTestId("pipeline-save").click();

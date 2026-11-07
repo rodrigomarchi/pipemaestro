@@ -1,4 +1,4 @@
-# 0041 — Central de notificações no top bar
+# 0044 — Central de notificações no top bar
 
 - **Status:** aceita
 - **Data:** 07/11/2026

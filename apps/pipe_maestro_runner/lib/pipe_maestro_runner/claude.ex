@@ -1,9 +1,13 @@
 defmodule PipeMaestroRunner.Claude do
   @moduledoc """
   How the runner invokes the agent CLI for a job: `claude -p <prompt>` in
-  headless mode, printing one JSON event per line (`stream-json`), with nothing
-  saved as a resumable session, and every permission granted: pipelines run
+  headless mode, printing one JSON event per line (`stream-json`), and every
+  permission granted: pipelines run
   on their own, and nobody would answer a permission prompt in a headless run.
+
+  The CLI saves no resumable session, unless the job keeps it for the next
+  stage (`persist_session`) or resumes an earlier one (`resume_session_id`,
+  forked so the earlier session stays as it was: ADR 0041).
 
   `$CLAUDE_BIN` points to another executable (tests use a fake that prints the
   same kind of lines).
@@ -31,9 +35,15 @@ defmodule PipeMaestroRunner.Claude do
       "stream-json",
       "--verbose"
     ] ++
-      ["--dangerously-skip-permissions", "--no-session-persistence", "--include-partial-messages"] ++
-      optional(job)
+      ["--dangerously-skip-permissions"] ++
+      session(job) ++ ["--include-partial-messages"] ++ optional(job)
   end
+
+  defp session(%Job{resume_session_id: id}) when is_binary(id),
+    do: ["--resume", id, "--fork-session"]
+
+  defp session(%Job{persist_session: true}), do: []
+  defp session(_job), do: ["--no-session-persistence"]
 
   defp optional(job) do
     Enum.flat_map(
@@ -70,14 +80,21 @@ defmodule PipeMaestroRunner.Claude do
   VM the agent starts that loads the runner app would boot as the runner's CLI).
   `CP_ARTIFACT_PATH` tells hooks and scripts where the stage's artifact goes,
   and is unset for a job without one, so the runner's own never leaks in. With a
-  `telemetry_endpoint`, the CLI's OpenTelemetry goes there.
+  `telemetry_endpoint`, the CLI's OpenTelemetry goes there. `CP_FILES_DIR` is
+  the job's folder for the files it leaves to the platform
+  (`PipeMaestroRunner.JobFiles`), absolute, and is unset without one.
   """
-  @spec env(Job.t(), String.t() | nil) :: [{charlist(), charlist() | false}]
-  def env(%Job{} = job, telemetry_endpoint \\ nil) do
+  @spec env(Job.t(), String.t() | nil, Path.t() | nil) :: [{charlist(), charlist() | false}]
+  def env(%Job{} = job, telemetry_endpoint \\ nil, files_dir \\ nil) do
     artifact =
       if job.artifact_path,
         do: [{~c"CP_ARTIFACT_PATH", String.to_charlist(job.artifact_path)}],
         else: [{~c"CP_ARTIFACT_PATH", false}]
+
+    files =
+      if files_dir,
+        do: [{~c"CP_FILES_DIR", files_dir |> Path.expand() |> String.to_charlist()}],
+        else: [{~c"CP_FILES_DIR", false}]
 
     api_key =
       case System.get_env(@api_key_env) do
@@ -93,7 +110,7 @@ defmodule PipeMaestroRunner.Claude do
       {~c"CLAUDECODE", false},
       {~c"CLAUDE_CODE_ENTRYPOINT", false},
       {~c"__BURRITO", false}
-      | artifact ++ api_key ++ secrets ++ telemetry(job, telemetry_endpoint)
+      | artifact ++ files ++ api_key ++ secrets ++ telemetry(job, telemetry_endpoint)
     ]
   end
 

@@ -202,7 +202,7 @@ defmodule PipeMaestroWeb.JobsLive do
             help_text="O agente roda num worktree descartável do projeto, com permissões totais: as mudanças não ficam no repositório."
             testid="job-prompt"
           />
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button type="button" variant="ghost" color="gray" phx-click="close_new">
               Cancelar
             </.button>

@@ -110,6 +110,62 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     assert Pipelines.list_pipelines(workspace) == []
   end
 
+  describe "the stage's context" do
+    test "the first stage cannot continue one before it", %{conn: conn, workspace: workspace} do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new?view=form")
+      assert has_element?(view, "[data-testid=stage-context-0]")
+      assert render(view) =~ "Continuar a etapa anterior"
+
+      html =
+        view
+        |> form("#pipeline-form",
+          pipeline: %{
+            name: "Continua cedo",
+            stages: %{"0" => %{name: "Etapa", prompt: "p", context: "continue"}}
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "a primeira etapa não tem uma etapa anterior para continuar"
+      assert Pipelines.list_pipelines(workspace) == []
+    end
+
+    test "a later stage continues the one before, and the form shows it again", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      pipeline =
+        pipeline_fixture(workspace, %{
+          "name" => "Duas etapas",
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "A"},
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "B"}
+          ]
+        })
+
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#pipeline-form", pipeline: %{stages: %{"1" => %{context: "continue"}}})
+        |> render_submit()
+
+      saved = Pipelines.get_pipeline!(workspace, pipeline.id)
+      assert Enum.map(saved.stages, & &1.context) == ["fresh", "continue"]
+
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-context-1] option[value=continue][selected]"
+             )
+
+      assert has_element?(view, "[data-testid=stage-context-0] option[value=fresh][selected]")
+    end
+  end
+
   test "editing keeps every stage setting and edits gates and rules", %{
     conn: conn,
     workspace: workspace

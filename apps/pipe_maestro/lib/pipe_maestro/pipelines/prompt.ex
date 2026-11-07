@@ -111,7 +111,8 @@ defmodule PipeMaestro.Pipelines.Prompt do
           required(:previous) => [Stage.t()],
           optional(:instructions) => String.t() | nil,
           optional(:contract) => String.t() | nil,
-          optional(:answers) => map() | nil
+          optional(:answers) => map() | nil,
+          optional(:files) => boolean()
         }
 
   @doc "The variables a stage's template may use, as `{{name}}`."
@@ -189,13 +190,22 @@ defmodule PipeMaestro.Pipelines.Prompt do
     - Ninguém vai responder perguntas durante a execução, e não existe ferramenta de perguntar (AskUserQuestion não está disponível). Se precisar de uma decisão humana, termine com status "bloqueado", explique no resumo e faça as perguntas no campo `perguntas` da saída estruturada.
     - Ao perguntar: só o que muda a solução e você não descobre sozinho no código; uma decisão por pergunta; de 2 a 4 opções descritas, a recomendada primeiro.
     - Escreva o resultado desta etapa em Markdown no arquivo #{artifact} (crie os diretórios se preciso).
-    - Responda no formato estruturado pedido: status "ok" ao concluir, com um resumo curto.
+    - Responda no formato estruturado pedido: status "ok" ao concluir, com um resumo curto.#{files_rule(context[:files])}
 
     Artefatos das etapas anteriores:
     #{artifacts}
     """
     |> String.trim_trailing()
   end
+
+  # Only a runner that uploads the job's folder names it in CP_FILES_DIR.
+  defp files_rule(true) do
+    "\n- Arquivos que a pessoa deve ver na plataforma (screenshots, relatórios, CSVs) devem ser " <>
+      "**copiados** para `$CP_FILES_DIR` (pode usar subpastas). Essa pasta fica fora do git, " <>
+      "e a plataforma os mostra na tarefa."
+  end
+
+  defp files_rule(_no_files), do: ""
 
   defp render(template, context, artifacts) do
     Regex.replace(@variable, template, fn whole, name ->

@@ -372,7 +372,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
           >
             O runner {ProjectChoice.offline_runner(@projects, @online, @params["project_id"])} está offline: a tarefa fica na fila e começa quando ele conectar.
           </.alert>
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button type="button" variant="ghost" color="gray" phx-click="close_new">
               Cancelar
             </.button>

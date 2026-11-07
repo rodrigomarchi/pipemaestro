@@ -71,7 +71,7 @@ descartável".
      manter os que falharam.
    - Botão "remover worktree" na tarefa.
    - O runner informa o uso de disco.
-4. **✓ Entrega confiável de eventos** (ADR 0006; a outbox ainda não sobrevive a um
+4. **✓ Entrega confiável de eventos** (ADR 0006; jobs perdidos num restart: [ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md); a outbox ainda não sobrevive a um
    restart do runner).
    - Uma *outbox* no runner guarda `job:event`, `job:started` e `job:finished` até o
      `ok` do servidor e reenvia depois de reconectar. O servidor já é idempotente por
@@ -138,7 +138,7 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
    - O que espera alguém, em todo o workspace, com o motivo e a ação direta.
    - Contador no menu, que já existe e hoje é fixo.
 8. **✓ Notificações** (ADR 0010): toast ao vivo e notificação do navegador quando uma tarefa pausa ou
-   termina. A central de notificações (ADR 0041) guarda os avisos numa caixa por pessoa e mostra, no
+   termina. A central de notificações (ADR 0044) guarda os avisos numa caixa por pessoa e mostra, no
    top bar, o que está rodando agora.
 9. **✓ Ações sobre tarefas** (ADR 0010): reexecutar (nova tarefa com o mesmo pedido), duplicar com
    outro pipeline ou diretório, buscar no histórico.

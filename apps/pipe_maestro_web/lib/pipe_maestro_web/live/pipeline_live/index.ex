@@ -290,7 +290,7 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
               class="mt-4 flex-1"
               testid={"pipeline-preview-#{pipeline.name}"}
             />
-            <div class="mt-4 flex justify-end gap-1 border-t border-gray-100 pt-3 dark:border-gray-800">
+            <div class="mt-4 flex flex-wrap justify-end gap-1 border-t border-gray-100 pt-3 dark:border-gray-800">
               <.button
                 size="xs"
                 variant="ghost"

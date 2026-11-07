@@ -277,16 +277,20 @@ defmodule PipeMaestroWeb.Layouts do
         </.sidebar_nav>
       </:sidebar>
 
-      <%!-- The blur sits on a layer of its own: a backdrop filter on the header would hold the notification panel (fixed) inside it. --%>
-      <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
-        <.sidebar_trigger for="app-sidebar" target="mobile" class="md:hidden" />
+      <header class={header_class()}>
+        <.sidebar_trigger
+          for="app-sidebar"
+          target="mobile"
+          class="md:hidden"
+          data-testid="sidebar-open"
+        />
         <.sidebar_trigger
           for="app-sidebar"
           target="collapse"
           class="hidden md:inline-flex"
           data-testid="sidebar-collapse"
         />
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
           <div class="flex min-w-0 items-center gap-2">
             <h1
@@ -300,8 +304,8 @@ defmodule PipeMaestroWeb.Layouts do
             </div>
           </div>
         </div>
-        <div class="ml-auto flex items-center gap-2">
-          {render_slot(@actions)}
+        <.header_actions actions={@actions} />
+        <div class="flex shrink-0 items-center gap-2">
           <.live_component
             module={PipeMaestroWeb.NotificationCenter}
             id="notification-center"
@@ -449,15 +453,14 @@ defmodule PipeMaestroWeb.Layouts do
         </.sidebar_nav>
       </:sidebar>
 
-      <%!-- The blur sits on a layer of its own: a backdrop filter on the header would hold the notification panel (fixed) inside it. --%>
-      <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
+      <header class={header_class()}>
         <.sidebar_trigger for="backoffice-sidebar" target="mobile" class="md:hidden" />
         <.sidebar_trigger
           for="backoffice-sidebar"
           target="collapse"
           class="hidden md:inline-flex"
         />
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <.badge size="xs" color="warning" variant="soft" label="Backoffice" />
             {render_slot(@breadcrumb)}
@@ -469,8 +472,8 @@ defmodule PipeMaestroWeb.Layouts do
             {@title}
           </h1>
         </div>
-        <div class="ml-auto flex items-center gap-2">
-          {render_slot(@actions)}
+        <.header_actions actions={@actions} />
+        <div class="flex shrink-0 items-center gap-2">
           <.color_scheme_switch id="backoffice-scheme" variant="dropdown" />
           <.account_menu name={@current_operator.name} email={@current_operator.email}>
             <.logout_button to={~p"/backoffice/logout"} variant="menu" data-testid="account-logout" />
@@ -485,6 +488,33 @@ defmodule PipeMaestroWeb.Layouts do
       <.toast_group flash={@flash} position="bottom-right" data-testid="toasts" />
       <.connection_status />
     </.sidebar_shell>
+    """
+  end
+
+  # The top bar. Narrower than xl the page's actions take a row of their own
+  # under the title, wrapping as needed, so they never push the page wider than
+  # the screen; on a phone it scrolls away with the page instead of pinning
+  # rows of buttons over the content. The blur sits on a layer of its own: a
+  # backdrop filter on the header would hold the notification panel (fixed)
+  # inside it.
+  defp header_class do
+    "relative z-20 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-200 bg-white/80 px-4 py-3 " <>
+      "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] " <>
+      "sm:px-6 md:sticky md:top-0 xl:h-16 xl:flex-nowrap xl:py-0 " <>
+      "dark:border-gray-800 dark:bg-gray-950/80"
+  end
+
+  attr :actions, :list, required: true
+
+  defp header_actions(assigns) do
+    ~H"""
+    <div
+      :if={@actions != []}
+      class="order-last flex w-full flex-wrap items-center gap-2 xl:order-none xl:w-auto xl:justify-end"
+      data-testid="page-actions"
+    >
+      {render_slot(@actions)}
+    </div>
     """
   end
 

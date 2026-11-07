@@ -6,22 +6,27 @@ defmodule PipeMaestroRunner.Connection do
 
   When the platform refuses the connection itself (HTTP 403: the token was
   revoked or the protocol version is no longer accepted) reconnecting cannot
-  help, so the connection stops and reports `:rejected`. Likewise when it
-  refuses the join because this runner is not on the platform's version
-  (`"outdated"`): it stops the jobs it runs, reports `{:outdated, refusal}`
-  and stops, for the person to download the current runner.
+  help, so the connection stops and reports `:rejected`. When it refuses the
+  join because this runner is not on the platform's version (`"outdated"`),
+  it drains before the update, without connecting again: it starts no more
+  jobs, lets the running ones end (up to `:drain_timeout_ms`, default 30
+  minutes; past it they are stopped as lost, `JobRunner.cancel/3`), writes
+  the whole outbox to its file, and only then reports `{:outdated, refusal}`
+  and stops.
 
-  Given a `:workdir`, it also runs jobs: it starts a
-  `PipeMaestroRunner.JobRunner` with the capacity announced in the
-  hello, hands it the `job:assign` and
+  Given a `:workdir`, it also runs jobs through a
+  `PipeMaestroRunner.JobRunner` (its own, with the capacity announced in
+  the hello, or the `:job_runner` it is given), hands it the `job:assign` and
   `job:cancel` messages, pushes back what it reports, and tells the control
   plane which jobs survive a reconnection (`Hello.running_job_ids`).
 
-  What it reports is kept until the control plane replies
-  (`PipeMaestroRunner.Outbox`) and sent again, in order, after every
-  join; a job whose end the control plane has not confirmed still counts as
-  running, so a reconnection does not fail it. With an `:outbox_path`, the
-  ends survive a restart too.
+  What it reports is kept until the control plane replies (a
+  `PipeMaestroRunner.Outbox.Server`: its own, or the `:outbox` it is given,
+  which outlives it) and sent again, in order, after every join; a job whose
+  end the control plane has not confirmed still counts as running, so a
+  reconnection does not fail it. With an `:outbox_path`, the ends survive a
+  restart too. `PipeMaestroRunner.Session` gives it both, so a crash of the
+  connection loses neither the jobs nor what they reported.
 
   With `telemetry: true`, the jobs' CLIs report their OpenTelemetry to the
   runner, which relays it (`job:telemetry`, `PipeMaestroProtocol.Telemetry`).
@@ -76,9 +81,12 @@ defmodule PipeMaestroRunner.Connection do
     Doctor,
     Health,
     JobRunner,
-    LogCollector,
-    Outbox
+    LogCollector
   }
+
+  alias PipeMaestroRunner.Outbox.Server, as: OutboxServer
+
+  @default_drain_timeout_ms 1_800_000
 
   @doc "Starts the connection with the runner's credentials and hello."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -102,7 +110,9 @@ defmodule PipeMaestroRunner.Connection do
   def init(opts) do
     config = Keyword.fetch!(opts, :config)
     %Hello{} = hello = Keyword.fetch!(opts, :hello)
-    job_runner = start_job_runner(opts)
+    outbox = outbox_server(opts)
+    :ok = OutboxServer.register(outbox, self())
+    job_runner = job_runner(opts, outbox)
 
     # :connect_options reaches Slipstream as is (tests pass `test_mode?: true`).
     socket =
@@ -133,7 +143,9 @@ defmodule PipeMaestroRunner.Connection do
         sampling: nil,
         health_timer: nil,
         cpu: nil,
-        outbox: Outbox.new(20_000, Keyword.get(opts, :outbox_path))
+        outbox: outbox,
+        drain_timeout_ms: Keyword.get(opts, :drain_timeout_ms, @default_drain_timeout_ms),
+        draining: nil
       )
 
     schedule_rescan(socket)
@@ -145,46 +157,43 @@ defmodule PipeMaestroRunner.Connection do
   defp schedule_rescan(%{assigns: %{rescan_every: every}}),
     do: Process.send_after(self(), :rescan, every)
 
-  # The agent's processes must not outlive the runner: each running job is
-  # canceled (the platform counts them as lost on the next join), waiting a
-  # little for them to stop.
-  @stop_wait_ms 10_000
-  defp stop_jobs(nil), do: :ok
-
-  defp stop_jobs(job_runner) do
-    ids = JobRunner.running_job_ids(job_runner)
-    Enum.each(ids, &JobRunner.cancel(job_runner, &1))
-    wait_stopped(job_runner, System.monotonic_time(:millisecond) + @stop_wait_ms)
-  end
-
-  defp wait_stopped(job_runner, deadline) do
-    cond do
-      JobRunner.running_job_ids(job_runner) == [] ->
-        :ok
-
-      System.monotonic_time(:millisecond) > deadline ->
-        :ok
-
-      true ->
-        Process.sleep(100)
-        wait_stopped(job_runner, deadline)
-    end
-  end
-
-  defp start_job_runner(opts) do
-    case Keyword.fetch(opts, :workdir) do
-      {:ok, workdir} ->
-        %Hello{capacity: capacity} = Keyword.fetch!(opts, :hello)
-        job_opts = Keyword.take(opts, [:executable, :kill_after, :root, :telemetry])
-
-        {:ok, pid} =
-          JobRunner.start_link([owner: self(), workdir: workdir, capacity: capacity] ++ job_opts)
-
-        pid
+  defp outbox_server(opts) do
+    case Keyword.fetch(opts, :outbox) do
+      {:ok, server} ->
+        server
 
       :error ->
+        {:ok, pid} = OutboxServer.start_link(path: Keyword.get(opts, :outbox_path))
+        pid
+    end
+  end
+
+  defp job_runner(opts, outbox) do
+    case {Keyword.fetch(opts, :job_runner), Keyword.fetch(opts, :workdir)} do
+      {{:ok, job_runner}, _workdir} ->
+        job_runner
+
+      {:error, {:ok, workdir}} ->
+        {:ok, pid} = JobRunner.start_link(job_runner_opts(opts, workdir, outbox))
+        pid
+
+      {:error, :error} ->
         nil
     end
+  end
+
+  @doc """
+  The options of the `PipeMaestroRunner.JobRunner` for a connection's
+  options: its capacity is the hello's, and what it reports goes to `owner`.
+  """
+  @spec job_runner_opts(keyword(), Path.t(), GenServer.server()) :: keyword()
+  def job_runner_opts(opts, workdir, owner) do
+    %Hello{capacity: capacity} = Keyword.fetch!(opts, :hello)
+    %{url: url, token: token} = Keyword.fetch!(opts, :config)
+    job_opts = Keyword.take(opts, [:executable, :kill_after, :root, :telemetry])
+    # The job's files go to the same control plane, as this runner.
+    files = %{url: url, token: token}
+    [owner: owner, workdir: workdir, capacity: capacity, files: files] ++ job_opts
   end
 
   @impl Slipstream
@@ -197,7 +206,7 @@ defmodule PipeMaestroRunner.Connection do
   # offered at that moment.
   defp hello_payload(%{assigns: %{hello: hello, job_runner: job_runner} = assigns}) do
     running = if job_runner, do: JobRunner.running_job_ids(job_runner), else: []
-    running = Enum.uniq(running ++ Outbox.job_ids(assigns.outbox))
+    running = Enum.uniq(running ++ OutboxServer.finished_job_ids(assigns.outbox))
     Hello.to_map(%{hello | running_job_ids: running, directories: assigns.directories})
   end
 
@@ -207,10 +216,11 @@ defmodule PipeMaestroRunner.Connection do
     if socket.assigns.logs, do: LogCollector.attach(self(), RunnerLog.logs?(reply))
     # The platform forgets nothing it was told, but this is a new channel
     # process: the next measure is pushed even if unchanged.
-    socket = assign(socket, usage: nil, outbox: Outbox.forget_refs(socket.assigns.outbox))
+    socket = assign(socket, usage: nil)
 
     socket =
-      Enum.reduce(Outbox.pending(socket.assigns.outbox), socket, fn {id, event, payload}, acc ->
+      Enum.reduce(OutboxServer.joined(socket.assigns.outbox), socket, fn {id, event, payload},
+                                                                         acc ->
         send_out(acc, id, event, payload)
       end)
 
@@ -221,7 +231,8 @@ defmodule PipeMaestroRunner.Connection do
   def handle_reply(ref, _reply, socket) do
     # An error reply settles a message too: sending it again would not change
     # the answer.
-    {:ok, assign(socket, outbox: Outbox.confirmed(socket.assigns.outbox, ref))}
+    :ok = OutboxServer.confirmed(socket.assigns.outbox, ref)
+    {:ok, socket}
   end
 
   @impl Slipstream
@@ -230,6 +241,9 @@ defmodule PipeMaestroRunner.Connection do
     notify(socket, :rejected)
     {:stop, :normal, socket}
   end
+
+  # Draining, it does not connect again: the runner is about to update.
+  def handle_disconnect(_reason, %{assigns: %{draining: %{}}} = socket), do: {:ok, socket}
 
   def handle_disconnect(reason, socket) do
     notify(socket, {:disconnected, reason})
@@ -246,11 +260,8 @@ defmodule PipeMaestroRunner.Connection do
   end
 
   @impl Slipstream
-  def handle_topic_close(_topic, {:failed_to_join, %{"reason" => "outdated"} = refusal}, socket) do
-    stop_jobs(socket.assigns.job_runner)
-    notify(socket, {:outdated, refusal})
-    {:stop, :normal, socket}
-  end
+  def handle_topic_close(_topic, {:failed_to_join, %{"reason" => "outdated"} = refusal}, socket),
+    do: {:ok, drain(socket, refusal)}
 
   def handle_topic_close(topic, _reason, socket) do
     socket = assign(socket, directories: Directories.scan(socket.assigns.root))
@@ -382,30 +393,84 @@ defmodule PipeMaestroRunner.Connection do
 
   # What the job runner reports goes to the platform through the outbox; while
   # disconnected it waits there for the next join.
-  def handle_info({:job_out, event, payload}, socket) do
-    socket = add_out(socket, event, payload)
-
-    case event do
-      "job:started" -> notify(socket, {:job_started, payload["job_id"]})
-      "job:finished" -> notify(socket, {:job_finished, payload})
-      _event -> :ok
-    end
-
-    {:noreply, socket}
+  def handle_info({:outbox_out, id, event, payload}, socket) do
+    tell_job(socket, event, payload)
+    {:noreply, socket |> tell_drops() |> send_out(id, event, payload)}
   end
+
+  def handle_info({:job_out, event, payload}, socket) do
+    tell_job(socket, event, payload)
+    {:noreply, add_out(socket, event, payload)}
+  end
+
+  def handle_info(:drain_check, socket), do: drain_check(socket)
 
   # The runner's log, in batches (`PipeMaestroRunner.LogCollector`).
   def handle_info({:runner_log, lines}, socket),
     do: {:noreply, add_out(socket, RunnerLog.event(), %{"lines" => lines})}
 
+  defp tell_job(socket, "job:started", payload),
+    do: notify(socket, {:job_started, payload["job_id"]})
+
+  defp tell_job(socket, "job:finished", payload), do: notify(socket, {:job_finished, payload})
+  defp tell_job(_socket, _event, _payload), do: :ok
+
   defp add_out(socket, event, payload) do
-    {id, outbox} = Outbox.add(socket.assigns.outbox, event, payload)
-    socket |> assign(outbox: outbox) |> tell_drops() |> send_out(id, event, payload)
+    id = OutboxServer.add(socket.assigns.outbox, event, payload)
+    socket |> tell_drops() |> send_out(id, event, payload)
+  end
+
+  # Before the update: no more jobs start, the running ones go on to their
+  # end, and the outbox waits in its file for the runner that comes back.
+  defp drain(socket, refusal) do
+    %{job_runner: job_runner, drain_timeout_ms: timeout} = socket.assigns
+    running = if job_runner, do: JobRunner.running_job_ids(job_runner), else: []
+    if job_runner, do: :ok = JobRunner.drain(job_runner)
+
+    LogCollector.capture(
+      :info,
+      "Recusado pela versão: terminando #{length(running)} job(s) antes de atualizar.",
+      %{
+        runner_event: "update_draining",
+        event_attrs: %{"jobs" => length(running), "timeout_ms" => timeout}
+      }
+    )
+
+    send(self(), :drain_check)
+    deadline = System.monotonic_time(:millisecond) + timeout
+    assign(socket, draining: %{refusal: refusal, deadline: deadline, stopped: false})
+  end
+
+  @drain_check_ms 100
+  # Stopped as lost, a job has `kill_after` (5 s by default) to go; past this,
+  # the update goes on anyway.
+  @stop_wait_ms 10_000
+
+  defp drain_check(%{assigns: %{draining: draining, job_runner: job_runner}} = socket) do
+    running = if job_runner, do: JobRunner.running_job_ids(job_runner), else: []
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      running == [] or (draining.stopped and now > draining.deadline) ->
+        :ok = OutboxServer.persist_all(socket.assigns.outbox)
+        notify(socket, {:outdated, draining.refusal})
+        {:stop, :normal, socket}
+
+      not draining.stopped and now > draining.deadline ->
+        Enum.each(running, &JobRunner.cancel(job_runner, &1, :lost))
+        Process.send_after(self(), :drain_check, @drain_check_ms)
+        draining = %{draining | stopped: true, deadline: now + @stop_wait_ms}
+        {:noreply, assign(socket, draining: draining)}
+
+      true ->
+        Process.send_after(self(), :drain_check, @drain_check_ms)
+        {:noreply, socket}
+    end
   end
 
   # Telling the log takes room in the outbox too: once a minute at most.
   defp tell_drops(%{assigns: %{outbox: outbox, drops_told: {told, at}}} = socket) do
-    dropped = Outbox.dropped(outbox)
+    dropped = OutboxServer.dropped(outbox)
     now = System.monotonic_time(:millisecond)
 
     if dropped > told and (at == nil or now - at >= 60_000) do
@@ -424,7 +489,8 @@ defmodule PipeMaestroRunner.Connection do
   defp send_out(socket, id, event, payload) do
     with true <- joined?(socket, socket.assigns.topic),
          {:ok, ref} <- push(socket, socket.assigns.topic, event, payload) do
-      assign(socket, outbox: Outbox.sent(socket.assigns.outbox, id, ref))
+      :ok = OutboxServer.sent(socket.assigns.outbox, id, ref)
+      socket
     else
       _not_sent -> socket
     end
@@ -476,7 +542,7 @@ defmodule PipeMaestroRunner.Connection do
 
     opts = [
       workdir: assigns.workdir,
-      outbox_pending: Outbox.size(assigns.outbox),
+      outbox_pending: OutboxServer.size(assigns.outbox),
       running_jobs: running,
       cpu: assigns.cpu
     ]

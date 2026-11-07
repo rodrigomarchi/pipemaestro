@@ -136,7 +136,11 @@ defmodule PipeMaestroRunner.UpdateTest do
 
   test "by default, without a terminal, it updates without asking, for the service manager",
        ctx do
-    opts = ctx.opts |> Keyword.put(:tty?, false) |> Keyword.delete(:auto_update)
+    opts =
+      ctx.opts
+      |> Keyword.put(:tty?, false)
+      |> Keyword.delete(:auto_update)
+      |> Keyword.update!(:env, &Map.put(&1, "PIPEMAESTRO_SERVICE", "1"))
 
     assert Update.handle(ctx.refusal, opts) == :relaunched
 
@@ -156,9 +160,23 @@ defmodule PipeMaestroRunner.UpdateTest do
     assert_received {:relaunch, _bin, @argv, :interactive}
   end
 
+  test "without a terminal and outside the service, the new binary starts on its own", ctx do
+    opts = ctx.opts |> Keyword.put(:tty?, false) |> Keyword.delete(:auto_update)
+
+    assert Update.handle(ctx.refusal, opts) == :relaunched
+
+    refute_received {:asked, _prompt}
+    assert File.read!(ctx.bin) == @new
+    assert_received {:relaunch, _bin, @argv, :detached}
+  end
+
   test "--auto-update without a terminal updates without asking, for the service manager",
        ctx do
-    opts = ctx.opts |> Keyword.put(:tty?, false) |> Keyword.put(:auto_update, true)
+    opts =
+      ctx.opts
+      |> Keyword.put(:tty?, false)
+      |> Keyword.put(:auto_update, true)
+      |> Keyword.update!(:env, &Map.put(&1, "PIPEMAESTRO_SERVICE", "1"))
 
     assert Update.handle(ctx.refusal, opts) == :relaunched
 

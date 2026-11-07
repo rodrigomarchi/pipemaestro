@@ -42,7 +42,7 @@ tarefa parada ou encerrada sempre aceita um novo prompt.
 Entrar em `awaiting_decision` e terminar (`succeeded`, `failed`, `canceled`) gera, além do
 toast e da notificação do navegador, uma notificação guardada na caixa do criador e do
 dono da decisão; sem nenhum dos dois no workspace, vai para os admins
-([ADR 0041](../adr/0041-central-de-notificacoes.md)).
+([ADR 0044](../adr/0044-central-de-notificacoes.md)).
 
 ## Etapa (tentativa: `StageRun`)
 
@@ -60,8 +60,15 @@ Cada tentativa é um `StageRun` com um job. Quando o job termina, o gate decide:
 
 Uma pausa por orçamento ou a pedido (`pause_requested`) também não tem questionário.
 
-Um job perdido porque o runner reiniciou (reconciliação no join, protocolo §4.6) conta
-como `failed`.
+Um job perdido porque o runner reiniciou, caiu ou se atualizou (reconciliação no join,
+protocolo §4.6) **não é tentativa**:
+
+| Evento | Tentativa | Depois |
+|---|---|---|
+| job de etapa perdido, abaixo do limite de perdas | `lost` ("Perdida (runner)") | a etapa roda de novo na **mesma** tentativa (`requeue + 1`), sem gate e sem análise |
+| o mesmo, no limite (`max_lost_requeues`, 3) | `lost` | `awaiting_decision` com o motivo da perda, sem análise |
+
+Ver a [ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md).
 
 **Verificações da plataforma.** Numa etapa que entrega (git, entrega `commit` ou `pr`,
 fora de grupo), o runner roda antes dos gates as verificações do contrato

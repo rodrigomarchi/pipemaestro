@@ -7,7 +7,10 @@ repositório `retro_hex_chat_infra`, do mesmo jeito que os outros apps Elixir de
 - **Clone:** `~/pipemaestro`, buscado do Forgejo com o token de leitura do servidor.
 - **DeployEx:** o app `pipe_maestro`, na porta 4008.
 - **HAProxy:** 14008.
-- **nginx e certificado:** `pipemaestro.app`. O `www` responde 301.
+- **nginx e certificado:** `pipemaestro.app`. O `www` responde 301. O `server` precisa
+  de `client_max_body_size 12m;`, porque os runners sobem os arquivos dos jobs (até
+  10 MiB cada, [ADR 0042](../adr/0042-arquivos-gerados-pela-etapa.md)). Com o padrão de
+  1 MB, os maiores voltam com 413 e aparecem na tarefa como "não chegaram".
 
 Os segredos ficam no vault da infra e entram no ambiente do app pelo DeployEx:
 
@@ -71,7 +74,13 @@ O `scripts/deploy_sun.sh` faz quatro coisas:
    atualizam a partir desse diretório
    ([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)), só se ele estiver na
    mesma origem da plataforma (o mesmo host, com https): um `RUNNER_DOWNLOADS_URL` em
-   outro host desliga a atualização automática;
+   outro host desliga a atualização automática. Recusado pela versão, cada runner
+   termina os jobs que roda (até 30 min), se atualiza e volta sozinho, no terminal, com
+   `nohup` ou como serviço; o que passar do prazo roda de novo sem gastar tentativa
+   ([ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md)). **Nota de transição:**
+   um runner anterior à ADR 0043 se atualiza pelo código antigo uma última vez; se
+   roda sem terminal e fora de `pipemaestro service install`, ele para nesse salto e
+   precisa ser iniciado de novo à mão;
 4. consulta `https://pipemaestro.app/version` até a release nova responder. Desiste depois de
    `ROLLOUT_TIMEOUT_S`, que por padrão é 300 segundos.
 

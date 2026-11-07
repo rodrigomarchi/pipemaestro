@@ -28,6 +28,12 @@ defmodule PipeMaestroRunner.JobRunner do
   job's records as `{:job_out, "job:telemetry", %{"job_id", "records"}}`, in
   batches; they may follow the job's outcome.
 
+  With `:files`, each job gets a folder of its own outside any worktree
+  (`CP_FILES_DIR`). After the agent, whether it succeeded, failed or was
+  canceled, what it left there is sent to the control plane over HTTP, off
+  this process, and the folder goes once the job reported. `files_failed`
+  counts the files that did not arrive.
+
   The outcome (`job:finished`) carries, besides the result, what the run
   reported about itself for auditing: the session, the CLI's version, the
   model, the tokens with the cache apart, the cost per model, the denied
@@ -36,10 +42,23 @@ defmodule PipeMaestroRunner.JobRunner do
   Each message's tokens go once: a message split over several lines keeps
   them on its first event.
 
+  A job that resumes an earlier session (`resume_session_id`) whose CLI ends
+  in error before opening any session (the CLI does not have that session on
+  this machine) runs once more, from scratch, in the same place and with the
+  same prompt; its outcome says whether it resumed (`session_resumed`).
+
   Canceling a waiting job drops it; canceling a running one (in its setup or
   in the CLI) sends SIGTERM, then SIGKILL if it is still there after
   `:kill_after` ms. A job past its `timeout_ms` is stopped the same way and
-  fails.
+  fails. A job stopped as `:lost` (`cancel/3`) ends without reporting its
+  end: the control plane counts it as lost by the runner and runs it again.
+
+  Draining (`drain/1`, before the runner updates itself) lets the running
+  jobs end and starts nothing else: the waiting ones are dropped, and the
+  control plane hands them over again on the next join.
+
+  The owner is a pid or a registered name: the connection, or the
+  `PipeMaestroRunner.Outbox.Server` that outlives it.
   """
   use GenServer
 
@@ -52,6 +71,7 @@ defmodule PipeMaestroRunner.JobRunner do
     Delivery,
     Gates,
     GitCredential,
+    JobFiles,
     LogCollector,
     RepoState,
     Setup,
@@ -75,11 +95,13 @@ defmodule PipeMaestroRunner.JobRunner do
   @launcher ~S(exec "$0" "$@" < /dev/null)
 
   @doc """
-  Starts the runner. Options: `:owner` (pid, required), `:workdir` (required),
+  Starts the runner. Options: `:owner` (pid or name, required), `:workdir` (required),
   `:root` (where the code directories are, `PipeMaestroRunner.Workspace`),
   `:executable` (default: `Claude.executable/0`), `:kill_after` (default 5000),
   `:capacity` (jobs at once, default 1), `:telemetry` (receive the CLI's
-  OpenTelemetry, default false).
+  OpenTelemetry, default false), `:files` (`%{url, token}`: where each job's
+  files go, `PipeMaestroRunner.JobFiles`; without it, jobs get no folder for
+  them) and `:files_req_options` (passed to `Req` on each upload).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -96,6 +118,21 @@ defmodule PipeMaestroRunner.JobRunner do
   @doc "Drops a waiting job or stops the running one."
   @spec cancel(GenServer.server(), String.t()) :: :ok
   def cancel(server, job_id), do: GenServer.cast(server, {:cancel, job_id})
+
+  @doc """
+  Stops a job as `:canceled` (the same as `cancel/2`) or as `:lost`: stopped
+  without reporting its end, for the control plane to run it again.
+  """
+  @spec cancel(GenServer.server(), String.t(), :canceled | :lost) :: :ok
+  def cancel(server, job_id, :canceled), do: cancel(server, job_id)
+  def cancel(server, job_id, :lost), do: GenServer.cast(server, {:cancel, job_id, :lost})
+
+  @doc """
+  Starts no more jobs: the waiting ones are dropped, and those it is handed
+  later too; the running ones go on to their end.
+  """
+  @spec drain(GenServer.server()) :: :ok
+  def drain(server), do: GenServer.call(server, :drain)
 
   @doc """
   Removes a task's worktree (`PipeMaestroRunner.Workspace`), unless a
@@ -117,6 +154,7 @@ defmodule PipeMaestroRunner.JobRunner do
     File.mkdir_p!(workdir)
     :ok = Workspace.clear_scratch(workdir)
     :ok = GitCredential.clear(workdir)
+    :ok = JobFiles.clear(workdir)
 
     endpoint =
       if Keyword.get(opts, :telemetry, false) do
@@ -133,8 +171,11 @@ defmodule PipeMaestroRunner.JobRunner do
        kill_after: Keyword.get(opts, :kill_after, 5_000),
        capacity: Keyword.get(opts, :capacity) || 1,
        telemetry_endpoint: endpoint,
+       files: Keyword.get(opts, :files),
+       files_req_options: Keyword.get(opts, :files_req_options, []),
        queue: [],
-       running: %{}
+       running: %{},
+       draining: false
      }}
   end
 
@@ -143,9 +184,12 @@ defmodule PipeMaestroRunner.JobRunner do
     {:reply, Map.keys(state.running), state}
   end
 
+  def handle_call(:drain, _from, state),
+    do: {:reply, :ok, %{state | queue: [], draining: true}}
+
   @impl true
   def handle_cast({:enqueue, %Job{id: id} = job}, state) do
-    if known?(state, id),
+    if state.draining or known?(state, id),
       do: {:noreply, state},
       else: {:noreply, start_ready(%{state | queue: state.queue ++ [job]})}
   end
@@ -184,6 +228,16 @@ defmodule PipeMaestroRunner.JobRunner do
       end
 
     {:noreply, state}
+  end
+
+  def handle_cast({:cancel, id, :lost}, state) do
+    case state.running do
+      %{^id => run} ->
+        {:noreply, put_run(state, stop(state, %{run | canceled: true, lost: true}))}
+
+      _waiting ->
+        {:noreply, %{state | queue: Enum.reject(state.queue, &(&1.id == id))}}
+    end
   end
 
   def handle_cast({:cancel, id}, state) do
@@ -272,12 +326,44 @@ defmodule PipeMaestroRunner.JobRunner do
   # What follows the agent's exit: the job ends now, or once the checks, the
   # gates, the delivery and the changes are measured.
   defp after_exit(state, run, code) do
-    run = %{run | wall_ms: wall_ms(run)}
+    if resume_missed?(run, code),
+      do: relaunch_fresh(state, run),
+      else: agent_exited(state, %{run | wall_ms: wall_ms(run)}, code)
+  end
+
+  # The CLI could not open the session it was asked to resume: it ended in
+  # error before reporting a session of its own.
+  defp resume_missed?(run, code),
+    do:
+      run.resume == :requested and code != 0 and not run.canceled and not run.timed_out and
+        run.session == nil
+
+  # The same job, from scratch: the setup, the sync and the notes of its
+  # prompt are already done, and the events keep counting.
+  defp relaunch_fresh(state, run) do
+    job = %{run.job | resume_session_id: nil}
+    elapsed = System.monotonic_time(:millisecond) - run.launched_at
+    timeout_ms = job.timeout_ms && max(job.timeout_ms - elapsed, 1)
+    {port, os_pid} = open_port(state, job, run.path, run.dir, timeout_ms, run.files_dir)
+
+    put_run(state, %{
+      run
+      | job: job,
+        port: port,
+        os_pid: os_pid,
+        partial: "",
+        stderr: [],
+        resume: :fell_back
+    })
+  end
+
+  defp agent_exited(state, run, code) do
     {checks, gates, delivery} = after_steps(run, code)
 
-    if run.tracking == nil and gates == [] and checks == [] and delivery == nil,
-      do: finish(state, run, code, %{}),
-      else: put_run(state, after_agent(run, code, {checks, gates}, delivery))
+    if run.tracking == nil and gates == [] and checks == [] and delivery == nil and
+         run.files_dir == nil,
+       do: finish(state, run, code, %{}),
+       else: put_run(state, after_agent(state, run, code, {checks, gates}, delivery))
   end
 
   # The gates follow an agent that ended well; the checks and the delivery,
@@ -298,11 +384,12 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   # After the agent, off this process (they take a while): the platform's
-  # checks, the gates, the delivery when all passed, then what the stage
-  # changed.
-  defp after_agent(run, code, steps, delivery) do
+  # checks, the gates, the delivery when all passed, what the stage changed,
+  # then the files it left for the platform.
+  defp after_agent(state, run, code, steps, delivery) do
     runner = self()
-    %{dir: dir, tracking: tracking, job: job} = run
+    %{dir: dir, tracking: tracking, job: job, files_dir: files_dir} = run
+    %{files: files, files_req_options: req_options} = state
 
     task =
       Task.async(fn ->
@@ -314,10 +401,26 @@ defmodule PipeMaestroRunner.JobRunner do
             do: Delivery.deliver(dir, delivery, env: delivery_env(job))
 
         changes = if tracking, do: Changes.report(dir, tracking)
-        %{"gates" => results, "changes" => changes, "delivery" => delivered}
+
+        %{
+          "gates" => results,
+          "changes" => changes,
+          "delivery" => delivered,
+          "files_failed" => upload_files(files_dir, files, job, req_options)
+        }
       end)
 
     %{run | port: nil, os_pid: nil, finishing: {task.ref, code}}
+  end
+
+  # How many of the files the agent left did not reach the control plane, or
+  # nil when they all did.
+  defp upload_files(nil, _files, _job, _req_options), do: nil
+
+  defp upload_files(files_dir, %{url: url, token: token}, job, req_options) do
+    {files, skipped} = JobFiles.collect(files_dir, job.env)
+    %{failed: failed} = JobFiles.upload(files, url, token, job.id, req_options)
+    if skipped + failed > 0, do: skipped + failed
   end
 
   # The checks, then the gates when the checks hold (a gate run on a worktree
@@ -396,6 +499,8 @@ defmodule PipeMaestroRunner.JobRunner do
 
   # Starts, in queue order, every waiting job whose place is free, while there
   # is capacity.
+  defp start_ready(%{draining: true} = state), do: state
+
   defp start_ready(state) do
     busy = MapSet.new(Map.values(state.running), &place(&1.job))
 
@@ -415,6 +520,7 @@ defmodule PipeMaestroRunner.JobRunner do
     # The job's secrets never reach the runner's log as they are.
     LogCollector.add_secrets(job.id, job |> GitCredential.secrets() |> Enum.map(&elem(&1, 1)))
     out(state, Job.started_event(), %{"job_id" => job.id})
+    files_dir = if state.files, do: JobFiles.prepare(state.workdir, job.id)
     runner = self()
     %{root: root, workdir: workdir, executable: executable} = state
 
@@ -436,6 +542,7 @@ defmodule PipeMaestroRunner.JobRunner do
       result: nil,
       stderr: [],
       canceled: false,
+      lost: false,
       timed_out: false,
       tracking: nil,
       finishing: nil,
@@ -444,7 +551,10 @@ defmodule PipeMaestroRunner.JobRunner do
       session: nil,
       messages: MapSet.new(),
       launched_at: nil,
-      wall_ms: nil
+      wall_ms: nil,
+      files_dir: files_dir,
+      path: nil,
+      resume: if(job.resume_session_id, do: :requested, else: :none)
     })
   end
 
@@ -514,7 +624,23 @@ defmodule PipeMaestroRunner.JobRunner do
 
   defp launch(state, run, {:ok, path, dir, setup, tracking, notes}) do
     job = if notes, do: %{run.job | prompt: run.job.prompt <> "\n\n" <> notes}, else: run.job
+    {port, os_pid} = open_port(state, job, path, dir, job.timeout_ms, run.files_dir)
 
+    put_run(state, %{
+      run
+      | job: job,
+        path: path,
+        dir: dir,
+        setup: setup,
+        tracking: tracking,
+        port: port,
+        os_pid: os_pid,
+        launched_at: System.monotonic_time(:millisecond)
+    })
+  end
+
+  # The CLI in a port, with the job's deadline (`timeout_ms` from now).
+  defp open_port(state, job, path, dir, timeout_ms, files_dir) do
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
         :binary,
@@ -522,7 +648,7 @@ defmodule PipeMaestroRunner.JobRunner do
         :stderr_to_stdout,
         {:line, @line_bytes},
         {:cd, dir},
-        {:env, Claude.env(job, state.telemetry_endpoint)},
+        {:env, Claude.env(job, state.telemetry_endpoint, files_dir)},
         {:args, ["-c", @launcher, path | Claude.argv(job)]}
       ])
 
@@ -533,18 +659,8 @@ defmodule PipeMaestroRunner.JobRunner do
         nil -> nil
       end
 
-    if job.timeout_ms, do: Process.send_after(self(), {:timeout, job.id, port}, job.timeout_ms)
-
-    put_run(state, %{
-      run
-      | job: job,
-        dir: dir,
-        setup: setup,
-        tracking: tracking,
-        port: port,
-        os_pid: os_pid,
-        launched_at: System.monotonic_time(:millisecond)
-    })
+    if timeout_ms, do: Process.send_after(self(), {:timeout, job.id, port}, timeout_ms)
+    {port, os_pid}
   end
 
   defp wall_ms(%{launched_at: nil}), do: nil
@@ -554,12 +670,14 @@ defmodule PipeMaestroRunner.JobRunner do
   defp setup_of({:error, _message, setup}), do: setup
 
   # A job that ended before its agent ran.
+  # A job stopped as lost tells nothing of its end.
   defp done(state, run, payload) do
     payload =
       for {key, value} <- payload, value != nil, into: %{"job_id" => run.job.id}, do: {key, value}
 
-    out(state, Job.finished_event(), payload)
+    unless run.lost, do: out(state, Job.finished_event(), payload)
     discard_scratch(state, run.job)
+    discard_files(run)
     LogCollector.forget_secrets(run.job.id)
     start_ready(%{state | running: Map.delete(state.running, run.job.id)})
   end
@@ -668,7 +786,7 @@ defmodule PipeMaestroRunner.JobRunner do
       "workdir" => current.dir
     }
 
-    payload = Map.merge(payload, audit(current, result))
+    payload = payload |> Map.merge(audit(current, result)) |> Map.merge(resumed(current))
 
     payload =
       for {key, value} <- Map.put(measured, "setup", current.setup),
@@ -677,8 +795,12 @@ defmodule PipeMaestroRunner.JobRunner do
           do: {key, value}
 
     GitCredential.remove(state.workdir, current.job.id)
-    out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+
+    unless current.lost,
+      do: out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+
     discard_scratch(state, current.job)
+    discard_files(current)
     LogCollector.forget_secrets(current.job.id)
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
   end
@@ -702,6 +824,14 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   defp discard_scratch(_state, _job), do: :ok
+
+  # The job's folder goes once it reported, in the background.
+  defp discard_files(%{files_dir: nil}), do: :ok
+
+  defp discard_files(%{files_dir: dir}) do
+    {:ok, _pid} = Task.start(fn -> File.rm_rf(dir) end)
+    :ok
+  end
 
   # What the run reported about itself, from its first and last lines and the
   # runner's own measures.
@@ -731,6 +861,11 @@ defmodule PipeMaestroRunner.JobRunner do
       "stderr" => stderr(current)
     }
   end
+
+  # Whether a job that asked to resume a session did.
+  defp resumed(%{resume: :requested}), do: %{"session_resumed" => true}
+  defp resumed(%{resume: :fell_back}), do: %{"session_resumed" => false}
+  defp resumed(_run), do: %{}
 
   defp stderr(%{stderr: []}), do: nil
 

@@ -4,6 +4,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
   import Phoenix.LiveViewTest
 
   alias PipeMaestro.{Jobs, Tasks}
+  alias PipeMaestro.Jobs.Files
   alias PipeMaestroWeb.RunnerStatus
 
   setup :register_and_log_in_member
@@ -659,6 +660,64 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=task-tab-count-arquivos]")
     end
 
+    test "shows the files each attempt sent: images as thumbnails, the others to download",
+         ctx do
+      png =
+        Base.decode64!(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+
+      task = create_task(ctx)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      refute has_element?(view, "[data-testid=stage-run-files-a-1]")
+      assert has_element?(view, "[data-testid=task-no-attachments]")
+      refute has_element?(view, "[data-testid=task-tab-count-anexos]")
+
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, image} = Files.store(ctx.runner, job.id, "a.png", png)
+      {:ok, csv} = Files.store(ctx.runner, job.id, "dados/r.csv", "a,b\n1,2\n")
+
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"}, %{
+        "files_failed" => 1
+      })
+
+      slug = ctx.workspace.slug
+      assert has_element?(view, "[data-testid=stage-run-files-a-1]")
+      assert has_element?(view, ~s([data-testid="stage-run-file-a-1-a.png"]))
+
+      assert has_element?(
+               view,
+               ~s(img[data-testid="stage-run-file-thumb-a-1-a.png"][src="/w/#{slug}/files/#{image.id}"])
+             )
+
+      assert has_element?(
+               view,
+               ~s(a[data-testid="stage-run-file-download-a-1-dados/r.csv"][href="/w/#{slug}/files/#{csv.id}"])
+             )
+
+      refute has_element?(view, ~s([data-testid="stage-run-file-thumb-a-1-dados/r.csv"]))
+      assert has_element?(view, "[data-testid=stage-run-files-failed-a-1]", "1")
+
+      refute has_element?(view, "[data-testid=task-no-attachments]")
+      assert has_element?(view, "[data-testid=task-tab-count-anexos]", "2")
+
+      assert has_element?(
+               view,
+               ~s([data-testid=task-panel-anexos] [data-testid=task-attachments-a-1] [data-testid="task-attachment-a-1-dados/r.csv"])
+             )
+    end
+
+    test "the attachments tab opens by its parameter", ctx do
+      task = create_task(ctx)
+
+      {:ok, view, _html} =
+        live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?aba=anexos")
+
+      assert has_element?(view, "[data-testid=task-tab-anexos]")
+      assert has_element?(view, "[data-testid=task-panel-anexos]:not(.hidden)")
+    end
+
     test "removes the worktree of a task that ended", ctx do
       task = create_task(ctx)
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
@@ -971,6 +1030,27 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=task-cancel]") |> render_click()
       assert has_element?(view, "[data-testid=task-status]", "Cancelada")
       assert render_click(view, "cancel") =~ "A tarefa já terminou"
+    end
+  end
+
+  describe "a stage lost by a restarted runner" do
+    test "shows the lost run apart from a failure, and the run again under the same attempt",
+         ctx do
+      task = create_task(ctx)
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      Jobs.reconcile(ctx.runner, [])
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-testid=stage-run-status-a-1]", "Perdida (runner)")
+      refute has_element?(view, "[data-testid=stage-run-status-a-1]", "Falhou")
+      assert has_element?(view, "[data-testid=stage-run-lost-a-1]", "o runner reiniciou")
+      assert has_element?(view, "[data-testid=stage-run-a-1-r1]")
+      assert has_element?(view, "[data-testid=stage-run-status-a-1-r1]", "Executando")
+      refute has_element?(view, "[data-testid=stage-run-a-2]")
+      refute has_element?(view, "[data-testid=stage-attempts-a]")
     end
   end
 

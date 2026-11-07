@@ -58,6 +58,18 @@ defmodule PipeMaestro.Pipelines.PromptTest do
   end
 
   describe "build/2" do
+    test "a runner that uploads files learns to copy them to CP_FILES_DIR" do
+      prompt = Prompt.build(@stage, context(%{files: true}))
+
+      assert prompt =~ "$CP_FILES_DIR"
+      assert prompt =~ "copiados"
+    end
+
+    test "without the files capability, the prompt says nothing about CP_FILES_DIR" do
+      refute Prompt.build(@stage, context()) =~ "CP_FILES_DIR"
+      refute Prompt.build(@stage, context(%{files: false})) =~ "CP_FILES_DIR"
+    end
+
     test "the fixed header teaches to ask through `perguntas`, with no AskUserQuestion" do
       prompt = Prompt.build(@stage, context())
 

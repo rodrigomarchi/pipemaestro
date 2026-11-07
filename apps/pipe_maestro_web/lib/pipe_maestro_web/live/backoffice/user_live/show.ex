@@ -296,7 +296,7 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
             viewable
             data-testid="new-password"
           />
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button
               type="button"
               variant="ghost"

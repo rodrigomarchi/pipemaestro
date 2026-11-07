@@ -8,6 +8,7 @@ defmodule PipeMaestroWeb.TaskComponents do
   import PipeMaestroWeb.JobComponents, only: [patch: 1]
   import PipeMaestroWeb.PipelineComponents, only: [pipeline_diagram: 1]
 
+  alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
   alias PipeMaestroWeb.PipelineDiagram
 
@@ -46,11 +47,44 @@ defmodule PipeMaestroWeb.TaskComponents do
     """
   end
 
+  @doc """
+  How an attempt that asked to continue the stage before started: in that
+  session, or from scratch when the runner no longer had it. Nothing for an
+  attempt that did not ask. Needs the run's `job`.
+  """
+  attr :run, StageRun, required: true
+
+  @spec stage_run_session(map()) :: Phoenix.LiveView.Rendered.t()
+  def stage_run_session(assigns) do
+    assigns = assign(assigns, :resumed, session_resumed(assigns.run.job))
+
+    ~H"""
+    <.badge
+      :if={@resumed != :none}
+      size="xs"
+      variant="soft"
+      color={if @resumed == :fell_back, do: "warning", else: "gray"}
+      label={
+        if @resumed == :fell_back,
+          do: "Começou do zero: a sessão anterior não estava disponível",
+          else: "Continuou a etapa anterior"
+      }
+      data-testid={"stage-run-session-#{@run.key}-#{@run.attempt}"}
+    />
+    """
+  end
+
+  defp session_resumed(%Job{context: %{"resume_session_id" => id}} = job) when is_binary(id),
+    do: if(job.session_resumed == false, do: :fell_back, else: :resumed)
+
+  defp session_resumed(_job), do: :none
+
   defp stage_label(:running), do: {"Executando", "info"}
   defp stage_label(:passed), do: {"Aprovada no gate", "success"}
   defp stage_label(:failed), do: {"Falhou", "danger"}
   defp stage_label(:blocked), do: {"Bloqueada", "warning"}
   defp stage_label(:canceled), do: {"Cancelada", "gray"}
+  defp stage_label(:lost), do: {"Perdida (runner)", "warning"}
 
   @doc "Where the task is: `2/6 · Investigação`, or how it ended."
   @spec stage_progress(Task.t()) :: String.t()

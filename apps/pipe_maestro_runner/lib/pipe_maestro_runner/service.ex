@@ -58,6 +58,8 @@ defmodule PipeMaestroRunner.Service do
         <dict>
           <key>PATH</key>
           <string>#{opts[:path]}</string>
+          <key>PIPEMAESTRO_SERVICE</key>
+          <string>1</string>
         </dict>
         <key>RunAtLoad</key>
         <true/>
@@ -85,6 +87,7 @@ defmodule PipeMaestroRunner.Service do
       WorkingDirectory=#{opts[:runner_dir]}
       ExecStart=#{Enum.join(opts[:program], " ")}
       Environment=PATH=#{opts[:path]}
+      Environment=PIPEMAESTRO_SERVICE=1
       Restart=always
       RestartSec=5
       StandardOutput=append:#{Path.join(opts[:config_dir], "runner.log")}
