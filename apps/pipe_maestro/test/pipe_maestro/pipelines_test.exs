@@ -317,6 +317,107 @@ defmodule PipeMaestro.PipelinesTest do
     end
   end
 
+  describe "stage context" do
+    defp context_stage(key, attrs \\ %{}),
+      do: Map.merge(%{"key" => key, "name" => "Etapa #{key}", "prompt" => "p"}, attrs)
+
+    defp context_errors(changeset),
+      do: changeset.changes.stages |> Enum.map(&errors_on(&1)[:context])
+
+    test "a stage starts fresh by default", %{workspace: workspace} do
+      pipeline = pipeline_fixture(workspace)
+      assert Enum.map(pipeline.stages, & &1.context) == ["fresh", "fresh"]
+      assert Stage.contexts() == ["fresh", "continue"]
+    end
+
+    test "a plain stage may continue the previous one", %{workspace: workspace} do
+      assert {:ok, pipeline} =
+               Pipelines.create_pipeline(workspace, %{
+                 "name" => "Continua",
+                 "stages" => [context_stage("a"), context_stage("b", %{"context" => "continue"})]
+               })
+
+      assert Enum.map(pipeline.stages, & &1.context) == ["fresh", "continue"]
+    end
+
+    test "rejects an unknown context", %{workspace: workspace} do
+      assert {:error, changeset} =
+               Pipelines.create_pipeline(workspace, %{
+                 "name" => "Desconhecido",
+                 "stages" => [context_stage("a"), context_stage("b", %{"context" => "outro"})]
+               })
+
+      assert [nil, ["escolha como a etapa começa"]] = context_errors(changeset)
+    end
+
+    test "the first stage has nothing to continue", %{workspace: workspace} do
+      assert {:error, changeset} =
+               Pipelines.create_pipeline(workspace, %{
+                 "name" => "Primeira",
+                 "stages" => [context_stage("a", %{"context" => "continue"}), context_stage("b")]
+               })
+
+      assert [["a primeira etapa não tem uma etapa anterior para continuar"], nil] =
+               context_errors(changeset)
+    end
+
+    test "a stage in a group may not continue", %{workspace: workspace} do
+      assert {:error, changeset} =
+               Pipelines.create_pipeline(workspace, %{
+                 "name" => "Em grupo",
+                 "stages" => [
+                   context_stage("a"),
+                   context_stage("b", %{"group" => "g", "context" => "continue"}),
+                   context_stage("c", %{"group" => "g"})
+                 ]
+               })
+
+      assert [nil, ["uma etapa em paralelo não pode continuar a anterior"], nil] =
+               context_errors(changeset)
+    end
+
+    test "a stage after a group may not continue it", %{workspace: workspace} do
+      assert {:error, changeset} =
+               Pipelines.create_pipeline(workspace, %{
+                 "name" => "Depois do grupo",
+                 "stages" => [
+                   context_stage("a", %{"group" => "g"}),
+                   context_stage("b", %{"group" => "g"}),
+                   context_stage("c", %{"context" => "continue"})
+                 ]
+               })
+
+      assert [
+               nil,
+               nil,
+               ["a etapa anterior roda em paralelo: não há uma sessão só para continuar"]
+             ] =
+               context_errors(changeset)
+    end
+
+    test "the context survives YAML, and a YAML without it starts fresh", %{
+      workspace: workspace
+    } do
+      {:ok, original} =
+        Pipelines.create_pipeline(workspace, %{
+          "name" => "Ida e volta",
+          "stages" => [context_stage("a"), context_stage("b", %{"context" => "continue"})]
+        })
+
+      yaml = Pipelines.export_yaml(original)
+      assert yaml =~ "context: \"continue\""
+      refute yaml =~ "context: \"fresh\""
+
+      assert {:ok, imported} = Pipelines.import_yaml(workspace_fixture(), yaml)
+      assert Enum.map(imported.stages, & &1.context) == ["fresh", "continue"]
+
+      without = String.replace(yaml, ~r/\n\s*context: "continue"/, "")
+      refute without =~ "context"
+      assert {:ok, old} = Pipelines.import_yaml(workspace_fixture(), without)
+      assert Enum.map(old.stages, & &1.context) == ["fresh", "fresh"]
+    end
+  end
+
   describe "steps/1" do
     defp groups(groups), do: Enum.map(groups, &%Stage{group: &1})
 

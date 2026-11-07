@@ -137,6 +137,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
       "rules_text" => Stage.rules_text(stage),
       "agent" => stage.agent || "",
       "group" => stage.group || "",
+      "context" => stage.context,
       "output_schema_json" =>
         if(stage.output_schema, do: Json.pretty(stage.output_schema), else: "")
     }

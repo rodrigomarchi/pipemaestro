@@ -89,6 +89,7 @@ defmodule PipeMaestroProtocolTest do
 
       assert {:error, "capabilities" <> _} = Hello.new(Map.put(@valid, :capabilities, "scratch"))
       assert "scratch" in Hello.capabilities()
+      assert "resume_session" in Hello.capabilities()
     end
 
     test "directories are validated, deduplicated and sorted" do

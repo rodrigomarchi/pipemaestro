@@ -17,6 +17,11 @@ defmodule PipeMaestro.Pipelines.Stage do
   task for a person. `agent` names the agent the stage runs as: one of the
   repository's (`.claude/agents/`) or of the pipeline's `agents`. Consecutive stages with
   the same `group` run at once, in the same worktree (an empty group: alone).
+
+  `context` is how the agent starts: `"fresh"`, with nothing from the stages
+  before but their artifacts, or `"continue"`, resuming the agent session of
+  the stage just before it (ADR 0041). Only a stage outside a group, after a
+  stage outside a group, may continue (`PipeMaestro.Pipelines.Pipeline`).
   """
   use Ecto.Schema
 
@@ -39,10 +44,12 @@ defmodule PipeMaestro.Pipelines.Stage do
           rules: [map()],
           rules_text: String.t() | nil,
           agent: String.t() | nil,
-          group: String.t() | nil
+          group: String.t() | nil,
+          context: String.t()
         }
 
   @models ~w(haiku sonnet opus)
+  @contexts ~w(fresh continue)
   @key_format ~r/^[a-z0-9][a-z0-9_-]{0,39}$/
 
   @primary_key false
@@ -62,6 +69,7 @@ defmodule PipeMaestro.Pipelines.Stage do
     field :rules_text, :string, virtual: true
     field :agent, :string
     field :group, :string
+    field :context, :string, default: "fresh"
   end
 
   @rule ~r/^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=)\s*(.+)$/
@@ -69,6 +77,10 @@ defmodule PipeMaestro.Pipelines.Stage do
   @doc "The models a stage may pick; `nil` keeps the CLI's default."
   @spec models() :: [String.t()]
   def models, do: @models
+
+  @doc "How a stage may start: from scratch, or continuing the stage before."
+  @spec contexts() :: [String.t()]
+  def contexts, do: @contexts
 
   @doc """
   Changeset for a stage. A blank key is derived from the name; the extra
@@ -90,7 +102,8 @@ defmodule PipeMaestro.Pipelines.Stage do
       :gates_text,
       :rules_text,
       :agent,
-      :group
+      :group,
+      :context
     ])
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome à etapa")
@@ -114,6 +127,15 @@ defmodule PipeMaestro.Pipelines.Stage do
     |> validate_length(:agent, max: 100)
     |> update_change(:group, &(&1 |> String.trim() |> String.downcase()))
     |> validate_format(:group, @key_format, message: "use letras minúsculas, números, - ou _")
+    |> default_context()
+    |> validate_inclusion(:context, @contexts, message: "escolha como a etapa começa")
+  end
+
+  # A blank choice (from a form or a YAML) starts fresh.
+  defp default_context(changeset) do
+    if get_field(changeset, :context) in [nil, ""],
+      do: put_change(changeset, :context, "fresh"),
+      else: changeset
   end
 
   @doc "A stage's gates as the form shows them: one per line, `!` when it must fail."
