@@ -129,8 +129,8 @@ no `job:finished` e em `PipeMaestro.Jobs.Job`.
     cancelado nem estourou o tempo e **nenhuma linha `system` (init) chegou**
     (`current.session == nil`, ou seja, o CLI morreu antes de abrir sessão), relança
     **uma vez** o mesmo job com `resume_session_id: nil` (mantendo `persist_session`)
-    no mesmo `dir`, sem refazer setup nem reanexar `notes` ao prompt; zera
-    `stderr`/`seq` não, (os eventos seguem numerados), e marca `:fell_back`.
+    no mesmo `dir`, sem refazer setup nem reanexar `notes` ao prompt (o `seq` dos eventos continua contando)
+    e marca `:fell_back`.
     Para isso, guardar `path` do executável no run em `launch/3`.
   - em `audit/2`/`finish/4`: `"session_resumed" => true | false` só quando o job pediu
     retomada; com `:fell_back`, `false`.
