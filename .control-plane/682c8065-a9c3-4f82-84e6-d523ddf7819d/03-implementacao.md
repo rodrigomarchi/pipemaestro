@@ -156,5 +156,16 @@ make e2e.shots FILE=tests/task-files.spec.ts       # task-files/02-stage-run-fil
 - `make e2e.shots`: conferi a seção da tentativa e a aba "Anexos" em claro e escuro. A
   miniatura carrega, e o nome, o tamanho, o link do CSV e o contador 2 aparecem sem
   quebra.
-- Suíte e2e completa (`make e2e`): a primeira rodada foi morta por um SIGKILL de fora (exit 137, provavelmente a limpeza de porta de outra sessão). A segunda rodada ainda não tinha terminado quando esta etapa fechou. A etapa seguinte deve confirmá-la com `make e2e` e `make ci`.
+- Suíte e2e completa (`make e2e`): 30 passam, `task-files.spec.ts` incluído.
 - Dialyzer (`make ci`) fica para o fim do bloco, na etapa seguinte.
+
+## Sobre a tentativa anterior
+
+A tentativa anterior foi dada como falha porque o runner reiniciou no meio dela. O
+processo `claude` dela continuou vivo, órfão, no mesmo worktree: commitou o spec e
+este artefato e seguia rodando `make e2e` na mesma `E2E_PORT`, cuja limpeza de porta
+(`kill -9`) derrubava as execuções da tentativa nova (exit 137). Esta tentativa
+encerrou o órfão, conferiu o que ele commitou e repetiu a verificação sozinha:
+`make ci.quick` sai 0 (uma primeira rodada falhou só por `too_many_connections` no
+Postgres de teste, com outros worktrees em paralelo), `make e2e FILE=tests/task-files.spec.ts`
+e `make e2e.shots` passam (telas conferidas em claro e escuro) e a suíte e2e completa passa.
