@@ -10,11 +10,10 @@
  * @flow H [done] A finished stage's steps are strips of icons that open their panels, filtered by kind (thinking shows only the model's thoughts)
  * @flow I [done] Usage breaks the cost down by origin and by stage (with the average wait and gate time), narrows to one pipeline, and goes back 90 days
  * @flow J [done] A task that ended takes a prompt: the correction runs as a new stage in its worktree, made again after it was removed
- * @flow K [todo] The board opens on its overview and splits into tabs (overview, tasks, decisions, activity, runners), each one its own URL, with the runners counted on their tab
  * @flow K [done] A stage is redone from its modal with instructions, which reach the agent
  * @flow L [done] A running stage is interrupted: the task waits for a decision instead of ending
  * @flow M [done] With a delivery, the platform checks each stage after the agent (it commits; the last stage takes the artifacts out of the branch), and a check that fails goes back to the agent with the reason
- * @flow N [todo] The board opens on its overview and splits into tabs (overview, tasks, decisions, activity, runners), each its own URL that survives a reload, with the runners counted online/total on their tab
+ * @flow N [done] The board opens on its overview and splits into tabs (overview, tasks, decisions, activity, runners), each its own URL that survives a reload, with the runners counted online/total on their tab
  */
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
