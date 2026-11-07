@@ -1,6 +1,10 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { waitForLiveView } from "../helpers/liveView";
 
+/** The board's tabs, by their `aba` parameter, in order. */
+export const boardTabs = ["visao", "tarefas", "decisoes", "atividade", "executores"] as const;
+export type BoardTab = (typeof boardTabs)[number];
+
 /**
  * The customer side: sign-in at /login, the workspace picker and the board.
  * Every element is reached by its `data-testid`.
@@ -57,10 +61,33 @@ export class AppPage {
     await this.expectBoard(name);
   }
 
-  async openBoard(workspaceSlug: string) {
-    await this.page.goto(`/w/${workspaceSlug}`);
+  /** Opens the board at one of its tabs; the overview is the default. */
+  async openBoard(workspaceSlug: string, tab?: BoardTab) {
+    const query = tab && tab !== "visao" ? `?aba=${tab}` : "";
+    await this.page.goto(`/w/${workspaceSlug}${query}`);
     await expect(this.title).toHaveText("Board");
     await waitForLiveView(this.page);
+    await this.expectBoardTab(tab ?? "visao");
+  }
+
+  /** One of the board's tabs, by its `aba` parameter. */
+  boardTab(tab: BoardTab): Locator {
+    return this.page.getByTestId(`board-tab-${tab}`);
+  }
+
+  /** The counter on a board tab: alerts, decisions waiting or runners online/total. */
+  boardTabCount(tab: "visao" | "decisoes" | "executores"): Locator {
+    return this.page.getByTestId(`board-tab-count-${tab}`);
+  }
+
+  /** Switches the board to a tab, without reloading the page. */
+  async openBoardTab(tab: BoardTab) {
+    await this.boardTab(tab).click();
+    await this.expectBoardTab(tab);
+  }
+
+  async expectBoardTab(tab: BoardTab) {
+    await expect(this.boardTab(tab)).toHaveAttribute("aria-selected", "true");
   }
 
   /** One of the board's "needs attention" alerts: "offline", "limit", "budget" or "overdue". */

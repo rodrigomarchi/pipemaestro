@@ -32,6 +32,7 @@ test.describe("Workspace user sessions", () => {
     const app = new AppPage(await context.newPage());
     await app.signIn(user.email, userPassword);
     await app.expectBoard(workspace);
+    await app.openBoardTab("tarefas");
     await expect(app.page.getByTestId("board-column-running")).toBeVisible();
     await expect(app.page.getByTestId("brand").getByTestId("brand-mark")).toBeVisible();
     await shot(app.page, "board");

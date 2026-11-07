@@ -74,6 +74,9 @@ test.describe("Board alerts", () => {
     await expect(board.boardAlert("limit", taskId)).toContainText(runnerName);
     await expect(board.boardAlert("offline", taskId)).toHaveCount(0);
 
+    // The overview tab counts its alerts, live too.
+    await expect(board.boardTabCount("visao")).toHaveText("1");
+
     runner.stop();
     await expect(board.boardAlert("offline", taskId)).toContainText(runnerName);
     await shot(board.page, "board-alertas");

@@ -105,7 +105,7 @@ test.describe("Landing director", () => {
     await expect(taskPage.stageRunStatus("implementacao", 1)).toHaveText("Executando", { timeout: 120_000 });
 
     // board: every column has a card, the runner online.
-    await app.openBoard(workspace.slug);
+    await app.openBoard(workspace.slug, "tarefas");
     for (const id of [couponId, shippingId, exportId, stockId, paginationId]) {
       await expect(page.getByTestId(`board-task-${id}`)).toBeVisible();
     }

@@ -13,6 +13,7 @@
  * @flow K [done] A stage is redone from its modal with instructions, which reach the agent
  * @flow L [done] A running stage is interrupted: the task waits for a decision instead of ending
  * @flow M [done] With a delivery, the platform checks each stage after the agent (it commits; the last stage takes the artifacts out of the branch), and a check that fails goes back to the agent with the reason
+ * @flow N [done] The board opens on its overview and splits into tabs (overview, tasks, decisions, activity, runners), each its own URL that survives a reload, with the runners counted online/total on their tab
  */
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -22,7 +23,7 @@ import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
 import { RunnerProcess } from "../helpers/runnerProcess";
 import { waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
-import { AppPage } from "../pages/AppPage";
+import { AppPage, boardTabs } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { Timeline } from "../pages/JobsPage";
 import { PipelinesPage } from "../pages/PipelinesPage";
@@ -204,8 +205,8 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("task-diagram").getByTestId("diagram-rail")).toHaveAttribute("data-waiting");
     await shot(app.page, "task-awaiting-decision");
 
-    // The board shows where each task is, a dot per stage.
-    await app.openBoard(workspace.slug);
+    // The board's tasks tab shows where each task is, a dot per stage.
+    await app.openBoard(workspace.slug, "tarefas");
     await expect(
       app.page.getByTestId(`board-task-progress-${blockedId}`).getByTestId("diagram-dot-0"),
     ).toHaveAttribute("data-state", "awaiting");
@@ -310,10 +311,28 @@ test.describe("Task pipeline", () => {
     await shot(app.page, "tasks-list");
 
     await app.page.getByTestId("sidebar-board").click();
+    await app.expectBoardTab("visao");
+    await expect(app.page.getByTestId("board-stat-succeeded")).toHaveText("4");
+    await expect(app.page.getByTestId("board-column-done")).toHaveCount(0);
+    await app.openBoardTab("tarefas");
     await expect(app.page.getByTestId(`board-task-${bugId}`)).toBeVisible();
     await expect(app.page.getByTestId("board-column-done")).toContainText("Erro intermitente");
-    await expect(app.page.getByTestId("board-stat-succeeded")).toHaveText("4");
+    await expect(app.page.getByTestId("board-stat-succeeded")).toHaveCount(0);
     await shot(app.page, "board");
+
+    // Flow N: each tab of the board, the runners counted online/total, at full and narrow width.
+    await expect(app.boardTabCount("executores")).toContainText("/1");
+    for (const tab of boardTabs) {
+      await app.openBoardTab(tab);
+      await shot(app.page, `board-${tab}`);
+    }
+    await app.page.reload();
+    await app.expectBoardTab("executores");
+    const viewport = app.page.viewportSize();
+    await app.page.setViewportSize({ width: 390, height: 844 });
+    await expect(app.boardTab("visao")).toBeVisible();
+    await shot(app.page, "board-tabs-narrow");
+    if (viewport) await app.page.setViewportSize(viewport);
 
     await app.page.getByTestId("sidebar-usage").click();
     await expect(app.page.getByTestId("usage-by-runner")).toContainText(runnerName);

@@ -56,8 +56,8 @@ defmodule PipeMaestroWeb.BoardLiveTest do
   describe "with tasks" do
     setup :board_setup
 
-    test "groups the tasks by state, live, with the numbers", ctx do
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+    test "the tasks tab groups the tasks by state, live", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=tarefas")
       assert has_element?(view, "[data-testid=board-column-running]", "Nenhuma tarefa")
 
       running = create_task(ctx, "Corrigir login")
@@ -98,13 +98,151 @@ defmodule PipeMaestroWeb.BoardLiveTest do
                "[data-testid=board-column-done] [data-testid=board-task-#{done.id}]"
              )
 
+      refute has_element?(view, "[data-testid=board-stat-running]")
+      refute has_element?(view, "[data-testid=board-runners]")
+      refute has_element?(view, "[data-testid=board-decision-#{blocked.id}]")
+      refute has_element?(view, "[data-testid=board-activity]")
+    end
+
+    test "the overview shows the numbers, the next decisions and the latest activity", ctx do
+      running = create_task(ctx, "Corrigir login")
+      blocked = create_task(ctx, "Tela branca")
+      done = create_task(ctx, "Ajustar rodapé")
+      finish_current(ctx, blocked, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
+      finish_current(ctx, done, %{"status" => "ok", "resumo" => "a"})
+      finish_current(ctx, done, %{"status" => "ok", "resumo" => "b"})
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+
       assert has_element?(view, "[data-testid=board-stat-running]", "1")
       assert has_element?(view, "[data-testid=board-stat-awaiting]", "1")
       assert has_element?(view, "[data-testid=board-stat-succeeded]", "1")
       assert has_element?(view, "[data-testid=board-stat-cost]", "US$ 1.5000")
 
-      assert has_element?(view, "[data-testid=board-decision-#{blocked.id}]", "Qual navegador?")
-      assert has_element?(view, "[data-testid=board-activity]", "Ajustar rodapé")
+      assert has_element?(
+               view,
+               "[data-testid=board-overview-decision-#{blocked.id}]",
+               "Qual navegador?"
+             )
+
+      assert has_element?(view, "[data-testid=board-overview-activity]", "Ajustar rodapé")
+      assert has_element?(view, "[data-testid=board-overview-decisions-all]")
+      assert has_element?(view, "[data-testid=board-overview-activity-all]")
+
+      refute has_element?(view, "[data-testid^=board-column-]")
+      refute has_element?(view, "[data-testid=board-task-#{running.id}]")
+      refute has_element?(view, "#board-filters")
+      refute has_element?(view, "[data-testid=board-runners]")
+      refute has_element?(view, "[data-testid=board-runner-mac]")
+      refute has_element?(view, "[data-testid=board-decision-#{blocked.id}]")
+      refute has_element?(view, "[data-testid=board-activity]")
+    end
+
+    test "the overview shows only the next three decisions", ctx do
+      blocked =
+        for title <- ~w(Um Dois Tres Quatro) do
+          task = create_task(ctx, title)
+          finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Ajuda"})
+          task
+        end
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+
+      shown =
+        Enum.count(blocked, &has_element?(view, "[data-testid=board-overview-decision-#{&1.id}]"))
+
+      assert shown == 3
+      assert has_element?(view, "[data-testid=board-overview-decisions]")
+    end
+
+    test "the decisions tab lists every decision waiting", ctx do
+      blocked =
+        for title <- ~w(Um Dois Tres Quatro) do
+          task = create_task(ctx, title)
+          finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Ajuda #{title}"})
+          task
+        end
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=decisoes")
+
+      for task <- blocked do
+        assert has_element?(
+                 view,
+                 "[data-testid=board-decision-#{task.id}]",
+                 "Ajuda #{task.title}"
+               )
+      end
+
+      assert has_element?(view, "[data-testid=board-decisions-link]")
+      refute has_element?(view, "[data-testid=board-stat-awaiting]")
+      refute has_element?(view, "[data-testid^=board-column-]")
+      refute has_element?(view, "[data-testid=board-runners]")
+      refute has_element?(view, "[data-testid=board-activity]")
+    end
+
+    test "the activity tab lists the twenty latest tasks", ctx do
+      for n <- 1..21, do: create_task(ctx, "Tarefa #{n}")
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=atividade")
+
+      items =
+        view
+        |> element("[data-testid=board-activity]")
+        |> render()
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("li")
+
+      assert Enum.count(items) == 20
+      refute has_element?(view, "[data-testid=board-stat-running]")
+      refute has_element?(view, "[data-testid^=board-column-]")
+      refute has_element?(view, "[data-testid=board-runners]")
+    end
+
+    test "the runners tab shows the runners and nothing else", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=executores")
+
+      assert has_element?(view, "[data-testid=board-runner-mac]")
+      assert has_element?(view, "[data-testid=board-runner-status-mac]", "Offline")
+      assert has_element?(view, "[data-testid=board-runners-link]")
+      refute has_element?(view, "[data-testid=board-stat-running]")
+      refute has_element?(view, "[data-testid^=board-column-]")
+      refute has_element?(view, "[data-testid=board-activity]")
+    end
+
+    test "the counters on the tabs follow the workspace live, whatever tab is open", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=atividade")
+
+      refute has_element?(view, "[data-testid=board-tab-count-decisoes]")
+      refute has_element?(view, "[data-testid=board-tab-count-visao]")
+      assert has_element?(view, "[data-testid=board-tab-count-executores]", "0/1")
+
+      tracker = spawn(fn -> Process.sleep(:infinity) end)
+      {:ok, _ref} = RunnerStatus.track(tracker, ctx.runner)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-tab-count-executores]", "1/1")
+             end)
+
+      task = create_task(ctx, "Pede ajuda")
+      finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Qual?"})
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-tab-count-decisoes]", "1")
+             end)
+
+      # Only a running task is stopped by its runner going offline.
+      create_task(ctx, "Fica rodando")
+      refute has_element?(view, "[data-testid=board-tab-count-visao]")
+
+      Process.exit(tracker, :kill)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-tab-count-executores]", "0/1")
+             end)
+
+      assert eventually(fn ->
+               has_element?(view, "[data-testid=board-tab-count-visao]", "1")
+             end)
     end
 
     test "alerts on a task whose runner is offline", ctx do
@@ -112,6 +250,14 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
       assert has_element?(view, "[data-testid=board-alert-offline-#{task.id}]", "Parada")
       assert has_element?(view, "[data-testid=board-alert-offline-#{task.id}]", "mac")
+      assert has_element?(view, "[data-testid=board-tab-count-visao]", "1")
+    end
+
+    test "the overview keeps its alerts to itself", ctx do
+      task = create_task(ctx, "Parada")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=decisoes")
+      refute has_element?(view, "[data-testid=board-alert-offline-#{task.id}]")
+      assert has_element?(view, "[data-testid=board-tab-count-visao]", "1")
     end
 
     test "alerts on a task whose runner's account is near its usage limits", ctx do
@@ -218,25 +364,27 @@ defmodule PipeMaestroWeb.BoardLiveTest do
              )
     end
 
-    test "filters by pipeline, runner, project and person", ctx do
+    test "filters by pipeline, runner, project and person, in the URL", ctx do
       other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
       a = create_task(ctx, "Na app")
       b = create_task(ctx, "Nas notas", %{"directory" => "notas", "pipeline_id" => other.id})
+      slug = ctx.workspace.slug
+      app_id = project_on(ctx.runner, "app").id
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{slug}?aba=tarefas")
       assert has_element?(view, "[data-testid=board-task-#{a.id}]")
       assert has_element?(view, "[data-testid=board-task-#{b.id}]")
 
       view |> form("#board-filters", filters: %{pipeline: "Outro"}) |> render_change()
+      assert_patch(view, ~p"/w/#{slug}?aba=tarefas&pipeline=Outro")
       refute has_element?(view, "[data-testid=board-task-#{a.id}]")
       assert has_element?(view, "[data-testid=board-task-#{b.id}]")
 
       view
-      |> form("#board-filters",
-        filters: %{pipeline: "", project_id: project_on(ctx.runner, "app").id}
-      )
+      |> form("#board-filters", filters: %{pipeline: "", project_id: app_id})
       |> render_change()
 
+      assert_patch(view, ~p"/w/#{slug}?aba=tarefas&project_id=#{app_id}")
       assert has_element?(view, "[data-testid=board-task-#{a.id}]")
       refute has_element?(view, "[data-testid=board-task-#{b.id}]")
 
@@ -246,14 +394,86 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       )
       |> render_change()
 
+      assert_patch(
+        view,
+        ~p"/w/#{slug}?aba=tarefas&runner_id=#{ctx.runner.id}&user_id=#{ctx.user.id}"
+      )
+
       assert has_element?(view, "[data-testid=board-task-#{a.id}]")
       assert has_element?(view, "[data-testid=board-task-#{b.id}]")
+    end
+
+    test "the filters come from the URL, so a reload or a shared link keeps them", ctx do
+      other = pipeline_fixture(ctx.workspace, %{"name" => "Outro"})
+      a = create_task(ctx, "Na app")
+      b = create_task(ctx, "Nas notas", %{"directory" => "notas", "pipeline_id" => other.id})
+      notes_id = project_on(ctx.runner, "notas").id
+
+      {:ok, view, _html} =
+        live(
+          ctx.conn,
+          ~p"/w/#{ctx.workspace.slug}?aba=tarefas&pipeline=Outro&project_id=#{notes_id}"
+        )
+
+      refute has_element?(view, "[data-testid=board-task-#{a.id}]")
+      assert has_element?(view, "[data-testid=board-task-#{b.id}]")
+      assert has_element?(view, "#board-filters option[value=Outro][selected]")
+      assert has_element?(view, ~s(#board-filters option[value="#{notes_id}"][selected]))
+    end
+
+    test "a filter that matches nothing in the URL leaves the columns empty", ctx do
+      create_task(ctx, "Na app")
+
+      {:ok, view, _html} =
+        live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=tarefas&project_id=nao-e-um-id")
+
+      assert has_element?(view, "[data-testid=board-column-running]", "Nenhuma tarefa")
+    end
+  end
+
+  describe "the tabs" do
+    test "the overview is the default, and an unknown tab falls back to it", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      for path <- [~p"/w/#{workspace.slug}", ~p"/w/#{workspace.slug}?aba=inexistente"] do
+        {:ok, view, _html} = live(conn, path)
+        assert has_element?(view, "[data-testid=board-tabs]")
+        assert has_element?(view, ~s([data-testid=board-tab-visao][aria-selected=true]))
+        refute has_element?(view, ~s([data-testid=board-tab-tarefas][aria-selected=true]))
+        assert has_element?(view, "[data-testid=board-stat-running]")
+        refute has_element?(view, "[data-testid^=board-column-]")
+      end
+    end
+
+    test "every tab is a live patch that marks itself active", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+
+      for {id, testid} <- [
+            {"tarefas", "board-column-running"},
+            {"decisoes", "board-no-decisions"},
+            {"atividade", "board-activity"},
+            {"executores", "board-no-runners"}
+          ] do
+        view |> element("[data-testid=board-tab-#{id}]") |> render_click()
+        assert_patch(view, ~p"/w/#{workspace.slug}?aba=#{id}")
+        assert has_element?(view, ~s([data-testid=board-tab-#{id}][aria-selected=true]))
+        refute has_element?(view, ~s([data-testid=board-tab-visao][aria-selected=true]))
+        assert has_element?(view, "[data-testid=#{testid}]")
+      end
+
+      view |> element("[data-testid=board-tab-visao]") |> render_click()
+      assert_patch(view, ~p"/w/#{workspace.slug}")
+      assert has_element?(view, "[data-testid=board-stat-running]")
     end
   end
 
   test "an empty workspace points to the first task", %{conn: conn, workspace: workspace} do
     {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
-    assert has_element?(view, "[data-testid=board-no-decisions]")
+    assert has_element?(view, "[data-testid=board-overview-no-decisions]")
 
     assert {:error, {:live_redirect, %{to: path}}} =
              view |> element("[data-testid=new-task]") |> render_click()
@@ -306,7 +526,7 @@ defmodule PipeMaestroWeb.BoardLiveTest do
   end
 
   test "shows the workspace's real runners, live", %{conn: conn, workspace: workspace, user: user} do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}?aba=executores")
     assert has_element?(view, "[data-testid=board-no-runners]")
 
     {_runner, _token} = runner_fixture(workspace, user, %{name: "build-01"})
@@ -314,6 +534,7 @@ defmodule PipeMaestroWeb.BoardLiveTest do
 
     assert render(view) =~ "build-01"
     assert has_element?(view, "[data-testid=board-runner-status-build-01]", "Offline")
+    assert has_element?(view, "[data-testid=board-tab-count-executores]", "0/1")
   end
 
   defp eventually(fun, attempts \\ 50) do

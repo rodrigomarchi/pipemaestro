@@ -184,7 +184,7 @@ defmodule PipeMaestroWeb.WorkByProjectLiveTest do
       a = create_task(ctx, ctx.app, "No app")
       b = create_task(ctx, ctx.notes, "Nas notas")
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}?aba=tarefas")
 
       assert has_element?(
                view,
@@ -193,6 +193,7 @@ defmodule PipeMaestroWeb.WorkByProjectLiveTest do
              )
 
       view |> form("#board-filters", filters: %{project_id: ctx.notes.id}) |> render_change()
+      assert_patch(view, ~p"/w/#{ctx.workspace.slug}?aba=tarefas&project_id=#{ctx.notes.id}")
       refute has_element?(view, "[data-testid=board-task-#{a.id}]")
       assert has_element?(view, "[data-testid=board-task-#{b.id}]")
       refute has_element?(view, "[data-testid=board-filter-directory]")
