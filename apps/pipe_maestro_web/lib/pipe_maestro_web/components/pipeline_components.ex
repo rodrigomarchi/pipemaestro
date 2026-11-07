@@ -343,12 +343,19 @@ defmodule PipeMaestroWeb.PipelineComponents do
     ~H"""
     <div
       class={[
-        "flex items-center gap-1.5 rounded-full border border-success-200 bg-success-50 font-medium text-success-700 dark:border-success-900 dark:bg-success-950/60 dark:text-success-300",
+        "flex items-center gap-1.5 rounded-full border font-medium",
+        (@diagram.done? &&
+           "border-success-200 bg-success-50 text-success-700 dark:border-success-900 dark:bg-success-950/60 dark:text-success-300") ||
+          "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300",
         (@mode == :compact && "px-2 py-1 text-xs") || "px-3 py-2 text-sm"
       ]}
       data-testid="diagram-end"
+      data-done={@diagram.done?}
     >
-      <.icon name="hero-check-circle" class="size-5 shrink-0" /> Concluída
+      <.icon
+        name={if @diagram.done?, do: "hero-check-circle", else: "hero-flag"}
+        class="size-5 shrink-0"
+      /> Fim
     </div>
     """
   end
@@ -530,7 +537,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
           title="Entrega: a plataforma confere o commit da etapa"
           data-testid={"diagram-delivers-#{@node.index}"}
         >
-          <.icon name="hero-check-badge" class="size-3.5" /> commit conferido
+          <.icon name="hero-check-badge" class="size-3.5" /> commit
         </span>
         <.stage_state_badge
           :if={@node.state}

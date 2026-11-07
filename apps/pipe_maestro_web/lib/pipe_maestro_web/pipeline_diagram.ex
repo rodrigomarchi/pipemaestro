@@ -70,6 +70,7 @@ defmodule PipeMaestroWeb.PipelineDiagram do
           delivery: :none | :commit | :pr,
           rail: %{edges: [edge()], cost_cap: String.t() | nil},
           waiting?: boolean(),
+          done?: boolean(),
           removed: [String.t()]
         }
 
@@ -117,6 +118,7 @@ defmodule PipeMaestroWeb.PipelineDiagram do
       delivery: delivery,
       rail: %{edges: edges(nodes), cost_cap: cost_cap(pipeline.max_task_cost_usd)},
       waiting?: Enum.any?(nodes, &(&1.state == :awaiting)),
+      done?: states != nil and nodes != [] and Enum.all?(nodes, &(&1.state == :passed)),
       removed: removed(before, stages)
     }
   end

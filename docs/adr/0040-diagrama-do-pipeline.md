@@ -52,6 +52,30 @@ Um membro não tinha como ver um pipeline em detalhe.
      grupo, e um grupo que ficou com uma etapa só deixa de ser grupo.
    - Por isso "paralelizar com a anterior" só existe a partir da terceira etapa.
 
+6. **O mesmo diagrama mostra o estado e as medidas, onde o pipeline aparece.**
+   - `PipelineDiagram.build/2` aceita camadas opcionais sobre a forma:
+     - `states:` onde a tarefa está em cada etapa (`task_states/1`). Uma etapa que
+       espera uma pessoa acende as suas arestas no trilho.
+     - `metrics:` o que cada etapa mediu.
+     - `compare_to:` outra versão. As etapas novas e as alteradas são marcadas pela
+       `key`, e as removidas são nomeadas.
+   - `for_task/1` desenha o pipeline que a tarefa de fato roda, a partir do retrato
+     que ela guardou, e não o pipeline de hoje.
+   - Quem usa cada camada:
+     - **tarefa:** o diagrama ao vivo no topo; cada nó é um link para a sua etapa;
+     - **Board, Tarefas e Decisões:** o modo `:micro`, um ponto por etapa
+       (`TaskComponents.task_progress/1`). Ele substitui as três cópias do texto
+       "2/5 · etapa";
+     - **propostas:** o pipeline proposto e, na melhoria, a comparação com o atual;
+     - **nova tarefa e gatilhos:** a miniatura do pipeline escolhido;
+     - **Uso e limites:** com um pipeline filtrado, o custo, as execuções e as falhas
+       de cada etapa.
+   - `PipeMaestroWeb.PipelineExplorer` é um LiveComponent que junta o diagrama e o
+     painel de detalhes. A página do pipeline, a proposta e o Uso o usam sem guardar
+     estado próprio.
+   - O estado de uma etapa tem um vocabulário só: `state_label/1`,
+     `stage_state_badge/1` e `stage_state_marker/1`.
+
 ## Consequências
 
 - O desenho é HEEx com CSS grid e SVG inline, sem biblioteca de grafos nem JS. O

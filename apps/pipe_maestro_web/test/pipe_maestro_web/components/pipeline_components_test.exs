@@ -374,4 +374,30 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       end
     end
   end
+
+  describe "the end node" do
+    test "is the end, neutral; done only once every stage of a task passed" do
+      shape = render_diagram(diagram([stage("a"), stage("b")]))
+      assert text(shape, "[data-testid=diagram-end]") =~ "Fim"
+      assert count(shape, "[data-testid=diagram-end][data-done]") == 0
+
+      halfway =
+        render_diagram(
+          PipelineDiagram.build(%Pipeline{stages: [stage("a"), stage("b")]},
+            states: %{0 => :passed, 1 => :awaiting}
+          )
+        )
+
+      assert count(halfway, "[data-testid=diagram-end][data-done]") == 0
+
+      done =
+        render_diagram(
+          PipelineDiagram.build(%Pipeline{stages: [stage("a"), stage("b")]},
+            states: %{0 => :passed, 1 => :passed}
+          )
+        )
+
+      assert count(done, "[data-testid=diagram-end][data-done]") == 1
+    end
+  end
 end
