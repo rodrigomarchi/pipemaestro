@@ -114,6 +114,52 @@ defmodule PipeMaestroWeb.NotificationComponents do
     """
   end
 
+  @doc """
+  The inbox with nothing in it (the panel and the page): the same empty state
+  as the other screens' (`<.empty>`), saying what fills it.
+  """
+  attr :unread_only, :boolean, default: false
+
+  @spec empty_inbox(map()) :: Phoenix.LiveView.Rendered.t()
+  def empty_inbox(assigns) do
+    ~H"""
+    <.empty
+      data-testid="notifications-empty-inbox"
+      title={if @unread_only, do: "Nenhuma notificação não lida", else: "Nenhuma notificação"}
+      description="Quando uma tarefa pausar ou terminar, ou uma proposta ficar pronta, ela aparece aqui."
+    >
+      <:icon><.icon name="hero-inbox" /></:icon>
+    </.empty>
+    """
+  end
+
+  @doc "Nothing under way: the same empty state as the other screens, with a way to start one."
+  attr :slug, :string, required: true
+
+  @spec empty_active(map()) :: Phoenix.LiveView.Rendered.t()
+  def empty_active(assigns) do
+    ~H"""
+    <.empty
+      data-testid="notifications-empty-active"
+      title="Nada rodando agora"
+      description="Quando uma tarefa ou proposta começar, ela aparece aqui com etapa, runner e tempo."
+    >
+      <:icon><.icon name="hero-moon" /></:icon>
+      <:actions>
+        <.button
+          link_type="live_redirect"
+          to={~p"/w/#{@slug}/tasks"}
+          size="sm"
+          icon="hero-plus"
+          data-testid="notifications-empty-active-create"
+        >
+          Criar uma tarefa
+        </.button>
+      </:actions>
+    </.empty>
+    """
+  end
+
   @doc "How long something has been going: \"3 min 12 s\"."
   @spec elapsed(DateTime.t() | nil, DateTime.t()) :: String.t()
   def elapsed(since, now \\ DateTime.utc_now())

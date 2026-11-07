@@ -137,6 +137,10 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
   `?aba=`.
 - Os itens (`PipeMaestroWeb.NotificationComponents`) servem ao painel e à página
   `/notifications`. Tempos que andam usam `phx-hook="Elapsed"` com `data-since`.
+- Os estados vazios vêm de `NotificationComponents.empty_inbox/1` e `empty_active/1`,
+  que usam `<.empty>` como as outras telas. Nenhuma tela monta um bloco vazio à mão.
+- A página `/notifications` recebe `{:notification, _}` (o hook a deixa passar) e a põe
+  no topo da lista; uma tela nova que liste a caixa entra em `@lists_inbox` no hook.
 
 ## Sidebar
 

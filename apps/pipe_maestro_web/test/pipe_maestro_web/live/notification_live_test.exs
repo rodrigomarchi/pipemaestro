@@ -155,4 +155,16 @@ defmodule PipeMaestroWeb.NotificationLiveTest do
     {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/notifications")
     assert has_element?(view, "[data-testid=notifications-empty-inbox]")
   end
+
+  test "a notification that arrives while the page is open shows at its top, no reload", ctx do
+    task = create_task(ctx, "Chegando")
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/notifications")
+    assert has_element?(view, "[data-testid=notifications-empty-inbox]")
+
+    Notifications.notify_task(task, :succeeded)
+
+    assert render(view) =~ "Chegando foi concluída"
+    refute has_element?(view, "[data-testid=notifications-empty-inbox]")
+    assert has_element?(view, item(task.id, "task-succeeded"))
+  end
 end

@@ -26,6 +26,12 @@ defmodule PipeMaestroWeb.NotificationLive do
      |> load()}
   end
 
+  # A notification that arrives while the page is open goes to its top (the hook
+  # lets this one through: see `PipeMaestroWeb.NotificationHooks`).
+  @impl true
+  def handle_info({:notification, notification}, socket),
+    do: {:noreply, update(socket, :notifications, &[notification | &1])}
+
   @impl true
   def handle_event("filter", %{"filter" => "unread"}, socket),
     do: {:noreply, push_patch(socket, to: filter_path(socket, filtro: "nao-lidas"))}
@@ -131,15 +137,7 @@ defmodule PipeMaestroWeb.NotificationLive do
       <div class="mx-auto max-w-3xl space-y-4" data-testid="notifications-page">
         <.card :if={@notifications == []}>
           <.card_content>
-            <div class="py-8 text-center" data-testid="notifications-empty-inbox">
-              <.icon name="hero-inbox" class="mx-auto size-10 text-gray-400" />
-              <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                {if @unread_only, do: "Nenhuma notificação não lida", else: "Nenhuma notificação"}
-              </p>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Quando uma tarefa pausar ou terminar, ou uma proposta ficar pronta, ela aparece aqui.
-              </p>
-            </div>
+            <NotificationComponents.empty_inbox unread_only={@unread_only} />
           </.card_content>
         </.card>
 

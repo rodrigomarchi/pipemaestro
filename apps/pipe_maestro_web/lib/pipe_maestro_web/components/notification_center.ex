@@ -200,22 +200,7 @@ defmodule PipeMaestroWeb.NotificationCenter do
               </.button>
             </div>
 
-            <div
-              :if={@empty_active?}
-              class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
-              data-testid="notifications-empty-active"
-            >
-              <.icon name="hero-moon" class="mx-auto size-8 text-gray-400" />
-              <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                Nada rodando agora
-              </p>
-              <.link
-                navigate={~p"/w/#{@slug}/tasks"}
-                class="mt-2 inline-block text-sm text-primary-600 hover:underline dark:text-primary-400"
-              >
-                Criar uma tarefa
-              </.link>
-            </div>
+            <NotificationComponents.empty_active :if={@empty_active?} slug={@slug} />
 
             <.execution_group
               :for={
@@ -273,16 +258,7 @@ defmodule PipeMaestroWeb.NotificationCenter do
               </.button>
             </div>
 
-            <div
-              :if={@inbox == []}
-              class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
-              data-testid="notifications-empty-inbox"
-            >
-              <.icon name="hero-inbox" class="mx-auto size-8 text-gray-400" />
-              <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                {if @unread_only, do: "Nenhuma notificação não lida", else: "Nenhuma notificação"}
-              </p>
-            </div>
+            <NotificationComponents.empty_inbox :if={@inbox == []} unread_only={@unread_only} />
 
             <ul :if={@inbox != []} role="list" class="space-y-1">
               <NotificationComponents.notification_item

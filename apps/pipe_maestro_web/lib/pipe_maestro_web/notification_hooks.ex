@@ -6,8 +6,9 @@ defmodule PipeMaestroWeb.NotificationHooks do
   page hands to `PipeMaestroWeb.Layouts.app/1`, and follows the person's
   notifications and what runs in the workspace (`PipeMaestro.Notifications`).
 
-  Only the center's own messages stop here; every other message goes on to
-  the page.
+  Only the center's own messages stop here, and a new notification also goes
+  on to the inbox page (`PipeMaestroWeb.NotificationLive`); every other
+  message goes on to the page.
   """
 
   alias Phoenix.Component
@@ -15,9 +16,13 @@ defmodule PipeMaestroWeb.NotificationHooks do
   alias PipeMaestro.Accounts.Scope
   alias PipeMaestro.Notifications
   alias PipeMaestroWeb.NotificationCenter
+  alias PipeMaestroWeb.NotificationLive
 
   # Changes closer than this make one reload of what runs.
   @debounce_ms 300
+
+  # Pages that list the inbox themselves and so take a new notification too.
+  @lists_inbox [NotificationLive]
 
   @doc "Assigns the center and, once connected, follows its messages."
   @spec follow(LiveView.Socket.t(), Scope.t()) :: LiveView.Socket.t()
@@ -38,9 +43,13 @@ defmodule PipeMaestroWeb.NotificationHooks do
   defp handle_info({:unread_count, count}, socket, _scope),
     do: {:halt, put_center(socket, unread: count)}
 
+  # The page that lists the inbox also gets the notification, to put it at the top.
   defp handle_info({:notification, notification}, socket, _scope) do
     LiveView.send_update(NotificationCenter, id: "notification-center", prepend: notification)
-    {:halt, socket}
+
+    if socket.view in @lists_inbox,
+      do: {:cont, socket},
+      else: {:halt, socket}
   end
 
   defp handle_info({:executions_changed, _workspace_id}, socket, _scope) do
