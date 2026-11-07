@@ -3,8 +3,8 @@ defmodule PipeMaestroWeb.NotificationCenterTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Jobs, Notifications, Proposals, Repo, Runners, Tasks, Workspaces}
   alias PipeMaestro.Accounts.Scope
+  alias PipeMaestro.{Jobs, Notifications, Proposals, Repo, Runners, Tasks, Workspaces}
   alias PipeMaestro.Notifications.Notification
 
   # The member signed in (Ana Lima) is the workspace's first, so its admin.

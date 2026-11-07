@@ -3,8 +3,8 @@ defmodule PipeMaestroWeb.NotificationLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Notifications, Repo, Tasks, Workspaces}
   alias PipeMaestro.Accounts.Scope
+  alias PipeMaestro.{Notifications, Repo, Tasks, Workspaces}
   alias PipeMaestro.Notifications.Notification
 
   setup :register_and_log_in_member
