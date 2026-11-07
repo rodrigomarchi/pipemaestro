@@ -114,7 +114,14 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
 - O painel de uma aba não escolhida fica na página, escondido: um stream dentro dele
   (a linha do tempo ao vivo) perderia o que mostrou se saísse do DOM. Uma tela cujas
   abas leem dados próprios carrega só a aba aberta (`RunnerLive`).
-- O que vale para a tela toda (status, totais, filtros, alertas) fica acima das abas.
+- As abas são o primeiro elemento do conteúdo: nada de card antes delas. O status (e
+  um dado-chave, como o custo) vai ao lado do título, no slot `:status` de
+  `Layouts.app`, visível de qualquer aba; o resumo do registro (custo, projeto,
+  branch, runner…) é uma aba **Resumo**; filtros ficam na barra superior (`:actions`);
+  um alerta acionável fica no topo da aba onde se age.
+- O conteúdo usa a largura toda: sem coluna lateral de metadados. Cards curtos
+  relacionados ficam lado a lado (`xl:grid-cols-2`); diagramas, tabelas e formulários
+  ocupam a linha inteira.
 
 ## Texto do agente e de pessoas
 

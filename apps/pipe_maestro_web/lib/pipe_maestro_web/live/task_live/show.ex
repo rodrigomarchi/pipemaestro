@@ -85,11 +85,14 @@ defmodule PipeMaestroWeb.TaskLive.Show do
      |> follow_running_job()}
   end
 
-  # The tabs, by their `aba` parameter: the stages (with the decision to take
-  # and what to do next), the request, the files changed and the decisions
-  # taken.
+  # The tabs, by their `aba` parameter, first on the page: the stages (with
+  # the runner's alerts, the decision to take and what to do next), the summary
+  # (cost, project, branch, pull request, worktree), the request, the files
+  # changed and the decisions taken. The status and the cost sit beside the
+  # title, seen from every tab.
   @tabs [
     {"etapas", "Etapas", "hero-queue-list"},
+    {"resumo", "Resumo", "hero-information-circle"},
     {"pedido", "Pedido", "hero-document-text"},
     {"arquivos", "Arquivos", "hero-document-duplicate"},
     {"decisoes", "Decisões", "hero-hand-raised"}
@@ -545,6 +548,16 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       active={:tasks}
       title={@task.title}
     >
+      <:status>
+        <.task_status task={@task} data-testid="task-status" />
+        <.badge
+          size="sm"
+          variant="outline"
+          color="gray"
+          label={format_cost(@cost)}
+          data-testid="task-cost-badge"
+        />
+      </:status>
       <:actions>
         <.button
           link_type="live_redirect"
@@ -606,144 +619,6 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       </:actions>
 
       <div class="space-y-6">
-        <.card variant="outline">
-          <.card_content>
-            <div class="flex flex-wrap items-start justify-between gap-4">
-              <div class="min-w-0 flex-1">
-                <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="task-pipeline-name">
-                  {@task.pipeline_name} · v{@task.pipeline_version} · {stage_progress(@task)}
-                </p>
-              </div>
-              <.task_status task={@task} data-testid="task-status" />
-            </div>
-            <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-4">
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Custo</dt>
-                <dd class="text-gray-900 dark:text-white" data-testid="task-cost">
-                  {format_cost(@cost)}
-                  <span
-                    :if={@task.pipeline_context && @task.pipeline_context["max_cost_usd"]}
-                    class="text-gray-500 dark:text-gray-400"
-                  >
-                    de US$ {@task.pipeline_context["max_cost_usd"]}
-                  </span>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Projeto</dt>
-                <dd class="text-gray-900 dark:text-white" data-testid="task-project">
-                  <.link
-                    :if={@task.project_id}
-                    navigate={
-                      ~p"/w/#{@current_scope.workspace.slug}/projects/#{@task.project_id}/edit"
-                    }
-                    class="text-primary-600 hover:underline dark:text-primary-400"
-                  >
-                    {(@task.project || %{})["name"] || @task.directory}
-                  </.link>
-                  <span :if={!@task.project_id}>
-                    {(@task.project || %{})["name"] || "sem projeto"}
-                  </span>
-                </dd>
-                <dd
-                  class="font-mono text-xs text-gray-500 dark:text-gray-400"
-                  data-testid="task-where"
-                >
-                  {if @task.runner, do: @task.runner.name, else: "—"}:{@task.directory}
-                </dd>
-              </div>
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Branch</dt>
-                <dd class="font-mono text-xs text-gray-900 dark:text-white" data-testid="task-branch">
-                  {@task.branch || "— (diretório sem git)"}
-                </dd>
-                <dd :if={@task.pr_url} class="mt-1 text-xs">
-                  <a
-                    href={@task.pr_url}
-                    target="_blank"
-                    rel="noopener"
-                    class="text-primary-600 hover:underline dark:text-primary-400"
-                    data-testid="task-pr"
-                  >
-                    Pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                  </a>
-                </dd>
-                <dd :if={@task.issue_url} class="mt-1 text-xs">
-                  <a
-                    href={@task.issue_url}
-                    target="_blank"
-                    rel="noopener"
-                    class="text-primary-600 hover:underline dark:text-primary-400"
-                    data-testid="task-issue"
-                  >
-                    {IntegrationComponents.issue_label(@task.issue_url)}
-                    <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                  </a>
-                </dd>
-                <dd
-                  :if={@task.issue_feedback["error"]}
-                  class="mt-1 text-xs text-warning-600 dark:text-warning-400"
-                  data-testid="task-issue-sync-error"
-                >
-                  A issue ainda não mostra o andamento: {@task.issue_feedback["error"]}. A plataforma tenta de novo.
-                </dd>
-              </div>
-              <div>
-                <dt class="text-gray-500 dark:text-gray-400">Diretório de trabalho</dt>
-                <dd
-                  class="break-all font-mono text-xs text-gray-900 dark:text-white"
-                  data-testid="task-worktree"
-                >
-                  {@task.worktree || "definido quando a primeira etapa termina"}
-                </dd>
-                <dd
-                  :if={worktree_state(@task)}
-                  class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                  data-testid="task-worktree-state"
-                >
-                  {worktree_state(@task)}
-                </dd>
-              </div>
-            </dl>
-            <.alert
-              :if={Tasks.waiting_for_runner?(@task, @online)}
-              color="info"
-              with_icon
-              class="mt-4"
-              data-testid="task-waiting-runner"
-            >
-              Aguardando o runner {if @task.runner, do: @task.runner.name, else: "—"} ficar online: a etapa começa assim que ele conectar.
-            </.alert>
-            <.alert
-              :if={
-                Tasks.runner_offline?(@task, @online) and
-                  not Tasks.waiting_for_runner?(@task, @online)
-              }
-              color="danger"
-              with_icon
-              class="mt-4"
-              data-testid="task-runner-offline"
-            >
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <span>
-                  A tarefa está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
-                  Interrompa a etapa para decidir: refazer em outro runner, seguir ou cancelar.
-                </span>
-                <.button
-                  size="xs"
-                  color="danger"
-                  variant="outline"
-                  icon="hero-hand-raised"
-                  phx-click="interrupt"
-                  data-testid="task-runner-offline-interrupt"
-                >
-                  Interromper a etapa
-                </.button>
-              </div>
-            </.alert>
-          </.card_content>
-        </.card>
-
         <.page_tabs
           tabs={task_tabs(@task, @decisions)}
           active={@tab}
@@ -752,6 +627,40 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         />
 
         <.tab_panel id="etapas" active={@tab} testid="task" class="space-y-6">
+          <.alert
+            :if={Tasks.waiting_for_runner?(@task, @online)}
+            color="info"
+            with_icon
+            data-testid="task-waiting-runner"
+          >
+            Aguardando o runner {if @task.runner, do: @task.runner.name, else: "—"} ficar online: a etapa começa assim que ele conectar.
+          </.alert>
+          <.alert
+            :if={
+              Tasks.runner_offline?(@task, @online) and
+                not Tasks.waiting_for_runner?(@task, @online)
+            }
+            color="danger"
+            with_icon
+            data-testid="task-runner-offline"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                A tarefa está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
+                Interrompa a etapa para decidir: refazer em outro runner, seguir ou cancelar.
+              </span>
+              <.button
+                size="xs"
+                color="danger"
+                variant="outline"
+                icon="hero-hand-raised"
+                phx-click="interrupt"
+                data-testid="task-runner-offline-interrupt"
+              >
+                Interromper a etapa
+              </.button>
+            </div>
+          </.alert>
           <.card variant="outline">
             <.card_content class="!p-0">
               <.pipeline_diagram
@@ -1036,6 +945,108 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                   <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
                 </div>
               </.form>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="resumo" active={@tab} testid="task">
+          <.card variant="outline">
+            <.card_content>
+              <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="task-pipeline-name">
+                {@task.pipeline_name} · v{@task.pipeline_version} · {stage_progress(@task)}
+              </p>
+              <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Custo</dt>
+                  <dd class="text-gray-900 dark:text-white" data-testid="task-cost">
+                    {format_cost(@cost)}
+                    <span
+                      :if={@task.pipeline_context && @task.pipeline_context["max_cost_usd"]}
+                      class="text-gray-500 dark:text-gray-400"
+                    >
+                      de US$ {@task.pipeline_context["max_cost_usd"]}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Projeto</dt>
+                  <dd class="text-gray-900 dark:text-white" data-testid="task-project">
+                    <.link
+                      :if={@task.project_id}
+                      navigate={
+                        ~p"/w/#{@current_scope.workspace.slug}/projects/#{@task.project_id}/edit"
+                      }
+                      class="text-primary-600 hover:underline dark:text-primary-400"
+                    >
+                      {(@task.project || %{})["name"] || @task.directory}
+                    </.link>
+                    <span :if={!@task.project_id}>
+                      {(@task.project || %{})["name"] || "sem projeto"}
+                    </span>
+                  </dd>
+                  <dd
+                    class="font-mono text-xs text-gray-500 dark:text-gray-400"
+                    data-testid="task-where"
+                  >
+                    {if @task.runner, do: @task.runner.name, else: "—"}:{@task.directory}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Branch</dt>
+                  <dd
+                    class="font-mono text-xs text-gray-900 dark:text-white"
+                    data-testid="task-branch"
+                  >
+                    {@task.branch || "— (diretório sem git)"}
+                  </dd>
+                  <dd :if={@task.pr_url} class="mt-1 text-xs">
+                    <a
+                      href={@task.pr_url}
+                      target="_blank"
+                      rel="noopener"
+                      class="text-primary-600 hover:underline dark:text-primary-400"
+                      data-testid="task-pr"
+                    >
+                      Pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                    </a>
+                  </dd>
+                  <dd :if={@task.issue_url} class="mt-1 text-xs">
+                    <a
+                      href={@task.issue_url}
+                      target="_blank"
+                      rel="noopener"
+                      class="text-primary-600 hover:underline dark:text-primary-400"
+                      data-testid="task-issue"
+                    >
+                      {IntegrationComponents.issue_label(@task.issue_url)}
+                      <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                    </a>
+                  </dd>
+                  <dd
+                    :if={@task.issue_feedback["error"]}
+                    class="mt-1 text-xs text-warning-600 dark:text-warning-400"
+                    data-testid="task-issue-sync-error"
+                  >
+                    A issue ainda não mostra o andamento: {@task.issue_feedback["error"]}. A plataforma tenta de novo.
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-gray-500 dark:text-gray-400">Diretório de trabalho</dt>
+                  <dd
+                    class="break-all font-mono text-xs text-gray-900 dark:text-white"
+                    data-testid="task-worktree"
+                  >
+                    {@task.worktree || "definido quando a primeira etapa termina"}
+                  </dd>
+                  <dd
+                    :if={worktree_state(@task)}
+                    class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                    data-testid="task-worktree-state"
+                  >
+                    {worktree_state(@task)}
+                  </dd>
+                </div>
+              </dl>
             </.card_content>
           </.card>
         </.tab_panel>

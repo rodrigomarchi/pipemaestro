@@ -60,7 +60,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   # agent worked on it.
   @tabs [
     {"proposta", "Proposta", "hero-light-bulb"},
-    {"agente", "Como o agente trabalhou", "hero-eye"}
+    {"agente", "Como o agente trabalhou", "hero-eye"},
+    {"resumo", "Resumo", "hero-information-circle"}
   ]
 
   # Without `aba`, the tab follows the run: the agent's work while there is
@@ -395,8 +396,12 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:proposals}
-      title="Proposta do agente"
+      title={@title}
     >
+      <:status>
+        <.kind_badge kind={@kind} data-testid="proposal-kind" />
+        <.job_status job={@job} data-testid="proposal-status" />
+      </:status>
       <:actions>
         <.button
           link_type="live_redirect"
@@ -432,61 +437,6 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           Pedir de novo com ajustes
         </.button>
       </:actions>
-
-      <.card variant="outline" class="mb-6">
-        <.card_content>
-          <div class="flex flex-wrap items-start gap-4">
-            <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
-              <.icon name="hero-cpu-chip" class="size-5" />
-            </span>
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <.kind_badge kind={@kind} data-testid="proposal-kind" />
-                <h2 class="font-semibold text-gray-900 dark:text-white" data-testid="proposal-title">
-                  {@title}
-                </h2>
-                <.job_status job={@job} data-testid="proposal-status" />
-              </div>
-              <p class="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-gray-500 dark:text-gray-400">
-                <span :if={@input["directory"]} class="flex items-center gap-1">
-                  <.icon name="hero-folder-open" class="size-4" />
-                  <span data-testid="proposal-directory">{@input["directory"]}</span>
-                </span>
-                <span :if={@job.runner}>no runner {@job.runner.name}</span>
-                <a
-                  :if={@input["issue_url"]}
-                  href={@input["issue_url"]}
-                  target="_blank"
-                  rel="noopener"
-                  class="flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
-                  data-testid="proposal-issue"
-                >
-                  {IntegrationComponents.issue_label(@input["issue_url"])}
-                  <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                </a>
-                <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>
-                <span :if={@job.duration_ms}>{format_duration(@job.duration_ms)}</span>
-                <.link
-                  :if={@input["task_id"]}
-                  navigate={task_link(@current_scope.workspace, @input["task_id"])}
-                  class="text-primary-600 hover:underline dark:text-primary-400"
-                  data-testid="proposal-task-link"
-                >
-                  ver a tarefa
-                </.link>
-              </p>
-              <div
-                :if={@input["request"] || @input["focus"]}
-                id="proposal-request"
-                class="prose prose-sm mt-2 max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
-                data-testid="proposal-request"
-              >
-                {Markdown.to_html(@input["request"] || @input["focus"])}
-              </div>
-            </div>
-          </div>
-        </.card_content>
-      </.card>
 
       <.page_tabs
         tabs={proposal_tabs()}
@@ -597,6 +547,54 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               />
             </ol>
             <.typing :if={@typing} text={@typing} />
+          </.card_content>
+        </.card>
+      </.tab_panel>
+
+      <.tab_panel
+        id="resumo"
+        active={proposal_tab(@tab, @result, @error)}
+        testid="proposal-view"
+        class="mt-6"
+      >
+        <.card variant="outline">
+          <.card_content>
+            <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+              <span :if={@input["directory"]} class="flex items-center gap-1">
+                <.icon name="hero-folder-open" class="size-4" />
+                <span data-testid="proposal-directory">{@input["directory"]}</span>
+              </span>
+              <span :if={@job.runner}>no runner {@job.runner.name}</span>
+              <a
+                :if={@input["issue_url"]}
+                href={@input["issue_url"]}
+                target="_blank"
+                rel="noopener"
+                class="flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
+                data-testid="proposal-issue"
+              >
+                {IntegrationComponents.issue_label(@input["issue_url"])}
+                <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+              </a>
+              <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>
+              <span :if={@job.duration_ms}>{format_duration(@job.duration_ms)}</span>
+              <.link
+                :if={@input["task_id"]}
+                navigate={task_link(@current_scope.workspace, @input["task_id"])}
+                class="text-primary-600 hover:underline dark:text-primary-400"
+                data-testid="proposal-task-link"
+              >
+                ver a tarefa
+              </.link>
+            </p>
+            <div
+              :if={@input["request"] || @input["focus"]}
+              id="proposal-request"
+              class="prose prose-sm mt-4 max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
+              data-testid="proposal-request"
+            >
+              {Markdown.to_html(@input["request"] || @input["focus"])}
+            </div>
           </.card_content>
         </.card>
       </.tab_panel>

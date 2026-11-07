@@ -2,7 +2,7 @@ defmodule PipeMaestroWeb.JobLive do
   @moduledoc """
   One job, in tabs (`?aba=`): its result, its prompt, the agent's run as a
   timeline that grows live while the runner reports events, and the audit;
-  its status and numbers stay above them, across the page. The timeline is a stream of
+  its numbers in a tab of their own; its status and cost beside the title. The timeline is a stream of
   segments (strips of icons and blocks of text, `PipeMaestroWeb.JobComponents`);
   only the strip still open at its end is kept here, to grow it in place. A queued or
   running job can be canceled from here. While it runs, what it spent so far
@@ -51,10 +51,11 @@ defmodule PipeMaestroWeb.JobLive do
      |> stream(:timeline, segments)}
   end
 
-  # The tabs, by their `aba` parameter, in order; the audit only once the run
-  # has ended.
+  # The tabs, by their `aba` parameter, first on the page; the audit only once
+  # the run has ended. The status and the cost sit beside the title.
   @tabs [
     {"resultado", "Resultado", "hero-flag"},
+    {"resumo", "Resumo", "hero-information-circle"},
     {"prompt", "Prompt", "hero-chat-bubble-bottom-center-text"},
     {"linha-do-tempo", "Linha do tempo", "hero-queue-list"},
     {"auditoria", "Auditoria", "hero-chart-bar"}
@@ -155,6 +156,16 @@ defmodule PipeMaestroWeb.JobLive do
       active={:jobs}
       title="Execução"
     >
+      <:status>
+        <.job_status job={@job} data-testid="job-status" />
+        <.badge
+          size="sm"
+          variant="outline"
+          color="gray"
+          label={format_cost(if @live, do: @live.cost_usd, else: @job.cost_usd)}
+          data-testid="job-cost-badge"
+        />
+      </:status>
       <:actions>
         <.button
           link_type="live_redirect"
@@ -182,44 +193,6 @@ defmodule PipeMaestroWeb.JobLive do
       </:actions>
 
       <div class="space-y-6">
-        <.card variant="outline">
-          <.card_content>
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <p class="min-w-0 truncate text-sm text-gray-500 dark:text-gray-400">
-                {prompt_summary(@job.prompt, 120)}
-              </p>
-              <.job_status job={@job} data-testid="job-status" />
-            </div>
-            <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
-              <.detail label="Runner" testid="job-runner-name">
-                {if @job.runner, do: @job.runner.name, else: "—"}
-              </.detail>
-              <.detail label="Enviada por">
-                {if @job.created_by_user, do: @job.created_by_user.name, else: "—"}
-              </.detail>
-              <.detail label="Duração" testid="job-duration">
-                {format_duration(@job.duration_ms)}
-              </.detail>
-              <.detail label="Turnos">{@job.num_turns || "—"}</.detail>
-              <.detail label="Custo" testid="job-cost">{format_cost(@job.cost_usd)}</.detail>
-              <.detail label="Código de saída">{@job.exit_code || "—"}</.detail>
-            </dl>
-            <dl
-              :if={@live}
-              class="mt-4 grid gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm sm:grid-cols-3 lg:grid-cols-6 dark:border-gray-800"
-              data-testid="job-live"
-            >
-              <p class="col-span-full text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Até agora
-              </p>
-              <.detail label="Custo" testid="job-live-cost">{format_cost(@live.cost_usd)}</.detail>
-              <.detail label="Tokens" testid="job-live-tokens">{short_number(@live.tokens)}</.detail>
-              <.detail label="Requisições" testid="job-live-requests">{@live.requests}</.detail>
-              <.detail label="Ferramentas" testid="job-live-tools">{@live.tool_calls}</.detail>
-            </dl>
-          </.card_content>
-        </.card>
-
         <.page_tabs
           tabs={job_tabs(@insights)}
           active={@tab}
@@ -254,6 +227,42 @@ defmodule PipeMaestroWeb.JobLive do
                 class="mt-2 whitespace-pre-wrap font-sans text-danger-700 dark:text-danger-400"
                 data-testid="job-error"
               >{@job.error}</pre>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="resumo" active={@tab} testid="job">
+          <.card variant="outline">
+            <.card_content>
+              <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+                <.detail label="Runner" testid="job-runner-name">
+                  {if @job.runner, do: @job.runner.name, else: "—"}
+                </.detail>
+                <.detail label="Enviada por">
+                  {if @job.created_by_user, do: @job.created_by_user.name, else: "—"}
+                </.detail>
+                <.detail label="Duração" testid="job-duration">
+                  {format_duration(@job.duration_ms)}
+                </.detail>
+                <.detail label="Turnos">{@job.num_turns || "—"}</.detail>
+                <.detail label="Custo" testid="job-cost">{format_cost(@job.cost_usd)}</.detail>
+                <.detail label="Código de saída">{@job.exit_code || "—"}</.detail>
+              </dl>
+              <dl
+                :if={@live}
+                class="mt-4 grid gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm sm:grid-cols-3 lg:grid-cols-6 dark:border-gray-800"
+                data-testid="job-live"
+              >
+                <p class="col-span-full text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Até agora
+                </p>
+                <.detail label="Custo" testid="job-live-cost">{format_cost(@live.cost_usd)}</.detail>
+                <.detail label="Tokens" testid="job-live-tokens">
+                  {short_number(@live.tokens)}
+                </.detail>
+                <.detail label="Requisições" testid="job-live-requests">{@live.requests}</.detail>
+                <.detail label="Ferramentas" testid="job-live-tools">{@live.tool_calls}</.detail>
+              </dl>
             </.card_content>
           </.card>
         </.tab_panel>

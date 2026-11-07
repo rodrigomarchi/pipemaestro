@@ -345,6 +345,8 @@ defmodule PipeMaestroWeb.JobLiveTest do
 
     # The result tab is shown; the others stay in the page, hidden.
     assert has_element?(view, "[data-testid=job-panel-resultado]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-panel-resumo].hidden [data-testid=job-duration]")
+    assert has_element?(view, "header [data-testid=job-status]", "Concluído")
     assert has_element?(view, "[data-testid=job-panel-linha-do-tempo].hidden")
     assert has_element?(view, "[data-testid=job-tab-auditoria]")
 

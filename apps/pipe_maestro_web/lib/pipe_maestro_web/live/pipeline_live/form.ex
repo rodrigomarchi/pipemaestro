@@ -304,17 +304,6 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         </.button>
       </:actions>
 
-      <.alert
-        :if={@from_proposal}
-        color="info"
-        class="mb-6"
-        with_icon
-        data-testid="pipeline-from-proposal"
-      >
-        Este é o pipeline que o agente propôs. Revise as etapas, ajuste o que quiser e salve {if @pipeline.id,
-          do: "(vira a versão #{@pipeline.version + 1})"}.
-      </.alert>
-
       <.tabs variant="underline" class="mb-6 overflow-x-auto" data-testid="pipeline-view-tabs">
         <.tab
           :for={{id, label, icon} <- tabs()}
@@ -328,6 +317,17 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           <.icon name={icon} class="mr-1.5 size-4" /> {label}
         </.tab>
       </.tabs>
+
+      <.alert
+        :if={@from_proposal}
+        color="info"
+        class="mb-6"
+        with_icon
+        data-testid="pipeline-from-proposal"
+      >
+        Este é o pipeline que o agente propôs. Revise as etapas, ajuste o que quiser e salve {if @pipeline.id,
+          do: "(vira a versão #{@pipeline.version + 1})"}.
+      </.alert>
 
       <.form for={@form} id="pipeline-form" phx-change="validate" phx-submit="save" class="space-y-6">
         <.card :if={@view == "diagram"} variant="outline">

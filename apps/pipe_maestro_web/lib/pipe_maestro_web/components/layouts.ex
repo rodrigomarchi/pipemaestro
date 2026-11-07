@@ -117,6 +117,9 @@ defmodule PipeMaestroWeb.Layouts do
   attr :title, :string, required: true, doc: "the page title shown in the top bar"
   attr :pending_decisions, :integer, default: 0, doc: "badge on the decisions item"
 
+  slot :status,
+    doc: "badges beside the title (a record's status, a key number), seen from every tab"
+
   slot :actions, doc: "buttons rendered on the right of the top bar"
   slot :inner_block, required: true
 
@@ -258,12 +261,17 @@ defmodule PipeMaestroWeb.Layouts do
         <.sidebar_trigger for="app-sidebar" target="collapse" class="hidden md:inline-flex" />
         <div class="min-w-0">
           <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
-          <h1
-            class="truncate text-base font-semibold text-gray-900 dark:text-white"
-            data-testid="page-title"
-          >
-            {@title}
-          </h1>
+          <div class="flex min-w-0 items-center gap-2">
+            <h1
+              class="truncate text-base font-semibold text-gray-900 dark:text-white"
+              data-testid="page-title"
+            >
+              {@title}
+            </h1>
+            <div :if={@status != []} class="flex shrink-0 items-center gap-1.5">
+              {render_slot(@status)}
+            </div>
+          </div>
         </div>
         <div class="ml-auto flex items-center gap-2">
           {render_slot(@actions)}

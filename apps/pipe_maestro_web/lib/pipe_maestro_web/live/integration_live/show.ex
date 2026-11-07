@@ -45,19 +45,23 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
     end
   end
 
-  # The tabs, by their `aba` parameter: the linked repositories, the events
-  # the host delivered, and the webhook for a manual setup (Forgejo only: the
-  # GitHub App delivers its own).
+  # The tabs, by their `aba` parameter, first on the page: the linked
+  # repositories, the events the host delivered, the webhook for a manual
+  # setup (Forgejo only: the GitHub App delivers its own) and the summary of
+  # the connection (who it acts as, how it signs in, its error). The status
+  # sits beside the title; a connection not active opens on its summary.
   @tabs [
     {"repositorios", "Repositórios", "hero-folder"},
     {"entregas", "Entregas", "hero-inbox-arrow-down"},
-    {"webhook", "Webhook", "hero-link"}
+    {"webhook", "Webhook", "hero-link"},
+    {"resumo", "Resumo", "hero-information-circle"}
   ]
 
   @impl true
   def handle_params(params, _uri, %{assigns: %{connection: connection}} = socket) do
     tabs = integration_tabs(connection, [], [])
-    {:noreply, assign(socket, tab: TabComponents.chosen(tabs, params["aba"], "repositorios"))}
+    default = if connection.status == "active", do: "repositorios", else: "resumo"
+    {:noreply, assign(socket, tab: TabComponents.chosen(tabs, params["aba"], default))}
   end
 
   # A member without access is on the way out (`mount/3`).
@@ -293,6 +297,9 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
       active={:integrations}
       title={@connection.name}
     >
+      <:status>
+        <.integration_status connection={@connection} data-testid="integration-status" />
+      </:status>
       <:actions>
         <.button
           size="sm"
@@ -329,52 +336,6 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
       </:actions>
 
       <div class="space-y-6">
-        <.card variant="outline">
-          <.card_content>
-            <div class="flex flex-wrap items-start justify-between gap-4">
-              <div class="min-w-0 space-y-1 text-sm">
-                <p class="text-gray-500 dark:text-gray-400">
-                  {provider_name(@connection.provider)} ·
-                  <span class="break-all">{@connection.base_url}</span>
-                </p>
-                <p class="text-gray-900 dark:text-white" data-testid="integration-bot">
-                  <span :if={@connection.bot_login}>
-                    Age como <strong>{@connection.bot_login}</strong>
-                  </span>
-                  <span :if={!@connection.bot_login}>Ainda sem acesso verificado.</span>
-                  <span :if={@connection.server_version} class="text-gray-500 dark:text-gray-400">
-                    · versão {@connection.server_version}
-                  </span>
-                </p>
-                <p class="text-gray-500 dark:text-gray-400">
-                  {auth_name(@connection.auth_kind)} · {api_mode_name(@connection.api_mode)}
-                </p>
-                <p
-                  :if={@connection.status == "error"}
-                  class="text-danger-600 dark:text-danger-400"
-                  data-testid="integration-error"
-                >
-                  {@connection.last_error}
-                </p>
-              </div>
-              <div class="flex flex-col items-end gap-2">
-                <.integration_status connection={@connection} data-testid="integration-status" />
-                <.button
-                  :if={@connection.auth_kind == "oauth"}
-                  size="xs"
-                  icon="hero-arrow-top-right-on-square"
-                  phx-click="authorize"
-                  data-testid="integration-oauth-connect"
-                >
-                  {if @connection.status == "active",
-                    do: "Autorizar de novo",
-                    else: "Autorizar no Forgejo"}
-                </.button>
-              </div>
-            </div>
-          </.card_content>
-        </.card>
-
         <.page_tabs
           tabs={integration_tabs(@connection, @repos, @deliveries)}
           active={@tab}
@@ -708,6 +669,53 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                   </.button>
                 </dd>
               </dl>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="resumo" active={@tab} testid="integration">
+          <.card variant="outline">
+            <.card_content>
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div class="min-w-0 space-y-1 text-sm">
+                  <p class="text-gray-500 dark:text-gray-400">
+                    {provider_name(@connection.provider)} ·
+                    <span class="break-all">{@connection.base_url}</span>
+                  </p>
+                  <p class="text-gray-900 dark:text-white" data-testid="integration-bot">
+                    <span :if={@connection.bot_login}>
+                      Age como <strong>{@connection.bot_login}</strong>
+                    </span>
+                    <span :if={!@connection.bot_login}>Ainda sem acesso verificado.</span>
+                    <span :if={@connection.server_version} class="text-gray-500 dark:text-gray-400">
+                      · versão {@connection.server_version}
+                    </span>
+                  </p>
+                  <p class="text-gray-500 dark:text-gray-400">
+                    {auth_name(@connection.auth_kind)} · {api_mode_name(@connection.api_mode)}
+                  </p>
+                  <p
+                    :if={@connection.status == "error"}
+                    class="text-danger-600 dark:text-danger-400"
+                    data-testid="integration-error"
+                  >
+                    {@connection.last_error}
+                  </p>
+                </div>
+                <div class="flex flex-col items-end gap-2">
+                  <.button
+                    :if={@connection.auth_kind == "oauth"}
+                    size="xs"
+                    icon="hero-arrow-top-right-on-square"
+                    phx-click="authorize"
+                    data-testid="integration-oauth-connect"
+                  >
+                    {if @connection.status == "active",
+                      do: "Autorizar de novo",
+                      else: "Autorizar no Forgejo"}
+                  </.button>
+                </div>
+              </div>
             </.card_content>
           </.card>
         </.tab_panel>
