@@ -265,6 +265,7 @@ defmodule PipeMaestroWeb.Layouts do
           </.sidebar_group>
 
           <:footer>
+            <.sidebar_toggle for="app-sidebar" data-testid="sidebar-toggle" />
             <.logout_button to={~p"/logout"} variant="sidebar" data-testid="sidebar-logout" />
             <.app_version class="pc-sidebar__brand block px-3 pt-2" />
           </:footer>
@@ -503,6 +504,35 @@ defmodule PipeMaestroWeb.Layouts do
       <.dropdown_menu_separator />
       {render_slot(@inner_block)}
     </.dropdown>
+    """
+  end
+
+  @doc """
+  The sidebar's own button to close it to a rail of icons and open it again,
+  styled as a sidebar item: "Recolher menu" with an arrow that turns around
+  once closed. It toggles the same attribute as the top bar's trigger, so the
+  `Sidebar` hook keeps the choice. Desktop only: on a phone the sidebar is a
+  sheet.
+  """
+  attr :for, :string, required: true, doc: "the sidebar's id"
+  attr :rest, :global
+
+  @spec sidebar_toggle(map()) :: Phoenix.LiveView.Rendered.t()
+  def sidebar_toggle(assigns) do
+    ~H"""
+    <button
+      type="button"
+      class="pc-sidebar-item pc-sidebar-trigger--collapse hidden w-full md:flex"
+      title="Recolher ou expandir o menu"
+      aria-label="Recolher ou expandir o menu"
+      aria-controls={@for}
+      phx-click={JS.toggle_attribute({"data-collapsed", "true", "false"}, to: "##{@for}")}
+      data-sidebar-toggle
+      {@rest}
+    >
+      <.icon name="hero-chevron-double-left" class="pc-sidebar-item__icon transition-transform" />
+      <span class="pc-sidebar-item__label">Recolher menu</span>
+    </button>
     """
   end
 

@@ -125,8 +125,9 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
 
 ## Sidebar
 
-- A sidebar abre ou fecha para uma faixa de ícones pelo botão ao lado do título; a
-  escolha fica guardada no navegador e vale em todas as telas
+- A sidebar abre ou fecha para uma faixa de ícones pelo botão "Recolher menu" no pé
+  dela (`Layouts.sidebar_toggle/1`, uma seta que se vira quando fechada) ou pelo
+  ícone ao lado do título; a escolha fica guardada no navegador e vale em todas as telas
   (`assets/js/sidebar.js`).
 - Uma tela com trabalho vivo do agente passa `focus` a `Layouts.app`: a tarefa e a
   execução em andamento, a proposta sendo escrita e Decisões enquanto o agente analisa

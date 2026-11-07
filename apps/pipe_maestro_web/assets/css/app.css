@@ -90,3 +90,9 @@
     transform: none;
   }
 }
+
+/* The sidebar's own toggle (Layouts.sidebar_toggle/1): its arrow points the
+   way the sidebar will move, so it turns around once the sidebar is closed. */
+.pc-sidebar[data-collapsed="true"] [data-sidebar-toggle] .pc-sidebar-item__icon {
+  transform: rotate(180deg);
+}

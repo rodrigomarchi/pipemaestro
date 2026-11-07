@@ -175,7 +175,9 @@ test.describe("Job execution", () => {
     await jobs.backToList();
     const sidebar = app.page.getByTestId("app-sidebar");
     await expect(sidebar).toHaveAttribute("data-collapsed", "false");
-    await app.page.getByTestId("sidebar-collapse").click();
+    await shot(app.page, "sidebar-open");
+    // The sidebar's own button closes it; the top bar's trigger does the same.
+    await app.page.getByTestId("sidebar-toggle").click();
     await expect(sidebar).toHaveAttribute("data-collapsed", "true");
     await shot(app.page, "sidebar-collapsed");
     await app.page.getByTestId("sidebar-runners").click();
