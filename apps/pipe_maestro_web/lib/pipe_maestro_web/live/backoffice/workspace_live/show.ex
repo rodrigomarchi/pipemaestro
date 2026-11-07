@@ -1,7 +1,8 @@
 defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
   @moduledoc """
-  One workspace in the backoffice: its members, adding an existing user or
-  creating a new one straight into it, and removing a member.
+  One workspace in the backoffice, in one column across the page: its
+  members, adding an existing user or creating a new one straight into it
+  (side by side), removing a member, and its runners.
   """
   use PipeMaestroWeb, :live_view
 
@@ -151,149 +152,96 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
         </.button>
       </:actions>
 
-      <div class="grid gap-6 xl:grid-cols-3">
-        <div class="space-y-6 self-start xl:col-span-2">
-          <.card variant="outline">
-            <.card_header
-              title="Membros"
-              description={"Pessoas que entram em /w/#{@workspace.slug}."}
-            >
-              <:action>
-                <.badge
-                  color="gray"
-                  variant="soft"
-                  label={member_count_label(length(@members))}
-                  data-testid="member-count"
-                />
-              </:action>
-            </.card_header>
-            <.table
-              :if={@members != []}
-              id="members"
-              rows={@members}
-              row_id={&"member-#{&1.user.id}"}
-            >
-              <:col :let={%{user: user}} label="Usuário">
-                <.link
-                  navigate={~p"/backoffice/users/#{user}"}
-                  class="flex items-center gap-3"
-                  data-testid={"member-#{user.email}"}
-                >
-                  <.avatar name={user.name} size="sm" random_color />
-                  <span class="min-w-0">
-                    <span class="block truncate font-medium text-gray-900 dark:text-white">
-                      {user.name}
-                    </span>
-                    <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                      {user.email}
-                    </span>
-                  </span>
-                </.link>
-              </:col>
-              <:col :let={%{user: user, role: role}} label="Papel">
-                <.form
-                  for={to_form(%{"role" => to_string(role)}, as: "role")}
-                  id={"member-role-form-#{user.id}"}
-                  phx-change="set_role"
-                >
-                  <input type="hidden" name="user_id" value={user.id} />
-                  <.icon_field
-                    field={to_form(%{"role" => to_string(role)}, as: "role")[:role]}
-                    icon="hero-shield-check"
-                    id={"member-role-#{user.id}"}
-                    type="select"
-                    label="Papel"
-                    hide_label
-                    options={[{"Admin", "admin"}, {"Membro", "member"}]}
-                    data-testid={"member-role-#{user.email}"}
-                  />
-                </.form>
-              </:col>
-              <:col :let={%{user: user}} label="Status">
-                <.status_badge
-                  disabled_at={user.disabled_at}
-                  data-testid={"member-status-#{user.email}"}
-                />
-              </:col>
-              <:col :let={%{user: user}} label="" class="text-right">
-                <.button
-                  size="xs"
-                  variant="ghost"
-                  color="danger"
-                  icon="hero-user-minus"
-                  phx-click="remove_member"
-                  phx-value-id={user.id}
-                  data-confirm={"Remover #{user.name} de #{@workspace.name}?"}
-                  data-testid={"member-remove-#{user.email}"}
-                >
-                  Remover
-                </.button>
-              </:col>
-            </.table>
-            <.card_content :if={@members == []}>
-              <.empty
-                data-testid="no-members"
-                title="Nenhum membro ainda"
-                description="Adicione um usuário existente ou crie um novo ao lado."
+      <div class="space-y-6">
+        <.card variant="outline">
+          <.card_header
+            title="Membros"
+            description={"Pessoas que entram em /w/#{@workspace.slug}."}
+          >
+            <:action>
+              <.badge
+                color="gray"
+                variant="soft"
+                label={member_count_label(length(@members))}
+                data-testid="member-count"
+              />
+            </:action>
+          </.card_header>
+          <.table
+            :if={@members != []}
+            id="members"
+            rows={@members}
+            row_id={&"member-#{&1.user.id}"}
+          >
+            <:col :let={%{user: user}} label="Usuário">
+              <.link
+                navigate={~p"/backoffice/users/#{user}"}
+                class="flex items-center gap-3"
+                data-testid={"member-#{user.email}"}
               >
-                <:icon><.icon name="hero-users" /></:icon>
-              </.empty>
-            </.card_content>
-          </.card>
-
-          <.card variant="outline" data-testid="workspace-runners">
-            <.card_header
-              title="Runners"
-              description="Executores conectados por membros deste workspace."
-            >
-              <:action>
-                <.badge
-                  color="success"
-                  variant="soft"
-                  label={"#{MapSet.size(@online)} online"}
-                  data-testid="workspace-runners-online"
-                />
-              </:action>
-            </.card_header>
-            <.table
-              :if={@runners != []}
-              id="workspace-runners-table"
-              rows={@runners}
-              row_id={&"workspace-runner-#{&1.id}"}
-            >
-              <:col :let={runner} label="Runner">
-                <span
-                  class="font-medium text-gray-900 dark:text-white"
-                  data-testid={"workspace-runner-#{runner.name}"}
-                >
-                  {runner.name}
+                <.avatar name={user.name} size="sm" random_color />
+                <span class="min-w-0">
+                  <span class="block truncate font-medium text-gray-900 dark:text-white">
+                    {user.name}
+                  </span>
+                  <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
+                    {user.email}
+                  </span>
                 </span>
-                <p class="font-mono text-xs text-gray-500">{runner.hostname}</p>
-              </:col>
-              <:col :let={runner} label="Status">
-                <.runner_status
-                  online={MapSet.member?(@online, runner.id)}
-                  data-testid={"workspace-runner-status-#{runner.name}"}
+              </.link>
+            </:col>
+            <:col :let={%{user: user, role: role}} label="Papel">
+              <.form
+                for={to_form(%{"role" => to_string(role)}, as: "role")}
+                id={"member-role-form-#{user.id}"}
+                phx-change="set_role"
+              >
+                <input type="hidden" name="user_id" value={user.id} />
+                <.icon_field
+                  field={to_form(%{"role" => to_string(role)}, as: "role")[:role]}
+                  icon="hero-shield-check"
+                  id={"member-role-#{user.id}"}
+                  type="select"
+                  label="Papel"
+                  hide_label
+                  options={[{"Admin", "admin"}, {"Membro", "member"}]}
+                  data-testid={"member-role-#{user.email}"}
                 />
-              </:col>
-              <:col :let={runner} label="Versão">
-                <span class="font-mono text-xs">{runner.runner_version}</span>
-              </:col>
-              <:col :let={runner} label="Visto">
-                {if MapSet.member?(@online, runner.id),
-                  do: "agora",
-                  else: time_ago(runner.last_seen_at, @now)}
-              </:col>
-            </.table>
-            <.card_content :if={@runners == []}>
-              <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="workspace-no-runners">
-                Nenhum runner conectado a este workspace.
-              </p>
-            </.card_content>
-          </.card>
-        </div>
+              </.form>
+            </:col>
+            <:col :let={%{user: user}} label="Status">
+              <.status_badge
+                disabled_at={user.disabled_at}
+                data-testid={"member-status-#{user.email}"}
+              />
+            </:col>
+            <:col :let={%{user: user}} label="" class="text-right">
+              <.button
+                size="xs"
+                variant="ghost"
+                color="danger"
+                icon="hero-user-minus"
+                phx-click="remove_member"
+                phx-value-id={user.id}
+                data-confirm={"Remover #{user.name} de #{@workspace.name}?"}
+                data-testid={"member-remove-#{user.email}"}
+              >
+                Remover
+              </.button>
+            </:col>
+          </.table>
+          <.card_content :if={@members == []}>
+            <.empty
+              data-testid="no-members"
+              title="Nenhum membro ainda"
+              description="Adicione um usuário existente ou crie um novo ao lado."
+            >
+              <:icon><.icon name="hero-users" /></:icon>
+            </.empty>
+          </.card_content>
+        </.card>
 
-        <div class="space-y-6">
+        <div class="grid gap-6 xl:grid-cols-2">
           <.card variant="outline">
             <.card_header
               title="Adicionar usuário existente"
@@ -376,6 +324,57 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
             </.card_content>
           </.card>
         </div>
+
+        <.card variant="outline" data-testid="workspace-runners">
+          <.card_header
+            title="Runners"
+            description="Executores conectados por membros deste workspace."
+          >
+            <:action>
+              <.badge
+                color="success"
+                variant="soft"
+                label={"#{MapSet.size(@online)} online"}
+                data-testid="workspace-runners-online"
+              />
+            </:action>
+          </.card_header>
+          <.table
+            :if={@runners != []}
+            id="workspace-runners-table"
+            rows={@runners}
+            row_id={&"workspace-runner-#{&1.id}"}
+          >
+            <:col :let={runner} label="Runner">
+              <span
+                class="font-medium text-gray-900 dark:text-white"
+                data-testid={"workspace-runner-#{runner.name}"}
+              >
+                {runner.name}
+              </span>
+              <p class="font-mono text-xs text-gray-500">{runner.hostname}</p>
+            </:col>
+            <:col :let={runner} label="Status">
+              <.runner_status
+                online={MapSet.member?(@online, runner.id)}
+                data-testid={"workspace-runner-status-#{runner.name}"}
+              />
+            </:col>
+            <:col :let={runner} label="Versão">
+              <span class="font-mono text-xs">{runner.runner_version}</span>
+            </:col>
+            <:col :let={runner} label="Visto">
+              {if MapSet.member?(@online, runner.id),
+                do: "agora",
+                else: time_ago(runner.last_seen_at, @now)}
+            </:col>
+          </.table>
+          <.card_content :if={@runners == []}>
+            <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="workspace-no-runners">
+              Nenhum runner conectado a este workspace.
+            </p>
+          </.card_content>
+        </.card>
       </div>
     </Layouts.backoffice>
     """

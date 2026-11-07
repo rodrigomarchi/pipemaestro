@@ -128,101 +128,26 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
         </.link>
       </:breadcrumb>
 
-      <div class="grid gap-6 xl:grid-cols-3">
-        <div class="space-y-6 xl:col-span-2">
-          <.card variant="outline">
-            <.card_content class="flex flex-wrap items-center gap-4">
-              <.avatar name={@user.name} size="lg" random_color />
-              <div class="min-w-0 flex-1">
-                <p class="text-lg font-semibold text-gray-900 dark:text-white" data-testid="user-name">
-                  {@user.name}
-                </p>
-                <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="user-email">
-                  {@user.email}
-                </p>
-                <p class="mt-1 text-xs text-gray-400">Criado em {format_date(@user.inserted_at)}</p>
-              </div>
-              <.status_badge disabled_at={@user.disabled_at} data-testid="user-status" />
-            </.card_content>
-          </.card>
-
-          <.card variant="outline">
-            <.card_header title="Workspaces" description="Onde este usuário pode entrar." />
-            <.table
-              :if={@user.workspaces != []}
-              id="user-workspaces"
-              rows={@user.workspaces}
-              row_id={&"user-workspace-#{&1.id}"}
-            >
-              <:col :let={workspace} label="Workspace">
-                <.link
-                  navigate={~p"/backoffice/workspaces/#{workspace}"}
-                  class="font-medium text-gray-900 hover:text-primary-600 dark:text-white"
-                  data-testid={"user-workspace-#{workspace.slug}"}
-                >
-                  {workspace.name}
-                </.link>
-              </:col>
-              <:col :let={workspace} label="Endereço">
-                <span class="font-mono text-xs text-gray-500">/w/{workspace.slug}</span>
-              </:col>
-              <:col :let={workspace} label="" class="text-right">
-                <.button
-                  size="xs"
-                  variant="ghost"
-                  color="danger"
-                  icon="hero-minus-circle"
-                  phx-click="remove_workspace"
-                  phx-value-id={workspace.id}
-                  data-confirm={"Remover #{@user.name} de #{workspace.name}?"}
-                  data-testid={"user-workspace-remove-#{workspace.slug}"}
-                >
-                  Remover
-                </.button>
-              </:col>
-            </.table>
-            <.card_content>
-              <p
-                :if={@user.workspaces == []}
-                data-testid="no-user-workspaces"
-                class="mb-4 text-sm text-gray-500 dark:text-gray-400"
-              >
-                Ainda não faz parte de nenhum workspace e por isso não consegue usar o produto.
+      <div class="space-y-6">
+        <.card variant="outline">
+          <.card_content class="flex flex-wrap items-center gap-4">
+            <.avatar name={@user.name} size="lg" random_color />
+            <div class="min-w-0 flex-1">
+              <p class="text-lg font-semibold text-gray-900 dark:text-white" data-testid="user-name">
+                {@user.name}
               </p>
-              <.form
-                :if={@other_workspaces != []}
-                for={%{}}
-                id="add-workspace-form"
-                phx-submit="add_workspace"
-                class="flex items-end gap-2"
-              >
-                <div class="flex-1">
-                  <.icon_label icon="hero-building-office" label="Adicionar a um workspace" />
-                  <.combo_box
-                    id="add-workspace"
-                    name="workspace_id"
-                    label="Adicionar a um workspace"
-                    placeholder="Buscar workspace"
-                    options={@other_workspaces}
-                    data-testid="add-to-workspace"
-                  />
-                </div>
-                <.button
-                  type="submit"
-                  variant="outline"
-                  icon="hero-plus"
-                  data-testid="add-to-workspace-submit"
-                >
-                  Adicionar
-                </.button>
-              </.form>
-            </.card_content>
-          </.card>
-        </div>
+              <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="user-email">
+                {@user.email}
+              </p>
+              <p class="mt-1 text-xs text-gray-400">Criado em {format_date(@user.inserted_at)}</p>
+            </div>
+            <.status_badge disabled_at={@user.disabled_at} data-testid="user-status" />
+          </.card_content>
+        </.card>
 
         <.card variant="outline">
           <.card_header title="Acesso" />
-          <.card_content class="space-y-6">
+          <.card_content class="grid gap-6 sm:grid-cols-2">
             <div>
               <p class="text-sm font-medium text-gray-900 dark:text-white">Senha</p>
               <p class="mt-1 mb-3 text-sm text-gray-500 dark:text-gray-400">
@@ -238,8 +163,6 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
                 Redefinir senha
               </.button>
             </div>
-
-            <.separator />
 
             <div :if={is_nil(@user.disabled_at)}>
               <p class="text-sm font-medium text-gray-900 dark:text-white">Desativar acesso</p>
@@ -274,6 +197,79 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
                 Reativar usuário
               </.button>
             </div>
+          </.card_content>
+        </.card>
+
+        <.card variant="outline">
+          <.card_header title="Workspaces" description="Onde este usuário pode entrar." />
+          <.table
+            :if={@user.workspaces != []}
+            id="user-workspaces"
+            rows={@user.workspaces}
+            row_id={&"user-workspace-#{&1.id}"}
+          >
+            <:col :let={workspace} label="Workspace">
+              <.link
+                navigate={~p"/backoffice/workspaces/#{workspace}"}
+                class="font-medium text-gray-900 hover:text-primary-600 dark:text-white"
+                data-testid={"user-workspace-#{workspace.slug}"}
+              >
+                {workspace.name}
+              </.link>
+            </:col>
+            <:col :let={workspace} label="Endereço">
+              <span class="font-mono text-xs text-gray-500">/w/{workspace.slug}</span>
+            </:col>
+            <:col :let={workspace} label="" class="text-right">
+              <.button
+                size="xs"
+                variant="ghost"
+                color="danger"
+                icon="hero-minus-circle"
+                phx-click="remove_workspace"
+                phx-value-id={workspace.id}
+                data-confirm={"Remover #{@user.name} de #{workspace.name}?"}
+                data-testid={"user-workspace-remove-#{workspace.slug}"}
+              >
+                Remover
+              </.button>
+            </:col>
+          </.table>
+          <.card_content>
+            <p
+              :if={@user.workspaces == []}
+              data-testid="no-user-workspaces"
+              class="mb-4 text-sm text-gray-500 dark:text-gray-400"
+            >
+              Ainda não faz parte de nenhum workspace e por isso não consegue usar o produto.
+            </p>
+            <.form
+              :if={@other_workspaces != []}
+              for={%{}}
+              id="add-workspace-form"
+              phx-submit="add_workspace"
+              class="flex items-end gap-2"
+            >
+              <div class="flex-1">
+                <.icon_label icon="hero-building-office" label="Adicionar a um workspace" />
+                <.combo_box
+                  id="add-workspace"
+                  name="workspace_id"
+                  label="Adicionar a um workspace"
+                  placeholder="Buscar workspace"
+                  options={@other_workspaces}
+                  data-testid="add-to-workspace"
+                />
+              </div>
+              <.button
+                type="submit"
+                variant="outline"
+                icon="hero-plus"
+                data-testid="add-to-workspace-submit"
+              >
+                Adicionar
+              </.button>
+            </.form>
           </.card_content>
         </.card>
       </div>

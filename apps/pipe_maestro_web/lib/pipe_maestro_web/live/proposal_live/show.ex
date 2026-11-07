@@ -638,8 +638,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp pipeline_review(assigns) do
     ~H"""
-    <div class="grid gap-6 xl:grid-cols-3">
-      <div class="space-y-6 xl:col-span-2">
+    <div class="space-y-6">
+      <div class="grid gap-6 xl:grid-cols-2">
         <.markdown_card
           id="proposal-analysis"
           icon="hero-magnifying-glass"
@@ -647,6 +647,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           markdown={@result.analysis}
           testid="proposal-analysis"
         />
+        <.checks checks={@result.checks} />
+      </div>
+      <div class="space-y-6">
         <.card variant="outline">
           <.card_content>
             <.section_heading
@@ -673,7 +676,6 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           </.card_content>
         </.card>
       </div>
-      <div class="space-y-6"><.checks checks={@result.checks} /></div>
     </div>
     """
   end
@@ -684,8 +686,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp project_review(assigns) do
     ~H"""
-    <div class="grid gap-6 xl:grid-cols-3">
-      <div class="space-y-6 xl:col-span-2">
+    <div class="space-y-6">
+      <div class="grid gap-6 xl:grid-cols-2">
         <.markdown_card
           id="proposal-analysis"
           icon="hero-magnifying-glass"
@@ -693,10 +695,10 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           markdown={@result.analysis}
           testid="proposal-analysis"
         />
+        <.checks checks={@result.checks} />
       </div>
-      <div class="space-y-6"><.checks checks={@result.checks} /></div>
 
-      <.card variant="outline" class="xl:col-span-3">
+      <.card variant="outline">
         <.card_content>
           <.section_heading
             icon="hero-folder-open"
@@ -776,8 +778,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp task_review(assigns) do
     ~H"""
-    <div class="grid gap-6 xl:grid-cols-3">
-      <div class="space-y-6 xl:col-span-2">
+    <div class="space-y-6">
+      <div class="space-y-6">
         <.card variant="outline">
           <.card_content>
             <.section_heading icon="hero-queue-list" title="A tarefa proposta" />
@@ -828,15 +830,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             </div>
           </.card_content>
         </.card>
-        <.markdown_card
-          id="proposal-analysis"
-          icon="hero-magnifying-glass"
-          title="O que o agente entendeu"
-          markdown={@result.analysis}
-          testid="proposal-analysis"
-        />
       </div>
-      <div class="space-y-6">
+      <div class="grid gap-6 xl:grid-cols-2">
         <.card variant="outline">
           <.card_content>
             <.section_heading icon="hero-check-badge" title="Pronta para rodar?" />
@@ -879,6 +874,13 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             </p>
           </.card_content>
         </.card>
+        <.markdown_card
+          id="proposal-analysis"
+          icon="hero-magnifying-glass"
+          title="O que o agente entendeu"
+          markdown={@result.analysis}
+          testid="proposal-analysis"
+        />
       </div>
     </div>
     """
@@ -919,8 +921,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp decision_review(assigns) do
     ~H"""
-    <div class="grid gap-6 xl:grid-cols-3">
-      <div class="space-y-6 xl:col-span-2">
+    <div class="space-y-6">
+      <div class="space-y-6">
         <.markdown_card
           id="proposal-diagnosis"
           icon="hero-magnifying-glass"
@@ -1014,8 +1016,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp improve_review(assigns) do
     ~H"""
-    <div class="grid gap-6 xl:grid-cols-3">
-      <div class="space-y-6 xl:col-span-2">
+    <div class="space-y-6">
+      <div class="grid gap-6 xl:grid-cols-2">
         <.markdown_card
           id="proposal-analysis"
           icon="hero-chart-bar"
@@ -1023,35 +1025,6 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           markdown={@result.analysis}
           testid="proposal-analysis"
         />
-        <.card variant="outline">
-          <.card_content>
-            <.section_heading
-              icon="hero-squares-2x2"
-              title={"Pipeline revisado: #{@result.pipeline["name"]}"}
-            />
-            <.live_component
-              module={PipelineExplorer}
-              id="proposal-explorer"
-              pipeline={@proposed}
-              opts={compare(@current)}
-              testid="proposal"
-            />
-            <div class="mt-5 flex justify-end">
-              <.button
-                link_type="live_redirect"
-                to={
-                  ~p"/w/#{@workspace.slug}/pipelines/#{@result.pipeline_id}/edit?proposta=#{@job.id}"
-                }
-                icon="hero-arrow-right-circle"
-                data-testid="proposal-review-pipeline"
-              >
-                Revisar e salvar o pipeline
-              </.button>
-            </div>
-          </.card_content>
-        </.card>
-      </div>
-      <div class="space-y-6">
         <.card variant="outline">
           <.card_content>
             <.section_heading icon="hero-pencil-square" title="Mudanças propostas" />
@@ -1069,8 +1042,33 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           </.card_content>
         </.card>
       </div>
+      <.card variant="outline">
+        <.card_content>
+          <.section_heading
+            icon="hero-squares-2x2"
+            title={"Pipeline revisado: #{@result.pipeline["name"]}"}
+          />
+          <.live_component
+            module={PipelineExplorer}
+            id="proposal-explorer"
+            pipeline={@proposed}
+            opts={compare(@current)}
+            testid="proposal"
+          />
+          <div class="mt-5 flex justify-end">
+            <.button
+              link_type="live_redirect"
+              to={~p"/w/#{@workspace.slug}/pipelines/#{@result.pipeline_id}/edit?proposta=#{@job.id}"}
+              icon="hero-arrow-right-circle"
+              data-testid="proposal-review-pipeline"
+            >
+              Revisar e salvar o pipeline
+            </.button>
+          </div>
+        </.card_content>
+      </.card>
 
-      <.card variant="outline" class="xl:col-span-3">
+      <.card variant="outline">
         <.card_content>
           <.section_heading
             icon="hero-light-bulb"

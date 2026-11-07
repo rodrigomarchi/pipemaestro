@@ -2,7 +2,7 @@ defmodule PipeMaestroWeb.JobLive do
   @moduledoc """
   One job, in tabs (`?aba=`): its result, its prompt, the agent's run as a
   timeline that grows live while the runner reports events, and the audit;
-  its status and numbers stay beside them. The timeline is a stream of
+  its status and numbers stay above them, across the page. The timeline is a stream of
   segments (strips of icons and blocks of text, `PipeMaestroWeb.JobComponents`);
   only the strip still open at its end is kept here, to grow it in place. A queued or
   running job can be canceled from here. While it runs, what it spent so far
@@ -181,109 +181,16 @@ defmodule PipeMaestroWeb.JobLive do
         </.button>
       </:actions>
 
-      <div class="grid gap-6 lg:grid-cols-3">
-        <div class="min-w-0 space-y-6 lg:col-span-2">
-          <.page_tabs
-            tabs={job_tabs(@insights)}
-            active={@tab}
-            path={&~p"/w/#{@current_scope.workspace.slug}/jobs/#{@job.id}?aba=#{&1}"}
-            testid="job"
-          />
-
-          <.tab_panel id="resultado" active={@tab} testid="job">
-            <.card variant="outline">
-              <.card_content>
-                <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  {if @job.error, do: "Erro", else: "Resultado"}
-                </h2>
-                <p
-                  :if={!@job.result and !@job.error}
-                  class="mt-2 text-sm text-gray-500 dark:text-gray-400"
-                  data-testid="job-no-result"
-                >
-                  {if Job.active?(@job),
-                    do: "A execução ainda não terminou.",
-                    else: "A execução terminou sem resultado."}
-                </p>
-                <.agent_output
-                  :if={@job.result}
-                  id="job-result"
-                  text={@job.result}
-                  class="mt-2"
-                  data-testid="job-result"
-                />
-                <pre
-                  :if={@job.error}
-                  class="mt-2 whitespace-pre-wrap font-sans text-danger-700 dark:text-danger-400"
-                  data-testid="job-error"
-                >{@job.error}</pre>
-              </.card_content>
-            </.card>
-          </.tab_panel>
-
-          <.tab_panel id="prompt" active={@tab} testid="job">
-            <.card variant="outline">
-              <.card_content>
-                <div
-                  id="job-prompt-text"
-                  phx-hook="Highlight"
-                  class="prose prose-sm max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
-                  data-testid="job-prompt-text"
-                >
-                  {Markdown.to_html(@job.prompt)}
-                </div>
-              </.card_content>
-            </.card>
-          </.tab_panel>
-
-          <.tab_panel id="linha-do-tempo" active={@tab} testid="job">
-            <.card variant="outline">
-              <.card_header title="Linha do tempo" description="O que o agente fez, em ordem.">
-                <:action>
-                  <.badge
-                    size="sm"
-                    variant="outline"
-                    color="gray"
-                    label={"#{@event_count} eventos"}
-                    data-testid="job-event-count"
-                  />
-                </:action>
-              </.card_header>
-              <.card_content>
-                <p
-                  :if={@event_count == 0}
-                  class="text-sm text-gray-500 dark:text-gray-400"
-                  data-testid="job-no-events"
-                >
-                  {if @job.status == :queued,
-                    do: "Aguardando o runner começar…",
-                    else: "Nenhum evento recebido."}
-                </p>
-                <ol id="job-events" phx-update="stream" class="space-y-4" data-testid="job-events">
-                  <.timeline_segment
-                    :for={{id, segment} <- @streams.timeline}
-                    id={id}
-                    timeline="job-events"
-                    segment={segment}
-                  />
-                </ol>
-                <.typing :if={@typing} text={@typing} />
-              </.card_content>
-            </.card>
-          </.tab_panel>
-
-          <.tab_panel :if={@insights} id="auditoria" active={@tab} testid="job">
-            <.job_audit job={@job} insights={@insights} />
-          </.tab_panel>
-        </div>
-
-        <.card variant="outline" class="h-fit">
+      <div class="space-y-6">
+        <.card variant="outline">
           <.card_content>
-            <div class="mb-4 flex items-center justify-between gap-4 text-sm">
-              <span class="text-gray-500 dark:text-gray-400">Status</span>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <p class="min-w-0 truncate text-sm text-gray-500 dark:text-gray-400">
+                {prompt_summary(@job.prompt, 120)}
+              </p>
               <.job_status job={@job} data-testid="job-status" />
             </div>
-            <dl class="space-y-3 text-sm">
+            <dl class="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
               <.detail label="Runner" testid="job-runner-name">
                 {if @job.runner, do: @job.runner.name, else: "—"}
               </.detail>
@@ -299,10 +206,10 @@ defmodule PipeMaestroWeb.JobLive do
             </dl>
             <dl
               :if={@live}
-              class="mt-4 space-y-3 border-t border-gray-100 pt-4 text-sm dark:border-gray-800"
+              class="mt-4 grid gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm sm:grid-cols-3 lg:grid-cols-6 dark:border-gray-800"
               data-testid="job-live"
             >
-              <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <p class="col-span-full text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 Até agora
               </p>
               <.detail label="Custo" testid="job-live-cost">{format_cost(@live.cost_usd)}</.detail>
@@ -312,6 +219,99 @@ defmodule PipeMaestroWeb.JobLive do
             </dl>
           </.card_content>
         </.card>
+
+        <.page_tabs
+          tabs={job_tabs(@insights)}
+          active={@tab}
+          path={&~p"/w/#{@current_scope.workspace.slug}/jobs/#{@job.id}?aba=#{&1}"}
+          testid="job"
+        />
+
+        <.tab_panel id="resultado" active={@tab} testid="job">
+          <.card variant="outline">
+            <.card_content>
+              <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">
+                {if @job.error, do: "Erro", else: "Resultado"}
+              </h2>
+              <p
+                :if={!@job.result and !@job.error}
+                class="mt-2 text-sm text-gray-500 dark:text-gray-400"
+                data-testid="job-no-result"
+              >
+                {if Job.active?(@job),
+                  do: "A execução ainda não terminou.",
+                  else: "A execução terminou sem resultado."}
+              </p>
+              <.agent_output
+                :if={@job.result}
+                id="job-result"
+                text={@job.result}
+                class="mt-2"
+                data-testid="job-result"
+              />
+              <pre
+                :if={@job.error}
+                class="mt-2 whitespace-pre-wrap font-sans text-danger-700 dark:text-danger-400"
+                data-testid="job-error"
+              >{@job.error}</pre>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="prompt" active={@tab} testid="job">
+          <.card variant="outline">
+            <.card_content>
+              <div
+                id="job-prompt-text"
+                phx-hook="Highlight"
+                class="prose prose-sm max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
+                data-testid="job-prompt-text"
+              >
+                {Markdown.to_html(@job.prompt)}
+              </div>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="linha-do-tempo" active={@tab} testid="job">
+          <.card variant="outline">
+            <.card_header title="Linha do tempo" description="O que o agente fez, em ordem.">
+              <:action>
+                <.badge
+                  size="sm"
+                  variant="outline"
+                  color="gray"
+                  label={"#{@event_count} eventos"}
+                  data-testid="job-event-count"
+                />
+              </:action>
+            </.card_header>
+            <.card_content>
+              <p
+                :if={@event_count == 0}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="job-no-events"
+              >
+                {if @job.status == :queued,
+                  do: "Aguardando o runner começar…",
+                  else: "Nenhum evento recebido."}
+              </p>
+              <ol id="job-events" phx-update="stream" class="space-y-4" data-testid="job-events">
+                <.timeline_segment
+                  :for={{id, segment} <- @streams.timeline}
+                  id={id}
+                  timeline="job-events"
+                  segment={segment}
+                />
+              </ol>
+              <.typing :if={@typing} text={@typing} />
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel :if={@insights} id="auditoria" active={@tab} testid="job">
+          <.job_audit job={@job} insights={@insights} />
+        </.tab_panel>
       </div>
     </Layouts.app>
     """
@@ -328,9 +328,9 @@ defmodule PipeMaestroWeb.JobLive do
 
   defp detail(assigns) do
     ~H"""
-    <div class="flex justify-between gap-4">
+    <div class="min-w-0">
       <dt class="text-gray-500 dark:text-gray-400">{@label}</dt>
-      <dd class="text-right font-medium text-gray-900 dark:text-white" data-testid={@testid}>
+      <dd class="truncate font-medium text-gray-900 dark:text-white" data-testid={@testid}>
         {render_slot(@inner_block)}
       </dd>
     </div>
