@@ -225,6 +225,10 @@ defmodule PipeMaestroWeb.BoardLiveTest do
                has_element?(view, "[data-testid=board-tab-count-decisoes]", "1")
              end)
 
+      # Only a running task is stopped by its runner going offline.
+      create_task(ctx, "Fica rodando")
+      refute has_element?(view, "[data-testid=board-tab-count-visao]")
+
       Process.exit(tracker, :kill)
 
       assert eventually(fn ->
@@ -409,7 +413,7 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       refute has_element?(view, "[data-testid=board-task-#{a.id}]")
       assert has_element?(view, "[data-testid=board-task-#{b.id}]")
       assert has_element?(view, "#board-filters option[value=Outro][selected]")
-      assert has_element?(view, "#board-filters option[value=#{notes_id}][selected]")
+      assert has_element?(view, ~s(#board-filters option[value="#{notes_id}"][selected]))
     end
 
     test "a filter that matches nothing in the URL leaves the columns empty", ctx do
