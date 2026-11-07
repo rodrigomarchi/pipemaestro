@@ -282,6 +282,58 @@ defmodule PipeMaestro.Integrations.GitHubTest do
     end
   end
 
+  describe "merging a pull request on GitHub" do
+    setup do
+      pull = %{
+        "number" => 1,
+        "node_id" => "PR_1",
+        "state" => "open",
+        "draft" => false,
+        "title" => "Corrige",
+        "head" => %{"ref" => "cp/x", "sha" => "abc"},
+        "base" => %{"ref" => "main"},
+        "html_url" => "https://github.test/acme/app/pull/1"
+      }
+
+      fake = FakeGitHub.start(repos: %{"acme/app" => %{pulls: [pull]}})
+      {:ok, client} = Credentials.client(github_connection(workspace_fixture()))
+      %{fake: fake, client: client}
+    end
+
+    test "reads the pull request with its head and whether it merges", %{client: client} do
+      assert {:ok, %{number: 1, head_sha: "abc", base: "main", mergeable: true, merged: false}} =
+               GitHub.get_pr(client, "acme/app", 1)
+    end
+
+    test "checks are the commit statuses and the other apps' check runs", ctx do
+      FakeGitHub.put_status(ctx.fake, "acme/app", "abc", "ci/build", "pending")
+      FakeGitHub.put_status(ctx.fake, "acme/app", "abc", "ci/build", "success")
+      FakeGitHub.put_check_run(ctx.fake, "acme/app", "abc", "test", "failure")
+      FakeGitHub.put_check_run(ctx.fake, "acme/app", "abc", "lint", nil)
+      FakeGitHub.put_check_run(ctx.fake, "acme/app", "abc", "docs", "skipped")
+      FakeGitHub.put_check_run(ctx.fake, "acme/app", "other", "test", "success")
+
+      assert {:ok, checks} = GitHub.pr_checks(ctx.client, "acme/app", "abc")
+
+      assert Enum.map(checks, &{&1.name, &1.state}) == [
+               {"ci/build", :success},
+               {"test", :failure},
+               {"lint", :pending},
+               {"docs", :success}
+             ]
+    end
+
+    test "merges with the method, refused when the head moved", ctx do
+      assert {:error, %{status: 409}} =
+               GitHub.merge_pr(ctx.client, "acme/app", 1, %{method: "squash", sha: "old"})
+
+      assert :ok = GitHub.merge_pr(ctx.client, "acme/app", 1, %{method: "squash", sha: "abc"})
+
+      assert [%{"merged" => true, "merge" => %{"merge_method" => "squash", "sha" => "abc"}}] =
+               FakeGitHub.repo(ctx.fake, "acme/app").pulls
+    end
+  end
+
   describe "feedback on GitHub" do
     test "a stage is a check run and the draft is marked ready through GraphQL" do
       fake = FakeGitHub.start(permissions: %{"ana" => "write"})

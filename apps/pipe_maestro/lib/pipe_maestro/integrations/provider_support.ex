@@ -36,6 +36,27 @@ defmodule PipeMaestro.Integrations.ProviderSupport do
     end
   end
 
+  @doc """
+  The commit statuses of a host's combined status (`GET
+  /commits/:sha/status`) as checks: the latest of each context, which the
+  combined status already is.
+  """
+  @spec status_checks(map()) :: [map()]
+  def status_checks(combined) do
+    for status <- combined["statuses"] || [] do
+      %{
+        name: status["context"],
+        state: status_state(status["state"] || status["status"]),
+        url: status["target_url"],
+        summary: status["description"]
+      }
+    end
+  end
+
+  defp status_state(state) when state in ["success"], do: :success
+  defp status_state(state) when state in ["failure", "error"], do: :failure
+  defp status_state(_pending_or_warning), do: :pending
+
   @doc "A repository's name in lower case (hosts ignore case in it)."
   @spec downcase(String.t() | nil) :: String.t() | nil
   def downcase(nil), do: nil

@@ -109,4 +109,24 @@ defmodule PipeMaestro.Integrations.Provider do
 
   @doc "Changes a pull request: `%{body, ready}`, either."
   @callback update_pr(Client.t(), repo(), map(), map()) :: {:ok, map()} | error()
+
+  @doc """
+  A pull request, as the other calls answer it plus `head_sha`, `base`,
+  `state` (`"open"` or `"closed"`) and `mergeable` (`nil` while the host
+  works it out).
+  """
+  @callback get_pr(Client.t(), repo(), number :: pos_integer()) :: {:ok, map()} | error()
+
+  @doc """
+  The checks on a commit, the latest of each: commit statuses and, on
+  GitHub, check runs, as `%{name, state, url, summary}`, `state` one of
+  `:pending`, `:success`, `:failure`.
+  """
+  @callback pr_checks(Client.t(), repo(), sha :: String.t()) :: {:ok, [map()]} | error()
+
+  @doc """
+  Merges a pull request: `%{method, sha}`, `method` one of `"merge"`,
+  `"squash"`, `"rebase"`, refused by the host when its head is no longer `sha`.
+  """
+  @callback merge_pr(Client.t(), repo(), number :: pos_integer(), map()) :: :ok | error()
 end

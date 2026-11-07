@@ -28,6 +28,9 @@ config :pipe_maestro, PipeMaestro.Integrations.GitHub,
 # Tests reflect a task on its issue themselves (PipeMaestro.Integrations.Feedback).
 config :pipe_maestro, PipeMaestro.Integrations.FeedbackWorker, false
 
+# Tests look at a task's pull request themselves (PipeMaestro.Integrations.AutoMerge).
+config :pipe_maestro, PipeMaestro.Integrations.AutoMergeWorker, false
+
 # A git worktree gets its own database (config/worktree.exs);
 # MIX_TEST_PARTITION splits it further (`mix help test`).
 {worktree, _binding} = Code.eval_file("worktree.exs", __DIR__)

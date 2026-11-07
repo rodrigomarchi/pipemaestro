@@ -1648,7 +1648,7 @@ defmodule PipeMaestro.TasksTest do
       assert %{key: "correcao-1", name: "Correção 1", rules: []} = List.last(task.stages)
       assert_receive {:job_assign, job}
       assert job.prompt =~ "Abra o PR desta branch"
-      assert job.prompt =~ "Uma pessoa pediu uma correção"
+      assert job.prompt =~ "Foi pedida uma correção"
       assert %{"pr" => %{"ready" => true, "block" => body}} = job.context["delivery"]
       assert body =~ "- [x] Correção 1"
 
@@ -1949,5 +1949,75 @@ defmodule PipeMaestro.TasksTest do
 
     assert Tasks.list_tasks(other) == []
     assert_raise Ecto.NoResultsError, fn -> Tasks.get_task!(other, task.id) end
+  end
+
+  describe "merging the pull request" do
+    setup ctx do
+      %{
+        pipeline:
+          pipeline_fixture(ctx.workspace, %{
+            "name" => "Com merge",
+            "delivery" => "pr",
+            "auto_merge" => "true",
+            "merge_method" => "rebase",
+            "max_merge_fixes" => "2"
+          })
+      }
+    end
+
+    defp merge_succeeded(ctx) do
+      task = create_task(ctx)
+      task = run_current(ctx, task, %{})
+      run_current(ctx, task, %{})
+    end
+
+    test "the pipeline's choice goes with the task", ctx do
+      task = create_task(ctx)
+
+      assert %{"auto_merge" => true, "merge_method" => "rebase", "max_merge_fixes" => 2} =
+               task.pipeline_context
+    end
+
+    test "without an integration the platform can call, the merge is blocked at once", ctx do
+      task = merge_succeeded(ctx)
+
+      assert %Task{status: :succeeded, merge_state: "blocked", merge_reason: reason} = task
+      assert reason =~ "integração"
+
+      assert Enum.any?(
+               PipeMaestro.Repo.all(PipeMaestro.Notifications.Notification),
+               &(&1.kind == :task_merge_blocked and &1.task_id == task.id)
+             )
+    end
+
+    test "a correction for the merge is counted; a person's is not", ctx do
+      task = merge_succeeded(ctx)
+
+      assert {:ok, %Task{merge_state: "fixing", merge_fixes: 1} = task} =
+               Tasks.correct(task, "o check de lint falhou", merge_fix: true)
+
+      task = run_current(ctx, task, %{})
+      assert %Task{status: :succeeded, merge_state: "blocked", merge_fixes: 1} = task
+
+      assert {:ok, %Task{merge_state: nil, merge_fixes: 1}} =
+               Tasks.correct(task, "e o changelog", by: ctx.user)
+    end
+
+    test "a blocked merge is tried again from zero corrections", ctx do
+      task = merge_succeeded(ctx)
+      {:ok, task} = Tasks.correct(task, "o check falhou", merge_fix: true)
+      task = run_current(ctx, task, %{})
+
+      assert {:ok, %Task{merge_state: "blocked", merge_fixes: 0}} =
+               Tasks.retry_merge(task, ctx.user)
+
+      assert Tasks.retry_merge(create_task(ctx), ctx.user) == {:error, :not_blocked}
+    end
+
+    test "a task canceled while fixing for the merge no longer waits for it", ctx do
+      task = merge_succeeded(ctx)
+      {:ok, task} = Tasks.correct(task, "o check falhou", merge_fix: true)
+      assert {:ok, %Task{status: :canceled, merge_state: nil}} = Tasks.cancel_task(task)
+    end
   end
 end

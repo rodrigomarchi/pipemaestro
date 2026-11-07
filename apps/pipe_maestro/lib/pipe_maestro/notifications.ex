@@ -35,7 +35,7 @@ defmodule PipeMaestro.Notifications do
   @active_statuses [:running, :awaiting_decision, :queued]
 
   @typedoc "What a task's event is: `PipeMaestro.Tasks` announces the same kinds."
-  @type task_event :: :awaiting | :succeeded | :failed | :canceled
+  @type task_event :: :awaiting | :succeeded | :failed | :canceled | :merged | :merge_blocked
 
   @typedoc """
   Options of `list_for/2`: `limit` (default 20), `before` (the
@@ -83,7 +83,9 @@ defmodule PipeMaestro.Notifications do
 
   @doc """
   Notifies the people of a task that it paused for a decision (`:awaiting`)
-  or ended (`:succeeded`, `:failed`, `:canceled`).
+  or ended (`:succeeded`, `:failed`, `:canceled`), and, with `auto_merge`,
+  that the platform merged its pull request (`:merged`) or could not
+  (`:merge_blocked`, with the reason).
   """
   @spec notify_task(Task.t(), task_event()) :: [Notification.t()]
   def notify_task(%Task{} = task, event) do
@@ -92,7 +94,7 @@ defmodule PipeMaestro.Notifications do
     create(task.workspace_id, recipients_for_task(task), %{
       kind: kind,
       title: title,
-      body: if(event == :awaiting, do: task.decision_reason),
+      body: task_body(task, event),
       task_id: task.id
     })
   end
@@ -101,6 +103,14 @@ defmodule PipeMaestro.Notifications do
   defp task_text(task, :succeeded), do: {:task_succeeded, "#{task.title} foi concluída"}
   defp task_text(task, :failed), do: {:task_failed, "#{task.title} falhou"}
   defp task_text(task, :canceled), do: {:task_canceled, "#{task.title} foi cancelada"}
+  defp task_text(task, :merged), do: {:task_merged, "O PR de #{task.title} foi integrado"}
+
+  defp task_text(task, :merge_blocked),
+    do: {:task_merge_blocked, "O merge do PR de #{task.title} parou"}
+
+  defp task_body(task, :awaiting), do: task.decision_reason
+  defp task_body(task, :merge_blocked), do: task.merge_reason
+  defp task_body(_task, _event), do: nil
 
   @doc """
   Who hears of a task: its creator and the owner of its decision, those still

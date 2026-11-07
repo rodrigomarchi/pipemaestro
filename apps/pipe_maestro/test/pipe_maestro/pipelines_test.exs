@@ -4,7 +4,7 @@ defmodule PipeMaestro.PipelinesTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.Pipelines
-  alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage, Templates}
+  alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage, Templates, Yaml}
 
   setup do
     %{workspace: workspace_fixture()}
@@ -239,6 +239,10 @@ defmodule PipeMaestro.PipelinesTest do
           "description" => "Com tudo: \"aspas\", dois-pontos: e #.",
           "system_prompt" => "Linha 1\nLinha 2",
           "max_task_cost_usd" => "2.5",
+          "delivery" => "pr",
+          "auto_merge" => "true",
+          "merge_method" => "rebase",
+          "max_merge_fixes" => "5",
           "mcp_config_json" =>
             ~s({"mcpServers": {"grafana": {"command": "mcp-grafana", "args": ["-t"]}}}),
           "agents_json" => ~s({"revisor": {"description": "d", "prompt": "p"}}),
@@ -269,7 +273,9 @@ defmodule PipeMaestro.PipelinesTest do
       assert {:ok, imported} = Pipelines.import_yaml(other, yaml)
 
       fields = fn p ->
-        Map.take(p, [:name, :description, :system_prompt, :mcp_config, :agents, :delivery])
+        p
+        |> Map.take([:name, :description, :system_prompt, :mcp_config, :agents, :delivery])
+        |> Map.merge(Map.take(p, [:auto_merge, :merge_method, :max_merge_fixes]))
         |> Map.put(:max, p.max_task_cost_usd && Decimal.to_string(p.max_task_cost_usd))
       end
 
@@ -306,6 +312,38 @@ defmodule PipeMaestro.PipelinesTest do
       assert {:error, "YAML inválido" <> _} = Pipelines.import_yaml(other, "name: [")
       assert {:error, %Ecto.Changeset{}} = Pipelines.import_yaml(other, "name: Sem etapas")
       assert {:error, "precisa ser" <> _} = Pipelines.import_yaml(other, "- só uma lista")
+    end
+
+    test "merging the pull request needs a delivery in PR and sane settings", %{
+      workspace: workspace
+    } do
+      attrs = %{
+        "name" => "Merge",
+        "auto_merge" => "true",
+        "stages" => [%{"key" => "a", "name" => "A", "prompt" => "A"}]
+      }
+
+      assert {:error, changeset} = Pipelines.create_pipeline(workspace, attrs)
+      assert "o merge automático precisa da entrega em PR" in errors_on(changeset).auto_merge
+
+      attrs =
+        Map.merge(attrs, %{"delivery" => "pr", "merge_method" => "x", "max_merge_fixes" => "11"})
+
+      assert {:error, changeset} = Pipelines.create_pipeline(workspace, attrs)
+      assert %{merge_method: [_], max_merge_fixes: [_]} = errors_on(changeset)
+
+      assert {:ok, %{auto_merge: true, merge_method: "squash", max_merge_fixes: 3} = pipeline} =
+               Pipelines.create_pipeline(
+                 workspace,
+                 Map.put(attrs, "delivery", "pr") |> Map.drop(~w(merge_method max_merge_fixes))
+               )
+
+      # A pipeline proposed by the agent never merges by itself.
+      yaml = Pipelines.export_yaml(pipeline)
+      assert yaml =~ "auto_merge: true"
+
+      assert Yaml.without_caps(%{"auto_merge" => true, "stages" => []}) ==
+               %{"stages" => []}
     end
 
     test "a workspace does not see another's pipelines", %{workspace: workspace} do
