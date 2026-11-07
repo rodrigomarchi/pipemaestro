@@ -676,8 +676,8 @@ defmodule PipeMaestroRunner.JobRunner do
           into: payload,
           do: {key, value}
 
-    out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
     GitCredential.remove(state.workdir, current.job.id)
+    out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
     discard_scratch(state, current.job)
     LogCollector.forget_secrets(current.job.id)
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
