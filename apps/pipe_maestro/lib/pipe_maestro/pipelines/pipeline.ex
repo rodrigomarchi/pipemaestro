@@ -97,6 +97,7 @@ defmodule PipeMaestro.Pipelines.Pipeline do
       drop_param: :stages_drop
     )
     |> validate_stages()
+    |> validate_contexts()
     |> unsafe_validate_unique([:workspace_id, :name], PipeMaestro.Repo,
       error_key: :name,
       message: "já existe um pipeline com esse nome"
@@ -184,6 +185,62 @@ defmodule PipeMaestro.Pipelines.Pipeline do
         changeset
     end
   end
+
+  # A stage that continues the one before needs a single session to resume:
+  # not the first stage, nor one in a group, nor one after a group. The error
+  # goes on the stage's own `context`.
+  defp validate_contexts(changeset) do
+    case get_change(changeset, :stages) do
+      nil ->
+        changeset
+
+      stages ->
+        {checked, _previous} = Enum.map_reduce(stages, :none, &check_context/2)
+
+        %{
+          changeset
+          | changes: Map.put(changeset.changes, :stages, checked),
+            valid?: changeset.valid? and Enum.all?(checked, & &1.valid?)
+        }
+    end
+  end
+
+  # A stage the form removed is no one's previous stage.
+  defp check_context(%{action: :replace} = stage, previous), do: {stage, previous}
+  defp check_context(stage, previous), do: {context_error(stage, previous), stage}
+
+  defp context_error(stage, previous) do
+    cond do
+      get_field(stage, :context) != "continue" ->
+        stage
+
+      previous == :none ->
+        add_error(
+          stage,
+          :context,
+          "a primeira etapa não tem uma etapa anterior para continuar"
+        )
+
+      grouped?(stage) ->
+        add_error(
+          stage,
+          :context,
+          "uma etapa em paralelo não pode continuar a anterior"
+        )
+
+      grouped?(previous) ->
+        add_error(
+          stage,
+          :context,
+          "a etapa anterior roda em paralelo: não há uma sessão só para continuar"
+        )
+
+      true ->
+        stage
+    end
+  end
+
+  defp grouped?(stage), do: get_field(stage, :group) not in [nil, ""]
 
   defp duplicated_keys(stages) do
     stages

@@ -123,7 +123,8 @@ defmodule PipeMaestro.Proposals.PipelineKind do
               "timeout_minutes" => %{"type" => "integer", "minimum" => 1, "maximum" => 1440},
               "gates" => %{"type" => "array", "items" => %{"type" => "string"}},
               "rules" => %{"type" => "array", "items" => %{"type" => "string"}},
-              "group" => %{"type" => "string"}
+              "group" => %{"type" => "string"},
+              "context" => %{"type" => "string", "enum" => Stage.contexts()}
             }
           }
         }
