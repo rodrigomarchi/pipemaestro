@@ -41,6 +41,8 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Pipelines
+  alias PipeMaestro.Pipelines
   alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage}
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
@@ -849,25 +851,8 @@ defmodule PipeMaestro.Tasks do
   def step_indexes(%Task{} = task, index), do: step(task, index)
 
   # The indexes of the step `index` belongs to, in order.
-  defp step(task, index) do
-    case group_of(task, index) do
-      nil ->
-        [index]
-
-      group ->
-        same = fn i -> group_of(task, i) == group end
-
-        first =
-          index
-          |> Stream.iterate(&(&1 - 1))
-          |> Enum.take_while(&(&1 >= 0 and same.(&1)))
-          |> List.last()
-
-        first
-        |> Stream.iterate(&(&1 + 1))
-        |> Enum.take_while(&(&1 < length(task.stages) and same.(&1)))
-    end
-  end
+  defp step(task, index),
+    do: task.stages |> Pipelines.steps() |> Enum.find([index], &(index in &1))
 
   defp step_first(task, index), do: task |> step(index) |> hd()
   defp step_last(task, index), do: task |> step(index) |> List.last()
