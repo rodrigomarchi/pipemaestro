@@ -1,6 +1,6 @@
 /**
  * @section Tarefas e pipelines
- * @flow A [todo] An admin sets a stage to continue the previous stage's agent session: the first stage is refused with the reason next to its context, a later stage is saved and the editor shows the choice again
+ * @flow A [done] An admin sets a stage to continue the previous stage's agent session: the first stage is refused with the reason next to its context, a later stage is saved and the editor shows the choice again
  */
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
