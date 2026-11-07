@@ -154,6 +154,7 @@ defmodule PipeMaestroWeb.JobLive do
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:jobs}
+      focus={Job.active?(@job)}
       title="Execução"
     >
       <:status>

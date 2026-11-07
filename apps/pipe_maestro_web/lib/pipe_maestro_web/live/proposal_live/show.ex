@@ -396,6 +396,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:proposals}
+      focus={Job.active?(@job)}
       title={@title}
     >
       <:status>

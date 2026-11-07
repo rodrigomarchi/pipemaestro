@@ -546,6 +546,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:tasks}
+      focus={Task.active?(@task)}
       title={@task.title}
     >
       <:status>

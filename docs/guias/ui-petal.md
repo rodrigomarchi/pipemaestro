@@ -123,6 +123,17 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
   relacionados ficam lado a lado (`xl:grid-cols-2`); diagramas, tabelas e formulários
   ocupam a linha inteira.
 
+## Sidebar
+
+- A sidebar abre ou fecha para uma faixa de ícones pelo botão ao lado do título; a
+  escolha fica guardada no navegador e vale em todas as telas
+  (`assets/js/sidebar.js`).
+- Uma tela com trabalho vivo do agente passa `focus` a `Layouts.app`: a tarefa e a
+  execução em andamento, a proposta sendo escrita e Decisões enquanto o agente analisa
+  uma falha. A sidebar abre fechada e fecha quando o trabalho começa com a tela aberta;
+  quando ele termina, ela não abre sozinha, para a tela não pular. Uma tela nova com
+  trabalho vivo segue a mesma regra.
+
 ## Texto do agente e de pessoas
 
 - Prompts, resumos, motivos, instruções, perguntas e artefatos são Markdown:
