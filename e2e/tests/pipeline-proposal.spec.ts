@@ -76,7 +76,8 @@ test.describe("Pipeline proposal", () => {
     await expect(proposal.checks).toContainText("make lint");
     await expect(proposal.checks).toContainText("Sem alvo de lint");
     await expect(proposal.stage(1)).toContainText("Implementação");
-    await expect(proposal.stage(1)).toContainText("{{projeto.teste}}");
+    await expect(await proposal.openStage(1)).toContainText("{{projeto.teste}}");
+    await proposal.closeStage();
     await shot(app.page, "proposal-review");
 
     await proposal.openPipeline();

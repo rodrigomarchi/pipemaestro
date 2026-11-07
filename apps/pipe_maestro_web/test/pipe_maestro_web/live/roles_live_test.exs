@@ -25,7 +25,12 @@ defmodule PipeMaestroWeb.RolesLiveTest do
     assert {:error, {:live_redirect, %{to: path, flash: %{"error" => _}}}} =
              live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/#{pipeline.id}/edit")
 
-    assert path == "/w/#{ctx.workspace.slug}/pipelines"
+    assert path == "/w/#{ctx.workspace.slug}/pipelines/#{pipeline.id}"
+
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/#{pipeline.id}")
+    assert has_element?(view, "[data-testid=pipeline-diagram]")
+    refute has_element?(view, "[data-testid=pipeline-page-edit]")
+    refute has_element?(view, "[data-testid^=diagram-insert-]")
 
     {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/projects")
     refute has_element?(view, "[data-testid=new-project]")

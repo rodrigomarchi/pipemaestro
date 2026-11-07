@@ -67,6 +67,36 @@ defmodule PipeMaestro.Pipelines do
   def delete_pipeline(%Pipeline{} = pipeline), do: Repo.delete(pipeline)
 
   @doc """
+  The steps of a list of stages, as their indexes in order: a stage alone, or
+  consecutive stages with the same `group`, which run at once. A blank group
+  is no group.
+  """
+  @spec steps([%{optional(:group) => String.t() | nil}]) :: [[non_neg_integer()]]
+  def steps(stages) do
+    stages
+    |> Enum.with_index()
+    |> Enum.chunk_while(
+      nil,
+      fn {stage, index}, chunk -> step_chunk(chunk, group(stage), index) end,
+      fn
+        nil -> {:cont, nil}
+        {_group, indexes} -> {:cont, Enum.reverse(indexes), nil}
+      end
+    )
+  end
+
+  defp step_chunk({group, indexes}, group, index) when group != nil,
+    do: {:cont, {group, [index | indexes]}}
+
+  defp step_chunk(nil, group, index), do: {:cont, {group, [index]}}
+
+  defp step_chunk({_other, indexes}, group, index),
+    do: {:cont, Enum.reverse(indexes), {group, [index]}}
+
+  defp group(%{group: group}) when group not in [nil, ""], do: group
+  defp group(_stage), do: nil
+
+  @doc """
   Creates the ready-made pipelines (`PipeMaestro.Pipelines.Templates`)
   the workspace does not have yet, by name.
   """

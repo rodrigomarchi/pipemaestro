@@ -131,9 +131,20 @@ defmodule PipeMaestroWeb.UsageLiveTest do
     assert has_element?(view, "[data-testid=usage-rate-limit-mac-status]", "perto do limite")
     assert has_element?(view, "[data-testid=usage-agent-active-time]", "30 s")
     assert has_element?(view, "[data-testid=usage-stage-queue-a]")
+    refute has_element?(view, "[data-testid=usage-pipeline-diagram]")
 
     view |> form("#usage-period", period: %{pipeline: "Entrega"}) |> render_change()
     assert has_element?(view, "[data-testid=usage-period-label]", "só do pipeline Entrega")
+
+    # The pipeline, stage by stage, with what each one spent.
+    assert has_element?(
+             view,
+             "[data-testid=usage-pipeline-diagram] [data-testid=diagram-metrics-0]",
+             "US$ 0.5"
+           )
+
+    assert has_element?(view, "[data-testid=diagram-metrics-0]", "1 falha")
+    refute has_element?(view, "[data-testid=diagram-metrics-1]")
     assert has_element?(view, "[data-testid=usage-total-runs]", "1")
     refute has_element?(view, "[data-testid=usage-by-origin-proposal-pipeline]")
 

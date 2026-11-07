@@ -21,7 +21,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     conn: conn,
     workspace: workspace
   } do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new?view=form")
 
     view
     |> form("#pipeline-form",
@@ -56,9 +56,8 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     {:error, {:live_redirect, %{to: path}}} =
       view |> form("#pipeline-form") |> render_submit()
 
-    assert path == "/w/#{workspace.slug}/pipelines"
-
     [pipeline] = Pipelines.list_pipelines(workspace)
+    assert path == "/w/#{workspace.slug}/pipelines/#{pipeline.id}"
     assert pipeline.name == "Revisão"
     assert Enum.map(pipeline.stages, & &1.key) == ["escrever", "ler"]
     assert Enum.map(pipeline.stages, & &1.timeout_minutes) == [60, 20]
@@ -171,7 +170,9 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
   } do
     pipeline = pipeline_fixture(workspace, %{"name" => "Meu"})
 
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+    {:ok, view, _html} =
+      live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+
     assert has_element?(view, "[data-testid=stage-name-1]")
 
     view |> element("[data-testid=stage-down-0]") |> render_click()
@@ -266,7 +267,8 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       workspace: workspace,
       pipeline: pipeline
     } do
-      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
 
       assert view |> element("[data-testid=stage-chips-0]") |> render() =~ "1 gate"
       assert view |> element("[data-testid=stage-chips-1]") |> render() =~ "grupo revisoes"
@@ -292,6 +294,21 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       assert meta =~ "2 etapas"
     end
 
+    test "the list previews each pipeline as a small diagram", %{
+      conn: conn,
+      workspace: workspace
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
+
+      assert has_element?(
+               view,
+               "[data-testid=pipeline-preview-Editor] [data-testid=diagram-stage-0]"
+             )
+
+      refute has_element?(view, "[data-testid=pipeline-Editor] [data-testid=diagram-rail]")
+      refute has_element?(view, "[data-testid=pipeline-Editor] [phx-click=select_node]")
+    end
+
     test "the form says an empty cost cap is no limit", %{conn: conn, workspace: workspace} do
       {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
       html = render(view)
@@ -301,6 +318,248 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       assert html =~ "Um teto de custo, se quiser, e o que vira do código."
       assert html =~ "Teto de custo (US$, opcional)"
       refute html =~ "Orçamento"
+    end
+  end
+
+  describe "the pipeline page" do
+    setup %{workspace: workspace} do
+      pipeline =
+        pipeline_fixture(workspace, %{
+          "name" => "Bug",
+          "delivery" => "pr",
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça **A**"},
+            %{
+              "key" => "b",
+              "name" => "Etapa B",
+              "prompt" => "Faça B",
+              "gates_text" => "mix test",
+              "rules_text" => "risco == alto"
+            }
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    test "shows the pipeline as a diagram", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+
+      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      assert has_element?(view, "[data-testid=diagram-stage-0]", "Etapa A")
+      assert has_element?(view, "[data-testid=diagram-edge-1-rule-0]", "risco == alto")
+      assert has_element?(view, "[data-testid=diagram-delivery]", "Pull request")
+      assert has_element?(view, "[data-testid=pipeline-page-version]", "v1")
+    end
+
+    test "a stage opens in the side panel, and closes", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+      refute has_element?(view, "[data-testid=pipeline-panel]")
+
+      view |> element("[data-testid=diagram-select-1]") |> render_click()
+      assert has_element?(view, "[data-testid=pipeline-panel]", "Etapa B")
+      assert has_element?(view, "[data-testid=stage-details-gates]", "mix test")
+      assert has_element?(view, "[data-testid=diagram-select-1][aria-pressed=true]")
+
+      view |> element("[data-testid=pipeline-panel-close]") |> render_click()
+      refute has_element?(view, "[data-testid=pipeline-panel]")
+
+      view |> element("[data-testid=diagram-entry]") |> render_click()
+      assert has_element?(view, "[data-testid=pipeline-summary-delivery]", "Pull request")
+    end
+
+    test "an admin can edit it from there", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+
+      assert has_element?(
+               view,
+               ~s([data-testid=pipeline-page-edit][href="/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit"])
+             )
+    end
+
+    test "a pipeline of another workspace is not found", %{conn: conn, workspace: workspace} do
+      other = pipeline_fixture(workspace_fixture(%{name: "Outro"}))
+
+      assert_raise Ecto.NoResultsError, fn ->
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{other.id}")
+      end
+    end
+
+    test "the list leads to it", %{conn: conn, workspace: workspace, pipeline: pipeline} do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
+
+      assert has_element?(
+               view,
+               ~s([data-testid=pipeline-open-Bug][href="/w/#{workspace.slug}/pipelines/#{pipeline.id}"])
+             )
+    end
+
+    test "saving an edit leads back to it", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               view |> form("#pipeline-form", pipeline: %{description: "x"}) |> render_submit()
+
+      assert to == "/w/#{workspace.slug}/pipelines/#{pipeline.id}"
+    end
+  end
+
+  describe "the editor's diagram" do
+    setup %{workspace: workspace} do
+      %{pipeline: pipeline_fixture(workspace, %{"name" => "Meu"})}
+    end
+
+    defp edit(conn, workspace, pipeline, query \\ ""),
+      do: live(conn, "/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit" <> query)
+
+    test "opens on the diagram, and the form is a tab away", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+
+      assert has_element?(view, "[data-testid=pipeline-view-diagram][aria-current]")
+      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      assert has_element?(view, "[data-testid=diagram-insert-0]")
+      refute has_element?(view, "[data-testid=stage-card-0]")
+
+      view |> element("[data-testid=pipeline-view-form]") |> render_click()
+      assert_patch(view, "/w/#{ctx.workspace.slug}/pipelines/#{ctx.pipeline.id}/edit?view=form")
+      assert has_element?(view, "[data-testid=stage-card-0]")
+      refute has_element?(view, "[data-testid=pipeline-diagram]")
+    end
+
+    test "every input is in the form once, whichever the tab", ctx do
+      for query <- ["", "?view=form"] do
+        {:ok, _view, html} = edit(ctx.conn, ctx.workspace, ctx.pipeline, query)
+
+        assert html |> String.split(~s(name="pipeline[stages][1][name]")) |> length() == 2
+        assert html |> String.split(~s(name="pipeline[name]")) |> length() == 2
+      end
+    end
+
+    test "a stage opens in the side panel, editable, and the node follows the draft", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      assert has_element?(view, "[data-testid=stage-panel-1].hidden")
+
+      view |> element("[data-testid=diagram-select-1]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-panel-1].hidden")
+      assert has_element?(view, "[data-testid=stage-panel-0].hidden")
+
+      view
+      |> form("#pipeline-form", pipeline: %{stages: %{"1" => %{name: "Revisar"}}})
+      |> render_change()
+
+      assert has_element?(view, "[data-testid=diagram-stage-1]", "Revisar")
+
+      view |> element("[data-testid=stage-panel-1-close]") |> render_click()
+      assert has_element?(view, "[data-testid=stage-panel-1].hidden")
+    end
+
+    test "the entry opens the pipeline's own settings", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      assert has_element?(view, "[data-testid=pipeline-panel].hidden")
+
+      view |> element("[data-testid=diagram-entry]") |> render_click()
+      refute has_element?(view, "[data-testid=pipeline-panel].hidden")
+      assert has_element?(view, "[data-testid=pipeline-panel] [data-testid=pipeline-name]")
+    end
+
+    test "saves from the diagram", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-select-0]") |> render_click()
+
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#pipeline-form", pipeline: %{stages: %{"0" => %{name: "Primeira"}}})
+        |> render_submit()
+
+      assert [%{name: "Primeira"}, %{name: "Etapa B"}] =
+               Pipelines.get_pipeline!(ctx.workspace, ctx.pipeline.id).stages
+    end
+
+    test "a new pipeline opens on the diagram with its settings open", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/new")
+
+      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      refute has_element?(view, "[data-testid=pipeline-panel].hidden")
+    end
+  end
+
+  describe "changing the structure on the diagram" do
+    setup %{conn: conn, workspace: workspace} do
+      pipeline =
+        pipeline_fixture(workspace, %{
+          "name" => "Três",
+          "stages" => [
+            %{"key" => "a", "name" => "A", "prompt" => "a"},
+            %{"key" => "b", "name" => "B", "prompt" => "b"},
+            %{"key" => "c", "name" => "C", "prompt" => "c"}
+          ]
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+      %{pipeline: pipeline, view: view}
+    end
+
+    defp node_names(view) do
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("[data-testid^=diagram-select-] .truncate")
+      |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
+    end
+
+    defp click(view, testid), do: view |> element("[data-testid=#{testid}]") |> render_click()
+
+    test "inserts a stage between two and opens it", %{view: view} do
+      click(view, "diagram-insert-2")
+
+      assert node_names(view) == ["A", "B", "Nova etapa", "C"]
+      refute has_element?(view, "[data-testid=stage-panel-2].hidden")
+    end
+
+    test "moves a stage, and its panel follows it", %{view: view} do
+      click(view, "diagram-select-0")
+      click(view, "diagram-right-0")
+
+      assert node_names(view) == ["B", "A", "C"]
+      refute has_element?(view, "[data-testid=stage-panel-1].hidden")
+    end
+
+    test "removes a stage", %{view: view} do
+      click(view, "diagram-remove-1")
+      assert node_names(view) == ["A", "C"]
+    end
+
+    test "runs a stage at once with the one before, and back", %{view: view} do
+      click(view, "diagram-join-group-2")
+      assert has_element?(view, "[data-testid=diagram-step-1][data-parallel]")
+      assert has_element?(view, "[data-testid=diagram-fork-1]")
+
+      click(view, "diagram-leave-group-2")
+      refute has_element?(view, "[data-parallel]")
+    end
+
+    test "the structure saves", %{view: view, workspace: workspace, pipeline: pipeline} do
+      click(view, "diagram-join-group-2")
+      view |> form("#pipeline-form") |> render_submit()
+
+      assert [%{group: nil}, %{group: "paralelo-1"}, %{group: "paralelo-1"}] =
+               Pipelines.get_pipeline!(workspace, pipeline.id).stages
     end
   end
 end

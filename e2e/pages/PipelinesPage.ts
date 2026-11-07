@@ -28,10 +28,17 @@ export class PipelinesPage {
     return this.page.getByTestId(`pipeline-version-${name}`);
   }
 
+  /** Opens a pipeline's editor on the Formulário tab (it opens on the diagram). */
   async edit(name: string) {
     await this.page.getByTestId(`pipeline-edit-${name}`).click();
     await expect(this.page.getByTestId("pipeline-name")).toHaveValue(name);
     await waitForLiveView(this.page);
+    await this.openFormTab();
+  }
+
+  async openFormTab() {
+    await this.page.getByTestId("pipeline-view-form").click();
+    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
   }
 
   stagePrompt(index: number): Locator {
@@ -73,8 +80,64 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-gates-${index}`);
   }
 
+  /** Saves, lands on the pipeline's page, and goes back to the list. */
   async save() {
     await this.page.getByTestId("pipeline-save").click();
+    await expect(this.page.getByTestId("pipeline-page-version")).toBeVisible();
+    await this.page.getByTestId("pipeline-page-back").click();
     await expect(this.page.getByTestId("create-default-pipelines")).toBeVisible();
+  }
+
+  /** A pipeline's page, from the list: the diagram. */
+  async openPage(name: string) {
+    await this.page.getByTestId(`pipeline-open-${name}`).click();
+    await expect(this.page.getByTestId("pipeline-page-version")).toBeVisible();
+    await waitForLiveView(this.page);
+  }
+
+  get diagram(): Locator {
+    return this.page.getByTestId("pipeline-diagram");
+  }
+
+  /** A stage's node in the diagram, by position. */
+  diagramStage(index: number): Locator {
+    return this.page.getByTestId(`diagram-stage-${index}`);
+  }
+
+  diagramStep(index: number): Locator {
+    return this.page.getByTestId(`diagram-step-${index}`);
+  }
+
+  /** Opens a stage's side panel from its node. */
+  async selectStage(index: number) {
+    await this.page.getByTestId(`diagram-select-${index}`).click();
+  }
+
+  /** The panel of a stage in the editor (its fields), or of the pipeline's page (its details). */
+  stagePanel(index: number): Locator {
+    return this.page.getByTestId(`stage-panel-${index}`);
+  }
+
+  get pagePanel(): Locator {
+    return this.page.getByTestId("pipeline-panel");
+  }
+
+  stageName(index: number): Locator {
+    return this.page.getByTestId(`stage-name-${index}`);
+  }
+
+  /** Inserts a stage at a position from the diagram's `+`; its panel opens. */
+  async insertStageAt(at: number) {
+    await this.page.getByTestId(`diagram-insert-${at}`).click();
+    await expect(this.stagePanel(at)).toBeVisible();
+  }
+
+  async joinGroup(index: number) {
+    await this.page.getByTestId(`diagram-join-group-${index}`).click();
+  }
+
+  async closePanel(index: number) {
+    await this.page.getByTestId(`stage-panel-${index}-close`).click();
+    await expect(this.stagePanel(index)).toBeHidden();
   }
 }
