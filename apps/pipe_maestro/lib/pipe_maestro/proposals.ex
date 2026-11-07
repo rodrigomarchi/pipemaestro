@@ -34,6 +34,7 @@ defmodule PipeMaestro.Proposals do
   alias PipeMaestro.Integrations.{Feedback, LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Notifications
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
 
@@ -479,21 +480,38 @@ defmodule PipeMaestro.Proposals do
   What happens as a proposal's job ends: a task proposal asked with
   `auto_approve`, if ready and with a pipeline, becomes its task, created and
   started (or queued) on behalf of who asked. Else it waits for review, and
-  the reason is kept with it. Other proposals are left alone.
+  the reason is kept with it. A proposal that succeeded and waits for review
+  is told to who asked (`PipeMaestro.Notifications.notify_proposal/1`); an
+  analysis of a failure is not one (its task tells of its pause).
   """
   @spec job_finished(Job.t()) :: :ok
   def job_finished(%Job{context: %{"proposal" => %{"kind" => "task"}}} = job) do
-    if job.status == :succeeded and input(job)["auto_approve"] == true and
-         is_nil(created_task_id(job)),
-       do: auto_create(job)
+    created =
+      if job.status == :succeeded and input(job)["auto_approve"] == true and
+           is_nil(created_task_id(job)),
+         do: auto_create(job),
+         else: :not_created
+
+    if created == :not_created, do: ready(job)
 
     # A triage of a linked issue tells the issue how it ended.
     Feedback.triage_finished(job)
     :ok
   end
 
+  def job_finished(%Job{context: %{"proposal" => %{"kind" => "analysis"}}}), do: :ok
+
+  def job_finished(%Job{context: %{"proposal" => %{}}} = job) do
+    ready(job)
+    :ok
+  end
+
   def job_finished(%Job{}), do: :ok
 
+  defp ready(%Job{status: :succeeded} = job), do: Notifications.notify_proposal(job)
+  defp ready(%Job{}), do: []
+
+  # `:created` when the proposal became its task, now or before.
   defp auto_create(job) do
     with {:ok, result} <- auto_result(job),
          {:ok, user} <- requester(job),
@@ -501,17 +519,17 @@ defmodule PipeMaestro.Proposals do
          {:ok, task} <- auto_task(user, workspace, job, result.task_params) do
       Audit.record(workspace, user, "task.auto_created", task, %{"proposal_id" => job.id})
       Jobs.update_proposal(job, %{"auto_approve" => %{"status" => "created"}})
-      :ok
+      :created
     else
       :already_created ->
-        :ok
+        :created
 
       {:skip, reason} ->
         Jobs.update_proposal(job, %{
           "auto_approve" => %{"status" => "skipped", "reason" => reason}
         })
 
-        :ok
+        :not_created
     end
   end
 
