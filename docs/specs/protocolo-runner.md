@@ -128,7 +128,9 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   - `capabilities` (opcional): o que o runner suporta além da versão do protocolo
     (vazio se omitido). Hoje, `"scratch"`: roda um job num worktree descartável (§4.4); e
     `"git_credential"`: recebe a credencial git do job e a renovação dela (§4.4);
-    `"health"`, `"logs"` e `"doctor"`: envia a saúde, o log e o diagnóstico (§4.7).
+    `"health"`, `"logs"` e `"doctor"`: envia a saúde, o log e o diagnóstico (§4.7);
+    `"files"`: dá a cada job a pasta `CP_FILES_DIR` e sobe o que o agente deixa nela
+    (§4.8).
     O control plane só oferece uma funcionalidade a quem a anuncia, o que permite
     acrescentar campos ao job sem quebrar runners antigos.
 
@@ -180,7 +182,7 @@ Cada mensagem recebe uma resposta: `ok`, ou `error` com `{"reason"}`, onde `reas
 |---|---|
 | `job:started` | `{"job_id"}` |
 | `job:event` | `{"job_id", "seq", "type", "data"}`, com `seq` contando a partir de 1 |
-| `job:finished` | `{"job_id", "status", "exit_code", "result", "cost_usd", "duration_ms", "num_turns", "error"?}`, com `status` igual a `succeeded`, `failed` ou `canceled` |
+| `job:finished` | `{"job_id", "status", "exit_code", "result", "cost_usd", "duration_ms", "num_turns", "files_failed"?, "error"?}`, com `status` igual a `succeeded`, `failed` ou `canceled`. `files_failed` só vem quando é maior que zero: quantos arquivos de `CP_FILES_DIR` não chegaram à plataforma (§4.8) |
 | `job:delta` | `{"job_id", "text"}`: o que o agente está escrevendo (até 4 KB do fim), no máximo a cada 250 ms. Sem resposta, fora da outbox e não guardado |
 | `job:telemetry` | `{"job_id", "records"}`: até 200 registros `{"name", "at", "attrs"}` da telemetria OpenTelemetry do CLI (`PipeMaestroProtocol.Telemetry`, ADR 0015). Pode chegar depois do `job:finished`; a outbox o descarta primeiro, como os eventos, quando enche |
 
@@ -251,7 +253,7 @@ plane antigo ainda mande.
 | `worktree` | `{"task_id", "branch"}`: roda em `<workdir>/worktrees/<task_id>`, um `git worktree` do diretório no branch dado, criado na primeira etapa e reaproveitado nas seguintes |
 | `output_schema` | passado em `--json-schema`; a saída validada volta em `structured_output` |
 | `model`, `max_budget_usd` | passados em `--model` e `--max-budget-usd`. `max_budget_usd` só vem quando a pessoa configurou um teto na etapa; sem ele, o runner não passa a flag |
-| `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB). Sem o campo, o runner tira `CP_ARTIFACT_PATH` do ambiente do agente, para que um valor herdado não vaze para o job |
+| `artifact_path` | caminho relativo onde o agente escreve o artefato da etapa; vai na env `CP_ARTIFACT_PATH`, e o runner devolve o conteúdo (até 64 KB). Sem o campo, o runner tira `CP_ARTIFACT_PATH` do ambiente do agente, para que um valor herdado não vaze para o job. Em qualquer job, um runner com a capacidade `"files"` também passa `CP_FILES_DIR`, o caminho absoluto da pasta do job fora do worktree (§4.8). `CP_FILES_DIR` é reservada: um segredo não a sobrescreve |
 | `timeout_ms` | tempo máximo do agente; ao estourar, o runner encerra o grupo de processos e o job falha |
 | `system_prompt`, `mcp_config`, `agents`, `agent` | o contexto do pipeline e o agente da etapa (ADR 0011): vão em `--append-system-prompt`, `--mcp-config`, `--agents` e `--agent` |
 | `delivery` | `{"push"?, "pr"?, "issue_comment"?}`: o que o runner faz com a etapa que passou nas verificações e nos gates ([ADR 0033](../adr/0033-contrato-entre-harness-e-agente.md)). O runner **não faz commit**: faz o push do `HEAD` (já verificado), abre ou adota o PR da branch e escreve só o bloco da plataforma na descrição (`{"title", "block", "ready"}`: o título só na criação; `ready` tira o prefixo de rascunho) e comenta na issue (`{"url", "body"}`) e, com `"status"` (`{"context", "state", "description", "target_url"}`), põe o commit status da etapa no que empurrou, num Forgejo. Numa tarefa de um repositório vinculado cuja conexão deixa a plataforma chamar o host ([ADR 0036](../adr/0036-integracoes-com-hosts-git.md)), a entrega é só `{"push": true}`: o PR e a issue ficam com o control plane. O bloco do PR é o de `PipeMaestroProtocol.PrText`. O `job:finished` traz `delivery` com `{"commit", "pushed", "pr_url", "commented", "error"?}`, `commit` sendo o commit entregue |
@@ -322,6 +324,50 @@ diagnóstico a quem anuncia `doctor`.
 | `runner:doctor` | runner → control plane | `{"request_id"?, "at", "checks"}`: `checks` é `[{"key", "name", "status", "detail"}]` (`PipeMaestroProtocol.RunnerDoctor`), `status` igual a `ok`, `warning` ou `error`. Enviado depois de cada join, a cada hora e em resposta a um pedido, com o `request_id` dele. Fora da outbox |
 
 As respostas são as da §4.2 (`ok`, ou `error` com `invalid`).
+
+### 4.8 Arquivos do job
+
+Os arquivos que o agente deixa para a pessoa ver (screenshots, relatórios, CSVs),
+`PipeMaestroProtocol.JobFiles` ([ADR 0041](../adr/0041-arquivos-gerados-pela-etapa.md)).
+Só um runner com a capacidade `"files"` os envia, e o control plane só cita
+`CP_FILES_DIR` no prompt dos jobs dele.
+
+- **A pasta.** Cada job tem `<workdir>/files/<job_id>`, fora de qualquer worktree, na
+  env `CP_FILES_DIR`. Ela é apagada depois do `job:finished` e quando o runner inicia.
+- **O envio.** Quando o agente termina (job `succeeded`, `failed` ou `canceled`),
+  depois dos checks, dos gates e da entrega e antes do `job:finished`, o runner envia
+  cada arquivo regular da pasta, subpastas incluídas, numa requisição própria, fora do
+  canal:
+
+  ```
+  PUT /api/runner/jobs/<job_id>/files?path=<caminho relativo>
+  Authorization: Bearer cpr_…
+  Content-Type: application/octet-stream
+
+  <conteúdo do arquivo>
+  ```
+
+- **O que não sobe.** Symlinks não são seguidos. Também não sobe um arquivo cujo
+  caminho traz o valor de um segredo do job (`env`) nem um que passe dos limites:
+  10 MiB por arquivo, 50 MiB e 100 arquivos por job. O caminho é relativo, sem `..`,
+  `.`, `\`, NUL nem segmento vazio, e tem até 255 bytes.
+- **As respostas.**
+
+  | Status | Corpo | Quando |
+  |---|---|---|
+  | `201` | `{"path", "byte_size", "sha256", "content_type"}` | guardado; reenviar o mesmo caminho substitui o arquivo |
+  | `401` | `{"error": "unauthorized"}` | sem token, ou com token inválido ou revogado |
+  | `404` | `{"error": "not_found"}` | o job não existe ou é de outro runner |
+  | `413` | `{"error": "too_large", "limit"}` | passou do limite do arquivo ou do job |
+  | `415` | `{"error": "unsupported"}` | o corpo não é `application/octet-stream` |
+  | `422` | `{"error": "invalid_path"}` | o caminho foi recusado |
+
+- **As tentativas.** Em erro de rede e 5xx, o runner faz até 3 tentativas, com espera
+  de 0,5 s, 1 s e 2 s. Ele não repete um 4xx. O que não subiu, somado ao que foi
+  pulado, vai em `files_failed` do `job:finished`. Um control plane sem o endpoint
+  responde 404, e o job termina como terminaria.
+- **O proxy.** Um proxy na frente do control plane precisa aceitar corpos de até
+  10 MiB, como o `client_max_body_size 12m;` do nginx em `docs/guias/instalacao.md`.
 
 ## 5. Versionamento
 
