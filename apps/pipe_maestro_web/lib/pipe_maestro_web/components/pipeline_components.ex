@@ -12,7 +12,13 @@ defmodule PipeMaestroWeb.PipelineComponents do
   connector: the second row holds each step's edges to the rail, the third
   the rail. In `:read` mode a node is selected (`select_node`); `:edit` adds
   the structure's buttons (`insert_stage`, `move_stage`, `remove_stage`,
-  `join_group`, `leave_group`); `:compact` is an inert preview.
+  `join_group`, `leave_group`); `:compact` is an inert preview, and `:micro`
+  a row of dots, one per stage, for where a task is. The diagram's layers
+  (a task's states, metrics, a comparison) show on the nodes; with `link`,
+  a node is a link (to a stage on the page) instead of opening a panel.
+
+  A stage's state has one vocabulary across the product: `state_label/1`,
+  `stage_state_badge/1` and `stage_state_marker/1`.
 
   `side_panel/1` is a panel fixed to the right edge. Unlike Petal's
   `slide_over`, which only opens when mounted, it stays in the page while
@@ -40,20 +46,114 @@ defmodule PipeMaestroWeb.PipelineComponents do
   def budget_label(nil), do: "Sem limite de custo"
   def budget_label(cost), do: "Até US$ #{cost}"
 
+  # ── A stage's state ───────────────────────────────────────────────────────
+
+  @states %{
+    pending: {"Aguardando", "gray"},
+    running: {"Executando", "info"},
+    awaiting: {"Aguardando decisão", "warning"},
+    passed: {"Concluída", "success"},
+    blocked: {"Bloqueada", "warning"},
+    failed: {"Falhou", "danger"},
+    canceled: {"Cancelada", "gray"}
+  }
+
+  @doc "What a stage's state is called (`PipeMaestroWeb.PipelineDiagram.task_states/1`)."
+  @spec state_label(atom()) :: String.t()
+  def state_label(state), do: @states |> Map.fetch!(state) |> elem(0)
+
+  defp state_color(state), do: @states |> Map.fetch!(state) |> elem(1)
+
+  attr :state, :atom, required: true
+  attr :rest, :global
+
+  @doc "A stage's state as a badge."
+  def stage_state_badge(assigns) do
+    assigns =
+      assign(assigns, label: state_label(assigns.state), color: state_color(assigns.state))
+
+    ~H"""
+    <.badge size="xs" variant="soft" color={@color} label={@label} {@rest} />
+    """
+  end
+
+  attr :state, :atom, required: true
+  attr :number, :integer, required: true
+  attr :class, :any, default: "size-8 text-sm ring-4 ring-gray-50 dark:ring-gray-950"
+
+  @doc "A stage's number, or its state as an icon once it ran."
+  def stage_state_marker(assigns) do
+    ~H"""
+    <span class={[
+      "relative z-10 flex shrink-0 items-center justify-center rounded-full font-semibold",
+      marker_class(@state),
+      @class
+    ]}>
+      <.icon :if={@state == :passed} name="hero-check" class="size-4" />
+      <.icon :if={@state in [:failed, :canceled]} name="hero-x-mark" class="size-4" />
+      <.icon :if={@state in [:awaiting, :blocked]} name="hero-hand-raised" class="size-4" />
+      <.icon :if={@state == :running} name="hero-arrow-path" class="size-4 animate-spin" />
+      <span :if={@state == :pending}>{@number}</span>
+    </span>
+    """
+  end
+
+  defp marker_class(:passed), do: "bg-success-500 text-white"
+  defp marker_class(:running), do: "bg-info-500 text-white"
+  defp marker_class(state) when state in [:awaiting, :blocked], do: "bg-warning-400 text-gray-900"
+  defp marker_class(state) when state in [:failed, :canceled], do: "bg-danger-500 text-white"
+
+  defp marker_class(:pending),
+    do: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+
   # ── The diagram ────────────────────────────────────────────────────────────
 
   attr :diagram, :map, required: true, doc: "a `PipeMaestroWeb.PipelineDiagram`"
-  attr :mode, :atom, default: :read, values: [:read, :edit, :compact]
+  attr :mode, :atom, default: :read, values: [:read, :edit, :compact, :micro]
 
   attr :selected, :any,
     default: nil,
     doc: "`:entry`, `{:stage, index}` or nil: the node whose panel is open"
+
+  attr :link, :any,
+    default: nil,
+    doc: "a function from a node to the href it links to, instead of opening its panel"
 
   attr :class, :any, default: nil
   attr :testid, :string, default: "pipeline-diagram"
   attr :rest, :global
 
   @doc "A pipeline as connected nodes, over the rail of a person's decisions."
+  def pipeline_diagram(%{mode: :micro} = assigns) do
+    assigns = assign(assigns, steps: Enum.with_index(assigns.diagram.steps))
+
+    ~H"""
+    <span
+      class={["inline-flex items-center gap-1", @class]}
+      data-testid={@testid}
+      aria-label={micro_label(@diagram)}
+      {@rest}
+    >
+      <%= for {step, i} <- @steps do %>
+        <span :if={i > 0} class="h-px w-1.5 bg-gray-300 dark:bg-gray-600"></span>
+        <span
+          class="inline-flex flex-col gap-0.5"
+          data-testid={"diagram-step-#{i}"}
+          data-parallel={step.parallel?}
+        >
+          <span
+            :for={node <- step.nodes}
+            class={["block size-2.5 rounded-full", dot_class(node.state)]}
+            title={"#{node.index + 1}. #{node.name}#{node.state && " · " <> state_label(node.state)}"}
+            data-testid={"diagram-dot-#{node.index}"}
+            data-state={node.state}
+          ></span>
+        </span>
+      <% end %>
+    </span>
+    """
+  end
+
   def pipeline_diagram(assigns) do
     columns = columns(assigns.diagram)
     total = assigns.diagram.steps |> Enum.flat_map(& &1.nodes) |> length()
@@ -82,12 +182,20 @@ defmodule PipeMaestroWeb.PipelineComponents do
           selected={@selected}
           total={@total}
           diagram={@diagram}
+          link={@link}
         />
         <%= if @mode != :compact do %>
           <.rail_stub :for={column <- @columns} column={column} edges={@diagram.rail.edges} />
-          <.decision_rail cost_cap={@diagram.rail.cost_cap} />
+          <.decision_rail cost_cap={@diagram.rail.cost_cap} waiting?={@diagram.waiting?} />
         <% end %>
       </div>
+      <p
+        :if={@diagram.removed != []}
+        class="flex items-center gap-1.5 px-4 pb-4 text-sm text-danger-700 dark:text-danger-300"
+        data-testid="diagram-removed"
+      >
+        <.icon name="hero-minus-circle" class="size-4" /> Saem: {Enum.join(@diagram.removed, ", ")}
+      </p>
     </div>
     """
   end
@@ -111,6 +219,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :selected, :any, required: true
   attr :total, :integer, required: true
   attr :diagram, :map, required: true
+  attr :link, :any, required: true
 
   defp column(%{column: {:entry}} = assigns) do
     ~H"""
@@ -162,6 +271,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
         selected={@selected == {:stage, node.index}}
         total={@total}
         parallel?={false}
+        link={@link}
       />
       <span
         :for={node <- @step.nodes}
@@ -184,6 +294,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
             selected={@selected == {:stage, node.index}}
             total={@total}
             parallel?={@step.parallel?}
+            link={@link}
           />
         </div>
       </div>
@@ -335,6 +446,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :selected, :boolean, required: true
   attr :total, :integer, required: true
   attr :parallel?, :boolean, required: true
+  attr :link, :any, default: nil
 
   defp stage_node(%{mode: :compact} = assigns) do
     ~H"""
@@ -353,29 +465,43 @@ defmodule PipeMaestroWeb.PipelineComponents do
       class={[
         "flex w-60 flex-col rounded-xl border bg-white shadow-sm transition dark:bg-gray-900",
         @parallel? && "h-full",
-        (@selected && "border-primary-500 ring-2 ring-primary-500/40") ||
-          "border-gray-200 hover:border-primary-400 dark:border-gray-700"
+        node_border(@selected, @node)
       ]}
       data-testid={"diagram-stage-#{@node.index}"}
+      data-state={@node.state}
     >
-      <button
-        type="button"
-        phx-click="select_node"
-        phx-value-node={@node.index}
-        aria-pressed={to_string(@selected)}
-        class="flex-1 p-3 text-left"
-        data-testid={"diagram-select-#{@node.index}"}
-      >
+      <.node_target node={@node} selected={@selected} link={@link}>
         <span class="flex items-center gap-2">
-          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700 dark:bg-primary-950 dark:text-primary-300">
-            {@node.index + 1}
-          </span>
+          <.stage_state_marker
+            state={@node.state || :pending}
+            number={@node.index + 1}
+            class={[
+              "size-6 text-xs",
+              !@node.state &&
+                "!bg-primary-50 !text-primary-700 dark:!bg-primary-950 dark:!text-primary-300"
+            ]}
+          />
           <span class="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
             {@node.name}
           </span>
+          <.badge
+            :if={@node.diff}
+            size="xs"
+            variant="soft"
+            color={if @node.diff == :added, do: "success", else: "info"}
+            label={if @node.diff == :added, do: "nova", else: "alterada"}
+            class="ml-auto shrink-0"
+            data-testid={"diagram-diff-#{@node.index}"}
+          />
         </span>
         <.stage_chips :if={@node.chips != []} chips={@node.chips} class="mt-2" />
-      </button>
+        <.stage_chips
+          :if={@node.metrics != []}
+          chips={@node.metrics}
+          class="mt-2"
+          testid={"diagram-metrics-#{@node.index}"}
+        />
+      </.node_target>
       <div class="flex items-center gap-2 border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
         <span
           class="inline-flex items-center gap-1"
@@ -392,6 +518,12 @@ defmodule PipeMaestroWeb.PipelineComponents do
         >
           <.icon name="hero-check-badge" class="size-3.5" /> commit conferido
         </span>
+        <.stage_state_badge
+          :if={@node.state}
+          state={@node.state}
+          class="ml-auto"
+          data-testid={"diagram-state-#{@node.index}"}
+        />
         <.node_actions
           :if={@mode == :edit}
           index={@node.index}
@@ -401,6 +533,62 @@ defmodule PipeMaestroWeb.PipelineComponents do
       </div>
     </div>
     """
+  end
+
+  defp node_border(true, _node), do: "border-primary-500 ring-2 ring-primary-500/40"
+
+  defp node_border(_selected, %{state: :awaiting}),
+    do: "border-warning-400 ring-2 ring-warning-400/40"
+
+  defp node_border(_selected, %{state: :running}), do: "border-info-400 ring-2 ring-info-400/30"
+  defp node_border(_selected, %{diff: :added}), do: "border-success-400 dark:border-success-700"
+  defp node_border(_selected, %{diff: :changed}), do: "border-info-400 dark:border-info-700"
+
+  defp node_border(_selected, _node),
+    do: "border-gray-200 hover:border-primary-400 dark:border-gray-700"
+
+  attr :node, :map, required: true
+  attr :selected, :boolean, required: true
+  attr :link, :any, required: true
+  slot :inner_block, required: true
+
+  # What a click on a node does: open its panel, or follow its link.
+  defp node_target(%{link: nil} = assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="select_node"
+      phx-value-node={@node.index}
+      aria-pressed={to_string(@selected)}
+      class="flex-1 p-3 text-left"
+      data-testid={"diagram-select-#{@node.index}"}
+    >
+      {render_slot(@inner_block)}
+    </button>
+    """
+  end
+
+  defp node_target(assigns) do
+    ~H"""
+    <a href={@link.(@node)} class="block flex-1 p-3" data-testid={"diagram-select-#{@node.index}"}>
+      {render_slot(@inner_block)}
+    </a>
+    """
+  end
+
+  defp dot_class(nil), do: "bg-gray-300 dark:bg-gray-600"
+  defp dot_class(:pending), do: "bg-gray-300 dark:bg-gray-600"
+  defp dot_class(:passed), do: "bg-success-500"
+  defp dot_class(:running), do: "bg-info-500 animate-pulse"
+  defp dot_class(state) when state in [:awaiting, :blocked], do: "bg-warning-400"
+  defp dot_class(state) when state in [:failed, :canceled], do: "bg-danger-500"
+
+  defp micro_label(diagram) do
+    diagram.steps
+    |> Enum.flat_map(& &1.nodes)
+    |> Enum.map_join(", ", fn node ->
+      if node.state, do: "#{node.name}: #{state_label(node.state)}", else: node.name
+    end)
   end
 
   attr :index, :integer, required: true
@@ -507,15 +695,26 @@ defmodule PipeMaestroWeb.PipelineComponents do
         <%= for {index, failures, rules} <- @edges do %>
           <li
             :for={edge <- failures}
-            class="text-[11px] text-gray-500 dark:text-gray-400"
+            class={[
+              "text-[11px]",
+              (edge.active? &&
+                 "rounded-md bg-warning-400 px-1.5 py-0.5 font-semibold text-gray-900") ||
+                "text-gray-500 dark:text-gray-400"
+            ]}
             data-testid={"diagram-edge-#{index}-failure"}
+            data-active={edge.active?}
           >
             {index + 1}: {edge.label}
           </li>
           <li
             :for={{edge, n} <- rules}
-            class="inline-flex items-center gap-1 rounded-md bg-warning-50 px-1.5 py-0.5 font-mono text-[11px] text-warning-800 dark:bg-warning-950/60 dark:text-warning-200"
+            class={[
+              "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px]",
+              (edge.active? && "bg-warning-400 font-semibold text-gray-900") ||
+                "bg-warning-50 text-warning-800 dark:bg-warning-950/60 dark:text-warning-200"
+            ]}
             data-testid={"diagram-edge-#{index}-rule-#{n}"}
+            data-active={edge.active?}
           >
             <.icon name="hero-hand-raised" class="size-3" /> {edge.label}
           </li>
@@ -529,13 +728,19 @@ defmodule PipeMaestroWeb.PipelineComponents do
   defp rail_stub(assigns), do: ~H"<span></span>"
 
   attr :cost_cap, :string, default: nil
+  attr :waiting?, :boolean, default: false
 
   defp decision_rail(assigns) do
     ~H"""
     <div
-      class="flex flex-wrap items-center gap-2 rounded-lg border-2 border-dashed border-warning-300 bg-warning-50/60 px-3 py-2 text-sm text-warning-800 dark:border-warning-800 dark:bg-warning-950/40 dark:text-warning-200"
+      class={[
+        "flex flex-wrap items-center gap-2 rounded-lg border-2 border-dashed px-3 py-2 text-sm text-warning-800 dark:text-warning-200",
+        (@waiting? && "border-warning-500 bg-warning-100 dark:bg-warning-900/50") ||
+          "border-warning-300 bg-warning-50/60 dark:border-warning-800 dark:bg-warning-950/40"
+      ]}
       style="grid-column: 1 / -1"
       data-testid="diagram-rail"
+      data-waiting={@waiting?}
     >
       <.icon name="hero-hand-raised" class="size-5 shrink-0" />
       <span class="font-semibold">Pessoa decide</span>

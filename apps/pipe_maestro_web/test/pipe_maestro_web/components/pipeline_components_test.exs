@@ -231,4 +231,102 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert PipelineComponents.delivery_icon("pr") == "hero-rocket-launch"
     end
   end
+
+  describe "the diagram's layers" do
+    test "each node shows a task's state, and a waiting node lights the rail" do
+      html =
+        render_diagram(
+          PipelineDiagram.build(%Pipeline{stages: [stage("a"), stage("b"), stage("c")]},
+            states: %{0 => :passed, 1 => :awaiting}
+          )
+        )
+
+      assert count(html, "[data-testid=diagram-stage-0][data-state=passed]") == 1
+      assert text(html, "[data-testid=diagram-state-1]") =~ "Aguardando decisão"
+      assert count(html, "[data-testid=diagram-stage-2][data-state=pending]") == 1
+      assert count(html, "[data-testid=diagram-edge-1-failure][data-active]") == 1
+      assert count(html, "[data-testid=diagram-edge-0-failure][data-active]") == 0
+      assert count(html, "[data-testid=diagram-rail][data-waiting]") == 1
+    end
+
+    test "nodes link somewhere instead of opening a panel, when asked" do
+      html =
+        render_diagram(diagram([stage("a"), stage("b")]), link: &"#stage-#{&1.key}")
+
+      assert count(html, "a[data-testid=diagram-select-1][href='#stage-b']") == 1
+      assert count(html, "[phx-click=select_node]") == 1
+    end
+
+    test "metrics show on their node" do
+      html =
+        render_diagram(
+          PipelineDiagram.build(%Pipeline{stages: [stage("a")]},
+            metrics: %{0 => [{"hero-banknotes", "US$ 1.20"}]}
+          )
+        )
+
+      assert text(html, "[data-testid=diagram-metrics-0]") =~ "US$ 1.20"
+    end
+
+    test "a comparison marks added and changed stages and names the removed" do
+      before = %Pipeline{stages: [stage("a"), stage("b"), stage("x")]}
+
+      html =
+        render_diagram(
+          PipelineDiagram.build(
+            %Pipeline{stages: [stage("a"), stage("b", prompt: "novo"), stage("c")]},
+            compare_to: before
+          )
+        )
+
+      assert count(html, "[data-testid=diagram-diff-0]") == 0
+      assert text(html, "[data-testid=diagram-diff-1]") =~ "alterada"
+      assert text(html, "[data-testid=diagram-diff-2]") =~ "nova"
+      assert text(html, "[data-testid=diagram-removed]") =~ "x"
+    end
+  end
+
+  describe "micro mode" do
+    test "a dot per stage with its state, a group's stacked, nothing to click" do
+      html =
+        render_diagram(
+          PipelineDiagram.build(
+            %Pipeline{stages: [stage("a"), stage("b", group: "r"), stage("c", group: "r")]},
+            states: %{0 => :passed, 1 => :running}
+          ),
+          mode: :micro,
+          testid: "progress"
+        )
+
+      assert count(html, "[data-testid=progress] [data-testid=diagram-dot-0][data-state=passed]") ==
+               1
+
+      assert count(html, "[data-testid=diagram-dot-1][data-state=running]") == 1
+
+      assert count(
+               html,
+               "[data-testid=diagram-step-1][data-parallel] [data-testid^=diagram-dot-]"
+             ) == 2
+
+      assert count(
+               html,
+               "[phx-click], a, [data-testid=diagram-rail], [data-testid=diagram-entry]"
+             ) == 0
+    end
+  end
+
+  describe "stage states" do
+    test "a label, a badge and a marker per state" do
+      assert PipelineComponents.state_label(:awaiting) == "Aguardando decisão"
+      assert PipelineComponents.state_label(:passed) == "Concluída"
+
+      badge = render_component(&PipelineComponents.stage_state_badge/1, state: :failed)
+      assert badge =~ "Falhou"
+
+      marker =
+        render_component(&PipelineComponents.stage_state_marker/1, state: :pending, number: 3)
+
+      assert marker =~ "3"
+    end
+  end
 end

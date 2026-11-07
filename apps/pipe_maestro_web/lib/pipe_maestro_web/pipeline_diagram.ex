@@ -27,6 +27,7 @@ defmodule PipeMaestroWeb.PipelineDiagram do
   @typedoc "One stage, as a node."
   @type stage_node :: %{
           index: non_neg_integer(),
+          key: String.t() | nil,
           name: String.t(),
           attempts: pos_integer(),
           model: String.t() | nil,
@@ -191,6 +192,7 @@ defmodule PipeMaestroWeb.PipelineDiagram do
   defp stage_node(%Stage{} = stage, index, delivery, parallel?, layers) do
     %{
       index: index,
+      key: stage.key,
       name: if(present?(stage.name), do: stage.name, else: "Nova etapa"),
       attempts: stage.max_attempts || 2,
       model: stage.model,
