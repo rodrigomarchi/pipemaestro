@@ -704,8 +704,12 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     label={"em paralelo · #{row.stage.group}"}
                     data-testid={"stage-group-#{row.stage.key}"}
                   />
-                  <span :if={length(row.runs) > 1} class="text-xs text-gray-500 dark:text-gray-400">
-                    {length(row.runs)} tentativas
+                  <span
+                    :if={attempts(row.runs) > 1}
+                    class="text-xs text-gray-500 dark:text-gray-400"
+                    data-testid={"stage-attempts-#{row.stage.key}"}
+                  >
+                    {attempts(row.runs)} tentativas
                   </span>
                   <.button
                     :if={redoable?(@task) and row.runs != []}
@@ -1356,6 +1360,9 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     </div>
     """
   end
+
+  # A run again after its runner lost it is the same attempt.
+  defp attempts(runs), do: runs |> Enum.uniq_by(& &1.attempt) |> length()
 
   # What tells an attempt apart in the test ids and DOM ids: its stage and
   # attempt, and how many times it ran again after its runner lost it.

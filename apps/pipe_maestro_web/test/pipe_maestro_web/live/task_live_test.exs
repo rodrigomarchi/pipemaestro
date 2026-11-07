@@ -991,6 +991,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=stage-run-a-1-r1]")
       assert has_element?(view, "[data-testid=stage-run-status-a-1-r1]", "Executando")
       refute has_element?(view, "[data-testid=stage-run-a-2]")
+      refute has_element?(view, "[data-testid=stage-attempts-a]")
     end
   end
 

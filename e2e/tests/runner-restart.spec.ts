@@ -1,6 +1,6 @@
 /**
  * @section Runners
- * @flow A [todo] A runner stopped in the middle of a stage comes back: the stage is shown "Perdida (runner)" and runs again in the same attempt, without spending one; the runner's events show the lost job
+ * @flow A [done] A runner stopped in the middle of a stage comes back: the stage is shown "Perdida (runner)" and runs again in the same attempt, without spending one; the runner's events show the lost job
  */
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
