@@ -47,8 +47,10 @@ defmodule PipeMaestroRunner.SelfUpdate do
   @launchd_label "com.pipemaestro.runner"
 
   # Starts the new binary apart, keeping this one's stdout and stderr (its
-  # log); the shell closes the port's pipes first, so nothing holds them.
-  @detach ~S(exec 3>&- 4>&-; nohup "$0" "$@" & exit 0)
+  # log), deaf to the hangup of a terminal that closes; the shell closes the
+  # port's pipes first, so nothing holds them. Not `nohup`, which would send
+  # the output to `nohup.out` when it is a terminal.
+  @detach ~S(exec 3>&- 4>&-; trap "" HUP; "$0" "$@" & exit 0)
 
   # What the old binary's environment carries about its unpacked release, which
   # the new binary has to unpack and point at on its own.
