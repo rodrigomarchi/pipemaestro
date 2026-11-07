@@ -1,7 +1,7 @@
 defmodule PipeMaestroWeb.ProposalLive.Show do
   @moduledoc """
-  One proposal (`PipeMaestro.Proposals`): while the agent works, its run as a
-  live timeline; once it ends, the review of its kind
+  One proposal (`PipeMaestro.Proposals`), in two tabs (`?aba=`): while the
+  agent works, its run as a live timeline; once it ends, the review of its kind
   (`PipeMaestroWeb.ProposalComponents`), and what the person can do with it:
 
     * project: review the project form filled with the answer and save it
@@ -21,13 +21,14 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.ProposalComponents
+  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
 
   alias PipeMaestro.{Audit, Jobs, Pipelines, Projects, Proposals, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines.Pipeline
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals.DecisionKind
-  alias PipeMaestroWeb.{Markdown, PipelineExplorer, QuestionnaireComponents}
+  alias PipeMaestroWeb.{ChangesetErrors, Markdown, PipelineExplorer, QuestionnaireComponents}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -44,6 +45,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
        |> assign(page_title: "Proposta do agente", job: job, kind: Proposals.kind(job))
        |> assign(input: Proposals.input(job), title: Proposals.title(job))
        |> assign(typing: nil, timeline_tail: timeline_tail(segments), feedback_form: nil)
+       |> assign(tab: nil)
        |> assign_result()
        |> stream(:timeline, segments)}
     else
@@ -53,6 +55,27 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
        |> push_navigate(to: ~p"/w/#{workspace.slug}/proposals")}
     end
   end
+
+  # The tabs, by their `aba` parameter: the proposal to review and how the
+  # agent worked on it.
+  @tabs [
+    {"proposta", "Proposta", "hero-light-bulb"},
+    {"agente", "Como o agente trabalhou", "hero-eye"}
+  ]
+
+  # Without `aba`, the tab follows the run: the agent's work while there is
+  # no proposal yet, the proposal (or its error) once it arrives.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    tab = if Enum.any?(@tabs, &(elem(&1, 0) == params["aba"])), do: params["aba"]
+    {:noreply, assign(socket, tab: tab)}
+  end
+
+  defp proposal_tabs, do: @tabs
+
+  defp proposal_tab(nil, result, error) when is_nil(result) and is_nil(error), do: "agente"
+  defp proposal_tab(nil, _result, _error), do: "proposta"
+  defp proposal_tab(tab, _result, _error), do: tab
 
   # Subscribe before reading again, so nothing that happens in between is
   # missed. A suggested decision follows its task: once decided, it no longer
@@ -297,11 +320,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
       {:error, changeset} ->
         message =
-          changeset
-          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
-          |> Map.values()
-          |> List.flatten()
-          |> Enum.join("; ")
+          ChangesetErrors.to_text(changeset)
 
         {:noreply, put_flash(socket, :error, "Não foi possível pedir de novo: #{message}")}
     end
@@ -469,83 +488,118 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         </.card_content>
       </.card>
 
-      <.alert :if={@error} color="danger" class="mb-6" data-testid="proposal-error">
-        {@error}
-      </.alert>
-
-      <.project_review
-        :if={@result && @kind == "project"}
-        result={@result}
-        form={@form}
-        input={@input}
-      />
-      <.pipeline_review
-        :if={@result && @kind == "pipeline"}
-        result={@result}
-        proposed={@proposed}
-        job={@job}
-        workspace={@current_scope.workspace}
-      />
-      <.task_review
-        :if={@result && @kind == "task"}
-        result={@result}
-        job={@job}
-        workspace={@current_scope.workspace}
-        created_task_id={@created_task_id}
-        auto_approve={@auto_approve}
-      />
-      <.decision_review
-        :if={@result && @kind == "decision"}
-        result={@result}
-        form={@form}
-        task={@task}
-        current={@current}
-        may_cancel={@task && can?(@current_scope, :cancel_task, @task)}
-      />
-      <.analysis_review
-        :if={@result && @kind == "analysis"}
-        result={@result}
-        task={@task}
-        current={@current}
-        workspace={@current_scope.workspace}
-      />
-      <.improve_review
-        :if={@result && @kind == "improve"}
-        result={@result}
-        proposed={@proposed}
-        current={@current_pipeline}
-        form={@form}
-        project={@project}
-        input={@input}
-        job={@job}
-        workspace={@current_scope.workspace}
+      <.page_tabs
+        tabs={proposal_tabs()}
+        active={proposal_tab(@tab, @result, @error)}
+        path={&~p"/w/#{@current_scope.workspace.slug}/proposals/#{@job.id}?aba=#{&1}"}
+        testid="proposal-view"
       />
 
-      <.card variant="outline" class={if(@result, do: "mt-6", else: "")}>
-        <.card_content>
-          <.section_heading
-            icon="hero-eye"
-            title="Como o agente trabalhou"
-            description={if Job.active?(@job), do: "Ao vivo, enquanto ele estuda e escreve."}
-          />
-          <p
-            :if={@job.status == :queued}
-            class="text-sm text-gray-500 dark:text-gray-400"
-            data-testid="proposal-waiting"
-          >
-            Aguardando o runner começar…
-          </p>
-          <ol id="proposal-events" phx-update="stream" class="space-y-4" data-testid="proposal-events">
-            <.timeline_segment
-              :for={{id, segment} <- @streams.timeline}
-              id={id}
-              timeline="proposal-events"
-              segment={segment}
+      <.tab_panel
+        id="proposta"
+        active={proposal_tab(@tab, @result, @error)}
+        testid="proposal-view"
+        class="mt-6"
+      >
+        <p
+          :if={!@result and !@error}
+          class="text-sm text-gray-500 dark:text-gray-400"
+          data-testid="proposal-pending"
+        >
+          {if Job.active?(@job),
+            do: "O agente ainda está trabalhando: a proposta aparece aqui quando ele terminar.",
+            else: "A execução terminou sem proposta."}
+        </p>
+        <.alert :if={@error} color="danger" class="mb-6" data-testid="proposal-error">
+          {@error}
+        </.alert>
+
+        <.project_review
+          :if={@result && @kind == "project"}
+          result={@result}
+          form={@form}
+          input={@input}
+        />
+        <.pipeline_review
+          :if={@result && @kind == "pipeline"}
+          result={@result}
+          proposed={@proposed}
+          job={@job}
+          workspace={@current_scope.workspace}
+        />
+        <.task_review
+          :if={@result && @kind == "task"}
+          result={@result}
+          job={@job}
+          workspace={@current_scope.workspace}
+          created_task_id={@created_task_id}
+          auto_approve={@auto_approve}
+        />
+        <.decision_review
+          :if={@result && @kind == "decision"}
+          result={@result}
+          form={@form}
+          task={@task}
+          current={@current}
+          may_cancel={@task && can?(@current_scope, :cancel_task, @task)}
+        />
+        <.analysis_review
+          :if={@result && @kind == "analysis"}
+          result={@result}
+          task={@task}
+          current={@current}
+          workspace={@current_scope.workspace}
+        />
+        <.improve_review
+          :if={@result && @kind == "improve"}
+          result={@result}
+          proposed={@proposed}
+          current={@current_pipeline}
+          form={@form}
+          project={@project}
+          input={@input}
+          job={@job}
+          workspace={@current_scope.workspace}
+        />
+      </.tab_panel>
+
+      <.tab_panel
+        id="agente"
+        active={proposal_tab(@tab, @result, @error)}
+        testid="proposal-view"
+        class="mt-6"
+      >
+        <.card variant="outline">
+          <.card_content>
+            <.section_heading
+              icon="hero-eye"
+              title="Como o agente trabalhou"
+              description={if Job.active?(@job), do: "Ao vivo, enquanto ele estuda e escreve."}
             />
-          </ol>
-          <.typing :if={@typing} text={@typing} />
-        </.card_content>
-      </.card>
+            <p
+              :if={@job.status == :queued}
+              class="text-sm text-gray-500 dark:text-gray-400"
+              data-testid="proposal-waiting"
+            >
+              Aguardando o runner começar…
+            </p>
+            <ol
+              id="proposal-events"
+              phx-update="stream"
+              class="space-y-4"
+              data-testid="proposal-events"
+            >
+              <.timeline_segment
+                :for={{id, segment} <- @streams.timeline}
+                id={id}
+                timeline="proposal-events"
+                segment={segment}
+              />
+            </ol>
+            <.typing :if={@typing} text={@typing} />
+          </.card_content>
+        </.card>
+      </.tab_panel>
 
       <.modal
         :if={@feedback_form}
@@ -748,7 +802,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               data-testid="proposal-auto-approve-skipped"
             >
               <p class="font-medium">Não foi criada automaticamente:</p>
-              <p class="whitespace-pre-line">{@auto_approve["reason"]}</p>
+              <div class="prose prose-sm max-w-none text-inherit dark:prose-invert">
+                {Markdown.to_html(@auto_approve["reason"])}
+              </div>
             </.alert>
             <div class="mt-5 flex justify-end">
               <.button
@@ -803,7 +859,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-200"
               data-testid="proposal-task-questions"
             >
-              <li :for={question <- @result.questions}>{question}</li>
+              <li :for={question <- @result.questions}>{Markdown.inline_html(question)}</li>
             </ul>
             <p
               class="mt-4 flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300"
@@ -935,7 +991,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
                   <.icon name={action_icon(alt.action)} class="size-4 text-gray-400" />
                   {action_label(alt.action)}
                 </p>
-                <p class="mt-0.5 text-gray-600 dark:text-gray-300">{alt.reason}</p>
+                <div class="mt-0.5 text-gray-600 dark:text-gray-300">
+                  {Markdown.inline_html(alt.reason)}
+                </div>
               </li>
             </ul>
           </.card_content>
@@ -1000,8 +1058,12 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             <ul class="space-y-3" data-testid="proposal-changes">
               <li :for={change <- @result.changes} class="text-sm">
                 <p class="font-medium text-gray-900 dark:text-white">{change.where}</p>
-                <p class="text-gray-700 dark:text-gray-200">{change.what}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{change.why}</p>
+                <div class="text-gray-700 dark:text-gray-200">
+                  {Markdown.inline_html(change.what)}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">
+                  {Markdown.inline_html(change.why)}
+                </div>
               </li>
             </ul>
           </.card_content>

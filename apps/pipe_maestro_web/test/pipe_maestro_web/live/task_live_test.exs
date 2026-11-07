@@ -622,6 +622,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-gate-a-1-0][data-passed=true]")
 
+      # A failed gate opens the details folded under the artifact.
+      assert has_element?(view, "[data-testid=stage-run-details-a-1][open]")
+      assert has_element?(view, "[data-testid=stage-run-details-toggle-a-1]", "gates 1/2")
+
       assert has_element?(view, "[data-testid=stage-run-feedback-a-2]", "1 failure")
     end
 
@@ -652,6 +656,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=stage-run-patch-a-1] .diff-add", "+novo")
       assert has_element?(view, "[data-testid=stage-run-patch-a-1] .diff-del", "-velho")
       assert has_element?(view, "[data-testid=task-files]", "lib/login.ex")
+      assert has_element?(view, "[data-testid=task-tab-count-arquivos]")
     end
 
     test "removes the worktree of a task that ended", ctx do
@@ -728,6 +733,37 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-summary-a-1]", "a feita")
       assert has_element?(view, "[data-testid=task-cost]", "US$")
+
+      # The artifact leads; how the stage got there is folded under it.
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-details-a-1] [data-testid=stage-run-summary-a-1]"
+             )
+
+      refute has_element?(view, "[data-testid=stage-run-details-a-1][open]")
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-output-a-1] [data-testid=agent-output-field-resumo]",
+               "a feita"
+             )
+
+      refute has_element?(
+               view,
+               "[data-testid=stage-run-details-a-1] [data-testid^=stage-run-artifact]"
+             )
+
+      assert has_element?(view, "[data-testid=task-prompt-text][phx-hook=Highlight]")
+
+      # In tabs: the stages first; the request, files and decisions a click away.
+      assert has_element?(view, "[data-testid=task-panel-etapas]:not(.hidden)")
+      assert has_element?(view, "[data-testid=task-panel-pedido].hidden")
+      assert has_element?(view, "[data-testid=task-no-decisions]")
+      view |> element("[data-testid=task-tab-pedido]") |> render_click()
+      assert_patch(view, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?aba=pedido")
+      assert has_element?(view, "[data-testid=task-panel-pedido]:not(.hidden)")
+      assert has_element?(view, "[data-testid=task-panel-etapas].hidden")
+      view |> element("[data-testid=task-tab-etapas]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1][phx-hook=Highlight]")
       refute has_element?(view, "[data-testid=stage-run-artifact-raw-a-1]")

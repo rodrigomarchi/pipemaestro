@@ -62,7 +62,7 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
           </ul>
           <p :if={@answers} class="mt-3 text-sm text-gray-900 dark:text-white">
             <span class="font-medium">Resposta:</span>
-            {Questionnaire.answer_text(Enum.at(@answers, n))}
+            {Markdown.inline_html(Questionnaire.answer_text(Enum.at(@answers, n)))}
           </p>
         </.card_content>
       </.card>
@@ -103,7 +103,9 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
       </.badge>
       <.badge :if={@question["multipla"]} color="gray" size="sm">várias respostas</.badge>
     </div>
-    <p class="mt-2 font-medium text-gray-900 dark:text-white">{@question["pergunta"]}</p>
+    <div class="mt-2 font-medium text-gray-900 dark:text-white [&_code]:text-[0.9em]">
+      {Markdown.inline_html(@question["pergunta"])}
+    </div>
     """
   end
 
@@ -119,9 +121,9 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
     </span>
     <span
       :if={@option["descricao"] not in [nil, ""]}
-      class="mt-1 block text-sm text-gray-600 dark:text-gray-300"
+      class="mt-1 block text-sm text-gray-600 dark:text-gray-300 [&_code]:text-[0.9em]"
     >
-      {@option["descricao"]}
+      {Markdown.inline_html(@option["descricao"])}
     </span>
     """
   end
@@ -184,9 +186,9 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
             (@answers["respostas"] || []) ++ List.duplicate(nil, 4)
           )
       }>
-        <span class="text-gray-600 dark:text-gray-300">{question["pergunta"]}</span>
+        <span class="text-gray-600 dark:text-gray-300">{Markdown.inline_html(question["pergunta"])}</span>
         <span class="font-medium text-gray-900 dark:text-white">
-          → {Questionnaire.answer_text(answer)}
+          → {Markdown.inline_html(Questionnaire.answer_text(answer))}
         </span>
       </li>
     </ul>

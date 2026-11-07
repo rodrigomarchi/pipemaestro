@@ -14,6 +14,7 @@ const KEYWORDS = {
   rust: "fn let mut pub struct enum impl trait use mod match if else for while loop return self Self true false None Some Ok Err",
 }
 KEYWORDS.typescript = KEYWORDS.javascript + " interface type enum implements readonly"
+KEYWORDS.json = "true false null"
 KEYWORDS.js = KEYWORDS.javascript
 KEYWORDS.ts = KEYWORDS.typescript
 KEYWORDS.ex = KEYWORDS.exs = KEYWORDS.heex = KEYWORDS.elixir

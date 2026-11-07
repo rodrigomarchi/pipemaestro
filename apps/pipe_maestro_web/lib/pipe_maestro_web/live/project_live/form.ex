@@ -11,6 +11,7 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
   alias PipeMaestro.{Audit, Integrations, Projects, Proposals, Runners}
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Runners.Runner
+  alias PipeMaestroWeb.ChangesetErrors
 
   @impl true
   def mount(params, session, socket) do
@@ -130,10 +131,7 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
   end
 
   defp errors(changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
-    |> Enum.flat_map(fn {_field, messages} -> messages end)
-    |> Enum.join("; ")
+    ChangesetErrors.to_text(changeset)
   end
 
   # A multi-line placeholder: in the template, the formatter would make it literal.

@@ -14,7 +14,7 @@ defmodule PipeMaestroWeb.FormComponents do
   use Phoenix.Component
   use PetalComponents
 
-  alias PipeMaestroWeb.MarkdownEditor
+  alias PipeMaestroWeb.{Markdown, MarkdownEditor}
 
   attr :field, Phoenix.HTML.FormField, required: true
   attr :label, :string, required: true
@@ -131,7 +131,11 @@ defmodule PipeMaestroWeb.FormComponents do
   attr :title, :string, required: true
   attr :description, :string, default: nil
 
-  @doc "The heading of a form's section: an icon in a tile, a title and a line about it."
+  @doc """
+  The heading of a form's section: an icon in a tile, a title and a line about
+  it. The line may carry inline Markdown (an agent's reason, a description it
+  wrote).
+  """
   @spec section_heading(map()) :: Phoenix.LiveView.Rendered.t()
   def section_heading(assigns) do
     ~H"""
@@ -141,7 +145,9 @@ defmodule PipeMaestroWeb.FormComponents do
       </span>
       <div>
         <h2 class="font-semibold text-gray-900 dark:text-white">{@title}</h2>
-        <p :if={@description} class="text-sm text-gray-500 dark:text-gray-400">{@description}</p>
+        <div :if={@description} class="text-sm text-gray-500 dark:text-gray-400">
+          {Markdown.inline_html(@description)}
+        </div>
       </div>
     </div>
     """

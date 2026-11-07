@@ -13,8 +13,7 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
 
   alias PipeMaestro.Audit
   alias PipeMaestro.Pipelines
-  alias PipeMaestroWeb.PipelineDiagram
-  alias PipeMaestroWeb.ProposalRequest
+  alias PipeMaestroWeb.{ChangesetErrors, Markdown, PipelineDiagram, ProposalRequest}
 
   import PipeMaestroWeb.PipelineComponents,
     only: [budget_label: 1, delivery_icon: 1, delivery_label: 1, pipeline_diagram: 1]
@@ -121,10 +120,7 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   end
 
   defp changeset_message(changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
-    |> inspect(pretty: true)
-    |> then(&"O pipeline não é válido: #{&1}")
+    "O pipeline não é válido: " <> ChangesetErrors.to_text(changeset)
   end
 
   defp file_name(name) do
@@ -265,7 +261,9 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
                     data-testid={"pipeline-version-#{pipeline.name}"}
                   />
                 </div>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{pipeline.description}</p>
+                <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {Markdown.inline_html(pipeline.description)}
+                </div>
               </div>
             </div>
             <dl

@@ -83,6 +83,12 @@ export class JobsPage {
     return new URL(this.page.url()).pathname.split("/").pop()!;
   }
 
+  /** Opens one of the job's tabs: "resultado", "prompt", "linha-do-tempo" or "auditoria". */
+  async openTab(tab: "resultado" | "prompt" | "linha-do-tempo" | "auditoria") {
+    await this.page.getByTestId(`job-tab-${tab}`).click();
+    await expect(this.page.getByTestId(`job-panel-${tab}`)).toBeVisible();
+  }
+
   async cancel() {
     await this.page.getByTestId("job-cancel").click();
   }

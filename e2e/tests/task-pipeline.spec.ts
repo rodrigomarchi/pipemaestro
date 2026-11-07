@@ -137,9 +137,17 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("task-files")).toContainText("fake-claude.txt");
     // The artifact's code block is highlighted in the browser.
     await expect(app.page.getByTestId("stage-run-artifact-triagem-1")).toHaveAttribute("data-highlighted", "true");
+    await tasks.openDetails("triagem", 1);
     await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
     await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded");
+    // The request, the files and the decisions each have a tab of their own.
+    await app.page.getByTestId("task-tab-pedido").click();
+    await expect(app.page.getByTestId("task-prompt-text")).toBeVisible();
+    await shot(app.page, "task-request");
+    await app.page.getByTestId("task-tab-arquivos").click();
+    await expect(app.page.getByTestId("task-files")).toBeVisible();
+    await app.page.getByTestId("task-tab-etapas").click();
     // The pipeline's diagram over the stages: every one passed, each a link to its stage.
     const taskDiagram = app.page.getByTestId("task-diagram");
     await expect(taskDiagram.getByTestId("diagram-stage-0")).toHaveAttribute("data-state", "passed");
@@ -339,12 +347,17 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("usage-agent-cache-hit")).toHaveText("91%");
     await expect(app.page.getByTestId("usage-agent-tool-errors-Write")).toHaveText("0");
     await shot(app.page, "usage");
+    await app.page.getByTestId("usage-tab-agente").click();
+    await expect(app.page.getByTestId("usage-agent-cache-hit")).toBeVisible();
+    await shot(app.page, "usage-agent");
 
     // Flow I: by origin, one pipeline, 90 days.
     await expect(app.page.getByTestId("usage-by-origin-stage")).toContainText("Etapas de pipeline");
     await expect(app.page.getByTestId("usage-stage-queue-executar")).not.toHaveText("—");
     await app.page.getByTestId("usage-pipeline").selectOption("Correção de bug");
     await expect(app.page.getByTestId("usage-period-label")).toContainText("Correção de bug");
+    await app.page.getByTestId("usage-tab-etapas").click();
+    await expect(app.page.getByTestId("usage-panel-etapas")).toBeVisible();
     // The pipeline, stage by stage, with what each one spent.
     await expect(app.page.getByTestId("usage-pipeline-diagram").getByTestId("diagram-metrics-0")).toContainText("US$");
     await shot(app.page, "usage-pipeline-diagram");

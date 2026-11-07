@@ -339,7 +339,9 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
     end
 
     test "show up live, filter by status, open the payload and replay", ctx do
-      {:ok, view, _html} = live(ctx.conn, ipath(ctx, "/#{ctx.connection.id}"))
+      {:ok, view, _html} = live(ctx.conn, ipath(ctx, "/#{ctx.connection.id}?aba=entregas"))
+      assert has_element?(view, "[data-testid=integration-panel-entregas]:not(.hidden)")
+      assert has_element?(view, "[data-testid=integration-panel-repositorios].hidden")
       assert has_element?(view, "[data-testid=no-deliveries]")
 
       deliver(ctx.connection, "d-1", %{
@@ -359,6 +361,8 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
 
       view |> element("[data-testid=delivery-payload-toggle-d-1]") |> render_click()
       assert view |> element("[data-testid=delivery-payload-d-1]") |> render() =~ "acme/nada"
+      assert has_element?(view, "[data-testid=delivery-payload-d-1] code.language-json")
+      assert has_element?(view, "[data-testid=integration-tab-count-entregas]", "2")
 
       view |> element("[data-testid=delivery-replay-d-1]") |> render_click()
       assert render_async(view) =~ "Reprocessada: ignorada"

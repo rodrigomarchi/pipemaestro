@@ -63,6 +63,14 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
+/* Inline code in rendered Markdown: a tinted chip instead of the backticks the
+   typography plugin draws around it. */
+.prose :where(code):not(:where(pre code)) {
+  @apply rounded bg-gray-100 px-1 py-0.5 font-normal dark:bg-gray-800;
+}
+.prose :where(code):not(:where(pre code))::before,
+.prose :where(code):not(:where(pre code))::after { content: none; }
+
 /* Code blocks highlighted by assets/js/highlight.js, in both themes. */
 .tok-kw { @apply font-semibold text-primary-700 dark:text-primary-300; }
 .tok-str { @apply text-success-700 dark:text-success-400; }

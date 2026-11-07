@@ -22,4 +22,26 @@ defmodule PipeMaestroWeb.Markdown do
       {:error, _reason} -> Phoenix.HTML.html_escape(markdown)
     end
   end
+
+  @doc """
+  The HTML for a short `markdown` that sits inside a line (a summary, a
+  question): a text of one paragraph loses its `<p>`, so it flows with what
+  surrounds it; longer text keeps its blocks.
+  """
+  @spec inline_html(String.t() | nil) :: Phoenix.HTML.safe()
+  def inline_html(nil), do: Phoenix.HTML.raw("")
+
+  def inline_html(markdown) when is_binary(markdown) do
+    case MDEx.to_html(markdown, @options) do
+      {:ok, html} -> html |> String.trim() |> unwrap_paragraph() |> Phoenix.HTML.raw()
+      {:error, _reason} -> Phoenix.HTML.html_escape(markdown)
+    end
+  end
+
+  defp unwrap_paragraph("<p>" <> rest = html) do
+    inner = String.replace_suffix(rest, "</p>", "")
+    if String.contains?(inner, "<p>"), do: html, else: inner
+  end
+
+  defp unwrap_paragraph(html), do: html
 end

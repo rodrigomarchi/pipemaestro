@@ -8,6 +8,7 @@ defmodule PipeMaestroWeb.BoardLive.DecisionsTab do
 
   alias PipeMaestro.Tasks
   alias PipeMaestro.Workspaces.Workspace
+  alias PipeMaestroWeb.Markdown
   import PipeMaestroWeb.TaskComponents, only: [stage_progress: 1]
 
   @doc "The tasks of `workspace` waiting for a decision."
@@ -81,7 +82,7 @@ defmodule PipeMaestroWeb.BoardLive.DecisionsTab do
             </span>
           </span>
           <span class="block text-sm text-gray-600 dark:text-gray-400">
-            {task.decision_reason}
+            {Markdown.inline_html(task.decision_reason)}
           </span>
         </span>
       </.link>

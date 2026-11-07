@@ -25,6 +25,22 @@ export class IntegrationsPage {
     await waitForLiveView(this.page);
   }
 
+  /** On a connection's page, opens a tab: "repositorios", "entregas" or "webhook". */
+  async openTab(tab: "repositorios" | "entregas" | "webhook") {
+    await this.page.getByTestId(`integration-tab-${tab}`).click();
+    await expect(this.page.getByTestId(`integration-panel-${tab}`)).toBeVisible();
+  }
+
+  /** On a connection's page, the webhook's address and its secret, revealed. */
+  async webhook(): Promise<{ url: string; secret: string }> {
+    await this.openTab("webhook");
+    const url = (await this.page.getByTestId("integration-webhook-url").innerText()).trim();
+    await this.page.getByTestId("integration-webhook-secret-reveal").click();
+    await expect(this.page.getByTestId("integration-webhook-secret")).not.toContainText("•");
+    const secret = (await this.page.getByTestId("integration-webhook-secret").innerText()).trim();
+    return { url, secret };
+  }
+
   /** Connects the fake Forgejo with the bot's token and waits for its page. */
   async createTokenConnection(name: string, options: { shot?: string; apiMode?: "control_plane" | "runner" } = {}) {
     await this.page.getByTestId("integration-new").click();
@@ -56,6 +72,7 @@ export class IntegrationsPage {
 
   /** From a connection's page, links `fullName` to the project in `directory`. */
   async linkRepo(fullName: string, projectLabel: string, options: { shot?: string } = {}) {
+    await this.openTab("repositorios");
     await this.page.getByTestId("repo-link-open").click();
     await this.page.getByTestId("repo-search").fill(fullName);
     await this.page.getByTestId(`repo-option-${key(fullName)}`).click();

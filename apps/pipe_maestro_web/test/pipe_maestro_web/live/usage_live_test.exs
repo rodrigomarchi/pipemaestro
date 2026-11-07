@@ -55,6 +55,13 @@ defmodule PipeMaestroWeb.UsageLiveTest do
     assert has_element?(view, "[data-testid=usage-total-time]", "1 min 05 s")
     assert has_element?(view, "[data-testid=usage-total-tokens]", "12.0k")
 
+    # The totals stay on top; the rest is in tabs, the overview first.
+    assert has_element?(view, "[data-testid=usage-panel-visao]:not(.hidden)")
+    assert has_element?(view, "[data-testid=usage-panel-agente].hidden")
+    view |> element("[data-testid=usage-tab-agente]") |> render_click()
+    assert_patch(view, ~p"/w/#{workspace.slug}/usage?aba=agente")
+    assert has_element?(view, "[data-testid=usage-panel-agente]:not(.hidden)")
+
     # How the agent worked, consolidated.
     assert has_element?(view, "[data-testid=usage-agent-cache-hit]", "90%")
     assert has_element?(view, "[data-testid=usage-agent-api]", "1 requisição")

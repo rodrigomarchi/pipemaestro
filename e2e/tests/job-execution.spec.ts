@@ -109,6 +109,15 @@ test.describe("Job execution", () => {
     await timeline.toggle(3);
     if (viewport) await app.page.setViewportSize(viewport);
 
+    // The result and the prompt each have a tab of their own.
+    await jobs.openTab("resultado");
+    await expect(jobs.result).toContainText("fake-claude.txt");
+    await shot(app.page, "job-result");
+    await jobs.openTab("prompt");
+    await expect(app.page.getByTestId("job-prompt-text")).toBeVisible();
+    await shot(app.page, "job-prompt");
+    await jobs.openTab("auditoria");
+
     // The audit: what the run reported, and the CLI's telemetry relayed by the
     // runner (the Write took 12 ms in the fake CLI's export).
     const audit = app.page.getByTestId("job-audit");
@@ -163,6 +172,8 @@ test.describe("Job execution", () => {
     const failedId = await jobs.create("App", "Quebre de propósito [falha]");
     await expect(jobs.status).toHaveText("Falhou");
     await expect(jobs.error).toContainText("falha simulada");
+    await jobs.openTab("resultado");
+    await expect(jobs.error).toBeVisible();
     await shot(app.page, "job-failed");
 
     await jobs.backToList();

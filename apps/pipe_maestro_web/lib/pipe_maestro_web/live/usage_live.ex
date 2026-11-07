@@ -8,6 +8,8 @@ defmodule PipeMaestroWeb.UsageLive do
   wait for their runner and spend in gates; how the agent worked
   (`PipeMaestro.Insights`): tokens and cache, models, API, tools and
   permissions; and how near each runner's account is to its usage limits.
+  The totals stay on top; the rest is in tabs (`?aba=`): overview, breakdown,
+  stages and how the agent worked.
   """
   use PipeMaestroWeb, :live_view
 
@@ -17,9 +19,10 @@ defmodule PipeMaestroWeb.UsageLive do
   import PipeMaestroWeb.AuditComponents, only: [workspace_audit: 1]
 
   import PipeMaestroWeb.RunnerComponents, only: [rate_limit: 1]
+  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
 
   alias PipeMaestro.{Insights, Pipelines, Proposals, Runners, Usage}
-  alias PipeMaestroWeb.PipelineExplorer
+  alias PipeMaestroWeb.{PipelineExplorer, TabComponents}
 
   @periods ~w(7 30 90)
 
@@ -33,6 +36,20 @@ defmodule PipeMaestroWeb.UsageLive do
      |> assign(pipelines: Usage.pipeline_names(workspace))
      |> load()}
   end
+
+  # The tabs, by their `aba` parameter; the totals and filters stay above them.
+  @tabs [
+    {"visao", "Visão geral", "hero-chart-bar"},
+    {"detalhamento", "Detalhamento", "hero-table-cells"},
+    {"etapas", "Por etapa", "hero-queue-list"},
+    {"agente", "Como o agente trabalhou", "hero-cpu-chip"}
+  ]
+
+  @impl true
+  def handle_params(params, _uri, socket),
+    do:
+      {:noreply,
+       assign(socket, tabs: @tabs, tab: TabComponents.chosen(@tabs, params["aba"], "visao"))}
 
   @impl true
   def handle_event("period", %{"period" => params}, socket) do
@@ -213,106 +230,121 @@ defmodule PipeMaestroWeb.UsageLive do
           </.card>
         </div>
 
-        <.card variant="outline">
-          <.card_header title="Custo por dia" />
-          <.card_content>
-            <p
-              :if={@report.by_day == []}
-              class="text-sm text-gray-500 dark:text-gray-400"
-              data-testid="usage-empty"
-            >
-              Nenhuma execução no período.
-            </p>
-            <div :if={@report.by_day != []} class="flex h-40 gap-2">
-              <div
-                :for={day <- @report.by_day}
-                class="flex h-full min-w-6 max-w-16 flex-1 flex-col items-center gap-1"
-                title={"#{Calendar.strftime(day.date, "%d/%m")}: #{format_cost(day.cost_usd)}, #{day.runs} execuções"}
-                data-testid={"usage-day-#{day.date}"}
-              >
-                <div class="flex w-full flex-1 items-end">
-                  <div
-                    class="w-full rounded-t bg-primary-500 dark:bg-primary-400"
-                    style={"height: #{bar_height(day.cost_usd, @peak)}%"}
-                  />
-                </div>
-                <span class="text-[10px] text-gray-500 dark:text-gray-400">
-                  {Calendar.strftime(day.date, "%d/%m")}
-                </span>
-              </div>
-            </div>
-          </.card_content>
-        </.card>
+        <.page_tabs
+          tabs={@tabs}
+          active={@tab}
+          path={&~p"/w/#{@current_scope.workspace.slug}/usage?aba=#{&1}"}
+          testid="usage"
+        />
 
-        <div class="grid gap-6 xl:grid-cols-2">
-          <.usage_table
-            title="Por origem"
-            rows={origin_rows(@report.by_origin)}
-            testid="usage-by-origin"
-          />
-          <.card :if={@limited != []} variant="outline" data-testid="usage-rate-limits">
-            <.card_header
-              title="Limites das contas"
-              description="O uso de cada runner nas janelas da conta Claude, como a última execução viu."
-            />
-            <.card_content class="space-y-4">
-              <div :for={runner <- @limited}>
-                <p class="mb-1 text-sm font-medium text-gray-900 dark:text-white">{runner.name}</p>
-                <.rate_limit runner={runner} testid={"usage-rate-limit-#{runner.name}"} />
+        <.tab_panel id="visao" active={@tab} testid="usage" class="space-y-6">
+          <.card variant="outline">
+            <.card_header title="Custo por dia" />
+            <.card_content>
+              <p
+                :if={@report.by_day == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="usage-empty"
+              >
+                Nenhuma execução no período.
+              </p>
+              <div :if={@report.by_day != []} class="flex h-40 gap-2">
+                <div
+                  :for={day <- @report.by_day}
+                  class="flex h-full min-w-6 max-w-16 flex-1 flex-col items-center gap-1"
+                  title={"#{Calendar.strftime(day.date, "%d/%m")}: #{format_cost(day.cost_usd)}, #{day.runs} execuções"}
+                  data-testid={"usage-day-#{day.date}"}
+                >
+                  <div class="flex w-full flex-1 items-end">
+                    <div
+                      class="w-full rounded-t bg-primary-500 dark:bg-primary-400"
+                      style={"height: #{bar_height(day.cost_usd, @peak)}%"}
+                    />
+                  </div>
+                  <span class="text-[10px] text-gray-500 dark:text-gray-400">
+                    {Calendar.strftime(day.date, "%d/%m")}
+                  </span>
+                </div>
               </div>
             </.card_content>
           </.card>
-        </div>
 
-        <div class="grid gap-6 xl:grid-cols-2">
-          <.usage_table title="Por pipeline" rows={@report.by_pipeline} testid="usage-by-pipeline" />
-          <.usage_table title="Por projeto" rows={@report.by_project} testid="usage-by-project" />
-          <.usage_table title="Por runner" rows={@report.by_runner} testid="usage-by-runner" />
-          <.usage_table title="Por pessoa" rows={@report.by_person} testid="usage-by-person" />
-        </div>
+          <div class="grid gap-6 xl:grid-cols-2">
+            <.usage_table
+              title="Por origem"
+              rows={origin_rows(@report.by_origin)}
+              testid="usage-by-origin"
+            />
+            <.card :if={@limited != []} variant="outline" data-testid="usage-rate-limits">
+              <.card_header
+                title="Limites das contas"
+                description="O uso de cada runner nas janelas da conta Claude, como a última execução viu."
+              />
+              <.card_content class="space-y-4">
+                <div :for={runner <- @limited}>
+                  <p class="mb-1 text-sm font-medium text-gray-900 dark:text-white">{runner.name}</p>
+                  <.rate_limit runner={runner} testid={"usage-rate-limit-#{runner.name}"} />
+                </div>
+              </.card_content>
+            </.card>
+          </div>
+        </.tab_panel>
 
-        <.card :if={@stage_map} variant="outline">
-          <.card_header
-            title="O pipeline, etapa por etapa"
-            description="O pipeline como está hoje, com o que cada etapa gastou no período."
-          />
-          <.live_component
-            module={PipelineExplorer}
-            id="usage-pipeline"
-            pipeline={@stage_map.pipeline}
-            opts={[metrics: @stage_map.metrics]}
-            testid="usage-pipeline"
-          />
-        </.card>
+        <.tab_panel id="detalhamento" active={@tab} testid="usage">
+          <div class="grid gap-6 xl:grid-cols-2">
+            <.usage_table title="Por pipeline" rows={@report.by_pipeline} testid="usage-by-pipeline" />
+            <.usage_table title="Por projeto" rows={@report.by_project} testid="usage-by-project" />
+            <.usage_table title="Por runner" rows={@report.by_runner} testid="usage-by-runner" />
+            <.usage_table title="Por pessoa" rows={@report.by_person} testid="usage-by-person" />
+          </div>
+        </.tab_panel>
 
-        <.card variant="outline">
-          <.card_header
-            title="Por etapa"
-            description="Execuções que falharam numa etapa viraram retentativas ou decisões. Fila e gates são médias por execução."
-          />
-          <.table
-            :if={@report.by_stage != []}
-            id="usage-by-stage"
-            rows={@report.by_stage}
-            density="compact"
-          >
-            <:col :let={row} label="Pipeline">{row.pipeline}</:col>
-            <:col :let={row} label="Etapa">{row.name}</:col>
-            <:col :let={row} label="Execuções">{row.runs}</:col>
-            <:col :let={row} label="Falharam">{row.failed}</:col>
-            <:col :let={row} label="Custo">{format_cost(row.cost_usd)}</:col>
-            <:col :let={row} label="Tempo">{format_duration(row.duration_ms)}</:col>
-            <:col :let={row} label="Fila">
-              <span data-testid={"usage-stage-queue-#{row.stage}"}>
-                {format_duration(row.avg_queue_ms)}
-              </span>
-            </:col>
-            <:col :let={row} label="Gates">{format_duration(row.avg_gates_ms)}</:col>
-            <:col :let={row} label="Tokens">{short_number(row.tokens)}</:col>
-          </.table>
-        </.card>
+        <.tab_panel id="etapas" active={@tab} testid="usage" class="space-y-6">
+          <.card :if={@stage_map} variant="outline">
+            <.card_header
+              title="O pipeline, etapa por etapa"
+              description="O pipeline como está hoje, com o que cada etapa gastou no período."
+            />
+            <.live_component
+              module={PipelineExplorer}
+              id="usage-pipeline"
+              pipeline={@stage_map.pipeline}
+              opts={[metrics: @stage_map.metrics]}
+              testid="usage-pipeline"
+            />
+          </.card>
 
-        <.workspace_audit insights={@insights} />
+          <.card variant="outline">
+            <.card_header
+              title="Por etapa"
+              description="Execuções que falharam numa etapa viraram retentativas ou decisões. Fila e gates são médias por execução."
+            />
+            <.table
+              :if={@report.by_stage != []}
+              id="usage-by-stage"
+              rows={@report.by_stage}
+              density="compact"
+            >
+              <:col :let={row} label="Pipeline">{row.pipeline}</:col>
+              <:col :let={row} label="Etapa">{row.name}</:col>
+              <:col :let={row} label="Execuções">{row.runs}</:col>
+              <:col :let={row} label="Falharam">{row.failed}</:col>
+              <:col :let={row} label="Custo">{format_cost(row.cost_usd)}</:col>
+              <:col :let={row} label="Tempo">{format_duration(row.duration_ms)}</:col>
+              <:col :let={row} label="Fila">
+                <span data-testid={"usage-stage-queue-#{row.stage}"}>
+                  {format_duration(row.avg_queue_ms)}
+                </span>
+              </:col>
+              <:col :let={row} label="Gates">{format_duration(row.avg_gates_ms)}</:col>
+              <:col :let={row} label="Tokens">{short_number(row.tokens)}</:col>
+            </.table>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="agente" active={@tab} testid="usage">
+          <.workspace_audit insights={@insights} />
+        </.tab_panel>
       </div>
     </Layouts.app>
     """

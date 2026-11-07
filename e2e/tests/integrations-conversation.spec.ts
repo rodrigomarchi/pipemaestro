@@ -61,10 +61,7 @@ test.describe("Conversation on the issue", () => {
     const integrations = new IntegrationsPage(app.page);
     await integrations.open(workspace.slug);
     await integrations.createTokenConnection("Forgejo");
-    const webhookUrl = (await app.page.getByTestId("integration-webhook-url").innerText()).trim();
-    await app.page.getByTestId("integration-webhook-secret-reveal").click();
-    await expect(app.page.getByTestId("integration-webhook-secret")).not.toContainText("•");
-    const secret = (await app.page.getByTestId("integration-webhook-secret").innerText()).trim();
+    const { url: webhookUrl, secret } = await integrations.webhook();
     const connectionPage = app.page.url();
 
     await integrations.linkRepo(repoName, "App (app)");
@@ -111,6 +108,7 @@ test.describe("Conversation on the issue", () => {
 
     await app.page.goto(connectionPage);
     await waitForLiveView(app.page);
+    await integrations.openTab("entregas");
     await expect(app.page.getByTestId(`delivery-status-${key(`comment-${suffix}`)}`)).toContainText("processada");
     await expect(app.page.getByTestId(`delivery-${key(`comment-${suffix}`)}`)).toContainText("comando seguir aplicado por ana");
     await shot(app.page, "command-applied");

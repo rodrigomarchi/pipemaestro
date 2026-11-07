@@ -78,8 +78,22 @@ export class TasksPage {
     return this.page.getByTestId(`stage-run-${key}-${attempt}`);
   }
 
+  /**
+   * Opens the details folded under an ended attempt's artifact (summary,
+   * gates, commit, files, steps); an attempt without them shows all already.
+   */
+  async openDetails(key: string, attempt: number) {
+    const details = this.page.getByTestId(`stage-run-details-${key}-${attempt}`);
+    if ((await details.count()) === 0) return;
+    if ((await details.getAttribute("open")) === null) {
+      await this.page.getByTestId(`stage-run-details-toggle-${key}-${attempt}`).click();
+    }
+    await expect(details).toHaveAttribute("open", "");
+  }
+
   /** A finished attempt's steps, opened with their toggle. */
   async openSteps(key: string, attempt: number): Promise<Locator> {
+    await this.openDetails(key, attempt);
     await this.page.getByTestId(`stage-run-steps-toggle-${key}-${attempt}`).click();
     const steps = this.page.getByTestId(`stage-run-steps-${key}-${attempt}`);
     await expect(steps).toBeVisible();
