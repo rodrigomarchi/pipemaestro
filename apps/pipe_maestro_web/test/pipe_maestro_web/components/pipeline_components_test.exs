@@ -95,17 +95,22 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
 
     test "edit mode inserts between steps, moves, removes and groups" do
       html =
-        render_diagram(diagram([stage("a"), stage("b"), stage("c", group: "r")]), mode: :edit)
+        render_diagram(
+          diagram([stage("a"), stage("b"), stage("c"), stage("d", group: "r")]),
+          mode: :edit
+        )
 
-      for at <- 0..3, do: assert(count(html, "[data-testid=diagram-insert-#{at}]") == 1)
-      assert count(html, "[data-testid=diagram-insert-3][phx-click=insert_stage]") == 1
+      for at <- 0..4, do: assert(count(html, "[data-testid=diagram-insert-#{at}]") == 1)
+      assert count(html, "[data-testid=diagram-insert-4][phx-click=insert_stage]") == 1
       assert count(html, "[data-testid=diagram-left-0][disabled]") == 1
-      assert count(html, "[data-testid=diagram-right-2][disabled]") == 1
+      assert count(html, "[data-testid=diagram-right-3][disabled]") == 1
       assert count(html, "[data-testid=diagram-remove-1][phx-click=remove_stage]") == 1
-      # The first stage prepares the worktree: it never runs in a group.
+      # The first stage prepares the worktree and never runs in a group, so
+      # neither it nor the one after it can join the one before.
       assert count(html, "[data-testid=diagram-join-group-0]") == 0
-      assert count(html, "[data-testid=diagram-join-group-1][phx-click=join_group]") == 1
-      assert count(html, "[data-testid=diagram-leave-group-2][phx-click=leave_group]") == 1
+      assert count(html, "[data-testid=diagram-join-group-1]") == 0
+      assert count(html, "[data-testid=diagram-join-group-2][phx-click=join_group]") == 1
+      assert count(html, "[data-testid=diagram-leave-group-3][phx-click=leave_group]") == 1
     end
 
     test "compact mode is a small, inert preview" do

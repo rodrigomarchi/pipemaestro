@@ -162,6 +162,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     |> put_params(Map.put(params, "stages", stages), socket.assigns.form.source.action)
   end
 
+  defp count(socket), do: length(StageParams.list(socket.assigns.params))
+
   @impl true
   def handle_params(params, _uri, socket),
     do:
@@ -195,17 +197,41 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   def handle_event("add_stage", _params, socket),
     do: {:noreply, update_stages(socket, &(&1 ++ [StageParams.new()]))}
 
+  def handle_event("insert_stage", %{"at" => at}, socket) do
+    at = String.to_integer(at)
+
+    {:noreply,
+     socket
+     |> assign(selected: {:stage, at})
+     |> update_stages(&StageParams.insert_at(&1, at))}
+  end
+
   def handle_event("remove_stage", %{"index" => index}, socket) do
     {:noreply,
      socket
      |> assign(selected: nil)
-     |> update_stages(&List.delete_at(&1, String.to_integer(index)))}
+     |> update_stages(&StageParams.remove(&1, String.to_integer(index)))}
   end
 
   def handle_event("move_stage", %{"index" => index, "to" => to}, socket) do
     {from, to} = {String.to_integer(index), String.to_integer(to)}
-    {:noreply, update_stages(socket, &StageParams.move(&1, from, to))}
+
+    selected =
+      if socket.assigns.selected == {:stage, from} and to in 0..(count(socket) - 1)//1,
+        do: {:stage, to},
+        else: socket.assigns.selected
+
+    {:noreply,
+     socket
+     |> assign(selected: selected)
+     |> update_stages(&StageParams.move(&1, from, to))}
   end
+
+  def handle_event("join_group", %{"index" => index}, socket),
+    do: {:noreply, update_stages(socket, &StageParams.join_group(&1, String.to_integer(index)))}
+
+  def handle_event("leave_group", %{"index" => index}, socket),
+    do: {:noreply, update_stages(socket, &StageParams.leave_group(&1, String.to_integer(index)))}
 
   def handle_event("save", %{"pipeline" => params}, socket) do
     workspace = socket.assigns.current_scope.workspace

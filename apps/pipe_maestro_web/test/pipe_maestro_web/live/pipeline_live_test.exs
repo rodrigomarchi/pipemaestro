@@ -170,7 +170,9 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
   } do
     pipeline = pipeline_fixture(workspace, %{"name" => "Meu"})
 
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+    {:ok, view, _html} =
+      live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+
     assert has_element?(view, "[data-testid=stage-name-1]")
 
     view |> element("[data-testid=stage-down-0]") |> render_click()
@@ -265,7 +267,8 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       workspace: workspace,
       pipeline: pipeline
     } do
-      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+      {:ok, view, _html} =
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
 
       assert view |> element("[data-testid=stage-chips-0]") |> render() =~ "1 gate"
       assert view |> element("[data-testid=stage-chips-1]") |> render() =~ "grupo revisoes"
@@ -478,6 +481,70 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
       assert has_element?(view, "[data-testid=pipeline-diagram]")
       refute has_element?(view, "[data-testid=pipeline-panel].hidden")
+    end
+  end
+
+  describe "changing the structure on the diagram" do
+    setup %{conn: conn, workspace: workspace} do
+      pipeline =
+        pipeline_fixture(workspace, %{
+          "name" => "Três",
+          "stages" => [
+            %{"key" => "a", "name" => "A", "prompt" => "a"},
+            %{"key" => "b", "name" => "B", "prompt" => "b"},
+            %{"key" => "c", "name" => "C", "prompt" => "c"}
+          ]
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+      %{pipeline: pipeline, view: view}
+    end
+
+    defp node_names(view) do
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("[data-testid^=diagram-select-] .truncate")
+      |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
+    end
+
+    defp click(view, testid), do: view |> element("[data-testid=#{testid}]") |> render_click()
+
+    test "inserts a stage between two and opens it", %{view: view} do
+      click(view, "diagram-insert-2")
+
+      assert node_names(view) == ["A", "B", "Nova etapa", "C"]
+      refute has_element?(view, "[data-testid=stage-panel-2].hidden")
+    end
+
+    test "moves a stage, and its panel follows it", %{view: view} do
+      click(view, "diagram-select-0")
+      click(view, "diagram-right-0")
+
+      assert node_names(view) == ["B", "A", "C"]
+      refute has_element?(view, "[data-testid=stage-panel-1].hidden")
+    end
+
+    test "removes a stage", %{view: view} do
+      click(view, "diagram-remove-1")
+      assert node_names(view) == ["A", "C"]
+    end
+
+    test "runs a stage at once with the one before, and back", %{view: view} do
+      click(view, "diagram-join-group-2")
+      assert has_element?(view, "[data-testid=diagram-step-1][data-parallel]")
+      assert has_element?(view, "[data-testid=diagram-fork-1]")
+
+      click(view, "diagram-leave-group-2")
+      refute has_element?(view, "[data-parallel]")
+    end
+
+    test "the structure saves", %{view: view, workspace: workspace, pipeline: pipeline} do
+      click(view, "diagram-join-group-2")
+      view |> form("#pipeline-form") |> render_submit()
+
+      assert [%{group: nil}, %{group: "paralelo-1"}, %{group: "paralelo-1"}] =
+               Pipelines.get_pipeline!(workspace, pipeline.id).stages
     end
   end
 end

@@ -413,7 +413,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
         phx-value-index={@index}
       />
       <.action
-        :if={not @parallel? and @index > 0}
+        :if={not @parallel? and @index > 1}
         icon="hero-squares-plus"
         label="Rodar em paralelo com a anterior"
         testid={"diagram-join-group-#{@index}"}
