@@ -17,6 +17,9 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   alias PipeMaestro.Pipelines.{Json, Pipeline, Prompt, Stage}
   alias PipeMaestro.Proposals
   alias PipeMaestro.Tasks.Contract
+  alias PipeMaestroWeb.PipelineDiagram
+
+  import PipeMaestroWeb.PipelineComponents, only: [stage_chips: 1]
 
   @impl true
   def mount(params, session, socket) do
@@ -236,35 +239,6 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     do: Enum.find(@deliveries, hd(@deliveries), fn {key, _, _, _} -> key == value end)
 
   defp stage_id(index), do: "stage-#{index}-prompt"
-
-  # What a collapsed stage still says about itself.
-  defp stage_chips(stage) do
-    gates = count_lines(stage[:gates_text].value)
-    rules = count_lines(stage[:rules_text].value)
-
-    [
-      {"hero-sparkles", model_label(stage[:model].value)},
-      {"hero-arrow-path", plural(stage[:max_attempts].value, "tentativa", "tentativas")},
-      {"hero-clock", "#{stage[:timeout_minutes].value || 60} min"},
-      gates > 0 && {"hero-shield-check", plural(gates, "gate", "gates")},
-      rules > 0 && {"hero-hand-raised", plural(rules, "regra de ajuda", "regras de ajuda")},
-      present(stage[:group].value) && {"hero-squares-2x2", "grupo #{stage[:group].value}"},
-      present(stage[:agent].value) && {"hero-user-circle", stage[:agent].value}
-    ]
-    |> Enum.filter(& &1)
-  end
-
-  defp plural(count, one, many) do
-    if to_string(count) == "1", do: "1 #{one}", else: "#{count} #{many}"
-  end
-
-  defp model_label(model) when model in [nil, ""], do: "modelo padrão"
-  defp model_label(model), do: model
-
-  defp count_lines(nil), do: 0
-
-  defp count_lines(text),
-    do: text |> to_string() |> String.split("\n") |> Enum.count(&(String.trim(&1) != ""))
 
   defp present(value), do: value not in [nil, ""] and String.trim(to_string(value)) != ""
 
@@ -656,18 +630,11 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
               class={["size-4 shrink-0 text-gray-400 transition", @collapsed && "-rotate-90"]}
             />
           </span>
-          <span
-            class="mt-1.5 flex flex-wrap gap-1.5"
-            data-testid={"stage-chips-#{@stage.index}"}
-          >
-            <span
-              :for={{icon, text} <- stage_chips(@stage)}
-              class="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            >
-              <.icon name={icon} class="size-3.5" />
-              {text}
-            </span>
-          </span>
+          <.stage_chips
+            chips={PipelineDiagram.chips(Ecto.Changeset.apply_changes(@stage.source))}
+            class="mt-1.5"
+            testid={"stage-chips-#{@stage.index}"}
+          />
         </span>
       </button>
       <div class="flex gap-1">

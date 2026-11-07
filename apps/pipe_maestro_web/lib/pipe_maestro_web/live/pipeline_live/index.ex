@@ -13,6 +13,9 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   alias PipeMaestro.Pipelines
   alias PipeMaestroWeb.ProposalRequest
 
+  import PipeMaestroWeb.PipelineComponents,
+    only: [budget_label: 1, delivery_icon: 1, delivery_label: 1]
+
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
@@ -143,17 +146,6 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
   defp load_pipelines(socket),
     do:
       assign(socket, pipelines: Pipelines.list_pipelines(socket.assigns.current_scope.workspace))
-
-  defp delivery_icon("pr"), do: "hero-rocket-launch"
-  defp delivery_icon("commit"), do: "hero-check-badge"
-  defp delivery_icon(_none), do: "hero-no-symbol"
-
-  defp delivery_label("pr"), do: "Pull request"
-  defp delivery_label("commit"), do: "Commits conferidos"
-  defp delivery_label(_none), do: "Sem entrega"
-
-  defp budget_label(nil), do: "Sem limite de custo"
-  defp budget_label(cost), do: "Até US$ #{cost}"
 
   defp stages_label(1), do: "1 etapa"
   defp stages_label(count), do: "#{count} etapas"
