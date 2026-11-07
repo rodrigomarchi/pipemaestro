@@ -514,8 +514,6 @@ defmodule PipeMaestro.Tasks do
   end
 
   defp job_context(task, stage, index) do
-    resumable? = resumable?(task)
-
     %{
       "directory" => task.directory,
       "worktree" => if(task.git, do: %{"task_id" => task.id, "branch" => task.branch}),
@@ -534,12 +532,24 @@ defmodule PipeMaestro.Tasks do
       "delivery" => if(not grouped?(task, index), do: delivery(task, index)),
       "checks" => if(place = contract_place(task, index), do: Contract.checks(stage, place)),
       "sync" => if(task.git, do: true),
-      "artifacts" => earlier_artifacts(task, index),
-      "persist_session" => if(resumable? and continued?(task, index + 1), do: true),
-      "resume_session_id" =>
-        if(resumable? and stage.context == "continue", do: previous_session_id(task, index))
+      "artifacts" => earlier_artifacts(task, index)
     }
+    |> Map.merge(session_context(task, stage, index))
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  # The agent's session: kept when the next stage continues it, resumed when
+  # this stage continues the one before.
+  defp session_context(task, stage, index) do
+    if resumable?(task) do
+      %{
+        "persist_session" => if(continued?(task, index + 1), do: true),
+        "resume_session_id" =>
+          if(stage.context == "continue", do: previous_session_id(task, index))
+      }
+    else
+      %{}
+    end
   end
 
   # Whether the task's runner keeps and resumes the agent's sessions (ADR
