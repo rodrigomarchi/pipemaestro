@@ -32,7 +32,7 @@ cancelamento pedido com o canal fora se perdiam, porque viviam no processo do ca
 | sem a marca, `XPC_SERVICE_NAME=com.pipemaestro.runner` (launchd) ou `INVOCATION_ID` sem TTY (systemd) | `:service` | idem: os serviços instalados antes desta decisão |
 | `PIPEMAESTRO_RELAUNCH_PARENT=1` | `:handoff` | sai com 75, e o runner que o subiu roda o binário novo |
 | com TTY | `:interactive` | sobe o binário novo como filho, com `PIPEMAESTRO_RELAUNCH_PARENT=1`. Com 75, sobe de novo; com outro status, sai com ele. São sempre dois BEAMs: o pai fixo e o runner da vez |
-| sem TTY e fora de um serviço | `:detached` | sobe o binário novo desacoplado (`nohup … &`, mesma saída) e sai com 0 |
+| sem TTY e fora de um serviço | `:detached` | sobe o binário novo desacoplado (em background, ignorando SIGHUP, com a mesma saída) e sai com 0 |
 
 Um lock de instância (`runner.pid` no diretório de configuração) impede dois runners com
 a mesma configuração: o `start` espera até 30 s o anterior sair antes de conectar.
