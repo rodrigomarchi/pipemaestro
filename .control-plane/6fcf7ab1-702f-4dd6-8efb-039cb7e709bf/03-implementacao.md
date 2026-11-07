@@ -197,3 +197,8 @@ E2E_FORGEJO_PORT=4613 E2E_GITHUB_PORT=4614 make e2e.shots FILE=tests/runner-rest
   contagem errada "2 tentativas" apareceu nos screenshots e foi corrigida (`bb583d3`).
 - A suíte e2e inteira não rodou nesta execução. A outra execução a iniciou, e o
   resultado final fica para a etapa de Telas (e2e).
+- Suíte e2e inteira (`make e2e.shots`, portas 4931/4932): 29 passaram e 1 falhou. A
+  falha foi o fim de `runner-restart.spec.ts`: a espera padrão de 5 s até "Cancelada" é
+  menor que a parada do agente pelo runner (SIGTERM e, depois de 5 s, SIGKILL) quando a
+  máquina está carregada. A espera passou para 15 s, sem mudar o que a spec confere.
+  Depois disso, a spec passou três vezes sozinha e `npx tsc --noEmit` saiu 0.
