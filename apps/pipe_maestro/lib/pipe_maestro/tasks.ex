@@ -53,8 +53,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals
   alias PipeMaestro.Proposals.AnalysisKind
-  alias PipeMaestro.{Repo, Runners}
-  alias PipeMaestro.RunnerTelemetry
+  alias PipeMaestro.{Repo, Runners, RunnerTelemetry}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{Contract, Decision, Engine, Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces
@@ -1023,20 +1022,7 @@ defmodule PipeMaestro.Tasks do
   defp close_step(task, first) do
     runs = latest_runs(task, first)
 
-    problems =
-      for run <- runs, run.status in [:blocked, :failed, :lost] do
-        case run.status do
-          :blocked -> "A etapa \"#{run.name}\" está bloqueada: #{run.summary}"
-          :failed -> "A etapa \"#{run.name}\" falhou: #{run.error}"
-          :lost -> lost_reason(run)
-        end
-      end
-
-    # A stage lost past the limit is no fault of the agent's: nothing to analyse.
-    asking =
-      if Enum.any?(runs, &(&1.status in [:blocked, :failed])),
-        do: group_asking(runs),
-        else: :none
+    problems = for run <- runs, run.status in [:blocked, :failed, :lost], do: problem(run)
 
     pauses =
       for run <- runs,
@@ -1046,12 +1032,27 @@ defmodule PipeMaestro.Tasks do
           do: "A etapa \"#{stage.name}\" terminou, mas #{reason}."
 
     cond do
-      problems != [] -> await(task, Enum.join(problems, " "), asking)
+      problems != [] -> await(task, Enum.join(problems, " "), step_asking(runs))
       pauses != [] -> await(task, Enum.join(pauses, " "))
       Enum.any?(runs, &(&1.status == :canceled)) -> await(task, "O passo foi interrompido.")
       task.pause_requested -> await(task, "Alguém pediu uma pausa depois deste passo.")
       true -> next_or_finish(task, step_last(task, first) + 1, nil)
     end
+  end
+
+  defp problem(%StageRun{status: :blocked} = run),
+    do: "A etapa \"#{run.name}\" está bloqueada: #{run.summary}"
+
+  defp problem(%StageRun{status: :failed} = run),
+    do: "A etapa \"#{run.name}\" falhou: #{run.error}"
+
+  defp problem(%StageRun{status: :lost} = run), do: lost_reason(run)
+
+  # A stage lost past the limit is no fault of the agent's: nothing to analyse.
+  defp step_asking(runs) do
+    if Enum.any?(runs, &(&1.status in [:blocked, :failed])),
+      do: group_asking(runs),
+      else: :none
   end
 
   # The questions of the group's blocked stages, put together, each marked
