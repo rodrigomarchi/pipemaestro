@@ -18,7 +18,8 @@ defmodule PipeMaestroWeb.UsageLive do
 
   import PipeMaestroWeb.RunnerComponents, only: [rate_limit: 1]
 
-  alias PipeMaestro.{Insights, Proposals, Runners, Usage}
+  alias PipeMaestro.{Insights, Pipelines, Proposals, Runners, Usage}
+  alias PipeMaestroWeb.PipelineExplorer
 
   @periods ~w(7 30 90)
 
@@ -48,8 +49,47 @@ defmodule PipeMaestroWeb.UsageLive do
     peak = report.by_day |> Enum.map(&Decimal.to_float(&1.cost_usd)) |> Enum.max(fn -> 0.0 end)
     insights = Insights.workspace(workspace, socket.assigns.days, filters)
     limited = workspace |> Runners.list_runners() |> Enum.filter(& &1.rate_limit)
-    assign(socket, report: report, peak: peak, insights: insights, limited: limited)
+
+    socket
+    |> assign(report: report, peak: peak, insights: insights, limited: limited)
+    |> assign(stage_map: stage_map(workspace, socket.assigns.pipeline, report.by_stage))
   end
+
+  # The pipeline filtered by, as it is now, with what each of its stages
+  # spent in the period (matched by key: a stage it no longer has stays in the
+  # table only).
+  defp stage_map(_workspace, "", _rows), do: nil
+
+  defp stage_map(workspace, name, rows) do
+    case Enum.find(Pipelines.list_pipelines(workspace), &(&1.name == name)) do
+      nil ->
+        nil
+
+      pipeline ->
+        metrics =
+          for row <- rows,
+              row.pipeline == name,
+              index = Enum.find_index(pipeline.stages, &(&1.key == row.stage)),
+              index != nil,
+              into: %{},
+              do: {index, stage_metrics(row)}
+
+        %{pipeline: pipeline, metrics: metrics}
+    end
+  end
+
+  defp stage_metrics(row) do
+    [
+      {"hero-banknotes", format_cost(row.cost_usd)},
+      {"hero-play", plural(row.runs, "execução", "execuções")},
+      row.failed > 0 && {"hero-x-circle", plural(row.failed, "falha", "falhas")},
+      row.avg_gates_ms && {"hero-shield-check", "gates " <> format_duration(row.avg_gates_ms)}
+    ]
+    |> Enum.filter(& &1)
+  end
+
+  defp plural(1, one, _many), do: "1 #{one}"
+  defp plural(count, _one, many), do: "#{count} #{many}"
 
   defp filter_form(assigns),
     do:
@@ -230,6 +270,20 @@ defmodule PipeMaestroWeb.UsageLive do
           <.usage_table title="Por runner" rows={@report.by_runner} testid="usage-by-runner" />
           <.usage_table title="Por pessoa" rows={@report.by_person} testid="usage-by-person" />
         </div>
+
+        <.card :if={@stage_map} variant="outline">
+          <.card_header
+            title="O pipeline, etapa por etapa"
+            description="O pipeline como está hoje, com o que cada etapa gastou no período."
+          />
+          <.live_component
+            module={PipelineExplorer}
+            id="usage-pipeline"
+            pipeline={@stage_map.pipeline}
+            opts={[metrics: @stage_map.metrics]}
+            testid="usage-pipeline"
+          />
+        </.card>
 
         <.card variant="outline">
           <.card_header
