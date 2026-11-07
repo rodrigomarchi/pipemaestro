@@ -704,7 +704,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(
                view,
-               ~s([data-testid=task-panel-anexos] [data-testid=task-attachments-a-1] [data-testid="stage-run-file-a-1-dados/r.csv"])
+               ~s([data-testid=task-panel-anexos] [data-testid=task-attachments-a-1] [data-testid="task-attachment-a-1-dados/r.csv"])
              )
     end
 
