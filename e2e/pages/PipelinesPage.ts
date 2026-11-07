@@ -28,10 +28,17 @@ export class PipelinesPage {
     return this.page.getByTestId(`pipeline-version-${name}`);
   }
 
+  /** Opens a pipeline's editor on the Formulário tab (it opens on the diagram). */
   async edit(name: string) {
     await this.page.getByTestId(`pipeline-edit-${name}`).click();
     await expect(this.page.getByTestId("pipeline-name")).toHaveValue(name);
     await waitForLiveView(this.page);
+    await this.openFormTab();
+  }
+
+  async openFormTab() {
+    await this.page.getByTestId("pipeline-view-form").click();
+    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
   }
 
   stagePrompt(index: number): Locator {

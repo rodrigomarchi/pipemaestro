@@ -1,7 +1,13 @@
 defmodule PipeMaestroWeb.PipelineLive.Form do
   @moduledoc """
   Creates or edits a pipeline: its name, delivery and context, and its stages,
-  which can be added, removed, moved and collapsed. Prompts are written in a
+  which can be added, removed, moved and collapsed. It opens on the Diagrama
+  tab (`PipeMaestroWeb.PipelineComponents.pipeline_diagram/1`, over the form's
+  draft), where a node opens its fields in a side panel and the structure
+  changes in place; `?view=form` is the Formulário tab, a card per stage.
+  Both tabs are one form: every field (`PipeMaestroWeb.PipelineLive.FormFields`)
+  is rendered once, in the frame of the tab, and a closed panel keeps its
+  inputs in the page, hidden. Prompts are written in a
   Markdown editor (`PipeMaestroWeb.FormComponents.markdown_editor/1`).
   A new pipeline can start from an agent's proposal, and an existing one from
   an improvement the agent proposed for it (`?proposta=<job id>`,
@@ -14,12 +20,13 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
 
   alias PipeMaestro.Audit
   alias PipeMaestro.Pipelines
-  alias PipeMaestro.Pipelines.{Json, Pipeline, Prompt, Stage}
+  alias PipeMaestro.Pipelines.{Json, Pipeline, Stage}
   alias PipeMaestro.Proposals
-  alias PipeMaestro.Tasks.Contract
   alias PipeMaestroWeb.PipelineDiagram
+  alias PipeMaestroWeb.PipelineLive.StageParams
 
-  import PipeMaestroWeb.PipelineComponents, only: [stage_chips: 1]
+  import PipeMaestroWeb.PipelineComponents, only: [pipeline_diagram: 1, side_panel: 1]
+  import PipeMaestroWeb.PipelineLive.FormFields
 
   @impl true
   def mount(params, session, socket) do
@@ -45,6 +52,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
      socket
      |> assign(page_title: page_title(socket.assigns.live_action), pipeline: pipeline)
      |> assign(collapsed: MapSet.new(), from_proposal: from_proposal?(params))
+     |> assign(selected: if(pipeline.id, do: nil, else: :entry))
      |> put_params(starting_params(pipeline, params, workspace), nil)}
   end
 
@@ -82,8 +90,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     stages =
       attrs
       |> Map.get("stages", [])
-      |> Enum.map(fn stage -> Map.merge(new_stage(), Map.new(stage, &text_param/1)) end)
-      |> to_indexed()
+      |> Enum.map(fn stage -> Map.merge(StageParams.new(), Map.new(stage, &text_param/1)) end)
+      |> StageParams.indexed()
 
     attrs
     |> Map.delete("stages")
@@ -100,7 +108,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   defp page_title(:edit), do: "Editar pipeline"
 
   defp initial_params(%Pipeline{id: nil}),
-    do: %{"name" => "", "description" => "", "stages" => %{"0" => new_stage()}}
+    do: %{"name" => "", "description" => "", "stages" => %{"0" => StageParams.new()}}
 
   defp initial_params(%Pipeline{} = pipeline) do
     %{
@@ -112,7 +120,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         if(pipeline.max_task_cost_usd, do: to_string(pipeline.max_task_cost_usd), else: ""),
       "mcp_config_json" => Pipeline.mcp_config_json(pipeline),
       "agents_json" => Pipeline.agents_json(pipeline),
-      "stages" => pipeline.stages |> Enum.map(&stage_params/1) |> to_indexed()
+      "stages" => pipeline.stages |> Enum.map(&stage_params/1) |> StageParams.indexed()
     }
   end
 
@@ -134,17 +142,6 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     }
   end
 
-  defp new_stage, do: %{"name" => "", "prompt" => "", "max_attempts" => "2"}
-
-  defp to_indexed(stages),
-    do: stages |> Enum.with_index() |> Map.new(fn {stage, i} -> {Integer.to_string(i), stage} end)
-
-  defp stages_list(params) do
-    (params["stages"] || %{})
-    |> Enum.sort_by(fn {index, _stage} -> String.to_integer(index) end)
-    |> Enum.map(&elem(&1, 1))
-  end
-
   defp put_params(socket, params, action) do
     changeset =
       socket.assigns.pipeline
@@ -158,7 +155,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   # collapsed opens again.
   defp update_stages(socket, fun) do
     params = socket.assigns.params
-    stages = params |> stages_list() |> fun.() |> to_indexed()
+    stages = params |> StageParams.list() |> fun.() |> StageParams.indexed()
 
     socket
     |> assign(collapsed: MapSet.new())
@@ -166,8 +163,22 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   end
 
   @impl true
+  def handle_params(params, _uri, socket),
+    do:
+      {:noreply, assign(socket, view: if(params["view"] == "form", do: "form", else: "diagram"))}
+
+  @impl true
   def handle_event("validate", %{"pipeline" => params}, socket),
     do: {:noreply, put_params(socket, params, :validate)}
+
+  def handle_event("select_node", %{"node" => "entry"}, socket),
+    do: {:noreply, assign(socket, selected: :entry)}
+
+  def handle_event("select_node", %{"node" => index}, socket),
+    do: {:noreply, assign(socket, selected: {:stage, String.to_integer(index)})}
+
+  def handle_event("close_panel", _params, socket),
+    do: {:noreply, assign(socket, selected: nil)}
 
   def handle_event("toggle_stage", %{"index" => index}, socket) do
     index = String.to_integer(index)
@@ -182,23 +193,18 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   end
 
   def handle_event("add_stage", _params, socket),
-    do: {:noreply, update_stages(socket, &(&1 ++ [new_stage()]))}
+    do: {:noreply, update_stages(socket, &(&1 ++ [StageParams.new()]))}
 
-  def handle_event("remove_stage", %{"index" => index}, socket),
-    do: {:noreply, update_stages(socket, &List.delete_at(&1, String.to_integer(index)))}
+  def handle_event("remove_stage", %{"index" => index}, socket) do
+    {:noreply,
+     socket
+     |> assign(selected: nil)
+     |> update_stages(&List.delete_at(&1, String.to_integer(index)))}
+  end
 
   def handle_event("move_stage", %{"index" => index, "to" => to}, socket) do
     {from, to} = {String.to_integer(index), String.to_integer(to)}
-
-    {:noreply,
-     update_stages(socket, fn stages ->
-       if to in 0..(length(stages) - 1)//1 do
-         {stage, rest} = List.pop_at(stages, from)
-         List.insert_at(rest, to, stage)
-       else
-         stages
-       end
-     end)}
+    {:noreply, update_stages(socket, &StageParams.move(&1, from, to))}
   end
 
   def handle_event("save", %{"pipeline" => params}, socket) do
@@ -226,31 +232,26 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     end
   end
 
-  defp model_options, do: [{"Padrão do CLI", ""} | Enum.map(Stage.models(), &{&1, &1})]
+  defp tab_path(workspace, %Pipeline{id: nil}, view),
+    do: tab_query(~p"/w/#{workspace.slug}/pipelines/new", view)
 
-  @deliveries [
-    {"none", "Nenhuma: os prompts decidem", "hero-no-symbol",
-     "A plataforma não confere nem entrega nada; o que acontece com o código fica a cargo dos prompts."},
-    {"commit", "Commits conferidos, sem push", "hero-check-badge",
-     "O agente faz os commits na branch da tarefa; a plataforma confere cada etapa (abaixo) e não faz push."},
-    {"pr", "Commits conferidos, push e PR", "hero-rocket-launch",
-     "O agente faz os commits; a plataforma confere cada etapa (abaixo), faz o push e mantém o seu bloco no PR, que abre em rascunho e fica pronto na última etapa."}
-  ]
+  defp tab_path(workspace, pipeline, view),
+    do: tab_query(~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit", view)
 
-  defp delivery_options, do: Enum.map(@deliveries, fn {value, label, _, _} -> {label, value} end)
+  defp tab_query(path, "form"), do: path <> "?view=form"
+  defp tab_query(path, _diagram), do: path
 
-  defp delivery(value),
-    do: Enum.find(@deliveries, hd(@deliveries), fn {key, _, _, _} -> key == value end)
-
-  defp stage_id(index), do: "stage-#{index}-prompt"
-
-  defp present(value), do: value not in [nil, ""] and String.trim(to_string(value)) != ""
-
-  # A multi-line placeholder: in the template, the formatter would make it literal.
-  defp gates_placeholder, do: "{{projeto.teste}}\n! mix test test/repro_test.exs"
+  defp tabs,
+    do: [{"diagram", "Diagrama", "hero-share"}, {"form", "Formulário", "hero-queue-list"}]
 
   @impl true
   def render(assigns) do
+    assigns =
+      assign(assigns,
+        diagram: PipelineDiagram.build(Ecto.Changeset.apply_changes(assigns.form.source)),
+        count: length(StageParams.list(assigns.params))
+      )
+
     ~H"""
     <Layouts.app
       flash={@flash}
@@ -263,13 +264,17 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
       <:actions>
         <.button
           link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/pipelines"}
+          to={
+            if @pipeline.id,
+              do: ~p"/w/#{@current_scope.workspace.slug}/pipelines/#{@pipeline.id}",
+              else: ~p"/w/#{@current_scope.workspace.slug}/pipelines"
+          }
           size="sm"
           variant="ghost"
           color="gray"
           icon="hero-arrow-left"
         >
-          Pipelines
+          {if @pipeline.id, do: "Voltar", else: "Pipelines"}
         </.button>
       </:actions>
 
@@ -284,311 +289,107 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           do: "(vira a versão #{@pipeline.version + 1})"}.
       </.alert>
 
+      <.tabs variant="underline" class="mb-6 overflow-x-auto" data-testid="pipeline-view-tabs">
+        <.tab
+          :for={{id, label, icon} <- tabs()}
+          link_type="live_patch"
+          to={tab_path(@current_scope.workspace, @pipeline, id)}
+          is_active={@view == id}
+          variant="underline"
+          aria-current={@view == id && "page"}
+          data-testid={"pipeline-view-#{id}"}
+        >
+          <.icon name={icon} class="mr-1.5 size-4" /> {label}
+        </.tab>
+      </.tabs>
+
       <.form for={@form} id="pipeline-form" phx-change="validate" phx-submit="save" class="space-y-6">
-        <div class="grid gap-6 xl:grid-cols-3">
-          <.card variant="outline" class="xl:col-span-2">
-            <.card_content>
-              <.section_heading
-                icon="hero-identification"
-                title="Identificação"
-                description="Como o pipeline aparece na lista e ao criar uma tarefa."
-              />
-              <.icon_field
-                field={@form[:name]}
-                icon="hero-tag"
-                label="Nome"
-                data-testid="pipeline-name"
-              />
-              <.icon_field
-                field={@form[:description]}
-                icon="hero-bars-3-bottom-left"
-                type="textarea"
-                rows="2"
-                label="Descrição"
-                no_margin
-                data-testid="pipeline-description"
-              />
-            </.card_content>
-          </.card>
-
-          <.card variant="outline">
-            <.card_content>
-              <.section_heading
-                icon="hero-rocket-launch"
-                title="Execução"
-                description="Um teto de custo, se quiser, e o que vira do código."
-              />
-              <.icon_field
-                field={@form[:max_task_cost_usd]}
-                icon="hero-banknotes"
-                type="number"
-                step="0.01"
-                min="0"
-                label="Teto de custo por tarefa (US$, opcional)"
-                help_text="Vazio é sem limite. Com um valor, a tarefa para e pede uma decisão ao passar dele."
-                data-testid="pipeline-max-cost"
-              />
-              <.icon_field
-                field={@form[:delivery]}
-                icon="hero-truck"
-                type="select"
-                label="Entrega (num diretório com git)"
-                options={delivery_options()}
-                no_margin
-                data-testid="pipeline-delivery"
-              />
-              <p
-                class="mt-2 flex gap-2 text-sm text-gray-500 dark:text-gray-400"
-                data-testid="pipeline-delivery-help"
-              >
-                <.icon
-                  name={elem(delivery(@form[:delivery].value), 2)}
-                  class="mt-0.5 size-4 shrink-0 text-primary-500"
-                />
-                {elem(delivery(@form[:delivery].value), 3)}
-              </p>
-              <div
-                :if={Contract.labels(@form[:delivery].value) != []}
-                class="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-950"
-                data-testid="pipeline-platform-checks"
-              >
-                <p class="mb-1 font-medium text-gray-700 dark:text-gray-200">
-                  Verificações da plataforma, em toda etapa que entrega
-                </p>
-                <ul class="list-inside list-disc space-y-0.5 text-gray-600 dark:text-gray-300">
-                  <li :for={label <- Contract.labels(@form[:delivery].value)}>{label}</li>
-                </ul>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Fixas, como gates que vêm antes dos seus: uma que falha volta ao agente com o motivo.
-                  Etapas em grupo (paralelas) ficam de fora.
-                </p>
-              </div>
-            </.card_content>
-          </.card>
-        </div>
-
-        <.card variant="outline">
-          <.card_content>
-            <.section_heading
-              icon="hero-cpu-chip"
-              title="Contexto do pipeline"
-              description="Vale para todas as etapas. Cada etapa roda com contexto novo, lê os artefatos das anteriores e responde com status (ok ou bloqueado) e resumo; ela segue sozinha para a próxima e só para quando precisa de ajuda."
-            />
-            <.markdown_editor
-              id="pipeline-system-prompt"
-              field={@form[:system_prompt]}
-              label="Instruções de sistema"
-              icon="hero-command-line"
-              testid="pipeline-system-prompt"
-              rows={4}
-              help_text="Somadas às do agente em todas as etapas."
-            />
-            <details class="group mt-2">
-              <summary class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300">
-                <.icon name="hero-chevron-right" class="size-4 transition group-open:rotate-90" />
-                <.icon name="hero-puzzle-piece" class="size-4" /> Servidores MCP e agentes
-              </summary>
-              <div class="mt-3 grid gap-4 lg:grid-cols-2">
-                <.icon_field
-                  field={@form[:mcp_config_json]}
-                  icon="hero-server-stack"
-                  type="textarea"
-                  rows="5"
-                  label="Servidores MCP (JSON com mcpServers)"
-                  placeholder={~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}})}
-                  help_text="Não guarde segredos aqui: use variáveis de ambiente do runner."
-                  class="font-mono text-sm"
-                  data-testid="pipeline-mcp-config"
-                />
-                <.icon_field
-                  field={@form[:agents_json]}
-                  icon="hero-user-group"
-                  type="textarea"
-                  rows="5"
-                  label="Agentes (JSON por nome)"
-                  placeholder={
-                    ~s({"revisor": {"description": "Revisa o diff", "prompt": "Revise..."}})
-                  }
-                  class="font-mono text-sm"
-                  data-testid="pipeline-agents"
-                />
-              </div>
-            </details>
+        <.card :if={@view == "diagram"} variant="outline">
+          <.card_content class="!p-0">
+            <.pipeline_diagram diagram={@diagram} mode={:edit} selected={@selected} />
           </.card_content>
         </.card>
 
-        <div class="flex items-center justify-between gap-2">
+        <div :if={@view == "form"} class="grid gap-6 xl:grid-cols-3">
+          <.card variant="outline" class="xl:col-span-2">
+            <.card_content><.identity_fields form={@form} /></.card_content>
+          </.card>
+          <.card variant="outline">
+            <.card_content><.execution_fields form={@form} /></.card_content>
+          </.card>
+          <.card variant="outline" class="xl:col-span-3">
+            <.card_content><.context_fields form={@form} /></.card_content>
+          </.card>
+        </div>
+
+        <.side_panel
+          :if={@view == "diagram"}
+          id="pipeline-panel"
+          title="Entrada e contexto"
+          description="O pipeline em si: nome, entrega, teto de custo e o que vale para todas as etapas."
+          open={@selected == :entry}
+          testid="pipeline-panel"
+        >
+          <div class="space-y-8">
+            <div><.identity_fields form={@form} /></div>
+            <div><.execution_fields form={@form} /></div>
+            <div><.context_fields form={@form} /></div>
+          </div>
+          <:footer>
+            <.button type="submit" icon="hero-check" data-testid="pipeline-panel-save">
+              Salvar
+            </.button>
+          </:footer>
+        </.side_panel>
+
+        <div :if={@view == "form"} class="flex items-center justify-between gap-2">
           <h2 class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
             <.icon name="hero-queue-list" class="size-5 text-primary-500 dark:text-primary-400" />
             Etapas
           </h2>
-          <p
-            :if={@form.source.action && @form[:stages].errors != []}
-            class="text-sm text-danger-600 dark:text-danger-400"
-            data-testid="pipeline-stages-error"
-          >
-            {@form[:stages].errors |> Enum.map_join(" ", &elem(&1, 0))}
-          </p>
         </div>
+        <p
+          :if={@form.source.action && @form[:stages].errors != []}
+          class="text-sm text-danger-600 dark:text-danger-400"
+          data-testid="pipeline-stages-error"
+        >
+          {@form[:stages].errors |> Enum.map_join(" ", &elem(&1, 0))}
+        </p>
 
-        <ol class="space-y-4">
+        <div class={@view == "form" && "space-y-4"}>
           <.inputs_for :let={stage} field={@form[:stages]}>
-            <li>
-              <.card variant="outline" data-testid={"stage-card-#{stage.index}"}>
-                <.card_content>
-                  <.stage_header
-                    stage={stage}
-                    count={length(stages_list(@params))}
-                    collapsed={MapSet.member?(@collapsed, stage.index)}
-                  />
-
-                  <div
-                    class={["mt-5 space-y-2", MapSet.member?(@collapsed, stage.index) && "hidden"]}
-                    data-testid={"stage-body-#{stage.index}"}
-                  >
-                    <div class="grid gap-4 sm:grid-cols-2">
-                      <.icon_field
-                        field={stage[:name]}
-                        icon="hero-tag"
-                        label="Nome"
-                        data-testid={"stage-name-#{stage.index}"}
-                      />
-                      <.icon_field
-                        field={stage[:key]}
-                        icon="hero-key"
-                        label="Chave"
-                        help_text="Nome do artefato; em branco, vem do nome."
-                        data-testid={"stage-key-#{stage.index}"}
-                      />
-                    </div>
-
-                    <.markdown_editor
-                      id={stage_id(stage.index)}
-                      field={stage[:prompt]}
-                      label="Prompt"
-                      testid={"stage-prompt-#{stage.index}"}
-                      variables={Prompt.variables()}
-                    />
-
-                    <div>
-                      <.block_heading icon="hero-cog-6-tooth" title="Execução" />
-                      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <.icon_field
-                          field={stage[:max_attempts]}
-                          icon="hero-arrow-path"
-                          type="number"
-                          min="1"
-                          max="5"
-                          label="Tentativas"
-                          data-testid={"stage-attempts-#{stage.index}"}
-                        />
-                        <.icon_field
-                          field={stage[:model]}
-                          icon="hero-sparkles"
-                          type="select"
-                          label="Modelo"
-                          options={model_options()}
-                          data-testid={"stage-model-#{stage.index}"}
-                        />
-                        <.icon_field
-                          field={stage[:max_budget_usd]}
-                          icon="hero-banknotes"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          label="Teto de custo (US$, opcional)"
-                          help_text="Vazio é sem limite."
-                          data-testid={"stage-budget-#{stage.index}"}
-                        />
-                        <.icon_field
-                          field={stage[:timeout_minutes]}
-                          icon="hero-clock"
-                          type="number"
-                          min="1"
-                          max="1440"
-                          label="Tempo máximo (min)"
-                          data-testid={"stage-timeout-#{stage.index}"}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <.block_heading icon="hero-shield-check" title="Verificação" />
-                      <div class="grid gap-4 sm:grid-cols-2">
-                        <.icon_field
-                          field={stage[:gates_text]}
-                          icon="hero-shield-check"
-                          type="textarea"
-                          rows="3"
-                          label="Gates (comandos depois da etapa)"
-                          placeholder={gates_placeholder()}
-                          help_text="Um por linha; ! na frente quando o comando deve falhar. Um gate não atendido reprova a tentativa."
-                          class="font-mono text-sm"
-                          data-testid={"stage-gates-#{stage.index}"}
-                        />
-                        <.icon_field
-                          field={stage[:rules_text]}
-                          icon="hero-hand-raised"
-                          type="textarea"
-                          rows="3"
-                          label="Pedir ajuda quando"
-                          placeholder="bem_definida == false"
-                          help_text="Um por linha: campo == valor ou campo != valor, sobre a saída estruturada. A tarefa para e pede uma decisão."
-                          class="font-mono text-sm"
-                          data-testid={"stage-rules-#{stage.index}"}
-                        />
-                      </div>
-                    </div>
-
-                    <details class="group">
-                      <summary class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300">
-                        <.icon
-                          name="hero-chevron-right"
-                          class="size-4 transition group-open:rotate-90"
-                        />
-                        <.icon name="hero-adjustments-horizontal" class="size-4" />
-                        Avançado: agente, grupo em paralelo e saída estruturada
-                      </summary>
-                      <div class="mt-4 space-y-4">
-                        <div class="grid gap-4 sm:grid-cols-2">
-                          <.icon_field
-                            field={stage[:agent]}
-                            icon="hero-user-circle"
-                            label="Rodar como o agente (opcional)"
-                            placeholder="revisor"
-                            help_text="Um agente do repositório (.claude/agents) ou do pipeline."
-                            data-testid={"stage-agent-#{stage.index}"}
-                          />
-                          <.icon_field
-                            field={stage[:group]}
-                            icon="hero-squares-2x2"
-                            label="Grupo em paralelo (opcional)"
-                            placeholder="auditorias"
-                            help_text="Etapas seguidas com o mesmo grupo rodam juntas; a seguinte espera todas."
-                            data-testid={"stage-group-#{stage.index}"}
-                          />
-                        </div>
-                        <.icon_field
-                          field={stage[:output_schema_json]}
-                          icon="hero-code-bracket-square"
-                          type="textarea"
-                          rows="5"
-                          label="Campos extras da saída estruturada (JSON Schema)"
-                          placeholder={
-                            ~s({"type": "object", "properties": {"arquivos": {"type": "array", "items": {"type": "string"}}}})
-                          }
-                          class="font-mono text-sm"
-                          no_margin
-                          data-testid={"stage-schema-#{stage.index}"}
-                        />
-                      </div>
-                    </details>
-                  </div>
-                </.card_content>
-              </.card>
-            </li>
+            <.card :if={@view == "form"} variant="outline" data-testid={"stage-card-#{stage.index}"}>
+              <.card_content>
+                <.stage_header
+                  stage={stage}
+                  count={@count}
+                  collapsed={MapSet.member?(@collapsed, stage.index)}
+                />
+                <div class="mt-5">
+                  <.stage_fields stage={stage} hidden={MapSet.member?(@collapsed, stage.index)} />
+                </div>
+              </.card_content>
+            </.card>
+            <.side_panel
+              :if={@view == "diagram"}
+              id={"stage-panel-#{stage.index}"}
+              title={"#{stage.index + 1}. #{stage_title(stage)}"}
+              open={@selected == {:stage, stage.index}}
+              testid={"stage-panel-#{stage.index}"}
+            >
+              <.stage_fields stage={stage} />
+              <:footer>
+                <.button
+                  type="submit"
+                  icon="hero-check"
+                  data-testid={"stage-panel-#{stage.index}-save"}
+                >
+                  Salvar
+                </.button>
+              </:footer>
+            </.side_panel>
           </.inputs_for>
-        </ol>
+        </div>
 
         <div class="sticky bottom-0 z-10 -mx-1 flex justify-between gap-2 rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
           <.button
@@ -604,89 +405,6 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         </div>
       </.form>
     </Layouts.app>
-    """
-  end
-
-  attr :stage, Phoenix.HTML.Form, required: true
-  attr :count, :integer, required: true
-  attr :collapsed, :boolean, required: true
-
-  defp stage_header(assigns) do
-    ~H"""
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <button
-        type="button"
-        phx-click="toggle_stage"
-        phx-value-index={@stage.index}
-        aria-expanded={to_string(not @collapsed)}
-        class="flex min-w-0 flex-1 items-start gap-3 text-left"
-        data-testid={"stage-toggle-#{@stage.index}"}
-      >
-        <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-sm font-semibold text-white dark:bg-primary-500">
-          {@stage.index + 1}
-        </span>
-        <span class="min-w-0">
-          <span class="flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white">
-            <span class="truncate">{(present(@stage[:name].value) && @stage[:name].value) ||
-              "Nova etapa"}</span>
-            <.icon
-              name="hero-chevron-down"
-              class={["size-4 shrink-0 text-gray-400 transition", @collapsed && "-rotate-90"]}
-            />
-          </span>
-          <.stage_chips
-            chips={PipelineDiagram.chips(Ecto.Changeset.apply_changes(@stage.source))}
-            class="mt-1.5"
-            testid={"stage-chips-#{@stage.index}"}
-          />
-        </span>
-      </button>
-      <div class="flex gap-1">
-        <.button
-          type="button"
-          size="xs"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-up"
-          title="Subir"
-          disabled={@stage.index == 0}
-          phx-click="move_stage"
-          phx-value-index={@stage.index}
-          phx-value-to={@stage.index - 1}
-          data-testid={"stage-up-#{@stage.index}"}
-        >
-          <span class="sr-only">Subir</span>
-        </.button>
-        <.button
-          type="button"
-          size="xs"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-down"
-          title="Descer"
-          disabled={@stage.index == @count - 1}
-          phx-click="move_stage"
-          phx-value-index={@stage.index}
-          phx-value-to={@stage.index + 1}
-          data-testid={"stage-down-#{@stage.index}"}
-        >
-          <span class="sr-only">Descer</span>
-        </.button>
-        <.button
-          type="button"
-          size="xs"
-          variant="ghost"
-          color="danger"
-          icon="hero-trash"
-          title="Remover etapa"
-          phx-click="remove_stage"
-          phx-value-index={@stage.index}
-          data-testid={"stage-remove-#{@stage.index}"}
-        >
-          <span class="sr-only">Remover</span>
-        </.button>
-      </div>
-    </div>
     """
   end
 end

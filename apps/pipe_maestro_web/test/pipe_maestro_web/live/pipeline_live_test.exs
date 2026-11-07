@@ -21,7 +21,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     conn: conn,
     workspace: workspace
   } do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new?view=form")
 
     view
     |> form("#pipeline-form",
@@ -170,7 +170,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
   } do
     pipeline = pipeline_fixture(workspace, %{"name" => "Meu"})
 
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
     assert has_element?(view, "[data-testid=stage-name-1]")
 
     view |> element("[data-testid=stage-down-0]") |> render_click()
@@ -265,7 +265,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       workspace: workspace,
       pipeline: pipeline
     } do
-      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
 
       assert view |> element("[data-testid=stage-chips-0]") |> render() =~ "1 gate"
       assert view |> element("[data-testid=stage-chips-1]") |> render() =~ "grupo revisoes"
@@ -399,6 +399,85 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
                view |> form("#pipeline-form", pipeline: %{description: "x"}) |> render_submit()
 
       assert to == "/w/#{workspace.slug}/pipelines/#{pipeline.id}"
+    end
+  end
+
+  describe "the editor's diagram" do
+    setup %{workspace: workspace} do
+      %{pipeline: pipeline_fixture(workspace, %{"name" => "Meu"})}
+    end
+
+    defp edit(conn, workspace, pipeline, query \\ ""),
+      do: live(conn, "/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit" <> query)
+
+    test "opens on the diagram, and the form is a tab away", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+
+      assert has_element?(view, "[data-testid=pipeline-view-diagram][aria-current]")
+      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      assert has_element?(view, "[data-testid=diagram-insert-0]")
+      refute has_element?(view, "[data-testid=stage-card-0]")
+
+      view |> element("[data-testid=pipeline-view-form]") |> render_click()
+      assert_patch(view, "/w/#{ctx.workspace.slug}/pipelines/#{ctx.pipeline.id}/edit?view=form")
+      assert has_element?(view, "[data-testid=stage-card-0]")
+      refute has_element?(view, "[data-testid=pipeline-diagram]")
+    end
+
+    test "every input is in the form once, whichever the tab", ctx do
+      for query <- ["", "?view=form"] do
+        {:ok, _view, html} = edit(ctx.conn, ctx.workspace, ctx.pipeline, query)
+
+        assert html |> String.split(~s(name="pipeline[stages][1][name]")) |> length() == 2
+        assert html |> String.split(~s(name="pipeline[name]")) |> length() == 2
+      end
+    end
+
+    test "a stage opens in the side panel, editable, and the node follows the draft", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      assert has_element?(view, "[data-testid=stage-panel-1].hidden")
+
+      view |> element("[data-testid=diagram-select-1]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-panel-1].hidden")
+      assert has_element?(view, "[data-testid=stage-panel-0].hidden")
+
+      view
+      |> form("#pipeline-form", pipeline: %{stages: %{"1" => %{name: "Revisar"}}})
+      |> render_change()
+
+      assert has_element?(view, "[data-testid=diagram-stage-1]", "Revisar")
+
+      view |> element("[data-testid=stage-panel-1-close]") |> render_click()
+      assert has_element?(view, "[data-testid=stage-panel-1].hidden")
+    end
+
+    test "the entry opens the pipeline's own settings", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      assert has_element?(view, "[data-testid=pipeline-panel].hidden")
+
+      view |> element("[data-testid=diagram-entry]") |> render_click()
+      refute has_element?(view, "[data-testid=pipeline-panel].hidden")
+      assert has_element?(view, "[data-testid=pipeline-panel] [data-testid=pipeline-name]")
+    end
+
+    test "saves from the diagram", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-select-0]") |> render_click()
+
+      {:error, {:live_redirect, _}} =
+        view
+        |> form("#pipeline-form", pipeline: %{stages: %{"0" => %{name: "Primeira"}}})
+        |> render_submit()
+
+      assert [%{name: "Primeira"}, %{name: "Etapa B"}] =
+               Pipelines.get_pipeline!(ctx.workspace, ctx.pipeline.id).stages
+    end
+
+    test "a new pipeline opens on the diagram with its settings open", ctx do
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pipelines/new")
+
+      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      refute has_element?(view, "[data-testid=pipeline-panel].hidden")
     end
   end
 end

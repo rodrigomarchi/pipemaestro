@@ -86,6 +86,8 @@ export class ProposalPage {
     await this.page.waitForURL(/\/pipelines\/new\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
+    await this.page.getByTestId("pipeline-view-form").click();
+    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
   }
 
   /** Project: saves the project as reviewed and lands on the list of projects. */
@@ -132,5 +134,7 @@ export class ProposalPage {
     await this.page.waitForURL(/\/edit\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
+    await this.page.getByTestId("pipeline-view-form").click();
+    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
   }
 }
