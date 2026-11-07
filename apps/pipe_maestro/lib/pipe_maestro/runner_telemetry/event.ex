@@ -26,9 +26,11 @@ defmodule PipeMaestro.RunnerTelemetry.Event do
   @groups %{
     "update_applied" => "update",
     "update_failed" => "update",
+    "update_draining" => "update",
     "connection_lost" => "connection",
     "outbox_dropped" => "connection",
     "log_dropped" => "connection",
+    "job_lost" => "connection",
     "setup_failed" => "setup",
     "delivery_failed" => "git",
     "credential_refused" => "git",

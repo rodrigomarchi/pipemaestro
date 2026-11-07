@@ -21,8 +21,8 @@ defmodule PipeMaestroProtocol.RunnerLog do
   alias PipeMaestroProtocol.Text
 
   @levels ~w(debug info warning error)
-  @events ~w(update_applied update_failed scratch_remove_failed outbox_dropped connection_lost
-             log_dropped)
+  @events ~w(update_applied update_failed update_draining scratch_remove_failed outbox_dropped
+             connection_lost log_dropped)
 
   @max_lines 200
   @max_message_bytes 4_096

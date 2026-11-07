@@ -51,7 +51,7 @@ defmodule PipeMaestro.Tasks.JobLostTest do
   # {attempt, requeue, status} of a stage's runs, in the timeline's order.
   defp timeline(task, key \\ "a") do
     for %StageRun{key: ^key} = run <- task.stage_runs,
-        do: {run.attempt, Map.get(run, :requeue), run.status}
+        do: {run.attempt, run.requeue, run.status}
   end
 
   describe "a job lost by a restarted runner" do

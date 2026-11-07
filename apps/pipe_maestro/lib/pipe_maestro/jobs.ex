@@ -27,6 +27,8 @@ defmodule PipeMaestro.Jobs do
   alias PipeMaestroProtocol.Telemetry
 
   @pubsub PipeMaestro.PubSub
+  @lost_error "Perdido: o runner reiniciou durante a execução."
+
   # What a runner announces to run a job in a disposable worktree.
   @scratch "scratch"
   @list_limit 100
@@ -328,7 +330,9 @@ defmodule PipeMaestro.Jobs do
   @doc """
   Squares the runner's jobs with what it says it is running when it joins.
   A job marked running that the runner no longer runs lost its process (the
-  runner restarted): it fails. Returns the queued jobs to hand over again.
+  runner restarted, updated or crashed): it fails. A task's stage lost that
+  way is not an attempt (`PipeMaestro.Tasks.job_lost/1`): it runs again.
+  Returns the queued jobs to hand over again.
   """
   @spec reconcile(Runner.t(), [String.t()]) :: [Job.t()]
   def reconcile(%Runner{id: runner_id} = runner, running_job_ids) do
@@ -342,16 +346,27 @@ defmodule PipeMaestro.Jobs do
 
     for job <- lost do
       job
-      |> update!(
-        status: :failed,
-        error: "O runner reiniciou durante a execução.",
-        finished_at: now()
-      )
+      |> update!(status: :failed, error: @lost_error, finished_at: now())
       |> summarize()
-      |> finished()
+      |> lost()
     end
 
     queued_for_runner(runner)
+  end
+
+  @doc """
+  The runner's running jobs among those it says it runs, with their stage
+  run: the ones it goes on with after a join.
+  """
+  @spec running_among(Runner.t(), [String.t()]) :: [Job.t()]
+  def running_among(%Runner{id: runner_id}, running_job_ids) do
+    Repo.all(
+      from j in Job,
+        where:
+          j.runner_id == ^runner_id and j.status == :running and
+            j.id in ^valid_ids(running_job_ids),
+        order_by: [asc: j.inserted_at, asc: j.id]
+    )
   end
 
   @doc "The runner started one of its queued jobs."
@@ -523,10 +538,20 @@ defmodule PipeMaestro.Jobs do
          {:ok, job} <- job |> Job.finish_changeset(attrs, now()) |> Repo.update() do
       job = summarize(job)
       notify(job)
-      finished(job)
+      if stopped_on_its_own?(job), do: lost(job), else: finished(job)
       {:ok, job}
     end
   end
+
+  # A stage's job the runner canceled with no one asking: a runner that stops
+  # its jobs as it goes (an older one refused for its version) lost it.
+  defp stopped_on_its_own?(%Job{status: :canceled, cancel_requested_at: nil, stage_run_id: id}),
+    do: is_binary(id)
+
+  defp stopped_on_its_own?(%Job{}), do: false
+
+  defp lost(%Job{stage_run_id: nil} = job), do: finished(job)
+  defp lost(%Job{} = job), do: PipeMaestro.Tasks.job_lost(job)
 
   # Keeps the ended run's summary, read back on the job.
   defp summarize(%Job{} = job) do

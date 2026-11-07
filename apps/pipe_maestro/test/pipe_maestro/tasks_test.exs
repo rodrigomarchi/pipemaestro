@@ -335,10 +335,13 @@ defmodule PipeMaestro.TasksTest do
       assert %Task{status: :running, current_stage: 1} = task
     end
 
-    test "a canceled job cancels the task", ctx do
+    test "a job canceled on request cancels the task", ctx do
       task = create_task(ctx)
-      task = run_current(ctx, task, %{"status" => "canceled"})
-      assert %Task{status: :canceled} = task
+      {:ok, _} = Jobs.mark_started(ctx.runner, current_job(task).id)
+      {:ok, _} = Jobs.request_cancel(Jobs.get(current_job(task).id))
+      {:ok, _} = Jobs.finish_job(ctx.runner, current_job(task).id, %{"status" => "canceled"})
+
+      assert %Task{status: :canceled} = Tasks.get_task!(ctx.workspace, task.id)
     end
 
     test "a job lost by a restarted runner runs the stage again, in the same attempt", ctx do

@@ -535,7 +535,7 @@ defmodule PipeMaestro.Integrations.Feedback do
   defp runs(task) do
     from(r in StageRun,
       where: r.task_id == ^task.id,
-      order_by: [asc: r.index, desc: r.attempt],
+      order_by: [asc: r.index, desc: r.attempt, desc: r.requeue],
       distinct: r.index,
       select: {r.index, r.status}
     )
