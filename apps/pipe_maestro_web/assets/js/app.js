@@ -24,6 +24,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/pipe_maestro_web"
 import {Highlight} from "./highlight"
+import {Sidebar} from "./sidebar"
 import {MarkdownEditor} from "./markdown_editor"
 import topbar from "../vendor/topbar"
 import PetalComponents from "petal_components/assets/js/petal_components"
@@ -32,7 +33,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, ...PetalComponents, Highlight, MarkdownEditor},
+  hooks: {...colocatedHooks, ...PetalComponents, Highlight, MarkdownEditor, Sidebar},
 })
 
 // Show progress bar on live navigation and form submits

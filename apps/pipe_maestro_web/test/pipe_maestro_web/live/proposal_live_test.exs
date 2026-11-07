@@ -252,6 +252,13 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-request] em", "issues")
       assert has_element?(view, "[data-testid=proposal-waiting]")
       assert has_element?(view, "[data-testid=proposal-view-panel-agente]:not(.hidden)")
+      assert has_element?(view, "header [data-testid=proposal-status]")
+
+      assert has_element?(
+               view,
+               "[data-testid=proposal-view-panel-resumo].hidden [data-testid=proposal-request]"
+             )
+
       assert has_element?(view, "[data-testid=proposal-pending]", "ainda está trabalhando")
 
       succeed(ctx, job, @pipeline_output)

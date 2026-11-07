@@ -327,6 +327,8 @@ defmodule PipeMaestroWeb.JobLiveTest do
     {:ok, view, _html} = live(conn, path)
 
     assert has_element?(view, "[data-testid=job-panel-linha-do-tempo]:not(.hidden)")
+    # A run in progress has the room: the sidebar opens closed to its icons.
+    assert has_element?(view, "[data-testid=app-sidebar][data-collapsed=true][data-focus=true]")
     assert has_element?(view, "[data-testid=job-panel-resultado].hidden")
 
     refute has_element?(view, "[data-testid=job-tab-auditoria]")
@@ -345,6 +347,9 @@ defmodule PipeMaestroWeb.JobLiveTest do
 
     # The result tab is shown; the others stay in the page, hidden.
     assert has_element?(view, "[data-testid=job-panel-resultado]:not(.hidden)")
+    assert has_element?(view, "[data-testid=app-sidebar][data-collapsed=false][data-focus=false]")
+    assert has_element?(view, "[data-testid=job-panel-resumo].hidden [data-testid=job-duration]")
+    assert has_element?(view, "header [data-testid=job-status]", "Concluído")
     assert has_element?(view, "[data-testid=job-panel-linha-do-tempo].hidden")
     assert has_element?(view, "[data-testid=job-tab-auditoria]")
 

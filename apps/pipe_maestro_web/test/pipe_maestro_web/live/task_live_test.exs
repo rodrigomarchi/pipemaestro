@@ -758,6 +758,12 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       # In tabs: the stages first; the request, files and decisions a click away.
       assert has_element?(view, "[data-testid=task-panel-etapas]:not(.hidden)")
       assert has_element?(view, "[data-testid=task-panel-pedido].hidden")
+      # The summary is a tab of its own; the status and cost sit beside the title.
+      assert has_element?(view, "[data-testid=task-panel-resumo].hidden [data-testid=task-cost]")
+      assert has_element?(view, "header [data-testid=task-status]")
+      assert has_element?(view, "header [data-testid=task-cost-badge]", "US\$")
+      # A task in progress has the room: the sidebar is closed to its icons.
+      assert has_element?(view, "[data-testid=app-sidebar][data-focus=true]")
       assert has_element?(view, "[data-testid=task-no-decisions]")
       view |> element("[data-testid=task-tab-pedido]") |> render_click()
       assert_patch(view, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?aba=pedido")

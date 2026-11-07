@@ -97,8 +97,10 @@ defmodule PipeMaestroWeb.Layouts do
   end
 
   @doc """
-  The signed-in app shell of a workspace: collapsible sidebar, top bar with the
-  workspace switcher and the user menu, and page content.
+  The signed-in app shell of a workspace: a sidebar that closes to a rail of
+  icons (the choice kept in the browser, `assets/js/sidebar.js`, and closed on
+  its own on a page with `focus`), top bar with the workspace switcher, the
+  title and its status, and the user menu, and page content.
 
   ## Examples
 
@@ -117,6 +119,13 @@ defmodule PipeMaestroWeb.Layouts do
   attr :title, :string, required: true, doc: "the page title shown in the top bar"
   attr :pending_decisions, :integer, default: 0, doc: "badge on the decisions item"
 
+  attr :focus, :boolean,
+    default: false,
+    doc: "the page follows work in progress: the sidebar closes to its icons to give it room"
+
+  slot :status,
+    doc: "badges beside the title (a record's status, a key number), seen from every tab"
+
   slot :actions, doc: "buttons rendered on the right of the top bar"
   slot :inner_block, required: true
 
@@ -127,7 +136,16 @@ defmodule PipeMaestroWeb.Layouts do
     ~H"""
     <.sidebar_shell for="app-sidebar" class="min-h-screen bg-gray-50 dark:bg-gray-950">
       <:sidebar>
-        <.sidebar_nav id="app-sidebar" label="Navegação principal" collapsible="icon">
+        <.sidebar_nav
+          id="app-sidebar"
+          label="Navegação principal"
+          collapsible="icon"
+          collapsed={@focus}
+          phx-hook="Sidebar"
+          phx-mounted={JS.ignore_attributes(["data-collapsed"])}
+          data-focus={to_string(@focus)}
+          data-testid="app-sidebar"
+        >
           <:header>
             <.brand compact />
           </:header>
@@ -255,15 +273,25 @@ defmodule PipeMaestroWeb.Layouts do
 
       <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
         <.sidebar_trigger for="app-sidebar" target="mobile" class="md:hidden" />
-        <.sidebar_trigger for="app-sidebar" target="collapse" class="hidden md:inline-flex" />
+        <.sidebar_trigger
+          for="app-sidebar"
+          target="collapse"
+          class="hidden md:inline-flex"
+          data-testid="sidebar-collapse"
+        />
         <div class="min-w-0">
           <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
-          <h1
-            class="truncate text-base font-semibold text-gray-900 dark:text-white"
-            data-testid="page-title"
-          >
-            {@title}
-          </h1>
+          <div class="flex min-w-0 items-center gap-2">
+            <h1
+              class="truncate text-base font-semibold text-gray-900 dark:text-white"
+              data-testid="page-title"
+            >
+              {@title}
+            </h1>
+            <div :if={@status != []} class="flex shrink-0 items-center gap-1.5">
+              {render_slot(@status)}
+            </div>
+          </div>
         </div>
         <div class="ml-auto flex items-center gap-2">
           {render_slot(@actions)}

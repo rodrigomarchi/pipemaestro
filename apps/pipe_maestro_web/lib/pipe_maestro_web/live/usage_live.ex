@@ -8,8 +8,9 @@ defmodule PipeMaestroWeb.UsageLive do
   wait for their runner and spend in gates; how the agent worked
   (`PipeMaestro.Insights`): tokens and cache, models, API, tools and
   permissions; and how near each runner's account is to its usage limits.
-  The totals stay on top; the rest is in tabs (`?aba=`): overview, breakdown,
-  stages and how the agent worked.
+  In tabs (`?aba=`), first on the page: the overview (totals, cost by day,
+  origin, account limits), the breakdown, the stages and how the agent worked;
+  the filters stay in the top bar.
   """
   use PipeMaestroWeb, :live_view
 
@@ -37,7 +38,8 @@ defmodule PipeMaestroWeb.UsageLive do
      |> load()}
   end
 
-  # The tabs, by their `aba` parameter; the totals and filters stay above them.
+  # The tabs, by their `aba` parameter, first on the page; the filters stay in
+  # the top bar.
   @tabs [
     {"visao", "Visão geral", "hero-chart-bar"},
     {"detalhamento", "Detalhamento", "hero-table-cells"},
@@ -178,58 +180,6 @@ defmodule PipeMaestroWeb.UsageLive do
       </:actions>
 
       <div class="space-y-6">
-        <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="usage-period-label">
-          Execuções que rodaram e terminaram nos últimos {@days} dias{if @pipeline != "",
-            do: ", só do pipeline #{@pipeline}"}.
-        </p>
-
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <.card variant="outline">
-            <.card_content>
-              <p class="text-sm text-gray-500 dark:text-gray-400">Custo</p>
-              <p
-                class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
-                data-testid="usage-total-cost"
-              >
-                {format_cost(@report.total.cost_usd)}
-              </p>
-            </.card_content>
-          </.card>
-          <.card variant="outline">
-            <.card_content>
-              <p class="text-sm text-gray-500 dark:text-gray-400">Execuções</p>
-              <p
-                class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
-                data-testid="usage-total-runs"
-              >
-                {@report.total.runs}
-              </p>
-            </.card_content>
-          </.card>
-          <.card variant="outline">
-            <.card_content>
-              <p class="text-sm text-gray-500 dark:text-gray-400">Tempo de agente</p>
-              <p
-                class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
-                data-testid="usage-total-time"
-              >
-                {format_duration(@report.total.duration_ms)}
-              </p>
-            </.card_content>
-          </.card>
-          <.card variant="outline">
-            <.card_content>
-              <p class="text-sm text-gray-500 dark:text-gray-400">Tokens</p>
-              <p
-                class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
-                data-testid="usage-total-tokens"
-              >
-                {short_number(@report.total.tokens)}
-              </p>
-            </.card_content>
-          </.card>
-        </div>
-
         <.page_tabs
           tabs={@tabs}
           active={@tab}
@@ -238,6 +188,57 @@ defmodule PipeMaestroWeb.UsageLive do
         />
 
         <.tab_panel id="visao" active={@tab} testid="usage" class="space-y-6">
+          <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="usage-period-label">
+            Execuções que rodaram e terminaram nos últimos {@days} dias{if @pipeline != "",
+              do: ", só do pipeline #{@pipeline}"}.
+          </p>
+
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <.card variant="outline">
+              <.card_content>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Custo</p>
+                <p
+                  class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
+                  data-testid="usage-total-cost"
+                >
+                  {format_cost(@report.total.cost_usd)}
+                </p>
+              </.card_content>
+            </.card>
+            <.card variant="outline">
+              <.card_content>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Execuções</p>
+                <p
+                  class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
+                  data-testid="usage-total-runs"
+                >
+                  {@report.total.runs}
+                </p>
+              </.card_content>
+            </.card>
+            <.card variant="outline">
+              <.card_content>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Tempo de agente</p>
+                <p
+                  class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
+                  data-testid="usage-total-time"
+                >
+                  {format_duration(@report.total.duration_ms)}
+                </p>
+              </.card_content>
+            </.card>
+            <.card variant="outline">
+              <.card_content>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Tokens</p>
+                <p
+                  class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"
+                  data-testid="usage-total-tokens"
+                >
+                  {short_number(@report.total.tokens)}
+                </p>
+              </.card_content>
+            </.card>
+          </div>
           <.card variant="outline">
             <.card_header title="Custo por dia" />
             <.card_content>

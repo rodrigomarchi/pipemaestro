@@ -160,15 +160,33 @@ test.describe("Job execution", () => {
     await expect(jobs.timeline.icons()).toHaveCount(4);
     // Flow E: what the running job spent so far follows its telemetry.
     await expect(app.page.getByTestId("job-live-cost")).toHaveText("US$ 0.0042");
+    // A run in progress gets the room: the sidebar closed to its icons.
+    await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-collapsed", "true");
     await expect(app.page.getByTestId("job-live-requests")).toHaveText("1");
     await shot(app.page, "job-running");
     await jobs.cancel();
     await expect(jobs.status).toHaveText("Cancelado");
+    // It does not open again on its own when the run ends.
+    await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-collapsed", "true");
     await runner.waitFor(new RegExp(`Job ${slowId} cancelado`));
     await shot(app.page, "job-canceled");
 
-    // Flow C: the agent fails.
+    // Elsewhere it opens; closed by hand, it stays closed from page to page.
     await jobs.backToList();
+    const sidebar = app.page.getByTestId("app-sidebar");
+    await expect(sidebar).toHaveAttribute("data-collapsed", "false");
+    await app.page.getByTestId("sidebar-collapse").click();
+    await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+    await shot(app.page, "sidebar-collapsed");
+    await app.page.getByTestId("sidebar-runners").click();
+    await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-collapsed", "true");
+    await app.page.reload();
+    await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-collapsed", "true");
+    await app.page.getByTestId("sidebar-collapse").click();
+    await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-collapsed", "false");
+
+    // Flow C: the agent fails.
+    await jobs.open(workspace.slug);
     const failedId = await jobs.create("App", "Quebre de propósito [falha]");
     await expect(jobs.status).toHaveText("Falhou");
     await expect(jobs.error).toContainText("falha simulada");

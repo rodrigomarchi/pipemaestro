@@ -127,6 +127,10 @@ defmodule PipeMaestroWeb.DecisionsLive do
   defp overdue?(%Task{decision_due_at: nil}, _now), do: false
   defp overdue?(%Task{decision_due_at: due}, now), do: DateTime.compare(due, now) == :lt
 
+  # The agent is analysing a failure on the page: it gets the room.
+  defp analysing?(questionnaires),
+    do: Enum.any?(questionnaires, fn {_id, q} -> q.analysis == :running end)
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -136,6 +140,7 @@ defmodule PipeMaestroWeb.DecisionsLive do
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:decisions}
+      focus={analysing?(@questionnaires)}
       title="Decisões"
     >
       <:actions>

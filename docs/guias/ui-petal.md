@@ -114,7 +114,25 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
 - O painel de uma aba não escolhida fica na página, escondido: um stream dentro dele
   (a linha do tempo ao vivo) perderia o que mostrou se saísse do DOM. Uma tela cujas
   abas leem dados próprios carrega só a aba aberta (`RunnerLive`).
-- O que vale para a tela toda (status, totais, filtros, alertas) fica acima das abas.
+- As abas são o primeiro elemento do conteúdo: nada de card antes delas. O status (e
+  um dado-chave, como o custo) vai ao lado do título, no slot `:status` de
+  `Layouts.app`, visível de qualquer aba; o resumo do registro (custo, projeto,
+  branch, runner…) é uma aba **Resumo**; filtros ficam na barra superior (`:actions`);
+  um alerta acionável fica no topo da aba onde se age.
+- O conteúdo usa a largura toda: sem coluna lateral de metadados. Cards curtos
+  relacionados ficam lado a lado (`xl:grid-cols-2`); diagramas, tabelas e formulários
+  ocupam a linha inteira.
+
+## Sidebar
+
+- A sidebar abre ou fecha para uma faixa de ícones pelo botão ao lado do título; a
+  escolha fica guardada no navegador e vale em todas as telas
+  (`assets/js/sidebar.js`).
+- Uma tela com trabalho vivo do agente passa `focus` a `Layouts.app`: a tarefa e a
+  execução em andamento, a proposta sendo escrita e Decisões enquanto o agente analisa
+  uma falha. A sidebar abre fechada e fecha quando o trabalho começa com a tela aberta;
+  quando ele termina, ela não abre sozinha, para a tela não pular. Uma tela nova com
+  trabalho vivo segue a mesma regra.
 
 ## Texto do agente e de pessoas
 

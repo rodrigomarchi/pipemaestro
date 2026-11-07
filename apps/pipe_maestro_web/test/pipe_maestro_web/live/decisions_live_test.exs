@@ -188,4 +188,34 @@ defmodule PipeMaestroWeb.DecisionsLiveTest do
     view |> element("[data-testid=decisions-all]") |> render_click()
     assert has_element?(view, "[data-testid=decision-#{task.id}]")
   end
+
+  test "while the agent analyses a failure here, the sidebar closes to give it room", ctx do
+    {:ok, idle, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
+    assert has_element?(idle, "[data-testid=app-sidebar][data-focus=false]")
+
+    pipeline =
+      pipeline_fixture(ctx.workspace, %{
+        "name" => "Falha uma vez",
+        "stages" => [
+          %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça A", "max_attempts" => 1},
+          %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+        ]
+      })
+
+    {:ok, task} =
+      Tasks.create_task(ctx.user, ctx.workspace, %{
+        "title" => "Quebra",
+        "prompt" => "faça",
+        "pipeline_id" => pipeline.id,
+        "project_id" => project_on(ctx.runner, "app").id
+      })
+
+    job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+    {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+    {:ok, _} = Jobs.finish_job(ctx.runner, job.id, %{"status" => "failed", "error" => "boom"})
+
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
+    assert has_element?(view, "[data-testid^=questionnaire-analyzing]")
+    assert has_element?(view, "[data-testid=app-sidebar][data-focus=true][data-collapsed=true]")
+  end
 end
