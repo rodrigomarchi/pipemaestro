@@ -317,6 +317,61 @@ defmodule PipeMaestroWeb.JobLiveTest do
     refute has_element?(view, "[data-testid=job-cancel]")
   end
 
+  test "in tabs: a queued job opens on its timeline, an ended one on its result as fields", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    path = ~p"/w/#{workspace.slug}/jobs/#{job.id}"
+    {:ok, view, _html} = live(conn, path)
+
+    assert has_element?(view, "[data-testid=job-panel-linha-do-tempo]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-panel-resultado].hidden")
+
+    refute has_element?(view, "[data-testid=job-tab-auditoria]")
+    assert has_element?(view, "[data-testid=job-no-result]", "ainda não terminou")
+
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+
+    {:ok, _} =
+      Jobs.finish_job(runner, job.id, %{
+        "status" => "succeeded",
+        "result" => ~s({"status":"ok","resumo":"Feito em `lib/a.ex`.","notas":["um","dois"]}),
+        "exit_code" => 0
+      })
+
+    {:ok, view, _html} = live(conn, path)
+
+    # The result tab is shown; the others stay in the page, hidden.
+    assert has_element?(view, "[data-testid=job-panel-resultado]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-panel-linha-do-tempo].hidden")
+    assert has_element?(view, "[data-testid=job-tab-auditoria]")
+
+    assert has_element?(view, "[data-testid=job-result][data-format=fields]")
+    assert has_element?(view, "[data-testid=job-result] [data-testid=agent-output-status]", "ok")
+
+    assert has_element?(
+             view,
+             "[data-testid=job-result] [data-testid=agent-output-field-resumo] code",
+             "lib/a.ex"
+           )
+
+    assert has_element?(
+             view,
+             "[data-testid=job-result] [data-testid=agent-output-field-notas] li",
+             "dois"
+           )
+
+    view
+    |> element("[data-testid=job-tab-prompt]")
+    |> render_click()
+
+    assert_patch(view, path <> "?aba=prompt")
+    assert has_element?(view, "[data-testid=job-panel-prompt]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-panel-resultado].hidden")
+  end
+
   test "a running job shows it is being canceled; a failure shows its error", %{
     conn: conn,
     workspace: workspace,

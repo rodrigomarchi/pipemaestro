@@ -44,4 +44,16 @@ defmodule PipeMaestroWeb.MarkdownTest do
   test "nil renders nothing" do
     assert html(nil) == ""
   end
+
+  describe "inline_html/1" do
+    defp inline(markdown), do: markdown |> Markdown.inline_html() |> Phoenix.HTML.safe_to_string()
+
+    test "one paragraph loses its <p>; more keep their blocks; nil is empty" do
+      assert inline("Feito em `lib/a.ex`.") == "Feito em <code>lib/a.ex</code>."
+      assert inline("um\n\ndois") =~ "<p>um</p>"
+      assert inline("ok <script>x</script>") =~ "ok"
+      refute inline("ok <script>x</script>") =~ "<script>"
+      assert inline(nil) == ""
+    end
+  end
 end

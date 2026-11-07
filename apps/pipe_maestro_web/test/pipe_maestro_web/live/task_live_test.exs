@@ -622,6 +622,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-gate-a-1-0][data-passed=true]")
 
+      # A failed gate opens the details folded under the artifact.
+      assert has_element?(view, "[data-testid=stage-run-details-a-1][open]")
+      assert has_element?(view, "[data-testid=stage-run-details-toggle-a-1]", "gates 1/2")
+
       assert has_element?(view, "[data-testid=stage-run-feedback-a-2]", "1 failure")
     end
 
@@ -728,6 +732,21 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-summary-a-1]", "a feita")
       assert has_element?(view, "[data-testid=task-cost]", "US$")
+
+      # The artifact leads; how the stage got there is folded under it.
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-details-a-1] [data-testid=stage-run-summary-a-1]"
+             )
+
+      refute has_element?(view, "[data-testid=stage-run-details-a-1][open]")
+
+      refute has_element?(
+               view,
+               "[data-testid=stage-run-details-a-1] [data-testid^=stage-run-artifact]"
+             )
+
+      assert has_element?(view, "[data-testid=task-prompt-text][phx-hook=Highlight]")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1][phx-hook=Highlight]")
       refute has_element?(view, "[data-testid=stage-run-artifact-raw-a-1]")

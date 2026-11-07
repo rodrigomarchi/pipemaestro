@@ -24,12 +24,14 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       timeline_segment: 1,
       timeline_tail: 1,
       typing: 1,
+      count_label: 3,
       format_cost: 1,
       format_duration: 1,
       format_percent: 1,
       short_number: 1
     ]
 
+  import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
   import PipeMaestroWeb.TaskComponents
 
   import PipeMaestroWeb.QuestionnaireComponents,
@@ -587,10 +589,14 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="task-pipeline-name">
                   {@task.pipeline_name} · v{@task.pipeline_version} · {stage_progress(@task)}
                 </p>
-                <pre
-                  class="mt-2 whitespace-pre-wrap font-sans text-gray-900 dark:text-white"
+                <div
+                  id="task-prompt-text"
+                  phx-hook="Highlight"
+                  class="prose prose-sm mt-2 max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
                   data-testid="task-prompt-text"
-                >{@task.prompt}</pre>
+                >
+                  {Markdown.to_html(@task.prompt)}
+                </div>
               </div>
               <.task_status task={@task} data-testid="task-status" />
             </div>
@@ -1056,7 +1062,9 @@ defmodule PipeMaestroWeb.TaskLive.Show do
               data-testid="task-pending-instructions"
             >
               <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
-              <p class="whitespace-pre-wrap">{@task.pending_instructions}</p>
+              <div class="prose prose-sm max-w-none dark:prose-invert">
+                {Markdown.to_html(@task.pending_instructions)}
+              </div>
             </div>
             <.form
               :if={@task.status == :running}
@@ -1185,175 +1193,283 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       </div>
 
       <div class="space-y-3 px-4 py-3">
-        <.setup_report
-          :if={@run.job && @run.job.setup}
-          setup={@run.job.setup}
-          data-testid={"stage-run-setup-#{@run.key}-#{@run.attempt}"}
-        />
-
-        <.changes_report
-          :if={@run.job && @run.job.changes}
-          changes={@run.job.changes}
-          id={"#{@run.key}-#{@run.attempt}"}
-        />
-
-        <details
-          :if={@run.feedback}
-          class="rounded-lg bg-warning-50 px-3 py-2 text-sm dark:bg-warning-950/30"
-          data-testid={"stage-run-feedback-#{@run.key}-#{@run.attempt}"}
-        >
-          <summary class="cursor-pointer text-warning-800 dark:text-warning-300">
-            Feedback da tentativa anterior
-          </summary>
-          <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-800 dark:text-gray-200">{@run.feedback}</pre>
-        </details>
-
-        <div
-          :if={@run.answers}
-          class="text-sm"
-          data-testid={"stage-run-answers-#{@run.key}-#{@run.attempt}"}
-        >
-          <span class="font-medium text-gray-900 dark:text-white">Respostas da pessoa:</span>
-          <.answer_list answers={@run.answers} class="mt-1 space-y-1 text-sm" />
-        </div>
-
-        <p :if={@run.instructions} class="text-sm text-gray-600 dark:text-gray-300">
-          <span class="font-medium">Instruções:</span> {@run.instructions}
-        </p>
-
-        <p
-          :if={@run.summary}
-          class="text-sm font-medium text-gray-900 dark:text-white"
-          data-testid={"stage-run-summary-#{@run.key}-#{@run.attempt}"}
-        >
-          {@run.summary}
-        </p>
-
         <p :if={@run.error} class="text-sm text-danger-700 dark:text-danger-400">{@run.error}</p>
 
-        <div
-          :if={plain_result?(@run)}
-          id={"result-#{@run.id}"}
-          phx-hook="Highlight"
-          class="prose prose-sm max-h-[32rem] max-w-none overflow-auto prose-h1:text-xl prose-h2:text-lg prose-h3:text-base rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950"
-          data-testid={"stage-run-result-#{@run.key}-#{@run.attempt}"}
-        >
-          {Markdown.to_html(@run.job.result)}
-        </div>
+        <%!-- An ended attempt with an artifact leads with it; how it got
+             there (summary, gates, commit, files, steps) is folded below. --%>
+        <%= if artifact_first?(@run, @live) do %>
+          <.artifact run={@run} raw_artifact={@raw_artifact} />
 
-        <p
-          :if={@run.job && @run.job.delivery && @run.job.delivery["commit"]}
-          class="text-xs text-gray-500 dark:text-gray-400"
-          data-testid={"stage-run-commit-#{@run.key}-#{@run.attempt}"}
-        >
-          <.icon name="hero-check-badge" class="size-4 text-success-600" /> Commit
-          <span class="font-mono">{String.slice(@run.job.delivery["commit"], 0, 7)}</span>
-          <span :if={@run.job.delivery["pushed"]}>· enviado</span>
-        </p>
-        <p
-          :if={@run.job && @run.job.delivery && @run.job.delivery["error"]}
-          class="text-xs text-danger-700 dark:text-danger-400"
-        >
-          A entrega falhou: {@run.job.delivery["error"]}
-        </p>
+          <details
+            id={"stage-run-details-#{@run.id}"}
+            open={details_open?(@run)}
+            phx-mounted={JS.ignore_attributes(["open"])}
+            class="group rounded-lg border border-gray-200 dark:border-gray-800"
+            data-testid={"stage-run-details-#{@run.key}-#{@run.attempt}"}
+          >
+            <summary
+              class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              data-testid={"stage-run-details-toggle-#{@run.key}-#{@run.attempt}"}
+            >
+              <.icon
+                name="hero-chevron-right"
+                class="size-4 transition-transform group-open:rotate-90"
+              />
+              <span class="font-medium">Detalhes da etapa</span>
+              <span
+                :for={part <- details_summary(@run)}
+                class="text-xs text-gray-500 dark:text-gray-400"
+              >
+                · {part}
+              </span>
+            </summary>
+            <div class="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
+              <.run_details run={@run} />
+              <.run_steps
+                :if={@run.job}
+                run={@run}
+                steps={@steps}
+                steps_filter={@steps_filter}
+              />
+            </div>
+          </details>
+        <% else %>
+          <.run_details run={@run} />
+          <.artifact :if={@run.artifact} run={@run} raw_artifact={@raw_artifact} />
 
-        <.gate_results
-          :if={@run.job && @run.job.gates not in [nil, []]}
-          gates={@run.job.gates}
-          id={"#{@run.key}-#{@run.attempt}"}
-        />
-
-        <div :if={@run.artifact}>
-          <div class="mb-1 flex items-center justify-between">
-            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-              Artefato
+          <div :if={@live}>
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-info-600 dark:text-info-400">
+              Ao vivo
             </p>
-            <button
-              type="button"
-              phx-click="toggle_artifact"
-              phx-value-run={@run.id}
-              class="text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-              data-testid={"stage-run-artifact-toggle-#{@run.key}-#{@run.attempt}"}
-            >
-              {if @raw_artifact, do: "Ver renderizado", else: "Ver texto"}
-            </button>
+            <ol id="task-events" phx-update="stream" class="space-y-3" data-testid="task-events">
+              <.timeline_segment
+                :for={{id, segment} <- @streams.timeline}
+                id={id}
+                timeline="task-events"
+                segment={segment}
+              />
+            </ol>
+            <.typing :if={@typing} text={@typing} />
           </div>
-          <div
-            :if={!@raw_artifact}
-            id={"artifact-#{@run.id}"}
-            phx-hook="Highlight"
-            class="prose prose-sm max-h-[40rem] max-w-none overflow-auto prose-h1:text-xl prose-h2:text-lg prose-h3:text-base rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950"
-            data-testid={"stage-run-artifact-#{@run.key}-#{@run.attempt}"}
-          >
-            {Markdown.to_html(@run.artifact)}
-          </div>
-          <pre
-            :if={@raw_artifact}
-            class="max-h-[40rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-4 py-3 font-mono text-sm text-gray-800 dark:bg-gray-950 dark:text-gray-100"
-            data-testid={"stage-run-artifact-raw-#{@run.key}-#{@run.attempt}"}
-          >{@run.artifact}</pre>
-        </div>
 
-        <div :if={@live}>
-          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-info-600 dark:text-info-400">
-            Ao vivo
-          </p>
-          <ol id="task-events" phx-update="stream" class="space-y-3" data-testid="task-events">
-            <.timeline_segment
-              :for={{id, segment} <- @streams.timeline}
-              id={id}
-              timeline="task-events"
-              segment={segment}
-            />
-          </ol>
-          <.typing :if={@typing} text={@typing} />
-        </div>
-
-        <div :if={@run.job && !@live}>
-          <button
-            type="button"
-            phx-click="toggle_steps"
-            phx-value-job={@run.job.id}
-            class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
-            data-testid={"stage-run-steps-toggle-#{@run.key}-#{@run.attempt}"}
-          >
-            <.icon
-              name={if @steps, do: "hero-chevron-down", else: "hero-chevron-right"}
-              class="size-4"
-            /> Passo a passo do agente
-          </button>
-          <div :if={@steps} class="mt-2 flex flex-wrap gap-1">
-            <.button
-              :for={
-                {filter, label} <- [
-                  {"all", "Tudo"},
-                  {"agent", "Agente"},
-                  {"tools", "Ferramentas"},
-                  {"thinking", "Raciocínio"},
-                  {"errors", "Erros"}
-                ]
-              }
-              size="xs"
-              variant={if @steps_filter == filter, do: "solid", else: "ghost"}
-              color="gray"
-              phx-click="filter_steps"
-              phx-value-job={@run.job.id}
-              phx-value-filter={filter}
-              data-testid={"stage-run-steps-filter-#{@run.key}-#{@run.attempt}-#{filter}"}
-            >
-              {label}
-            </.button>
-          </div>
-          <.steps
-            :if={@steps}
-            items={timeline_items(@steps, @steps_filter)}
-            id={"#{@run.key}-#{@run.attempt}"}
+          <.run_steps
+            :if={@run.job && !@live}
+            run={@run}
+            steps={@steps}
+            steps_filter={@steps_filter}
           />
-        </div>
+        <% end %>
       </div>
     </div>
     """
   end
+
+  attr :run, StageRun, required: true
+
+  # How an attempt went: its environment, files, feedback, answers, summary,
+  # result, commit and gates.
+  defp run_details(assigns) do
+    ~H"""
+    <.setup_report
+      :if={@run.job && @run.job.setup}
+      setup={@run.job.setup}
+      data-testid={"stage-run-setup-#{@run.key}-#{@run.attempt}"}
+    />
+
+    <.changes_report
+      :if={@run.job && @run.job.changes}
+      changes={@run.job.changes}
+      id={"#{@run.key}-#{@run.attempt}"}
+    />
+
+    <details
+      :if={@run.feedback}
+      class="rounded-lg bg-warning-50 px-3 py-2 text-sm dark:bg-warning-950/30"
+      data-testid={"stage-run-feedback-#{@run.key}-#{@run.attempt}"}
+    >
+      <summary class="cursor-pointer text-warning-800 dark:text-warning-300">
+        Feedback da tentativa anterior
+      </summary>
+      <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-800 dark:text-gray-200">{@run.feedback}</pre>
+    </details>
+
+    <div
+      :if={@run.answers}
+      class="text-sm"
+      data-testid={"stage-run-answers-#{@run.key}-#{@run.attempt}"}
+    >
+      <span class="font-medium text-gray-900 dark:text-white">Respostas da pessoa:</span>
+      <.answer_list answers={@run.answers} class="mt-1 space-y-1 text-sm" />
+    </div>
+
+    <div
+      :if={@run.instructions}
+      class={[
+        "text-sm text-gray-600 dark:text-gray-300",
+        "prose prose-sm max-w-none dark:prose-invert"
+      ]}
+    >
+      <span class="font-medium">Instruções:</span> {Markdown.inline_html(@run.instructions)}
+    </div>
+
+    <div
+      :if={@run.summary}
+      class={["text-sm text-gray-900 dark:text-white", "prose prose-sm max-w-none dark:prose-invert"]}
+      data-testid={"stage-run-summary-#{@run.key}-#{@run.attempt}"}
+    >
+      {Markdown.inline_html(@run.summary)}
+    </div>
+
+    <.agent_output
+      :if={plain_result?(@run)}
+      id={"result-#{@run.id}"}
+      text={@run.job.result}
+      class="max-h-[32rem] overflow-auto rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-950"
+      data-testid={"stage-run-result-#{@run.key}-#{@run.attempt}"}
+    />
+
+    <p
+      :if={@run.job && @run.job.delivery && @run.job.delivery["commit"]}
+      class="text-xs text-gray-500 dark:text-gray-400"
+      data-testid={"stage-run-commit-#{@run.key}-#{@run.attempt}"}
+    >
+      <.icon name="hero-check-badge" class="size-4 text-success-600" /> Commit
+      <span class="font-mono">{String.slice(@run.job.delivery["commit"], 0, 7)}</span>
+      <span :if={@run.job.delivery["pushed"]}>· enviado</span>
+    </p>
+    <p
+      :if={@run.job && @run.job.delivery && @run.job.delivery["error"]}
+      class="text-xs text-danger-700 dark:text-danger-400"
+    >
+      A entrega falhou: {@run.job.delivery["error"]}
+    </p>
+
+    <.gate_results
+      :if={@run.job && @run.job.gates not in [nil, []]}
+      gates={@run.job.gates}
+      id={"#{@run.key}-#{@run.attempt}"}
+    />
+    """
+  end
+
+  attr :run, StageRun, required: true
+  attr :raw_artifact, :boolean, required: true
+
+  # What the stage produced, rendered or as the text the agent wrote.
+  defp artifact(assigns) do
+    ~H"""
+    <div>
+      <div class="mb-1 flex items-center justify-between">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Artefato
+        </p>
+        <button
+          type="button"
+          phx-click="toggle_artifact"
+          phx-value-run={@run.id}
+          class="text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+          data-testid={"stage-run-artifact-toggle-#{@run.key}-#{@run.attempt}"}
+        >
+          {if @raw_artifact, do: "Ver renderizado", else: "Ver texto"}
+        </button>
+      </div>
+      <div
+        :if={!@raw_artifact}
+        id={"artifact-#{@run.id}"}
+        phx-hook="Highlight"
+        class="prose prose-sm max-h-[40rem] max-w-none overflow-auto prose-h1:text-xl prose-h2:text-lg prose-h3:text-base rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950"
+        data-testid={"stage-run-artifact-#{@run.key}-#{@run.attempt}"}
+      >
+        {Markdown.to_html(@run.artifact)}
+      </div>
+      <pre
+        :if={@raw_artifact}
+        class="max-h-[40rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-4 py-3 font-mono text-sm text-gray-800 dark:bg-gray-950 dark:text-gray-100"
+        data-testid={"stage-run-artifact-raw-#{@run.key}-#{@run.attempt}"}
+      >{@run.artifact}</pre>
+    </div>
+    """
+  end
+
+  attr :run, StageRun, required: true
+  attr :steps, :list, default: nil
+  attr :steps_filter, :string, default: "all"
+
+  # The agent's steps, read when asked for and filtered by kind.
+  defp run_steps(assigns) do
+    ~H"""
+    <div>
+      <button
+        type="button"
+        phx-click="toggle_steps"
+        phx-value-job={@run.job.id}
+        class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+        data-testid={"stage-run-steps-toggle-#{@run.key}-#{@run.attempt}"}
+      >
+        <.icon
+          name={if @steps, do: "hero-chevron-down", else: "hero-chevron-right"}
+          class="size-4"
+        /> Passo a passo do agente
+      </button>
+      <div :if={@steps} class="mt-2 flex flex-wrap gap-1">
+        <.button
+          :for={
+            {filter, label} <- [
+              {"all", "Tudo"},
+              {"agent", "Agente"},
+              {"tools", "Ferramentas"},
+              {"thinking", "Raciocínio"},
+              {"errors", "Erros"}
+            ]
+          }
+          size="xs"
+          variant={if @steps_filter == filter, do: "solid", else: "ghost"}
+          color="gray"
+          phx-click="filter_steps"
+          phx-value-job={@run.job.id}
+          phx-value-filter={filter}
+          data-testid={"stage-run-steps-filter-#{@run.key}-#{@run.attempt}-#{filter}"}
+        >
+          {label}
+        </.button>
+      </div>
+      <.steps
+        :if={@steps}
+        items={timeline_items(@steps, @steps_filter)}
+        id={"#{@run.key}-#{@run.attempt}"}
+      />
+    </div>
+    """
+  end
+
+  defp artifact_first?(%StageRun{artifact: artifact, status: status}, live),
+    do: is_binary(artifact) and status != :running and not live
+
+  # Opened already when something went wrong in it: a gate that failed, a
+  # delivery that did not happen.
+  defp details_open?(%StageRun{job: %Job{} = job}) do
+    Enum.any?(job.gates || [], &(&1["passed"] == false)) or
+      match?(%{"error" => error} when is_binary(error), job.delivery)
+  end
+
+  defp details_open?(_run), do: false
+
+  # What the folded details hold, in a line: gates met, files, commit.
+  defp details_summary(%StageRun{job: %Job{} = job}) do
+    gates = job.gates || []
+    files = (job.changes || %{})["files"] || []
+    commit = (job.delivery || %{})["commit"]
+
+    [
+      gates != [] &&
+        "gates #{Enum.count(gates, & &1["passed"])}/#{length(gates)}",
+      files != [] && count_label(length(files), "arquivo", "arquivos"),
+      is_binary(commit) && "commit #{String.slice(commit, 0, 7)}"
+    ]
+    |> Enum.filter(&is_binary/1)
+  end
+
+  defp details_summary(_run), do: []
 
   attr :gates, :list, required: true
   attr :id, :string, required: true

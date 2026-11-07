@@ -17,6 +17,7 @@ defmodule PipeMaestroWeb.JobComponents do
 
   # `timeline/1` here is the run's timeline, not Petal's.
   import PetalComponents.Timeline, only: []
+  import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
 
   alias PipeMaestro.Jobs.{Event, Job}
   alias PipeMaestroWeb.Markdown
@@ -295,7 +296,7 @@ defmodule PipeMaestroWeb.JobComponents do
       </div>
       <div class="min-w-0 flex-1">
         <.event_header event={@event} look={@look} />
-        <.event_body event={@event} body={@look.body} />
+        <.event_body id={"#{@id}-body"} event={@event} body={@look.body} />
       </div>
     </li>
     """
@@ -376,7 +377,7 @@ defmodule PipeMaestroWeb.JobComponents do
       data-event-panel
     >
       <.event_header event={@event} look={@look} />
-      <.event_body event={@event} body={@look.body} />
+      <.event_body id={"#{@id}-body"} event={@event} body={@look.body} />
     </div>
     """
   end
@@ -405,6 +406,7 @@ defmodule PipeMaestroWeb.JobComponents do
     """
   end
 
+  attr :id, :string, required: true
   attr :event, Event, required: true
   attr :body, :string, required: true
 
@@ -417,6 +419,17 @@ defmodule PipeMaestroWeb.JobComponents do
     ]}>
       {Markdown.to_html(@event.data["text"])}
     </div>
+    """
+  end
+
+  defp event_body(%{event: %Event{type: "result", data: %{"text" => text}}} = assigns)
+       when is_binary(text) and text != "" do
+    ~H"""
+    <.agent_output
+      id={"#{@id}-output"}
+      text={@event.data["text"]}
+      class={["mt-1 max-h-[32rem] overflow-auto rounded-lg px-3 py-2", @body]}
+    />
     """
   end
 

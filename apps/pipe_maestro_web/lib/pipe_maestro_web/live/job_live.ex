@@ -1,7 +1,8 @@
 defmodule PipeMaestroWeb.JobLive do
   @moduledoc """
-  One job: its prompt, status and numbers, and the agent's run as a timeline
-  that grows live while the runner reports events. The timeline is a stream of
+  One job, in tabs (`?aba=`): its result, its prompt, the agent's run as a
+  timeline that grows live while the runner reports events, and the audit;
+  its status and numbers stay beside them. The timeline is a stream of
   segments (strips of icons and blocks of text, `PipeMaestroWeb.JobComponents`);
   only the strip still open at its end is kept here, to grow it in place. A queued or
   running job can be canceled from here. While it runs, what it spent so far
@@ -13,6 +14,7 @@ defmodule PipeMaestroWeb.JobLive do
 
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.AuditComponents
+  import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
 
   alias PipeMaestro.{Insights, Jobs}
   alias PipeMaestro.Jobs.Job
@@ -41,11 +43,39 @@ defmodule PipeMaestroWeb.JobLive do
     {:ok,
      socket
      |> assign(page_title: "Execução", job: job, event_count: last_seq(events), typing: nil)
+     |> assign(tab: nil)
      |> assign(live_pending: false)
      |> assign(timeline_tail: timeline_tail(segments))
      |> assign_insights()
      |> stream(:timeline, segments)}
   end
+
+  # The tabs, by their `aba` parameter, in order; the audit only once the run
+  # has ended.
+  @tabs [
+    {"resultado", "Resultado", "hero-flag"},
+    {"prompt", "Prompt", "hero-chat-bubble-bottom-center-text"},
+    {"linha-do-tempo", "Linha do tempo", "hero-queue-list"},
+    {"auditoria", "Auditoria", "hero-chart-bar"}
+  ]
+  @tab_ids Enum.map(@tabs, &elem(&1, 0))
+
+  # Without `aba`, a run still going opens on its timeline and an ended one
+  # on its result.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    tab =
+      cond do
+        params["aba"] in @tab_ids -> params["aba"]
+        Job.active?(socket.assigns.job) -> "linha-do-tempo"
+        true -> "resultado"
+      end
+
+    {:noreply, assign(socket, tab: tab)}
+  end
+
+  defp job_tabs(nil), do: Enum.reject(@tabs, &(elem(&1, 0) == "auditoria"))
+  defp job_tabs(_insights), do: @tabs
 
   # What the run spent so far while it runs; the audit, once it has ended.
   defp assign_insights(%{assigns: %{job: job}} = socket) do
@@ -151,81 +181,120 @@ defmodule PipeMaestroWeb.JobLive do
       </:actions>
 
       <div class="grid gap-6 lg:grid-cols-3">
-        <div class="space-y-6 lg:col-span-2">
-          <.card variant="outline">
-            <.card_content>
-              <div class="flex items-start justify-between gap-4">
-                <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">Prompt</h2>
-                <.job_status job={@job} data-testid="job-status" />
-              </div>
-              <pre
-                class="mt-2 whitespace-pre-wrap font-sans text-gray-900 dark:text-white"
-                data-testid="job-prompt-text"
-              >{@job.prompt}</pre>
-            </.card_content>
-          </.card>
+        <div class="min-w-0 space-y-6 lg:col-span-2">
+          <.tabs variant="underline" class="overflow-x-auto" data-testid="job-tabs">
+            <.tab
+              :for={{id, label, icon} <- job_tabs(@insights)}
+              link_type="live_patch"
+              to={~p"/w/#{@current_scope.workspace.slug}/jobs/#{@job.id}?aba=#{id}"}
+              is_active={@tab == id}
+              variant="underline"
+              data-testid={"job-tab-#{id}"}
+            >
+              <.icon name={icon} class="mr-1.5 size-4" /> {label}
+            </.tab>
+          </.tabs>
 
-          <.card :if={@job.result || @job.error} variant="outline">
-            <.card_content>
-              <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">
-                {if @job.error, do: "Erro", else: "Resultado"}
-              </h2>
-              <div
-                :if={@job.result}
-                id="job-result"
-                phx-hook="Highlight"
-                class="prose prose-sm mt-2 max-w-none dark:prose-invert"
-                data-testid="job-result"
-              >
-                {Markdown.to_html(@job.result)}
-              </div>
-              <pre
-                :if={@job.error}
-                class="mt-2 whitespace-pre-wrap font-sans text-danger-700 dark:text-danger-400"
-                data-testid="job-error"
-              >{@job.error}</pre>
-            </.card_content>
-          </.card>
-
-          <.card variant="outline">
-            <.card_header title="Linha do tempo" description="O que o agente fez, em ordem.">
-              <:action>
-                <.badge
-                  size="sm"
-                  variant="outline"
-                  color="gray"
-                  label={"#{@event_count} eventos"}
-                  data-testid="job-event-count"
+          <%!-- Every tab stays in the page, hidden when not chosen: the
+               timeline is a stream, and a stream removed from the page loses
+               what it showed. --%>
+          <div class={@tab != "resultado" && "hidden"} data-testid="job-panel-resultado">
+            <.card variant="outline">
+              <.card_content>
+                <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  {if @job.error, do: "Erro", else: "Resultado"}
+                </h2>
+                <p
+                  :if={!@job.result and !@job.error}
+                  class="mt-2 text-sm text-gray-500 dark:text-gray-400"
+                  data-testid="job-no-result"
+                >
+                  {if Job.active?(@job),
+                    do: "A execução ainda não terminou.",
+                    else: "A execução terminou sem resultado."}
+                </p>
+                <.agent_output
+                  :if={@job.result}
+                  id="job-result"
+                  text={@job.result}
+                  class="mt-2"
+                  data-testid="job-result"
                 />
-              </:action>
-            </.card_header>
-            <.card_content>
-              <p
-                :if={@event_count == 0}
-                class="text-sm text-gray-500 dark:text-gray-400"
-                data-testid="job-no-events"
-              >
-                {if @job.status == :queued,
-                  do: "Aguardando o runner começar…",
-                  else: "Nenhum evento recebido."}
-              </p>
-              <ol id="job-events" phx-update="stream" class="space-y-4" data-testid="job-events">
-                <.timeline_segment
-                  :for={{id, segment} <- @streams.timeline}
-                  id={id}
-                  timeline="job-events"
-                  segment={segment}
-                />
-              </ol>
-              <.typing :if={@typing} text={@typing} />
-            </.card_content>
-          </.card>
+                <pre
+                  :if={@job.error}
+                  class="mt-2 whitespace-pre-wrap font-sans text-danger-700 dark:text-danger-400"
+                  data-testid="job-error"
+                >{@job.error}</pre>
+              </.card_content>
+            </.card>
+          </div>
 
-          <.job_audit :if={@insights} job={@job} insights={@insights} />
+          <div class={@tab != "prompt" && "hidden"} data-testid="job-panel-prompt">
+            <.card variant="outline">
+              <.card_content>
+                <div
+                  id="job-prompt-text"
+                  phx-hook="Highlight"
+                  class="prose prose-sm max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
+                  data-testid="job-prompt-text"
+                >
+                  {Markdown.to_html(@job.prompt)}
+                </div>
+              </.card_content>
+            </.card>
+          </div>
+
+          <div class={@tab != "linha-do-tempo" && "hidden"} data-testid="job-panel-linha-do-tempo">
+            <.card variant="outline">
+              <.card_header title="Linha do tempo" description="O que o agente fez, em ordem.">
+                <:action>
+                  <.badge
+                    size="sm"
+                    variant="outline"
+                    color="gray"
+                    label={"#{@event_count} eventos"}
+                    data-testid="job-event-count"
+                  />
+                </:action>
+              </.card_header>
+              <.card_content>
+                <p
+                  :if={@event_count == 0}
+                  class="text-sm text-gray-500 dark:text-gray-400"
+                  data-testid="job-no-events"
+                >
+                  {if @job.status == :queued,
+                    do: "Aguardando o runner começar…",
+                    else: "Nenhum evento recebido."}
+                </p>
+                <ol id="job-events" phx-update="stream" class="space-y-4" data-testid="job-events">
+                  <.timeline_segment
+                    :for={{id, segment} <- @streams.timeline}
+                    id={id}
+                    timeline="job-events"
+                    segment={segment}
+                  />
+                </ol>
+                <.typing :if={@typing} text={@typing} />
+              </.card_content>
+            </.card>
+          </div>
+
+          <div
+            :if={@insights}
+            class={@tab != "auditoria" && "hidden"}
+            data-testid="job-panel-auditoria"
+          >
+            <.job_audit job={@job} insights={@insights} />
+          </div>
         </div>
 
         <.card variant="outline" class="h-fit">
           <.card_content>
+            <div class="mb-4 flex items-center justify-between gap-4 text-sm">
+              <span class="text-gray-500 dark:text-gray-400">Status</span>
+              <.job_status job={@job} data-testid="job-status" />
+            </div>
             <dl class="space-y-3 text-sm">
               <.detail label="Runner" testid="job-runner-name">
                 {if @job.runner, do: @job.runner.name, else: "—"}

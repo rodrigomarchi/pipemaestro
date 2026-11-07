@@ -103,7 +103,9 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
       </.badge>
       <.badge :if={@question["multipla"]} color="gray" size="sm">várias respostas</.badge>
     </div>
-    <p class="mt-2 font-medium text-gray-900 dark:text-white">{@question["pergunta"]}</p>
+    <div class="mt-2 font-medium text-gray-900 dark:text-white [&_code]:text-[0.9em]">
+      {Markdown.inline_html(@question["pergunta"])}
+    </div>
     """
   end
 
@@ -119,9 +121,9 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
     </span>
     <span
       :if={@option["descricao"] not in [nil, ""]}
-      class="mt-1 block text-sm text-gray-600 dark:text-gray-300"
+      class="mt-1 block text-sm text-gray-600 dark:text-gray-300 [&_code]:text-[0.9em]"
     >
-      {@option["descricao"]}
+      {Markdown.inline_html(@option["descricao"])}
     </span>
     """
   end
