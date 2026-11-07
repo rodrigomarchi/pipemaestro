@@ -39,6 +39,23 @@ tarefa parada ou encerrada sempre aceita um novo prompt.
 | `canceled` | Cancelada por uma pessoa. |
 | `failed` | Reservado; hoje as falhas levam a `awaiting_decision`. |
 
+### O merge do PR
+
+Com um pipeline que faz o merge do PR (`auto_merge`, [ADR 0045](../adr/0045-merge-automatico-do-pr.md)),
+uma tarefa `succeeded` ganha um `merge_state`, à parte do status:
+
+```
+succeeded ──► waiting_checks ──(checks passaram, sem conflito)──► merged
+                 │      ▲
+                 │      └──(a correção passou: succeeded de novo)
+                 ├──(check falhou ou conflito, correções < máximo)──► fixing (tarefa running, "Correção N")
+                 └──(correções esgotadas, host recusou, PR fechado, 6 h)──► blocked ──(retry_merge)──► waiting_checks
+```
+
+Sem uma integração que deixe a plataforma chamar o host, a tarefa termina já em
+`blocked`. Uma correção pedida por uma pessoa limpa o estado, que volta quando a tarefa
+termina de novo; cancelar a tarefa durante `waiting_checks` ou `fixing` também o limpa.
+
 Entrar em `awaiting_decision` e terminar (`succeeded`, `failed`, `canceled`) gera, além do
 toast e da notificação do navegador, uma notificação guardada na caixa do criador e do
 dono da decisão; sem nenhum dos dois no workspace, vai para os admins
@@ -127,7 +144,11 @@ Valem só em `awaiting_decision`:
 - `correct(task, prompt, runner_id:)`: numa tarefa encerrada, acrescenta a etapa
   "Correção N" ao fim de `task.stages`, com o template de correção, o prompt da pessoa
   nas instruções e os gates, tentativas, modelo e timeout da última etapa. Ela roda e
-  entrega como qualquer etapa. O `Decision` tem `action: :correct`.
+  entrega como qualquer etapa. O `Decision` tem `action: :correct`. Com
+  `merge_fix: true` (o merge automático), conta em `merge_fixes` e deixa a tarefa em
+  `fixing`.
+- `retry_merge(task, pessoa)`: num merge `blocked` de uma tarefa `succeeded`, volta a
+  esperar os checks, com as correções contadas do zero.
 - `interrupt(task)`: numa tarefa `running`, marca `pause_requested` e cancela o job. O
   `:canceled` que volta leva a `awaiting_decision` ("foi interrompida"). Um
   `cancel_task` depois zera a pausa e encerra.

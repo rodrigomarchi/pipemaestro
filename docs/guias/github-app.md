@@ -27,6 +27,7 @@ Permissões do repositório:
 | Pull requests | Read and write |
 | Contents | Read and write |
 | Checks | Read and write |
+| Commit statuses | Read (o merge automático lê o CI que reporta por status, [ADR 0045](../adr/0045-merge-automatico-do-pr.md)) |
 
 Eventos:
 - Issues;

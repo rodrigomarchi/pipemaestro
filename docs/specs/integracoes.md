@@ -134,3 +134,21 @@ login); um inválido para o estado recebe uma resposta com os comandos válidos.
   "Correção N" com o texto do review e os comentários de linha como pedido.
 - "Refazer etapa" no check run (GitHub), de quem tem escrita: nova tentativa da etapa.
 - PR fechado com merge: o comentário de status diz "integrado".
+
+### Merge automático
+
+Com `auto_merge` no pipeline ([ADR 0045](../adr/0045-merge-automatico-do-pr.md)), depois da
+última etapa a plataforma (`PipeMaestro.Integrations.AutoMerge`) olha o PR a cada minuto
+e a cada mudança da tarefa:
+
+- **Espera** pelo PR pronto, na head igual ao último commit da tarefa, com `mergeable`
+  calculado e sem check rodando.
+- **Os checks** são os status de commit (o status combinado, `GET
+  /commits/:sha/status`) e, no GitHub, os check runs (`GET /commits/:sha/check-runs`).
+  Ficam de fora os `pipemaestro/*` da própria plataforma.
+- **O merge** é `PUT /pulls/:n/merge` com `merge_method` e `sha` no GitHub, e `POST
+  /pulls/:n/merge` com `Do` e `head_commit_id` no Forgejo.
+- **Check vermelho ou conflito** (visto duas vezes na mesma head) vira uma etapa
+  "Correção N" com o que falhou, até `max_merge_fixes`. Depois disso, o merge fica
+  bloqueado e quem cuida da tarefa é avisado.
+- **Recusa do host, PR fechado ou 6 horas de espera** bloqueiam o merge, sem correção.
