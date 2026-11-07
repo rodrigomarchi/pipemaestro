@@ -1,6 +1,6 @@
 # 0038 — Atualização automática por padrão
 
-- **Status:** aceita
+- **Status:** aceita; a execução do binário novo foi alterada pela [ADR 0041](0041-runner-resiliente-a-reinicios.md)
 - **Data:** 06/11/2026
 - **Altera:** [ADR 0025](0025-atualizacao-automatica-do-runner.md)
 

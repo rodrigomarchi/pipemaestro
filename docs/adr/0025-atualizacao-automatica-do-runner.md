@@ -1,6 +1,6 @@
 # 0025 — Atualização automática do runner
 
-- **Status:** aceita; o padrão (atualizar sem perguntar) foi alterado pela [ADR 0038](0038-atualizacao-automatica-por-padrao.md)
+- **Status:** aceita; o padrão (atualizar sem perguntar) foi alterado pela [ADR 0038](0038-atualizacao-automatica-por-padrao.md); a execução do binário novo foi alterada pela [ADR 0041](0041-runner-resiliente-a-reinicios.md)
 - **Data:** 04/11/2026
 
 ## Contexto

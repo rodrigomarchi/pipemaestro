@@ -1,6 +1,6 @@
 # 0023 — Runner na versão da plataforma
 
-- **Status:** aceita; superada em parte pela [ADR 0035](0035-versao-propria-do-runner.md): a versão exigida é a do runner, não a do control plane
+- **Status:** aceita; superada em parte pela [ADR 0035](0035-versao-propria-do-runner.md): a versão exigida é a do runner, não a do control plane; o runner recusado drena em vez de cancelar ([ADR 0041](0041-runner-resiliente-a-reinicios.md))
 - **Data:** 04/11/2026
 
 ## Contexto
