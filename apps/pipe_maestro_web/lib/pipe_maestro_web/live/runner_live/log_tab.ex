@@ -179,9 +179,11 @@ defmodule PipeMaestroWeb.RunnerLive.LogTab do
   @spec kind_label(String.t()) :: String.t()
   def kind_label("update_applied"), do: "atualizado"
   def kind_label("update_failed"), do: "atualização falhou"
+  def kind_label("update_draining"), do: "terminando jobs"
   def kind_label("connection_lost"), do: "conexão perdida"
   def kind_label("outbox_dropped"), do: "fila cheia"
   def kind_label("log_dropped"), do: "log descartado"
+  def kind_label("job_lost"), do: "job perdido"
   def kind_label("setup_failed"), do: "setup falhou"
   def kind_label("delivery_failed"), do: "entrega falhou"
   def kind_label("credential_refused"), do: "credencial recusada"

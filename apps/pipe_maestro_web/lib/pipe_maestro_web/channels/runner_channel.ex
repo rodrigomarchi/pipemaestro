@@ -15,7 +15,9 @@ defmodule PipeMaestroWeb.RunnerChannel do
   every job but a proposal the workspace's secrets (`PipeMaestro.Secrets`),
   added only on the way out, and, from a task of a linked repository, the
   git credential of its connection, renewed with `job:credential` before it
-  expires (ADR 0037).
+  expires (ADR 0037). On every join, the jobs the runner still runs get a
+  cancel asked while it was away and their credential renewed at once: the
+  renewal scheduled by a channel goes with it (a restart of the server).
 
   So do the task worktrees (`PipeMaestroProtocol.Worktree`): the channel
   pushes `worktree:remove` when someone asks for a task's worktree to go, and
@@ -109,6 +111,8 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
     for job_id <- Jobs.ended_among(runner, hello.running_job_ids),
         do: push(socket, Job.cancel_event(), %{"job_id" => job_id})
+
+    for job <- Jobs.running_among(runner, hello.running_job_ids), do: resume(socket, job)
 
     for task <- Tasks.pending_worktree_removals(runner),
         do: push(socket, Worktree.remove_event(), Tasks.removal(task))
@@ -311,6 +315,20 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
     push(socket, Job.assign_event(), Job.to_map(wire))
     if credential, do: schedule_renewal(job.id, credential)
+  end
+
+  # A job the runner went on with while the channel was away (the server
+  # restarted, or the connection dropped): a cancel asked meanwhile is told
+  # again, and its git credential, whose renewal went with the old channel,
+  # is renewed at once.
+  defp resume(socket, %{cancel_requested_at: %DateTime{}} = job),
+    do: push(socket, Job.cancel_event(), %{"job_id" => job.id})
+
+  defp resume(socket, job) do
+    with %{} = credential <- git_credential(socket.assigns.runner, job) do
+      push(socket, Job.credential_event(), %{"job_id" => job.id, "git_credential" => credential})
+      schedule_renewal(job.id, credential)
+    end
   end
 
   defp git_credential(runner, job) do

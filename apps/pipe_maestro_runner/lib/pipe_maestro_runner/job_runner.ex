@@ -50,7 +50,15 @@ defmodule PipeMaestroRunner.JobRunner do
   Canceling a waiting job drops it; canceling a running one (in its setup or
   in the CLI) sends SIGTERM, then SIGKILL if it is still there after
   `:kill_after` ms. A job past its `timeout_ms` is stopped the same way and
-  fails.
+  fails. A job stopped as `:lost` (`cancel/3`) ends without reporting its
+  end: the control plane counts it as lost by the runner and runs it again.
+
+  Draining (`drain/1`, before the runner updates itself) lets the running
+  jobs end and starts nothing else: the waiting ones are dropped, and the
+  control plane hands them over again on the next join.
+
+  The owner is a pid or a registered name: the connection, or the
+  `PipeMaestroRunner.Outbox.Server` that outlives it.
   """
   use GenServer
 
@@ -87,7 +95,7 @@ defmodule PipeMaestroRunner.JobRunner do
   @launcher ~S(exec "$0" "$@" < /dev/null)
 
   @doc """
-  Starts the runner. Options: `:owner` (pid, required), `:workdir` (required),
+  Starts the runner. Options: `:owner` (pid or name, required), `:workdir` (required),
   `:root` (where the code directories are, `PipeMaestroRunner.Workspace`),
   `:executable` (default: `Claude.executable/0`), `:kill_after` (default 5000),
   `:capacity` (jobs at once, default 1), `:telemetry` (receive the CLI's
@@ -110,6 +118,21 @@ defmodule PipeMaestroRunner.JobRunner do
   @doc "Drops a waiting job or stops the running one."
   @spec cancel(GenServer.server(), String.t()) :: :ok
   def cancel(server, job_id), do: GenServer.cast(server, {:cancel, job_id})
+
+  @doc """
+  Stops a job as `:canceled` (the same as `cancel/2`) or as `:lost`: stopped
+  without reporting its end, for the control plane to run it again.
+  """
+  @spec cancel(GenServer.server(), String.t(), :canceled | :lost) :: :ok
+  def cancel(server, job_id, :canceled), do: cancel(server, job_id)
+  def cancel(server, job_id, :lost), do: GenServer.cast(server, {:cancel, job_id, :lost})
+
+  @doc """
+  Starts no more jobs: the waiting ones are dropped, and those it is handed
+  later too; the running ones go on to their end.
+  """
+  @spec drain(GenServer.server()) :: :ok
+  def drain(server), do: GenServer.call(server, :drain)
 
   @doc """
   Removes a task's worktree (`PipeMaestroRunner.Workspace`), unless a
@@ -151,7 +174,8 @@ defmodule PipeMaestroRunner.JobRunner do
        files: Keyword.get(opts, :files),
        files_req_options: Keyword.get(opts, :files_req_options, []),
        queue: [],
-       running: %{}
+       running: %{},
+       draining: false
      }}
   end
 
@@ -160,9 +184,12 @@ defmodule PipeMaestroRunner.JobRunner do
     {:reply, Map.keys(state.running), state}
   end
 
+  def handle_call(:drain, _from, state),
+    do: {:reply, :ok, %{state | queue: [], draining: true}}
+
   @impl true
   def handle_cast({:enqueue, %Job{id: id} = job}, state) do
-    if known?(state, id),
+    if state.draining or known?(state, id),
       do: {:noreply, state},
       else: {:noreply, start_ready(%{state | queue: state.queue ++ [job]})}
   end
@@ -201,6 +228,16 @@ defmodule PipeMaestroRunner.JobRunner do
       end
 
     {:noreply, state}
+  end
+
+  def handle_cast({:cancel, id, :lost}, state) do
+    case state.running do
+      %{^id => run} ->
+        {:noreply, put_run(state, stop(state, %{run | canceled: true, lost: true}))}
+
+      _waiting ->
+        {:noreply, %{state | queue: Enum.reject(state.queue, &(&1.id == id))}}
+    end
   end
 
   def handle_cast({:cancel, id}, state) do
@@ -462,6 +499,8 @@ defmodule PipeMaestroRunner.JobRunner do
 
   # Starts, in queue order, every waiting job whose place is free, while there
   # is capacity.
+  defp start_ready(%{draining: true} = state), do: state
+
   defp start_ready(state) do
     busy = MapSet.new(Map.values(state.running), &place(&1.job))
 
@@ -503,6 +542,7 @@ defmodule PipeMaestroRunner.JobRunner do
       result: nil,
       stderr: [],
       canceled: false,
+      lost: false,
       timed_out: false,
       tracking: nil,
       finishing: nil,
@@ -630,11 +670,12 @@ defmodule PipeMaestroRunner.JobRunner do
   defp setup_of({:error, _message, setup}), do: setup
 
   # A job that ended before its agent ran.
+  # A job stopped as lost tells nothing of its end.
   defp done(state, run, payload) do
     payload =
       for {key, value} <- payload, value != nil, into: %{"job_id" => run.job.id}, do: {key, value}
 
-    out(state, Job.finished_event(), payload)
+    unless run.lost, do: out(state, Job.finished_event(), payload)
     discard_scratch(state, run.job)
     discard_files(run)
     LogCollector.forget_secrets(run.job.id)
@@ -754,7 +795,10 @@ defmodule PipeMaestroRunner.JobRunner do
           do: {key, value}
 
     GitCredential.remove(state.workdir, current.job.id)
-    out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+
+    unless current.lost,
+      do: out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
+
     discard_scratch(state, current.job)
     discard_files(current)
     LogCollector.forget_secrets(current.job.id)

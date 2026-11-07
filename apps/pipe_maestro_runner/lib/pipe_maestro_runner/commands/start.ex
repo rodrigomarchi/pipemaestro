@@ -2,16 +2,27 @@ defmodule PipeMaestroRunner.Commands.Start do
   @moduledoc """
   Connects with the saved credentials and stays online until stopped (Ctrl+C):
 
-      pipemaestro start [--root ~/src] [--no-auto-update]
+      pipemaestro start [--root ~/src] [--no-auto-update] [--drain-timeout 30]
 
   `--root` is where the code directories it offers are (every directory at its
   first level); it is saved with the credentials, so later starts reuse it.
 
-  Reconnects on its own when the network drops. Stops when the platform
-  refuses the runner (revoked), since retrying could not help. Refused for
-  not being on the platform's version, the single binary updates itself and
-  starts again without asking (`PipeMaestroRunner.Update`), as the service
-  does; with `--no-auto-update` it asks in a terminal instead.
+  Reconnects on its own when the network drops, and starts the connection
+  again when it crashes, without stopping the jobs
+  (`PipeMaestroRunner.Session`). Stops only when reconnecting cannot help:
+  the platform refuses the runner (revoked), or it is not on the platform's
+  version and may not update itself (`--no-auto-update` without a terminal,
+  or a "no").
+
+  Refused for not being on the platform's version, it first lets the
+  running jobs end, up to `--drain-timeout` minutes (30 by default), and
+  keeps what they reported for the new binary to send; then the single
+  binary updates itself and comes back on its own
+  (`PipeMaestroRunner.Update`): in the terminal, under the service, or
+  started apart. With `--no-auto-update` it asks in a terminal instead.
+
+  One runner runs per configuration (`PipeMaestroRunner.InstanceLock`):
+  one starting while another is on its way out waits for it.
 
   Runs the jobs the platform sends with the agent CLI (`claude`, or
   `$CLAUDE_BIN`), up to the runner's capacity at once
@@ -25,12 +36,13 @@ defmodule PipeMaestroRunner.Commands.Start do
   alias PipeMaestroRunner.{
     Claude,
     Config,
-    Connection,
     Directories,
     Host,
+    InstanceLock,
     LogCollector,
     Output,
     SelfUpdate,
+    Session,
     Update
   }
 
@@ -38,13 +50,16 @@ defmodule PipeMaestroRunner.Commands.Start do
 
   alias PipeMaestroProtocol.{RunnerDoctor, RunnerHealth}
 
-  @switches [root: :string, auto_update: :boolean]
+  @switches [root: :string, auto_update: :boolean, drain_timeout: :integer]
+  @default_drain_minutes 30
   @spec run([String.t()]) :: no_return()
   def run(args) do
     {opts, _rest, invalid} = OptionParser.parse(args, strict: @switches)
     if invalid != [], do: Output.fail!("Opção inválida: #{inspect(invalid)}")
 
     Output.info("pipemaestro #{Host.runner_version()}")
+    lock = Path.join(Config.dir(), "runner.pid")
+    take_lock(lock)
     if bin = System.get_env("__BURRITO_BIN_PATH"), do: SelfUpdate.clean_stale(bin)
     config = config_with_root(Output.config!(), opts[:root])
     start_log(config)
@@ -69,8 +84,8 @@ defmodule PipeMaestroRunner.Commands.Start do
 
     Output.info("Conectando #{config.runner_name} a #{config.url}...")
 
-    {:ok, pid} =
-      Connection.start_link(
+    {:ok, session} =
+      Session.start_link(
         config: config,
         hello: hello,
         notify: self(),
@@ -82,16 +97,20 @@ defmodule PipeMaestroRunner.Commands.Start do
         health_every: interval("RUNNER_HEALTH_EVERY_MS", RunnerHealth.interval_ms()),
         doctor_every: interval("RUNNER_DOCTOR_EVERY_MS", RunnerDoctor.interval_ms()),
         # This runner's own log, for the control plane.
-        logs: true
+        logs: true,
+        drain_timeout_ms: drain_timeout_ms(opts[:drain_timeout])
       )
 
-    ref = Process.monitor(pid)
+    # Its end is told by the monitor, not by taking this process with it.
+    Process.unlink(session)
+    ref = Process.monitor(session)
 
     update = [
       argv: ["start" | args],
       auto_update: opts[:auto_update],
       platform_url: config.url,
-      marker: marker
+      marker: marker,
+      lock: lock
     ]
 
     loop(config, ref, update)
@@ -116,8 +135,11 @@ defmodule PipeMaestroRunner.Commands.Start do
         Output.info("Conexão perdida (#{inspect(reason)}). Reconectando...")
         loop(config, ref, update)
 
+      # The jobs ended (or were stopped past the deadline), and what they
+      # reported waits in the outbox's file: this runner connects no more.
       {:runner_connection, {:outdated, refusal}} ->
-        {:fail, message} = Update.handle(refusal, update)
+        :ok = InstanceLock.release(update[:lock])
+        {:fail, message} = Update.handle(refusal, Keyword.delete(update, :lock))
         Output.fail!(message)
 
       {:runner_connection, :rejected} ->
@@ -127,7 +149,28 @@ defmodule PipeMaestroRunner.Commands.Start do
         """)
 
       {:DOWN, ^ref, :process, _pid, reason} ->
-        Output.fail!("A conexão terminou: #{inspect(reason)}")
+        Output.fail!("O runner parou: #{inspect(reason)}")
+    end
+  end
+
+  defp take_lock(lock) do
+    case InstanceLock.acquire(lock) do
+      :ok ->
+        :ok
+
+      {:error, {:held, pid}} ->
+        Output.fail!("""
+        Outro runner com esta configuração já está rodando (pid #{pid}).
+        Pare-o antes, ou use outro RUNNER_CONFIG_DIR.
+        """)
+    end
+  end
+
+  # `--drain-timeout` in minutes; a shorter one in ms for the screen tests.
+  defp drain_timeout_ms(minutes) do
+    case Integer.parse(System.get_env("PIPEMAESTRO_DRAIN_TIMEOUT_MS") || "") do
+      {ms, ""} when ms >= 0 -> ms
+      _unset -> max(minutes || @default_drain_minutes, 0) * 60_000
     end
   end
 

@@ -5,13 +5,17 @@ defmodule PipeMaestro.Tasks.StageRun do
   questions it was answered (`answers`, `%{"perguntas", "respostas"}`) and what
   the gate found: `passed`, `failed` (an error) or `blocked` (the agent asked
   for a person), with the stage's summary, structured output and artifact.
+
+  A run whose job was lost by its runner (a restart, an update, a crash) is
+  `lost`, not an attempt: the stage runs again in the same `attempt`, with
+  `requeue` counting how many times it was lost before.
   """
   use PipeMaestro.Schema
 
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.Task
 
-  @type status :: :running | :passed | :failed | :blocked | :canceled
+  @type status :: :running | :passed | :failed | :blocked | :canceled | :lost
 
   @type t :: %__MODULE__{
           id: Ecto.UUID.t() | nil,
@@ -19,6 +23,7 @@ defmodule PipeMaestro.Tasks.StageRun do
           key: String.t() | nil,
           name: String.t() | nil,
           attempt: pos_integer() | nil,
+          requeue: non_neg_integer(),
           instructions: String.t() | nil,
           feedback: String.t() | nil,
           answers: map() | nil,
@@ -39,12 +44,13 @@ defmodule PipeMaestro.Tasks.StageRun do
     field :key, :string
     field :name, :string
     field :attempt, :integer
+    field :requeue, :integer, default: 0
     field :instructions, :string
     field :feedback, :string
     field :answers, :map
 
     field :status, Ecto.Enum,
-      values: [:running, :passed, :failed, :blocked, :canceled],
+      values: [:running, :passed, :failed, :blocked, :canceled, :lost],
       default: :running
 
     field :summary, :string

@@ -74,7 +74,13 @@ O `scripts/deploy_sun.sh` faz quatro coisas:
    atualizam a partir desse diretório
    ([ADR 0025](../adr/0025-atualizacao-automatica-do-runner.md)), só se ele estiver na
    mesma origem da plataforma (o mesmo host, com https): um `RUNNER_DOWNLOADS_URL` em
-   outro host desliga a atualização automática;
+   outro host desliga a atualização automática. Recusado pela versão, cada runner
+   termina os jobs que roda (até 30 min), se atualiza e volta sozinho, no terminal, com
+   `nohup` ou como serviço; o que passar do prazo roda de novo sem gastar tentativa
+   ([ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md)). **Nota de transição:**
+   um runner anterior à ADR 0043 se atualiza pelo código antigo uma última vez; se
+   roda sem terminal e fora de `pipemaestro service install`, ele para nesse salto e
+   precisa ser iniciado de novo à mão;
 4. consulta `https://pipemaestro.app/version` até a release nova responder. Desiste depois de
    `ROLLOUT_TIMEOUT_S`, que por padrão é 300 segundos.
 

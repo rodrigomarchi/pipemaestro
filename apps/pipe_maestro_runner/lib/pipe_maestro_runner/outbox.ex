@@ -10,7 +10,8 @@ defmodule PipeMaestroRunner.Outbox do
   Given a file, the messages that move a task along (a job's end, a removed
   worktree) are also kept there, so they survive a restart of the runner: the
   runner starts with them, still counts their jobs as running, and sends them
-  again. A job's events live only in memory.
+  again. A job's events live only in memory, except before an update
+  (`persist_all/1`), which keeps everything still to confirm.
 
   It holds at most `max` messages. Past that, the oldest of a job's events
   and telemetry and of the runner's log go first (`dropped/1` counts them): a
@@ -111,6 +112,28 @@ defmodule PipeMaestroRunner.Outbox do
     |> Enum.uniq()
   end
 
+  @doc """
+  Writes every message still to confirm to the file, not only those a
+  restart must not lose: before the runner updates itself, so the new one
+  sends it all.
+  """
+  @spec persist_all(t()) :: :ok
+  def persist_all(%{path: nil}), do: :ok
+  def persist_all(outbox), do: write(outbox.path, Enum.map(pending(outbox), &entry/1))
+
+  defp entry({_id, event, payload}), do: {event, payload}
+
+  @doc """
+  The jobs whose end is still to confirm: they count as running for the
+  control plane until it has it. A job with only its start or events here
+  (one stopped as lost before an update) does not.
+  """
+  @spec finished_job_ids(t()) :: [String.t()]
+  def finished_job_ids(outbox) do
+    for({_id, "job:finished", %{"job_id" => id}} <- pending(outbox), do: id)
+    |> Enum.uniq()
+  end
+
   defp load(nil), do: []
 
   # A missing or unreadable file starts empty: no reason not to start.
@@ -140,9 +163,13 @@ defmodule PipeMaestroRunner.Outbox do
           event in @durable,
           do: entry
 
+    write(path, durable)
+  end
+
+  defp write(path, entries) do
     temp = path <> ".tmp"
     File.mkdir_p!(Path.dirname(path))
-    File.write!(temp, :erlang.term_to_binary(durable))
+    File.write!(temp, :erlang.term_to_binary(entries))
     File.rename!(temp, path)
   end
 

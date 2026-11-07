@@ -143,8 +143,11 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
   Um runner fora da versão de runner que o control plane exige recebe o mesmo payload do `409` do login
   (`{"reason": "outdated", "version", "runner_version", "download_url"}`). Nada dele é
-  gravado e ele não fica online. O runner cancela os jobs que roda, não tenta de novo e
-  se atualiza ou pede para baixar a versão atual, como no login. Como o deploy reinicia o control plane, todo runner
+  gravado e ele não fica online. O runner não tenta de novo: para de iniciar jobs,
+  espera os que roda terminarem (até `--drain-timeout`, 30 min por padrão), grava a
+  outbox inteira no arquivo e só então se atualiza ou pede para baixar a versão atual,
+  como no login. Os jobs que passarem do prazo são parados sem reportar o fim e contam
+  como perdidos (§4.6) ([ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md)). Como o deploy reinicia o control plane, todo runner
   reconecta e passa por essa checagem. Um deploy que não muda o runner não muda a versão
   exigida, e os runners voltam online.
 - **O que acontece no join:** o control plane grava o `Hello` (labels, capacidade,
@@ -173,7 +176,9 @@ canal `runner:<runner_id>`.
 | `job:credential` | `{"job_id", "git_credential"}` | a credencial git renovada de um job na fila ou em execução, alguns minutos antes de a anterior vencer; o runner regrava o arquivo dela (ADR 0037) |
 
 No join, o control plane reenvia `job:assign` para cada job ainda `queued` daquele
-runner.
+runner. Para cada job `running` que o runner diz seguir rodando, manda já um
+`job:credential` novo (se o runner anuncia `"git_credential"`) e agenda a próxima
+renovação, e reenvia `job:cancel` quando o cancelamento foi pedido com o canal fora.
 
 ### 4.2 Runner → control plane
 
@@ -231,10 +236,14 @@ O par `(job_id, seq)` é único, então um evento reenviado é ignorado.
 resposta e, depois de cada join, reenvia em ordem o que não foi respondido. Uma
 resposta `error` também encerra a mensagem, porque reenviar não mudaria a resposta. O
 control plane é idempotente: `seq` repetido é ignorado, e um `job:started` ou
-`job:finished` repetido responde `not_queued` ou `finished`. Um job com mensagens não
-confirmadas entra em `running_job_ids` do `Hello`, para que a reconciliação não o
-falhe antes do reenvio. A outbox vive em memória: se o runner reinicia, ela se perde e
-os jobs em execução viram `failed`.
+`job:finished` repetido responde `not_queued` ou `finished`. Um job cujo `job:finished`
+ainda não foi confirmado entra em `running_job_ids` do `Hello`, para que a
+reconciliação não o falhe antes do reenvio. Só o início ou os eventos pendentes não
+bastam: um job parado como perdido na drenagem tem só esses, e precisa faltar no
+`Hello` para contar como perda. O `job:finished` e o `worktree:removed` também ficam num
+arquivo e sobrevivem a um reinício do runner; antes de uma atualização, a outbox
+inteira vai para o arquivo. Um crash da conexão não a perde: ela vive num processo
+próprio, e só a conexão é reiniciada.
 
 ### 4.3 Diretórios
 
@@ -313,7 +322,11 @@ queued ──job:started──► running ──job:finished──► succeeded 
 ```
 
 No join, um job `running` daquele runner que não está em `running_job_ids` vira
-`failed`, porque o runner reiniciou e perdeu o processo.
+`failed`, porque o runner reiniciou e perdeu o processo. Se é o job de uma etapa, é uma
+**perda por infraestrutura**: a etapa roda de novo na mesma tentativa, sem gastá-la, até
+um limite, e o runner registra o evento `job_lost`. Um `job:finished` `canceled` de um
+job sem pedido de cancelamento conta igual
+([ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md)).
 
 ### 4.7 Telemetria do runner
 
@@ -325,7 +338,7 @@ diagnóstico a quem anuncia `doctor`.
 | Evento | Sentido | Payload |
 |---|---|---|
 | `runner:health` | runner → control plane | `{"at", "cpu_pct", "load1", "mem_used_bytes", "mem_total_bytes", "disk_free_bytes", "disk_total_bytes", "outbox_pending", "running_jobs", "beam_bytes"}` (`PipeMaestroProtocol.RunnerHealth`). Cada número pode ser `null` quando a máquina não o informa. Enviado depois de cada join e a cada 60 s, fora da outbox |
-| `runner:log` | runner → control plane | `{"lines"}`: até 200 linhas `{"at", "level", "message", "event"?, "attrs"?}` (`PipeMaestroProtocol.RunnerLog`), `level` igual a `debug`, `info`, `warning` ou `error`, `message` de até 4 KB, já com os segredos redigidos. `event` vem de uma lista fechada (`update_applied`, `update_failed`, `scratch_remove_failed`, `outbox_dropped`, `connection_lost`, `log_dropped`), com `attrs` de valores simples. Um lote sai a cada 5 s ou 200 linhas, e o runner envia no máximo 1 000 linhas por minuto. Passa pela outbox, que o descarta primeiro, como `job:event`, quando enche. Com `"logs": false` na resposta do join, só as linhas com `event` são enviadas |
+| `runner:log` | runner → control plane | `{"lines"}`: até 200 linhas `{"at", "level", "message", "event"?, "attrs"?}` (`PipeMaestroProtocol.RunnerLog`), `level` igual a `debug`, `info`, `warning` ou `error`, `message` de até 4 KB, já com os segredos redigidos. `event` vem de uma lista fechada (`update_draining`, `update_applied`, `update_failed`, `scratch_remove_failed`, `outbox_dropped`, `connection_lost`, `log_dropped`), com `attrs` de valores simples. Um lote sai a cada 5 s ou 200 linhas, e o runner envia no máximo 1 000 linhas por minuto. Passa pela outbox, que o descarta primeiro, como `job:event`, quando enche. Com `"logs": false` na resposta do join, só as linhas com `event` são enviadas |
 | `runner:doctor` | control plane → runner | `{"request_id"}`: roda o diagnóstico agora |
 | `runner:doctor` | runner → control plane | `{"request_id"?, "at", "checks"}`: `checks` é `[{"key", "name", "status", "detail"}]` (`PipeMaestroProtocol.RunnerDoctor`), `status` igual a `ok`, `warning` ou `error`. Enviado depois de cada join, a cada hora e em resposta a um pedido, com o `request_id` dele. Fora da outbox |
 

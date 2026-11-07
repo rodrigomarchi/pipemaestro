@@ -1033,6 +1033,27 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     end
   end
 
+  describe "a stage lost by a restarted runner" do
+    test "shows the lost run apart from a failure, and the run again under the same attempt",
+         ctx do
+      task = create_task(ctx)
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      Jobs.reconcile(ctx.runner, [])
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-testid=stage-run-status-a-1]", "Perdida (runner)")
+      refute has_element?(view, "[data-testid=stage-run-status-a-1]", "Falhou")
+      assert has_element?(view, "[data-testid=stage-run-lost-a-1]", "o runner reiniciou")
+      assert has_element?(view, "[data-testid=stage-run-a-1-r1]")
+      assert has_element?(view, "[data-testid=stage-run-status-a-1-r1]", "Executando")
+      refute has_element?(view, "[data-testid=stage-run-a-2]")
+      refute has_element?(view, "[data-testid=stage-attempts-a]")
+    end
+  end
+
   defp eventually(fun, attempts \\ 50) do
     cond do
       fun.() -> true

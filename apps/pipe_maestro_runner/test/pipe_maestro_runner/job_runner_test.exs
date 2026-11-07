@@ -1207,4 +1207,37 @@ defmodule PipeMaestroRunner.JobRunnerTest do
       end
     end
   end
+
+  describe "draining before an update" do
+    test "drain/1 lets the running job go on, drops the waiting ones and starts nothing new",
+         %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(runner, job("j1", "devagar [gotejando]"))
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}, 5_000
+      JobRunner.enqueue(runner, job("j2", "diga oi"))
+
+      assert JobRunner.drain(runner) == :ok
+      JobRunner.enqueue(runner, job("j3", "diga oi"))
+
+      {_messages, finished} = collect_until_finished("j1")
+      assert finished["status"] == "succeeded"
+
+      refute_receive {:job_out, "job:started", %{"job_id" => "j2"}}, 500
+      refute_received {:job_out, "job:started", %{"job_id" => "j3"}}
+      assert JobRunner.running_job_ids(runner) == []
+    end
+
+    test "a job stopped as lost ends without reporting its end", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"), kill_after: 200)
+
+      JobRunner.enqueue(runner, job("j1", "devagar [lento]"))
+      assert_receive {:job_out, "job:started", %{"job_id" => "j1"}}, 5_000
+
+      assert JobRunner.cancel(runner, "j1", :lost) == :ok
+
+      wait_until(fn -> JobRunner.running_job_ids(runner) == [] end)
+      refute_receive {:job_out, "job:finished", %{"job_id" => "j1"}}, 500
+    end
+  end
 end

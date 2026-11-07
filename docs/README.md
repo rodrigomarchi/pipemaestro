@@ -67,6 +67,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0040 | [O diagrama é a visão padrão do pipeline](adr/0040-diagrama-do-pipeline.md) | Aceita |
 | 0041 | [Continuar a sessão da etapa anterior](adr/0041-continuar-a-sessao-da-etapa-anterior.md) | Aceita |
 | 0042 | [Arquivos gerados pela etapa sobem como anexos](adr/0042-arquivos-gerados-pela-etapa.md) | Aceita |
+| 0043 | [Runner resiliente a reinícios e à atualização](adr/0043-runner-resiliente-a-reinicios.md) | Aceita |
 
 ## Specs
 

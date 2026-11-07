@@ -338,7 +338,9 @@ defmodule PipeMaestro.JobsTest do
       assert [%Job{id: queued_id}] = Jobs.reconcile(ctx.runner, [alive.id, "garbage"])
       assert queued_id == queued.id
 
-      assert %Job{status: :failed, error: "O runner" <> _} = Jobs.get_job!(ctx.workspace, lost.id)
+      assert %Job{status: :failed, error: "Perdido: o runner" <> _} =
+               Jobs.get_job!(ctx.workspace, lost.id)
+
       assert %Job{status: :running} = Jobs.get_job!(ctx.workspace, alive.id)
     end
   end
