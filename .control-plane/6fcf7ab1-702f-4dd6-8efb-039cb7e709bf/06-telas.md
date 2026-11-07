@@ -22,3 +22,11 @@ A tarefa mudou telas (`runner_channel`, `task_components`, `runner_live/log_tab`
   com as telas vizinhas.
 
 Nada precisou de ajuste visual.
+
+## Repetição da etapa
+
+- `make e2e` de novo (portas 4713/4714): 29 passaram e 1 falhou
+  (`integrations-issue-to-task`, `proposal-issue` não apareceu a tempo). A spec não toca
+  nas telas desta tarefa; rodada sozinha, passou (exit 0). Tratada como oscilação do ambiente.
+- A colisão das portas fixas 4013/4014 entre worktrees fica para uma tarefa separada.
+- Screenshots e achados visuais acima continuam valendo; nenhum código mudou.
