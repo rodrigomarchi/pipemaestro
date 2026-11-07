@@ -123,6 +123,21 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
   relacionados ficam lado a lado (`xl:grid-cols-2`); diagramas, tabelas e formulários
   ocupam a linha inteira.
 
+## Central de notificações no shell
+
+- O sino fica no top bar de `Layouts.app`, antes do seletor de tema, e abre um
+  `slide_over` do Petal com as abas "Em andamento" e "Notificações"
+  ([ADR 0041](../adr/0041-central-de-notificacoes.md)).
+- O hook de `on_mount(:require_workspace)` (`PipeMaestroWeb.NotificationHooks`) mantém
+  `@notification_center`. **Toda tela do workspace o repassa** a `Layouts.app`
+  (`notification_center={@notification_center}`), como `pending_decisions`. Uma tela
+  nova que esquecer mostra o sino zerado, e o teste das rotas do workspace falha.
+- O painel é um LiveComponent (`PipeMaestroWeb.NotificationCenter`) e trata os próprios
+  eventos com `phx-target={@myself}`. Por ser um overlay, as abas dele não usam
+  `?aba=`.
+- Os itens (`PipeMaestroWeb.NotificationComponents`) servem ao painel e à página
+  `/notifications`. Tempos que andam usam `phx-hook="Elapsed"` com `data-since`.
+
 ## Sidebar
 
 - A sidebar abre ou fecha para uma faixa de ícones pelo botão "Recolher menu" no pé

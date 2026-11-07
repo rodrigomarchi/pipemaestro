@@ -39,6 +39,11 @@ tarefa parada ou encerrada sempre aceita um novo prompt.
 | `canceled` | Cancelada por uma pessoa. |
 | `failed` | Reservado; hoje as falhas levam a `awaiting_decision`. |
 
+Entrar em `awaiting_decision` e terminar (`succeeded`, `failed`, `canceled`) gera, além do
+toast e da notificação do navegador, uma notificação guardada na caixa do criador e do
+dono da decisão; sem nenhum dos dois no workspace, vai para os admins
+([ADR 0041](../adr/0041-central-de-notificacoes.md)).
+
 ## Etapa (tentativa: `StageRun`)
 
 Cada tentativa é um `StageRun` com um job. Quando o job termina, o gate decide:
