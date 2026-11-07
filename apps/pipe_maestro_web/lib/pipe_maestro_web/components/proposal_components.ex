@@ -87,9 +87,9 @@ defmodule PipeMaestroWeb.ProposalComponents do
               <code class="break-all text-xs text-gray-800 dark:text-gray-100">
                 {check.command}
               </code>
-              <p :if={check.note != ""} class="text-xs text-gray-500 dark:text-gray-400">
-                {check.note}
-              </p>
+              <div :if={check.note != ""} class="text-xs text-gray-500 dark:text-gray-400">
+                {Markdown.inline_html(check.note)}
+              </div>
             </div>
           </li>
         </ul>

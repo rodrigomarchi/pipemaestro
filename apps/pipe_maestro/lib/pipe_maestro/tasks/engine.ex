@@ -107,6 +107,8 @@ defmodule PipeMaestro.Tasks.Engine do
   @doc """
   What the next attempt of a stage is told about the one that failed: the
   error, what the agent said it did, and the output of the gates not met.
+  It is Markdown: each gate's output goes in a code block, read as is by the
+  agent and on the task's page.
   """
   @spec feedback(String.t() | nil, String.t() | nil, [map()] | nil) :: String.t()
   def feedback(error, summary, gates) do
@@ -115,7 +117,8 @@ defmodule PipeMaestro.Tasks.Engine do
         if gate["platform"],
           do: "#{gate["command"]}: #{gate["message"]}",
           else:
-            "Saída de `#{gate["command"]}` (código #{gate["exit_code"]}):\n#{tail(gate["output"])}"
+            "Saída de `#{gate["command"]}` (código #{gate["exit_code"]}):\n" <>
+              code_block(tail(gate["output"]))
       end
 
     [
@@ -125,6 +128,18 @@ defmodule PipeMaestro.Tasks.Engine do
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join("\n\n")
+  end
+
+  # A fence longer than any run of backticks in the text, so it cannot close early.
+  defp code_block(text) do
+    longest =
+      ~r/`+/
+      |> Regex.scan(text)
+      |> Enum.map(fn [run] -> String.length(run) end)
+      |> Enum.max(fn -> 0 end)
+
+    fence = String.duplicate("`", max(3, longest + 1))
+    "#{fence}\n#{text}\n#{fence}"
   end
 
   defp tail(nil), do: ""

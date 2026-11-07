@@ -62,6 +62,15 @@ defmodule PipeMaestroWeb.JobComponentsTest do
   end
 
   describe "the one-line summary of an icon" do
+    test "a prompt's summary is its first line with text, without Markdown marks" do
+      assert JobComponents.prompt_summary("\n# Corrigir o **login**\n\nresto") ==
+               "Corrigir o login"
+
+      assert JobComponents.prompt_summary("- use `mix test`") == "use mix test"
+      assert JobComponents.prompt_summary("**/*.ex") == "**/*.ex"
+      assert JobComponents.prompt_summary(String.duplicate("a", 100), 10) == "aaaaaaaaa…"
+    end
+
     test "a tool says what it does: a command's purpose, a path, a pattern" do
       summary = fn name, input ->
         JobComponents.event_summary(ev(1, "tool_use", %{"name" => name, "input" => input}))
@@ -363,6 +372,20 @@ defmodule PipeMaestroWeb.JobComponentsTest do
   end
 
   describe "a panel shows the event in full" do
+    test "another tool: short arguments in a line, long text as Markdown, lists as JSON" do
+      html =
+        tool_panel("Task", %{
+          "description" => "Explora o login",
+          "prompt" => "Leia o **login** e diga:\n\n- onde valida",
+          "todos" => [%{"content" => "a"}],
+          "limit" => nil
+        })
+
+      assert html =~ "Explora o login"
+      assert html =~ "<strong>login</strong>"
+      assert html =~ ~r/<code class="language-json[^"]*">\[\n  \{\n    &quot;content&quot;/
+    end
+
     test "the session says which credential and permission mode it ran with" do
       html =
         panel_html("system", %{

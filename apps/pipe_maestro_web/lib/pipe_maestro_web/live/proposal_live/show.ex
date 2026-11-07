@@ -27,7 +27,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   alias PipeMaestro.Pipelines.Pipeline
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals.DecisionKind
-  alias PipeMaestroWeb.{Markdown, PipelineExplorer, QuestionnaireComponents}
+  alias PipeMaestroWeb.{ChangesetErrors, Markdown, PipelineExplorer, QuestionnaireComponents}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -297,11 +297,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
       {:error, changeset} ->
         message =
-          changeset
-          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
-          |> Map.values()
-          |> List.flatten()
-          |> Enum.join("; ")
+          ChangesetErrors.to_text(changeset)
 
         {:noreply, put_flash(socket, :error, "Não foi possível pedir de novo: #{message}")}
     end
@@ -748,7 +744,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               data-testid="proposal-auto-approve-skipped"
             >
               <p class="font-medium">Não foi criada automaticamente:</p>
-              <p class="whitespace-pre-line">{@auto_approve["reason"]}</p>
+              <div class="prose prose-sm max-w-none text-inherit dark:prose-invert">
+                {Markdown.to_html(@auto_approve["reason"])}
+              </div>
             </.alert>
             <div class="mt-5 flex justify-end">
               <.button
@@ -803,7 +801,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-200"
               data-testid="proposal-task-questions"
             >
-              <li :for={question <- @result.questions}>{question}</li>
+              <li :for={question <- @result.questions}>{Markdown.inline_html(question)}</li>
             </ul>
             <p
               class="mt-4 flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300"
@@ -935,7 +933,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
                   <.icon name={action_icon(alt.action)} class="size-4 text-gray-400" />
                   {action_label(alt.action)}
                 </p>
-                <p class="mt-0.5 text-gray-600 dark:text-gray-300">{alt.reason}</p>
+                <div class="mt-0.5 text-gray-600 dark:text-gray-300">
+                  {Markdown.inline_html(alt.reason)}
+                </div>
               </li>
             </ul>
           </.card_content>
@@ -1000,8 +1000,12 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
             <ul class="space-y-3" data-testid="proposal-changes">
               <li :for={change <- @result.changes} class="text-sm">
                 <p class="font-medium text-gray-900 dark:text-white">{change.where}</p>
-                <p class="text-gray-700 dark:text-gray-200">{change.what}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">{change.why}</p>
+                <div class="text-gray-700 dark:text-gray-200">
+                  {Markdown.inline_html(change.what)}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">
+                  {Markdown.inline_html(change.why)}
+                </div>
               </li>
             </ul>
           </.card_content>

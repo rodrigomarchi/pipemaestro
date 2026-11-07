@@ -592,11 +592,15 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                     </.button>
                   </div>
                 </div>
-                <pre
+                <div
                   :if={@open_payload && @open_payload.id == delivery.id}
-                  class="mt-2 max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"
+                  id={"delivery-payload-#{delivery.id}"}
+                  phx-hook="Highlight"
+                  class="mt-2"
                   data-testid={"delivery-payload-#{key(delivery.external_id)}"}
-                >{JSON.encode!(@open_payload.payload)}</pre>
+                >
+                  <pre class="max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"><code class="language-json text-gray-800 dark:text-gray-100">{Jason.encode!(@open_payload.payload, pretty: true)}</code></pre>
+                </div>
               </li>
             </ul>
           </.card_content>

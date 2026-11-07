@@ -62,7 +62,7 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
           </ul>
           <p :if={@answers} class="mt-3 text-sm text-gray-900 dark:text-white">
             <span class="font-medium">Resposta:</span>
-            {Questionnaire.answer_text(Enum.at(@answers, n))}
+            {Markdown.inline_html(Questionnaire.answer_text(Enum.at(@answers, n)))}
           </p>
         </.card_content>
       </.card>
@@ -186,9 +186,9 @@ defmodule PipeMaestroWeb.QuestionnaireComponents do
             (@answers["respostas"] || []) ++ List.duplicate(nil, 4)
           )
       }>
-        <span class="text-gray-600 dark:text-gray-300">{question["pergunta"]}</span>
+        <span class="text-gray-600 dark:text-gray-300">{Markdown.inline_html(question["pergunta"])}</span>
         <span class="font-medium text-gray-900 dark:text-white">
-          → {Questionnaire.answer_text(answer)}
+          → {Markdown.inline_html(Questionnaire.answer_text(answer))}
         </span>
       </li>
     </ul>

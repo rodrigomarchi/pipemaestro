@@ -14,7 +14,7 @@ defmodule PipeMaestroWeb.DecisionsLive do
 
   alias PipeMaestro.{Tasks, Workspaces}
   alias PipeMaestro.Tasks.Task
-  alias PipeMaestroWeb.{ProposalRequest, QuestionnaireLive}
+  alias PipeMaestroWeb.{Markdown, ProposalRequest, QuestionnaireLive}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -232,7 +232,9 @@ defmodule PipeMaestroWeb.DecisionsLive do
               />
             </.form>
 
-            <.alert color="warning" with_icon class="mt-3">{task.decision_reason}</.alert>
+            <.alert color="warning" with_icon class="mt-3">
+              {Markdown.inline_html(task.decision_reason)}
+            </.alert>
             <.analysis_state analysis={@questionnaires[task.id].analysis} key={task.id} />
             <.live_component
               :if={@questionnaires[task.id].questionnaire}

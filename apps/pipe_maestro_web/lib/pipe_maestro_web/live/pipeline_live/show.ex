@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.PipelineLive.Show do
   use PipeMaestroWeb, :live_view
 
   alias PipeMaestro.Pipelines
-  alias PipeMaestroWeb.PipelineExplorer
+  alias PipeMaestroWeb.{Markdown, PipelineExplorer}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -62,7 +62,7 @@ defmodule PipeMaestroWeb.PipelineLive.Show do
             data-testid="pipeline-page-version"
           />
           <span :if={@pipeline.description} class="text-gray-600 dark:text-gray-300">
-            {@pipeline.description}
+            {Markdown.inline_html(@pipeline.description)}
           </span>
         </div>
 

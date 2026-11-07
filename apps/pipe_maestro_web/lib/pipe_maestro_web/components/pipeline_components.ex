@@ -877,9 +877,9 @@ defmodule PipeMaestroWeb.PipelineComponents do
 
     ~H"""
     <div class="space-y-5" data-testid="pipeline-summary">
-      <p :if={@pipeline.description} class="text-sm text-gray-600 dark:text-gray-300">
-        {@pipeline.description}
-      </p>
+      <div :if={@pipeline.description} class="text-sm text-gray-600 dark:text-gray-300">
+        {Markdown.inline_html(@pipeline.description)}
+      </div>
       <dl class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-300">
         <div class="flex items-center gap-1" data-testid="pipeline-summary-delivery">
           <dt><.icon name={delivery_icon(@pipeline.delivery)} class="size-4" /></dt>

@@ -18,7 +18,7 @@ defmodule PipeMaestroWeb.ProposalRequest do
   import Phoenix.LiveView, only: [push_navigate: 2]
 
   alias PipeMaestro.{Audit, Pipelines, Projects, Proposals}
-  alias PipeMaestroWeb.{ProjectChoice, RunnerStatus}
+  alias PipeMaestroWeb.{ChangesetErrors, ProjectChoice, RunnerStatus}
 
   @typedoc """
   The open form: its kind, fixed fields, form, typed params, the workspace's
@@ -119,11 +119,7 @@ defmodule PipeMaestroWeb.ProposalRequest do
 
       {:error, changeset} ->
         message =
-          changeset
-          |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
-          |> Map.values()
-          |> List.flatten()
-          |> Enum.join("; ")
+          ChangesetErrors.to_text(changeset)
 
         Phoenix.LiveView.put_flash(socket, :error, "O agente não pôde sugerir: #{message}")
     end

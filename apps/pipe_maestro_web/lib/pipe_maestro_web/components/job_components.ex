@@ -468,13 +468,15 @@ defmodule PipeMaestroWeb.JobComponents do
       >
         O CLI não mostra o raciocínio nesta execução, só quanto tempo levou.
       </p>
-      <pre
+      <div
         :if={@event.data["text"] not in [nil, ""]}
         class={[
-          "mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg px-3 py-2 font-sans text-xs",
+          "prose prose-sm mt-1 max-h-64 max-w-none overflow-auto rounded-lg px-3 py-2 dark:prose-invert",
           @body
         ]}
-      >{@event.data["text"]}</pre>
+      >
+        {Markdown.to_html(@event.data["text"])}
+      </div>
     </div>
     """
   end
@@ -594,15 +596,54 @@ defmodule PipeMaestroWeb.JobComponents do
     """
   end
 
-  # Reads, searches and the rest: their arguments in one line.
+  # Reads, searches and the rest: short arguments in one line; long text (a
+  # plan, a subagent's prompt) as Markdown; lists and maps as indented JSON.
   defp tool_body(assigns) do
-    assigns = assign(assigns, parts: assigns.input |> Map.values() |> Enum.map(&to_string/1))
+    {short, long, structured} = split_input(assigns.input)
+    assigns = assign(assigns, short: short, long: long, structured: structured)
 
     ~H"""
-    <p class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
-      {Enum.join(@parts, " · ")}
+    <p
+      :if={@short != []}
+      class="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300"
+    >
+      {Enum.join(@short, " · ")}
     </p>
+    <div :for={{key, text} <- @long} class="mt-1" data-input={key}>
+      <p class="text-xs text-gray-500 dark:text-gray-400">{key}</p>
+      <div class="prose prose-sm max-h-80 max-w-none overflow-auto rounded-lg bg-gray-50 px-3 py-2 dark:prose-invert dark:bg-gray-950">
+        {Markdown.to_html(text)}
+      </div>
+    </div>
+    <div :for={{key, value} <- @structured} class="mt-1" data-input={key}>
+      <p class="text-xs text-gray-500 dark:text-gray-400">{key}</p>
+      <pre class="max-h-64 overflow-auto rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-950"><code class="language-json text-gray-800 dark:text-gray-100">{Jason.encode!(value, pretty: true)}</code></pre>
+    </div>
     """
+  end
+
+  # A text is long when it has more than a line or would not fit in one.
+  defp split_input(input) do
+    input
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.reduce({[], [], []}, fn {key, value}, {short, long, structured} ->
+      cond do
+        is_nil(value) or value == "" ->
+          {short, long, structured}
+
+        is_binary(value) and (String.contains?(value, "\n") or String.length(value) > 160) ->
+          {short, [{key, value} | long], structured}
+
+        is_map(value) or is_list(value) ->
+          {short, long, [{key, value} | structured]}
+
+        true ->
+          {[to_string(value) | short], long, structured}
+      end
+    end)
+    |> then(fn {short, long, structured} ->
+      {Enum.reverse(short), Enum.reverse(long), Enum.reverse(structured)}
+    end)
   end
 
   @doc ~s(How the CLI signed in, from its `apiKeySource`: "none" is the login of whoever ran `claude`.)
@@ -852,10 +893,26 @@ defmodule PipeMaestroWeb.JobComponents do
   def format_cost(cost) when is_float(cost), do: cost |> Decimal.from_float() |> format_cost()
   def format_cost(cost) when is_integer(cost), do: cost |> Decimal.new() |> format_cost()
 
-  @doc "The first line of a prompt, cut to `max` characters."
+  @doc """
+  The first line of a prompt with text, cut to `max` characters, without its
+  Markdown marks (a heading's `#`, a list's `-`, emphasis and code ticks).
+  """
   @spec prompt_summary(String.t(), pos_integer()) :: String.t()
   def prompt_summary(prompt, max \\ 80) do
-    line = prompt |> String.split("\n", parts: 2) |> hd() |> String.trim()
+    line =
+      prompt
+      |> String.split("\n")
+      |> Enum.map(&plain_line/1)
+      |> Enum.find("", &(&1 != ""))
+
     if String.length(line) > max, do: String.slice(line, 0, max - 1) <> "…", else: line
+  end
+
+  defp plain_line(line) do
+    line
+    |> String.trim()
+    |> String.replace(~r/^(#+|>|[-*+]|\d+\.)\s+/, "")
+    |> String.replace(~r/\*\*(\S.*?)\*\*|`([^`]+)`/, "\\1\\2")
+    |> String.trim()
   end
 end

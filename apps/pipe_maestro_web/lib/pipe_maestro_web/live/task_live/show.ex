@@ -842,7 +842,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
               >
                 <.card_content>
                   <.alert color="warning" with_icon data-testid="decision-reason">
-                    {@task.decision_reason}
+                    {Markdown.inline_html(@task.decision_reason)}
                   </.alert>
                   <.analysis_state analysis={@questionnaire.analysis} />
                   <.live_component
@@ -1032,9 +1032,12 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     class="my-1 space-y-1 text-sm"
                     data-testid={"task-decision-answers-#{n}"}
                   />
-                  <p :if={decision.instructions} class="text-gray-600 dark:text-gray-300">
-                    {decision.instructions}
-                  </p>
+                  <div
+                    :if={decision.instructions}
+                    class="prose prose-sm max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
+                  >
+                    {Markdown.to_html(decision.instructions)}
+                  </div>
                   <p class="text-xs text-gray-500 dark:text-gray-400">
                     {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"}
                     <span :if={decision.decided_via} data-testid={"task-decision-via-#{n}"}>
@@ -1290,7 +1293,13 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       <summary class="cursor-pointer text-warning-800 dark:text-warning-300">
         Feedback da tentativa anterior
       </summary>
-      <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-800 dark:text-gray-200">{@run.feedback}</pre>
+      <div
+        id={"feedback-#{@run.id}"}
+        phx-hook="Highlight"
+        class="prose prose-sm mt-2 max-h-80 max-w-none overflow-auto dark:prose-invert"
+      >
+        {Markdown.to_html(@run.feedback)}
+      </div>
     </details>
 
     <div
@@ -1319,6 +1328,23 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     >
       {Markdown.inline_html(@run.summary)}
     </div>
+
+    <details
+      :if={@run.structured_output not in [nil, %{}]}
+      id={"stage-run-output-#{@run.id}"}
+      phx-mounted={JS.ignore_attributes(["open"])}
+      class="text-sm"
+      data-testid={"stage-run-output-#{@run.key}-#{@run.attempt}"}
+    >
+      <summary class="cursor-pointer text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
+        Resposta completa do agente
+      </summary>
+      <.agent_output
+        id={"stage-run-output-body-#{@run.id}"}
+        text={Jason.encode!(@run.structured_output)}
+        class="mt-2 rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-950"
+      />
+    </details>
 
     <.agent_output
       :if={plain_result?(@run)}
