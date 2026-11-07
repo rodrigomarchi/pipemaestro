@@ -1,6 +1,6 @@
 /**
  * @section Tarefas e pipelines
- * @flow A [todo] What the agent copies to $CP_FILES_DIR reaches the task: an image as a thumbnail that opens, a CSV downloaded as an attachment, every file of the task in the "Anexos" tab, and nothing of it in the worktree's git
+ * @flow A [done] What the agent copies to $CP_FILES_DIR reaches the task: an image as a thumbnail that opens, a CSV downloaded as an attachment, every file of the task in the "Anexos" tab, and nothing of it in the worktree's git
  */
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -99,9 +99,11 @@ test.describe("Task files", () => {
     expect(csv.headers()["content-disposition"]).toMatch(/^attachment;/);
     expect(await csv.text()).toBe("tela,ok\nlogin,sim\n");
 
-    // Someone of another workspace gets nothing.
+    // Someone without a session gets nothing: sent to sign in, not the file.
     const stranger = await browser.newContext();
-    expect((await stranger.request.get(csvHref!)).status()).not.toBe(200);
+    const refused = await stranger.request.get(csvHref!, { maxRedirects: 0 });
+    expect(refused.status()).toBe(302);
+    expect(refused.headers()["location"]).toContain("/login");
     await stranger.close();
 
     // The "Anexos" tab gathers every file of the task, by stage and attempt.
