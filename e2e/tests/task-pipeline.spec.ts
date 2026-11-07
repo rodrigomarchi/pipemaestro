@@ -22,6 +22,7 @@ import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
 import { RunnerProcess } from "../helpers/runnerProcess";
 import { waitForLiveView } from "../helpers/liveView";
+import { expectFitsPhone } from "../helpers/phone";
 import { shot } from "../helpers/screenshots";
 import { AppPage, boardTabs } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
@@ -141,6 +142,7 @@ test.describe("Task pipeline", () => {
     await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
     await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded");
+    await expectFitsPhone(app.page, "task-succeeded");
     // The request, the files and the decisions each have a tab of their own.
     await app.page.getByTestId("task-tab-pedido").click();
     await expect(app.page.getByTestId("task-prompt-text")).toBeVisible();
@@ -228,6 +230,7 @@ test.describe("Task pipeline", () => {
       app.page.getByTestId(`decision-progress-${blockedId}`).getByTestId("diagram-dot-0"),
     ).toHaveAttribute("data-state", "awaiting");
     await shot(app.page, "decisions");
+    await expectFitsPhone(app.page, "decisions");
     await app.page.getByTestId(`decision-link-${blockedId}`).click();
     await expect(tasks.status).toHaveText("Aguardando decisão");
     await waitForLiveView(app.page);

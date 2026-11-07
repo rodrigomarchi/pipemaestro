@@ -45,3 +45,16 @@ export const Sidebar = {
     document.removeEventListener("click", this.onClick)
   },
 }
+
+// On a phone the sidebar is a sheet that locks the page's scroll (a class on
+// <body>, outside what LiveView patches) until it is closed. Following one of
+// its links navigates without closing it, so the next page would open with
+// the scroll still locked: every open sheet is closed as navigation starts.
+export const closeSheetsOnNavigation = liveSocket => {
+  window.addEventListener("phx:page-loading-start", ({detail}) => {
+    if (detail.kind !== "redirect" && detail.kind !== "patch") return
+    document.querySelectorAll('.pc-sidebar[data-mobile-open="true"]').forEach(sidebar => {
+      liveSocket.execJS(sidebar, sidebar.getAttribute("data-close"))
+    })
+  })
+}

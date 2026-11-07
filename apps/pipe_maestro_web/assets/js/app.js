@@ -24,7 +24,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/pipe_maestro_web"
 import {Highlight} from "./highlight"
-import {Sidebar} from "./sidebar"
+import {Sidebar, closeSheetsOnNavigation} from "./sidebar"
 import {MarkdownEditor} from "./markdown_editor"
 import topbar from "../vendor/topbar"
 import PetalComponents from "petal_components/assets/js/petal_components"
@@ -55,6 +55,7 @@ window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
 // connect if there are any LiveViews on the page
+closeSheetsOnNavigation(liveSocket)
 liveSocket.connect()
 
 // expose liveSocket on window for web console debug logs and latency simulation:
