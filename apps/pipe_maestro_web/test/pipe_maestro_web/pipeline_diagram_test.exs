@@ -113,9 +113,9 @@ defmodule PipeMaestroWeb.PipelineDiagramTest do
       diagram = PipelineDiagram.build(pipeline([stage("a"), stage("b", rules: rules)]))
 
       assert diagram.rail.edges == [
-               %{index: 0, kind: :failure, label: "esgotou ou bloqueou"},
-               %{index: 1, kind: :failure, label: "esgotou ou bloqueou"},
-               %{index: 1, kind: :rule, label: "risco == alto"}
+               %{index: 0, kind: :failure, label: "esgotou ou bloqueou", active?: false},
+               %{index: 1, kind: :failure, label: "esgotou ou bloqueou", active?: false},
+               %{index: 1, kind: :rule, label: "risco == alto", active?: false}
              ]
     end
 
@@ -161,6 +161,106 @@ defmodule PipeMaestroWeb.PipelineDiagramTest do
                {"hero-arrow-path", "2 tentativas"},
                {"hero-clock", "60 min"}
              ]
+    end
+  end
+
+  describe "build/2 with a task's states" do
+    test "each node takes its state; the rail lights the edges of a node that waits" do
+      rules = [%{"field" => "risco", "op" => "==", "value" => "alto"}]
+
+      diagram =
+        PipelineDiagram.build(pipeline([stage("a"), stage("b", rules: rules), stage("c")]),
+          states: %{0 => :passed, 1 => :awaiting}
+        )
+
+      assert [[%{state: :passed}], [%{state: :awaiting}], [%{state: :pending}]] =
+               Enum.map(diagram.steps, & &1.nodes)
+
+      assert [
+               %{index: 0, active?: false},
+               %{index: 1, active?: true},
+               %{index: 1, active?: true} | _
+             ] =
+               diagram.rail.edges
+
+      assert diagram.waiting? == true
+    end
+
+    test "without states, nodes have none and nothing is lit" do
+      diagram = PipelineDiagram.build(pipeline([stage("a")]))
+      assert [%{nodes: [%{state: nil}]}] = diagram.steps
+      assert diagram.waiting? == false
+    end
+  end
+
+  describe "build/2 with metrics" do
+    test "a node shows the metrics given for it" do
+      diagram =
+        PipelineDiagram.build(pipeline([stage("a"), stage("b")]),
+          metrics: %{1 => [{"hero-banknotes", "US$ 1.20"}]}
+        )
+
+      assert [[%{metrics: []}], [%{metrics: [{"hero-banknotes", "US$ 1.20"}]}]] =
+               Enum.map(diagram.steps, & &1.nodes)
+    end
+  end
+
+  describe "build/2 compared to another version" do
+    test "marks the stages added and changed, and names the ones removed" do
+      before = pipeline([stage("a"), stage("b"), stage("gone")])
+      revised = pipeline([stage("a"), stage("b", prompt: "outro"), stage("new")])
+
+      diagram = PipelineDiagram.build(revised, compare_to: before)
+
+      assert [[%{diff: nil}], [%{diff: :changed}], [%{diff: :added}]] =
+               Enum.map(diagram.steps, & &1.nodes)
+
+      assert diagram.removed == ["gone"]
+    end
+  end
+
+  describe "for_task/1 and task_states/1" do
+    alias PipeMaestro.Tasks.{StageRun, Task}
+
+    defp task(attrs) do
+      struct(
+        %Task{
+          pipeline_name: "Bug",
+          stages: [stage("a"), stage("b"), stage("c")],
+          pipeline_context: %{
+            "delivery" => "pr",
+            "max_cost_usd" => "5.00",
+            "system_prompt" => "x"
+          },
+          current_stage: 0,
+          status: :running,
+          stage_runs: []
+        },
+        attrs
+      )
+    end
+
+    test "the pipeline a task runs: its snapshot of stages and context" do
+      pipeline = PipelineDiagram.for_task(task([]))
+
+      assert %Pipeline{name: "Bug", delivery: "pr", system_prompt: "x"} = pipeline
+      assert Decimal.equal?(pipeline.max_task_cost_usd, Decimal.new("5.00"))
+      assert length(pipeline.stages) == 3
+    end
+
+    test "each stage's state: its last attempt, waiting where the task waits, or pending" do
+      runs = [
+        %StageRun{index: 0, attempt: 1, status: :failed},
+        %StageRun{index: 0, attempt: 2, status: :passed},
+        %StageRun{index: 1, attempt: 1, status: :blocked}
+      ]
+
+      assert PipelineDiagram.task_states(task(stage_runs: runs, current_stage: 1)) ==
+               %{0 => :passed, 1 => :blocked, 2 => :pending}
+
+      assert PipelineDiagram.task_states(
+               task(stage_runs: runs, current_stage: 1, status: :awaiting_decision)
+             ) == %{0 => :passed, 1 => :awaiting, 2 => :pending}
     end
   end
 end
