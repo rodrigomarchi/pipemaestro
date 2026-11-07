@@ -63,6 +63,11 @@ export class NotificationsPage {
     return this.page.getByTestId(`notifications-item-${subjectId}-${kind}`);
   }
 
+  /** An item inside the panel only (the notifications page repeats the same ids). */
+  panelItem(subjectId: string, kind: NotificationKind): Locator {
+    return this.panel.getByTestId(`notifications-item-${subjectId}-${kind}`);
+  }
+
   /** Opens the panel from the bell, on the running tab. */
   async open() {
     await this.bell.click();

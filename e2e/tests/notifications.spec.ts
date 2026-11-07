@@ -159,7 +159,7 @@ test.describe("Notification center", () => {
     await center.open();
     await shot(app.page, "panel-active-narrow");
     await center.inboxTab.click();
-    await expect(center.item(doneId, "task-succeeded")).toBeVisible();
+    await expect(center.panelItem(doneId, "task-succeeded")).toBeVisible();
     await shot(app.page, "panel-inbox-narrow");
     await center.close();
     if (viewport) await app.page.setViewportSize(viewport);
