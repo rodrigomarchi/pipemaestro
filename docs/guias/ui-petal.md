@@ -99,6 +99,36 @@ layout) e `loading="lazy"`, salvo a do hero (`eager`). As imagens são geradas p
   root layout antes do primeiro paint. Use `dark:` normalmente; a troca é feita por
   `<.color_scheme_switch>`.
 
+## Telas em abas
+
+Uma tela que empilha assuntos diferentes (a tarefa, a execução, a proposta, a
+integração, o uso) se divide em abas, cada uma focada num assunto:
+
+- A aba escolhida vem do parâmetro `?aba=`, lido em `handle_params/3`; um valor
+  ausente ou inválido cai na aba padrão (`TabComponents.chosen/3`). Assim o reload e
+  o link compartilhado abrem a mesma aba.
+- `PipeMaestroWeb.TabComponents.page_tabs/1` desenha a fileira (`<.tabs>`/`<.tab>`
+  do Petal com `live_patch`, ícone e contador opcional) e `tab_panel/1` embrulha o
+  conteúdo de cada aba. Os test ids seguem o prefixo da tela:
+  `<tela>-tab-<aba>`, `<tela>-tab-count-<aba>` e `<tela>-panel-<aba>`.
+- O painel de uma aba não escolhida fica na página, escondido: um stream dentro dele
+  (a linha do tempo ao vivo) perderia o que mostrou se saísse do DOM. Uma tela cujas
+  abas leem dados próprios carrega só a aba aberta (`RunnerLive`).
+- O que vale para a tela toda (status, totais, filtros, alertas) fica acima das abas.
+
+## Texto do agente e de pessoas
+
+- Prompts, resumos, motivos, instruções, perguntas e artefatos são Markdown:
+  `PipeMaestroWeb.Markdown.to_html/1` para blocos, `inline_html/1` para uma linha
+  (sem o `<p>` em volta). Saída de comando, log, diff e caminho continuam em
+  `font-mono`, como texto.
+- A resposta final de uma execução pode ser JSON (a saída estruturada de uma
+  etapa). `PipeMaestroWeb.AgentOutput.agent_output/1` mostra um objeto JSON como
+  campos (status em badge, texto em Markdown, o resto como JSON indentado) e o resto
+  como Markdown.
+- JSON mostrado a uma pessoa vai indentado num `<code class="language-json">` dentro
+  de um elemento com `phx-hook="Highlight"`, que o colore.
+
 ## Integração (o que não é óbvio)
 
 - `@plugin "@tailwindcss/forms"` é obrigatório: as classes `pc-*` de input só definem

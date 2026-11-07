@@ -15,6 +15,7 @@ defmodule PipeMaestroWeb.JobLive do
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.AuditComponents
   import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
+  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
 
   alias PipeMaestro.{Insights, Jobs}
   alias PipeMaestro.Jobs.Job
@@ -182,23 +183,14 @@ defmodule PipeMaestroWeb.JobLive do
 
       <div class="grid gap-6 lg:grid-cols-3">
         <div class="min-w-0 space-y-6 lg:col-span-2">
-          <.tabs variant="underline" class="overflow-x-auto" data-testid="job-tabs">
-            <.tab
-              :for={{id, label, icon} <- job_tabs(@insights)}
-              link_type="live_patch"
-              to={~p"/w/#{@current_scope.workspace.slug}/jobs/#{@job.id}?aba=#{id}"}
-              is_active={@tab == id}
-              variant="underline"
-              data-testid={"job-tab-#{id}"}
-            >
-              <.icon name={icon} class="mr-1.5 size-4" /> {label}
-            </.tab>
-          </.tabs>
+          <.page_tabs
+            tabs={job_tabs(@insights)}
+            active={@tab}
+            path={&~p"/w/#{@current_scope.workspace.slug}/jobs/#{@job.id}?aba=#{&1}"}
+            testid="job"
+          />
 
-          <%!-- Every tab stays in the page, hidden when not chosen: the
-               timeline is a stream, and a stream removed from the page loses
-               what it showed. --%>
-          <div class={@tab != "resultado" && "hidden"} data-testid="job-panel-resultado">
+          <.tab_panel id="resultado" active={@tab} testid="job">
             <.card variant="outline">
               <.card_content>
                 <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400">
@@ -227,9 +219,9 @@ defmodule PipeMaestroWeb.JobLive do
                 >{@job.error}</pre>
               </.card_content>
             </.card>
-          </div>
+          </.tab_panel>
 
-          <div class={@tab != "prompt" && "hidden"} data-testid="job-panel-prompt">
+          <.tab_panel id="prompt" active={@tab} testid="job">
             <.card variant="outline">
               <.card_content>
                 <div
@@ -242,9 +234,9 @@ defmodule PipeMaestroWeb.JobLive do
                 </div>
               </.card_content>
             </.card>
-          </div>
+          </.tab_panel>
 
-          <div class={@tab != "linha-do-tempo" && "hidden"} data-testid="job-panel-linha-do-tempo">
+          <.tab_panel id="linha-do-tempo" active={@tab} testid="job">
             <.card variant="outline">
               <.card_header title="Linha do tempo" description="O que o agente fez, em ordem.">
                 <:action>
@@ -278,15 +270,11 @@ defmodule PipeMaestroWeb.JobLive do
                 <.typing :if={@typing} text={@typing} />
               </.card_content>
             </.card>
-          </div>
+          </.tab_panel>
 
-          <div
-            :if={@insights}
-            class={@tab != "auditoria" && "hidden"}
-            data-testid="job-panel-auditoria"
-          >
+          <.tab_panel :if={@insights} id="auditoria" active={@tab} testid="job">
             <.job_audit job={@job} insights={@insights} />
-          </div>
+          </.tab_panel>
         </div>
 
         <.card variant="outline" class="h-fit">

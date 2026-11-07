@@ -15,11 +15,14 @@ defmodule PipeMaestroWeb.ChangesetErrors do
   end
 
   defp interpolate({message, opts}) do
-    Regex.replace(~r/%\{(\w+)\}/, message, fn whole, key ->
-      Enum.find_value(opts, whole, fn {name, value} ->
-        if to_string(name) == key, do: to_string(value)
-      end)
-    end)
+    Regex.replace(~r/%\{(\w+)\}/, message, fn whole, key -> option(opts, key, whole) end)
+  end
+
+  defp option(opts, key, default) do
+    case Enum.find(opts, fn {name, _value} -> to_string(name) == key end) do
+      {_name, value} -> to_string(value)
+      nil -> default
+    end
   end
 
   defp lines(errors, path) when is_map(errors) do

@@ -33,6 +33,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
   import PipeMaestroWeb.TaskComponents
+  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
 
   import PipeMaestroWeb.QuestionnaireComponents,
     only: [analysis_state: 1, answer_list: 1, decode_answers: 1]
@@ -47,7 +48,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     PipelineDiagram,
     ProposalRequest,
     QuestionnaireLive,
-    RunnerStatus
+    RunnerStatus,
+    TabComponents
   }
 
   import PipeMaestroWeb.PipelineComponents,
@@ -78,9 +80,31 @@ defmodule PipeMaestroWeb.TaskLive.Show do
      |> load_online()
      |> load_decisions()
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
-     |> assign(redo: nil)
+     |> assign(redo: nil, tab: "etapas")
      |> load_rerun()
      |> follow_running_job()}
+  end
+
+  # The tabs, by their `aba` parameter: the stages (with the decision to take
+  # and what to do next), the request, the files changed and the decisions
+  # taken.
+  @tabs [
+    {"etapas", "Etapas", "hero-queue-list"},
+    {"pedido", "Pedido", "hero-document-text"},
+    {"arquivos", "Arquivos", "hero-document-duplicate"},
+    {"decisoes", "Decisões", "hero-hand-raised"}
+  ]
+
+  @impl true
+  def handle_params(params, _uri, socket),
+    do: {:noreply, assign(socket, tab: TabComponents.chosen(@tabs, params["aba"], "etapas"))}
+
+  defp task_tabs(task, decisions) do
+    Enum.map(@tabs, fn
+      {"arquivos", label, icon} -> {"arquivos", label, icon, length(task_files(task))}
+      {"decisoes", label, icon} -> {"decisoes", label, icon, length(decisions)}
+      tab -> tab
+    end)
   end
 
   @impl true
@@ -589,14 +613,6 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="task-pipeline-name">
                   {@task.pipeline_name} · v{@task.pipeline_version} · {stage_progress(@task)}
                 </p>
-                <div
-                  id="task-prompt-text"
-                  phx-hook="Highlight"
-                  class="prose prose-sm mt-2 max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
-                  data-testid="task-prompt-text"
-                >
-                  {Markdown.to_html(@task.prompt)}
-                </div>
               </div>
               <.task_status task={@task} data-testid="task-status" />
             </div>
@@ -689,32 +705,6 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 </dd>
               </div>
             </dl>
-            <details
-              :if={@task.project}
-              id="task-project-snapshot"
-              class="mt-4 text-sm"
-              data-testid="task-project-snapshot"
-              phx-mounted={JS.ignore_attributes(["open"])}
-            >
-              <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
-                Retrato do projeto quando a tarefa começou
-              </summary>
-              <dl class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                <div :for={
-                  {label, value} <- [
-                    {"Setup", @task.project["setup_command"]},
-                    {"Testes", @task.project["test_command"]},
-                    {"Lint", @task.project["lint_command"]},
-                    {"Copiar para o worktree", Enum.join(@task.project["copy_paths"] || [], ", ")}
-                  ]
-                }>
-                  <dt class="text-gray-500 dark:text-gray-400">{label}</dt>
-                  <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
-                    {if value in [nil, ""], do: "—", else: value}
-                  </dd>
-                </div>
-              </dl>
-            </details>
             <.alert
               :if={Tasks.waiting_for_runner?(@task, @online)}
               color="info"
@@ -751,231 +741,413 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                 </.button>
               </div>
             </.alert>
-            <div :if={task_files(@task) != []} class="mt-4 text-sm">
-              <p class="mb-1 text-gray-500 dark:text-gray-400">Arquivos alterados na tarefa</p>
-              <.file_list files={task_files(@task)} data-testid="task-files" />
-            </div>
           </.card_content>
         </.card>
 
-        <.card variant="outline">
-          <.card_content class="!p-0">
-            <.pipeline_diagram
-              diagram={task_diagram(@task)}
-              link={&"#stage-#{&1.key}"}
-              testid="task-diagram"
-            />
-          </.card_content>
-        </.card>
+        <.page_tabs
+          tabs={task_tabs(@task, @decisions)}
+          active={@tab}
+          path={&~p"/w/#{@current_scope.workspace.slug}/tasks/#{@task.id}?aba=#{&1}"}
+          testid="task"
+        />
 
-        <ol class="relative space-y-0" data-testid="task-pipeline">
-          <li
-            :for={row <- stage_rows(@task)}
-            id={"stage-#{row.stage.key}"}
-            class="relative flex scroll-mt-20 gap-4 pb-8 last:pb-0"
-            data-testid={"stage-#{row.stage.key}"}
-          >
-            <div
-              :if={row.index < length(@task.stages) - 1}
-              class="absolute left-4 top-9 -bottom-0 w-px bg-gray-200 dark:bg-gray-800"
-              aria-hidden="true"
-            />
-            <.stage_state_marker state={row.state} number={row.index + 1} />
+        <.tab_panel id="etapas" active={@tab} testid="task" class="space-y-6">
+          <.card variant="outline">
+            <.card_content class="!p-0">
+              <.pipeline_diagram
+                diagram={task_diagram(@task)}
+                link={&"#stage-#{&1.key}"}
+                testid="task-diagram"
+              />
+            </.card_content>
+          </.card>
 
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
-                <h2 class={[
-                  "text-base font-semibold",
-                  row.state == :pending && "text-gray-400 dark:text-gray-500",
-                  row.state != :pending && "text-gray-900 dark:text-white"
-                ]}>
-                  {row.stage.name}
-                </h2>
-                <.stage_state_badge state={row.state} data-testid={"stage-state-#{row.stage.key}"} />
-                <.badge
-                  :if={row.stage.group not in [nil, ""]}
-                  size="xs"
-                  variant="outline"
-                  color="gray"
-                  label={"em paralelo · #{row.stage.group}"}
-                  data-testid={"stage-group-#{row.stage.key}"}
-                />
-                <span :if={length(row.runs) > 1} class="text-xs text-gray-500 dark:text-gray-400">
-                  {length(row.runs)} tentativas
-                </span>
-                <.button
-                  :if={redoable?(@task) and row.runs != []}
-                  size="xs"
-                  variant="ghost"
-                  color="gray"
-                  icon="hero-arrow-uturn-left"
-                  phx-click="open_redo"
-                  phx-value-index={row.index}
-                  class="ml-auto"
-                  data-testid={"stage-redo-#{row.stage.key}"}
-                >
-                  Refazer a partir daqui
-                </.button>
-              </div>
+          <ol class="relative space-y-0" data-testid="task-pipeline">
+            <li
+              :for={row <- stage_rows(@task)}
+              id={"stage-#{row.stage.key}"}
+              class="relative flex scroll-mt-20 gap-4 pb-8 last:pb-0"
+              data-testid={"stage-#{row.stage.key}"}
+            >
+              <div
+                :if={row.index < length(@task.stages) - 1}
+                class="absolute left-4 top-9 -bottom-0 w-px bg-gray-200 dark:bg-gray-800"
+                aria-hidden="true"
+              />
+              <.stage_state_marker state={row.state} number={row.index + 1} />
 
-              <div :if={row.runs != []} class="mt-3 space-y-4">
-                <.attempt
-                  :for={run <- row.runs}
-                  run={run}
-                  many={length(row.runs) > 1}
-                  live={run.job && run.job.id == @live_job_id}
-                  spent={run.job && run.job.id == @live_job_id && @live_spent}
-                  typing={@typing}
-                  streams={@streams}
-                  steps={run.job && Map.get(@timelines, run.job.id)}
-                  steps_filter={(run.job && Map.get(@step_filters, run.job.id)) || "all"}
-                  raw_artifact={MapSet.member?(@raw_artifacts, run.id)}
-                  workspace_slug={@current_scope.workspace.slug}
-                />
-              </div>
-
-              <.card
-                :if={row.state == :awaiting}
-                variant="outline"
-                class="mt-4 border-warning-300 dark:border-warning-800"
-                data-testid="decision-panel"
-              >
-                <.card_content>
-                  <.alert color="warning" with_icon data-testid="decision-reason">
-                    {Markdown.inline_html(@task.decision_reason)}
-                  </.alert>
-                  <.analysis_state analysis={@questionnaire.analysis} />
-                  <.live_component
-                    :if={@questionnaire.questionnaire}
-                    module={QuestionnaireLive}
-                    id={"questionnaire-#{@task.id}"}
-                    task_id={@task.id}
-                    questionnaire={@questionnaire.questionnaire}
-                    can_cancel={can?(@current_scope, :cancel_task, @task)}
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+                  <h2 class={[
+                    "text-base font-semibold",
+                    row.state == :pending && "text-gray-400 dark:text-gray-500",
+                    row.state != :pending && "text-gray-900 dark:text-white"
+                  ]}>
+                    {row.stage.name}
+                  </h2>
+                  <.stage_state_badge state={row.state} data-testid={"stage-state-#{row.stage.key}"} />
+                  <.badge
+                    :if={row.stage.group not in [nil, ""]}
+                    size="xs"
+                    variant="outline"
+                    color="gray"
+                    label={"em paralelo · #{row.stage.group}"}
+                    data-testid={"stage-group-#{row.stage.key}"}
                   />
-                  <details
-                    class="group mt-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-                    open={
-                      is_nil(@questionnaire.questionnaire) and @questionnaire.analysis != :running
-                    }
-                    id="decision-manual"
-                    phx-mounted={JS.ignore_attributes(["open"])}
-                    data-testid="decision-manual"
+                  <span :if={length(row.runs) > 1} class="text-xs text-gray-500 dark:text-gray-400">
+                    {length(row.runs)} tentativas
+                  </span>
+                  <.button
+                    :if={redoable?(@task) and row.runs != []}
+                    size="xs"
+                    variant="ghost"
+                    color="gray"
+                    icon="hero-arrow-uturn-left"
+                    phx-click="open_redo"
+                    phx-value-index={row.index}
+                    class="ml-auto"
+                    data-testid={"stage-redo-#{row.stage.key}"}
                   >
-                    <summary
-                      class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200"
-                      data-testid="decision-manual-toggle"
+                    Refazer a partir daqui
+                  </.button>
+                </div>
+
+                <div :if={row.runs != []} class="mt-3 space-y-4">
+                  <.attempt
+                    :for={run <- row.runs}
+                    run={run}
+                    many={length(row.runs) > 1}
+                    live={run.job && run.job.id == @live_job_id}
+                    spent={run.job && run.job.id == @live_job_id && @live_spent}
+                    typing={@typing}
+                    streams={@streams}
+                    steps={run.job && Map.get(@timelines, run.job.id)}
+                    steps_filter={(run.job && Map.get(@step_filters, run.job.id)) || "all"}
+                    raw_artifact={MapSet.member?(@raw_artifacts, run.id)}
+                    workspace_slug={@current_scope.workspace.slug}
+                  />
+                </div>
+
+                <.card
+                  :if={row.state == :awaiting}
+                  variant="outline"
+                  class="mt-4 border-warning-300 dark:border-warning-800"
+                  data-testid="decision-panel"
+                >
+                  <.card_content>
+                    <.alert color="warning" with_icon data-testid="decision-reason">
+                      {Markdown.inline_html(@task.decision_reason)}
+                    </.alert>
+                    <.analysis_state analysis={@questionnaire.analysis} />
+                    <.live_component
+                      :if={@questionnaire.questionnaire}
+                      module={QuestionnaireLive}
+                      id={"questionnaire-#{@task.id}"}
+                      task_id={@task.id}
+                      questionnaire={@questionnaire.questionnaire}
+                      can_cancel={can?(@current_scope, :cancel_task, @task)}
+                    />
+                    <details
+                      class="group mt-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                      open={
+                        is_nil(@questionnaire.questionnaire) and @questionnaire.analysis != :running
+                      }
+                      id="decision-manual"
+                      phx-mounted={JS.ignore_attributes(["open"])}
+                      data-testid="decision-manual"
                     >
-                      Decidir sem responder
-                    </summary>
-                    <div class="mt-3 flex justify-end">
-                      <.button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        icon="hero-cpu-chip"
-                        phx-click="suggest_decision"
-                        data-testid="decision-suggest"
+                      <summary
+                        class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200"
+                        data-testid="decision-manual-toggle"
                       >
-                        Sugerir com IA
-                      </.button>
-                    </div>
-                    <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
-                      <.markdown_editor
-                        id="decision-instructions"
-                        field={@decision[:instructions]}
-                        label="Instruções para continuar (opcional)"
-                        icon="hero-chat-bubble-left-right"
-                        rows={3}
-                        placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
-                        testid="decision-instructions"
-                      />
-                      <div :if={@options != []} class="mb-3">
-                        <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
-                          O agente propôs (refaz a etapa com a escolha e as instruções):
-                        </p>
-                        <div class="flex flex-wrap gap-2">
+                        Decidir sem responder
+                      </summary>
+                      <div class="mt-3 flex justify-end">
+                        <.button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          icon="hero-cpu-chip"
+                          phx-click="suggest_decision"
+                          data-testid="decision-suggest"
+                        >
+                          Sugerir com IA
+                        </.button>
+                      </div>
+                      <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
+                        <.markdown_editor
+                          id="decision-instructions"
+                          field={@decision[:instructions]}
+                          label="Instruções para continuar (opcional)"
+                          icon="hero-chat-bubble-left-right"
+                          rows={3}
+                          placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
+                          testid="decision-instructions"
+                        />
+                        <div :if={@options != []} class="mb-3">
+                          <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                            O agente propôs (refaz a etapa com a escolha e as instruções):
+                          </p>
+                          <div class="flex flex-wrap gap-2">
+                            <.button
+                              :for={{option, index} <- Enum.with_index(@options)}
+                              type="submit"
+                              name="choice"
+                              value={option}
+                              size="sm"
+                              variant="outline"
+                              color="primary"
+                              data-testid={"decision-option-#{index}"}
+                            >
+                              {option}
+                            </.button>
+                          </div>
+                        </div>
+                        <div class="flex flex-wrap justify-end gap-2">
                           <.button
-                            :for={{option, index} <- Enum.with_index(@options)}
                             type="submit"
-                            name="choice"
-                            value={option}
-                            size="sm"
+                            name="action"
+                            value="retry"
                             variant="outline"
-                            color="primary"
-                            data-testid={"decision-option-#{index}"}
+                            icon="hero-arrow-path"
+                            data-testid="decision-retry"
                           >
-                            {option}
+                            Refazer etapa
+                          </.button>
+                          <.button
+                            type="submit"
+                            name="action"
+                            value="advance"
+                            icon="hero-forward"
+                            data-testid="decision-advance"
+                          >
+                            Seguir para a próxima
                           </.button>
                         </div>
-                      </div>
-                      <div class="flex flex-wrap justify-end gap-2">
-                        <.button
-                          type="submit"
-                          name="action"
-                          value="retry"
-                          variant="outline"
-                          icon="hero-arrow-path"
-                          data-testid="decision-retry"
-                        >
-                          Refazer etapa
-                        </.button>
-                        <.button
-                          type="submit"
-                          name="action"
-                          value="advance"
-                          icon="hero-forward"
-                          data-testid="decision-advance"
-                        >
-                          Seguir para a próxima
-                        </.button>
-                      </div>
-                    </.form>
-                  </details>
-                </.card_content>
-              </.card>
-            </div>
-          </li>
-        </ol>
-
-        <.card :if={!Task.active?(@task)} variant="outline" data-testid="task-correct">
-          <.card_content>
-            <.section_heading
-              icon="hero-wrench-screwdriver"
-              title="Corrigir com um prompt"
-              description="Roda no worktree e na branch desta tarefa como uma nova etapa, com as verificações, os gates e a entrega de sempre."
-            />
-            <.alert
-              :if={no_pr?(@task)}
-              color="warning"
-              with_icon
-              class="mb-3"
-              data-testid="task-no-pr-warning"
-            >
-              A tarefa terminou sem PR: a entrega não chegou a abri-lo. Peça a correção abaixo.
-            </.alert>
-            <.form for={@correct_form} id="correct-form" phx-submit="correct">
-              <.markdown_editor
-                id="task-correct-text"
-                field={@correct_form[:prompt]}
-                label="O que fazer"
-                icon="hero-chat-bubble-bottom-center-text"
-                rows={3}
-                placeholder="Ex.: resolva o conflito com a main; o PR acusou erro no CI; ajuste o que a revisão pediu."
-                testid="task-correct-text"
-              />
-              <.rerun_runner
-                form={@correct_form}
-                runners={@runner_choices}
-                online={@online}
-                testid="task-correct-runner"
-              />
-              <div class="flex justify-end">
-                <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
+                      </.form>
+                    </details>
+                  </.card_content>
+                </.card>
               </div>
-            </.form>
-          </.card_content>
-        </.card>
+            </li>
+          </ol>
+
+          <.card
+            :if={@task.status == :running or (Task.active?(@task) and @task.pending_instructions)}
+            variant="outline"
+          >
+            <.card_content>
+              <div
+                :if={@task.pending_instructions}
+                class="mb-3 rounded-lg bg-info-50 px-3 py-2 text-sm text-info-900 dark:bg-info-950/40 dark:text-info-100"
+                data-testid="task-pending-instructions"
+              >
+                <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
+                <div class="prose prose-sm max-w-none dark:prose-invert">
+                  {Markdown.to_html(@task.pending_instructions)}
+                </div>
+              </div>
+              <.form
+                :if={@task.status == :running}
+                for={to_form(%{"text" => ""}, as: "instruct")}
+                id="instruct-form"
+                phx-submit="instruct"
+              >
+                <.markdown_editor
+                  id="task-instruct-text"
+                  field={to_form(%{"text" => ""}, as: "instruct")[:text]}
+                  label="Mensagem para a tarefa"
+                  icon="hero-chat-bubble-bottom-center-text"
+                  rows={2}
+                  placeholder="Ex.: não mexa no módulo de pagamentos."
+                  help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
+                  testid="task-instruct-text"
+                />
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                  <span
+                    :if={@task.pause_requested}
+                    class="text-sm text-warning-700 dark:text-warning-400"
+                    data-testid="task-pause-requested"
+                  >
+                    Pausa pedida: a tarefa para quando esta etapa terminar.
+                  </span>
+                  <.button
+                    :if={@task.status == :running and not @task.pause_requested}
+                    type="button"
+                    variant="outline"
+                    color="gray"
+                    icon="hero-pause"
+                    phx-click="request_pause"
+                    data-testid="task-request-pause"
+                  >
+                    Pausar depois desta etapa
+                  </.button>
+                  <.button
+                    :if={@task.status == :running}
+                    type="button"
+                    variant="outline"
+                    color="warning"
+                    icon="hero-hand-raised"
+                    phx-click="interrupt"
+                    data-confirm="Interromper a etapa em execução? A tarefa vai aguardar uma decisão: refazer com instruções, seguir ou cancelar."
+                    data-testid="task-interrupt"
+                  >
+                    Interromper agora
+                  </.button>
+                  <.button icon="hero-paper-airplane" data-testid="task-instruct">Enviar</.button>
+                </div>
+              </.form>
+            </.card_content>
+          </.card>
+
+          <.card :if={!Task.active?(@task)} variant="outline" data-testid="task-correct">
+            <.card_content>
+              <.section_heading
+                icon="hero-wrench-screwdriver"
+                title="Corrigir com um prompt"
+                description="Roda no worktree e na branch desta tarefa como uma nova etapa, com as verificações, os gates e a entrega de sempre."
+              />
+              <.alert
+                :if={no_pr?(@task)}
+                color="warning"
+                with_icon
+                class="mb-3"
+                data-testid="task-no-pr-warning"
+              >
+                A tarefa terminou sem PR: a entrega não chegou a abri-lo. Peça a correção abaixo.
+              </.alert>
+              <.form for={@correct_form} id="correct-form" phx-submit="correct">
+                <.markdown_editor
+                  id="task-correct-text"
+                  field={@correct_form[:prompt]}
+                  label="O que fazer"
+                  icon="hero-chat-bubble-bottom-center-text"
+                  rows={3}
+                  placeholder="Ex.: resolva o conflito com a main; o PR acusou erro no CI; ajuste o que a revisão pediu."
+                  testid="task-correct-text"
+                />
+                <.rerun_runner
+                  form={@correct_form}
+                  runners={@runner_choices}
+                  online={@online}
+                  testid="task-correct-runner"
+                />
+                <div class="flex justify-end">
+                  <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
+                </div>
+              </.form>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="pedido" active={@tab} testid="task">
+          <.card variant="outline">
+            <.card_content>
+              <div
+                id="task-prompt-text"
+                phx-hook="Highlight"
+                class="prose prose-sm max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
+                data-testid="task-prompt-text"
+              >
+                {Markdown.to_html(@task.prompt)}
+              </div>
+              <details
+                :if={@task.project}
+                id="task-project-snapshot"
+                class="mt-4 border-t border-gray-100 pt-4 text-sm dark:border-gray-800"
+                data-testid="task-project-snapshot"
+                phx-mounted={JS.ignore_attributes(["open"])}
+              >
+                <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
+                  Retrato do projeto quando a tarefa começou
+                </summary>
+                <dl class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                  <div :for={
+                    {label, value} <- [
+                      {"Setup", @task.project["setup_command"]},
+                      {"Testes", @task.project["test_command"]},
+                      {"Lint", @task.project["lint_command"]},
+                      {"Copiar para o worktree", Enum.join(@task.project["copy_paths"] || [], ", ")}
+                    ]
+                  }>
+                    <dt class="text-gray-500 dark:text-gray-400">{label}</dt>
+                    <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
+                      {if value in [nil, ""], do: "—", else: value}
+                    </dd>
+                  </div>
+                </dl>
+              </details>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="arquivos" active={@tab} testid="task">
+          <.card variant="outline">
+            <.card_content>
+              <p
+                :if={task_files(@task) == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="task-no-files"
+              >
+                Nenhum arquivo alterado ainda.
+              </p>
+              <.file_list
+                :if={task_files(@task) != []}
+                files={task_files(@task)}
+                data-testid="task-files"
+              />
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="decisoes" active={@tab} testid="task">
+          <.card variant="outline">
+            <.card_header title="Decisões tomadas" />
+            <.card_content>
+              <p
+                :if={@decisions == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="task-no-decisions"
+              >
+                Nenhuma decisão tomada nesta tarefa.
+              </p>
+              <ol :if={@decisions != []} class="space-y-3 text-sm" data-testid="task-decisions">
+                <li :for={{decision, n} <- Enum.with_index(@decisions)} class="flex gap-3">
+                  <.icon name="hero-hand-raised" class="mt-0.5 size-4 shrink-0 text-warning-500" />
+                  <div class="min-w-0">
+                    <p class="text-gray-900 dark:text-white">
+                      <span class="font-medium">{decision_label(decision.action)}</span>
+                      em "{stage_name(@task, decision.stage_index)}"
+                      <span :if={decision.choice}>· escolha: {decision.choice}</span>
+                    </p>
+                    <.answer_list
+                      :if={decision.answers}
+                      answers={Map.merge(decision.questions || %{}, decision.answers)}
+                      class="my-1 space-y-1 text-sm"
+                      data-testid={"task-decision-answers-#{n}"}
+                    />
+                    <div
+                      :if={decision.instructions}
+                      class="prose prose-sm max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
+                    >
+                      {Markdown.to_html(decision.instructions)}
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"}
+                      <span :if={decision.decided_via} data-testid={"task-decision-via-#{n}"}>
+                        (via {decision.decided_via})
+                      </span>
+                      · {Calendar.strftime(
+                        decision.inserted_at,
+                        "%d/%m %H:%M"
+                      )}
+                    </p>
+                  </div>
+                </li>
+              </ol>
+            </.card_content>
+          </.card>
+        </.tab_panel>
 
         <.modal
           :if={@redo}
@@ -1013,114 +1185,6 @@ defmodule PipeMaestroWeb.TaskLive.Show do
             </div>
           </.form>
         </.modal>
-
-        <.card :if={@decisions != []} variant="outline">
-          <.card_header title="Decisões tomadas" />
-          <.card_content>
-            <ol class="space-y-3 text-sm" data-testid="task-decisions">
-              <li :for={{decision, n} <- Enum.with_index(@decisions)} class="flex gap-3">
-                <.icon name="hero-hand-raised" class="mt-0.5 size-4 shrink-0 text-warning-500" />
-                <div class="min-w-0">
-                  <p class="text-gray-900 dark:text-white">
-                    <span class="font-medium">{decision_label(decision.action)}</span>
-                    em "{stage_name(@task, decision.stage_index)}"
-                    <span :if={decision.choice}>· escolha: {decision.choice}</span>
-                  </p>
-                  <.answer_list
-                    :if={decision.answers}
-                    answers={Map.merge(decision.questions || %{}, decision.answers)}
-                    class="my-1 space-y-1 text-sm"
-                    data-testid={"task-decision-answers-#{n}"}
-                  />
-                  <div
-                    :if={decision.instructions}
-                    class="prose prose-sm max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
-                  >
-                    {Markdown.to_html(decision.instructions)}
-                  </div>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"}
-                    <span :if={decision.decided_via} data-testid={"task-decision-via-#{n}"}>
-                      (via {decision.decided_via})
-                    </span>
-                    · {Calendar.strftime(
-                      decision.inserted_at,
-                      "%d/%m %H:%M"
-                    )}
-                  </p>
-                </div>
-              </li>
-            </ol>
-          </.card_content>
-        </.card>
-
-        <.card
-          :if={@task.status == :running or (Task.active?(@task) and @task.pending_instructions)}
-          variant="outline"
-        >
-          <.card_content>
-            <div
-              :if={@task.pending_instructions}
-              class="mb-3 rounded-lg bg-info-50 px-3 py-2 text-sm text-info-900 dark:bg-info-950/40 dark:text-info-100"
-              data-testid="task-pending-instructions"
-            >
-              <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
-              <div class="prose prose-sm max-w-none dark:prose-invert">
-                {Markdown.to_html(@task.pending_instructions)}
-              </div>
-            </div>
-            <.form
-              :if={@task.status == :running}
-              for={to_form(%{"text" => ""}, as: "instruct")}
-              id="instruct-form"
-              phx-submit="instruct"
-            >
-              <.markdown_editor
-                id="task-instruct-text"
-                field={to_form(%{"text" => ""}, as: "instruct")[:text]}
-                label="Mensagem para a tarefa"
-                icon="hero-chat-bubble-bottom-center-text"
-                rows={2}
-                placeholder="Ex.: não mexa no módulo de pagamentos."
-                help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
-                testid="task-instruct-text"
-              />
-              <div class="flex flex-wrap items-center justify-end gap-2">
-                <span
-                  :if={@task.pause_requested}
-                  class="text-sm text-warning-700 dark:text-warning-400"
-                  data-testid="task-pause-requested"
-                >
-                  Pausa pedida: a tarefa para quando esta etapa terminar.
-                </span>
-                <.button
-                  :if={@task.status == :running and not @task.pause_requested}
-                  type="button"
-                  variant="outline"
-                  color="gray"
-                  icon="hero-pause"
-                  phx-click="request_pause"
-                  data-testid="task-request-pause"
-                >
-                  Pausar depois desta etapa
-                </.button>
-                <.button
-                  :if={@task.status == :running}
-                  type="button"
-                  variant="outline"
-                  color="warning"
-                  icon="hero-hand-raised"
-                  phx-click="interrupt"
-                  data-confirm="Interromper a etapa em execução? A tarefa vai aguardar uma decisão: refazer com instruções, seguir ou cancelar."
-                  data-testid="task-interrupt"
-                >
-                  Interromper agora
-                </.button>
-                <.button icon="hero-paper-airplane" data-testid="task-instruct">Enviar</.button>
-              </div>
-            </.form>
-          </.card_content>
-        </.card>
       </div>
     </Layouts.app>
     """

@@ -1,16 +1,18 @@
 defmodule PipeMaestroWeb.IntegrationLive.Show do
   @moduledoc """
-  One connection to a git host: its status, the webhook's address and secret
-  for a manual setup, and its linked repositories, with the search that
-  links a new one to a project.
+  One connection to a git host: its status and, in tabs (`?aba=`), its linked
+  repositories (with the search that links a new one to a project), the
+  events the host delivered, and the webhook's address and secret for a
+  manual setup.
   """
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.IntegrationComponents
+  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
 
   alias PipeMaestro.{Integrations, Projects}
   alias PipeMaestro.Integrations.{Connection, Delivery, Ingest}
-  alias PipeMaestroWeb.IntegrationOAuth
+  alias PipeMaestroWeb.{IntegrationOAuth, TabComponents}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -29,7 +31,8 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
          show_secret: false,
          linking: false,
          delivery_status: "",
-         open_payload: nil
+         open_payload: nil,
+         tab: "repositorios"
        )
        |> reset_link()
        |> load_repos()
@@ -39,6 +42,34 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
        socket
        |> put_flash(:error, "Só admins do workspace gerenciam as integrações.")
        |> push_navigate(to: ~p"/w/#{scope.workspace.slug}")}
+    end
+  end
+
+  # The tabs, by their `aba` parameter: the linked repositories, the events
+  # the host delivered, and the webhook for a manual setup (Forgejo only: the
+  # GitHub App delivers its own).
+  @tabs [
+    {"repositorios", "Repositórios", "hero-folder"},
+    {"entregas", "Entregas", "hero-inbox-arrow-down"},
+    {"webhook", "Webhook", "hero-link"}
+  ]
+
+  @impl true
+  def handle_params(params, _uri, %{assigns: %{connection: connection}} = socket) do
+    tabs = integration_tabs(connection, [], [])
+    {:noreply, assign(socket, tab: TabComponents.chosen(tabs, params["aba"], "repositorios"))}
+  end
+
+  # A member without access is on the way out (`mount/3`).
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+
+  defp integration_tabs(%Connection{provider: provider}, repos, deliveries) do
+    for {id, label, icon} <- @tabs, id != "webhook" or provider != "github" do
+      case id do
+        "repositorios" -> {id, label, icon, length(repos)}
+        "entregas" -> {id, label, icon, length(deliveries)}
+        _webhook -> {id, label, icon}
+      end
     end
   end
 
@@ -344,315 +375,342 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
           </.card_content>
         </.card>
 
-        <.card variant="outline">
-          <.card_header
-            title="Repositórios vinculados"
-            description="Cada um ligado a um projeto: as issues viram tarefas no diretório dele."
-          >
-            <:action>
-              <.button
-                :if={!@linking}
-                size="xs"
-                icon="hero-plus"
-                phx-click="open_link"
-                data-testid="repo-link-open"
-              >
-                Vincular repositório
-              </.button>
-            </:action>
-          </.card_header>
-          <.card_content>
-            <div
-              :if={@linking}
-              class="mb-6 space-y-4 rounded-xl border border-primary-200 p-4 dark:border-primary-900"
-              data-testid="repo-link"
+        <.page_tabs
+          tabs={integration_tabs(@connection, @repos, @deliveries)}
+          active={@tab}
+          path={&~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}?aba=#{&1}"}
+          testid="integration"
+        />
+
+        <.tab_panel id="repositorios" active={@tab} testid="integration">
+          <.card variant="outline">
+            <.card_header
+              title="Repositórios vinculados"
+              description="Cada um ligado a um projeto: as issues viram tarefas no diretório dele."
             >
-              <.form
-                :let={f}
-                for={to_form(%{"query" => @search}, as: "search")}
-                id="repo-search-form"
-                phx-change="search"
-                phx-submit="search"
-              >
-                <.icon_field
-                  field={f[:query]}
-                  icon="hero-magnifying-glass"
-                  label={"Buscar no #{provider_name(@connection.provider)}"}
-                  placeholder="dono/repositório"
-                  phx-debounce="300"
-                  data-testid="repo-search"
-                />
-              </.form>
-              <p :if={@search_error} class="text-sm text-danger-600 dark:text-danger-400">
-                {@search_error}
-              </p>
-              <ul
-                :if={@picked == nil}
-                class="max-h-64 divide-y divide-gray-100 overflow-y-auto text-sm dark:divide-gray-800"
-              >
-                <li
-                  :if={@results == [] and !@search_error}
-                  class="py-2 text-gray-500 dark:text-gray-400"
+              <:action>
+                <.button
+                  :if={!@linking}
+                  size="xs"
+                  icon="hero-plus"
+                  phx-click="open_link"
+                  data-testid="repo-link-open"
                 >
-                  Nenhum repositório encontrado.
-                </li>
-                <li :for={repo <- @results} class="flex items-center justify-between gap-3 py-2">
-                  <span class="font-mono text-gray-900 dark:text-white">{repo.full_name}</span>
-                  <.button
-                    size="xs"
-                    variant="outline"
-                    color="gray"
-                    phx-click="pick"
-                    phx-value-full-name={repo.full_name}
-                    data-testid={"repo-option-#{key(repo.full_name)}"}
-                  >
-                    Escolher
-                  </.button>
-                </li>
-              </ul>
-              <.form
-                :if={@picked}
-                for={@link_form}
-                id="repo-link-form"
-                phx-submit="link"
-                class="space-y-4"
-              >
-                <input type="hidden" name="repo[full_name]" value={@picked} />
-                <p class="text-sm text-gray-600 dark:text-gray-300" data-testid="repo-picked">
-                  <.icon name="hero-code-bracket-square" class="size-4 text-primary-500" />
-                  <span class="font-mono">{@picked}</span>
-                </p>
-                <p
-                  :for={{message, _} <- Keyword.get_values(@link_form.errors, :full_name)}
-                  class="text-sm text-danger-600 dark:text-danger-400"
-                >
-                  {message}
-                </p>
-                <.icon_field
-                  field={@link_form[:project_id]}
-                  icon="hero-folder"
-                  type="select"
-                  label="Projeto"
-                  prompt="Escolha o projeto (o diretório do runner)"
-                  options={Enum.map(@projects, &{"#{&1.name} (#{&1.directory})", &1.id})}
-                  data-testid="repo-project"
-                />
-                <div class="flex justify-end gap-2">
-                  <.button type="button" size="sm" variant="ghost" color="gray" phx-click="close_link">
-                    Cancelar
-                  </.button>
-                  <.button size="sm" icon="hero-link" data-testid="repo-link-save">Vincular</.button>
-                </div>
-              </.form>
-              <div :if={!@picked} class="flex justify-end">
-                <.button type="button" size="sm" variant="ghost" color="gray" phx-click="close_link">
-                  Cancelar
+                  Vincular repositório
                 </.button>
-              </div>
-            </div>
-
-            <p
-              :if={@repos == [] and !@linking}
-              class="text-sm text-gray-500 dark:text-gray-400"
-              data-testid="no-repos"
-            >
-              Nenhum repositório vinculado ainda.
-            </p>
-            <ul :if={@repos != []} class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
-              <li
-                :for={repo <- @repos}
-                class="flex flex-wrap items-center justify-between gap-3 py-3"
-                data-testid={"repo-#{key(repo.full_name)}"}
+              </:action>
+            </.card_header>
+            <.card_content>
+              <div
+                :if={@linking}
+                class="mb-6 space-y-4 rounded-xl border border-primary-200 p-4 dark:border-primary-900"
+                data-testid="repo-link"
               >
-                <div class="min-w-0">
-                  <.link
-                    navigate={
-                      ~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}/repos/#{repo.id}"
-                    }
-                    class="font-mono font-medium text-gray-900 hover:underline dark:text-white"
-                    data-testid={"repo-link-#{key(repo.full_name)}"}
+                <.form
+                  :let={f}
+                  for={to_form(%{"query" => @search}, as: "search")}
+                  id="repo-search-form"
+                  phx-change="search"
+                  phx-submit="search"
+                >
+                  <.icon_field
+                    field={f[:query]}
+                    icon="hero-magnifying-glass"
+                    label={"Buscar no #{provider_name(@connection.provider)}"}
+                    placeholder="dono/repositório"
+                    phx-debounce="300"
+                    data-testid="repo-search"
+                  />
+                </.form>
+                <p :if={@search_error} class="text-sm text-danger-600 dark:text-danger-400">
+                  {@search_error}
+                </p>
+                <ul
+                  :if={@picked == nil}
+                  class="max-h-64 divide-y divide-gray-100 overflow-y-auto text-sm dark:divide-gray-800"
+                >
+                  <li
+                    :if={@results == [] and !@search_error}
+                    class="py-2 text-gray-500 dark:text-gray-400"
                   >
-                    {repo.full_name}
-                  </.link>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {plural(
-                      length(repo.triggers),
-                      "gatilho",
-                      "gatilhos"
-                    )}
-                  </p>
-                </div>
-                <.webhook_status repo={repo} testid={"repo-webhook-#{key(repo.full_name)}"} />
-              </li>
-            </ul>
-          </.card_content>
-        </.card>
-
-        <.card variant="outline">
-          <.card_header
-            title="Entregas"
-            description="Cada evento do host que chegou (ou que a reconciliação achou) e o que a plataforma fez com ele."
-          >
-            <:action>
-              <.form
-                :let={f}
-                for={to_form(%{"status" => @delivery_status}, as: "deliveries")}
-                id="deliveries-filter"
-                phx-change="filter_deliveries"
-              >
-                <.icon_field
-                  field={f[:status]}
-                  icon="hero-funnel"
-                  type="select"
-                  label="Status"
-                  hide_label
-                  prompt="Todas"
-                  options={for status <- Delivery.statuses(), do: {status_name(status), status}}
-                  data-testid="deliveries-status"
-                />
-              </.form>
-            </:action>
-          </.card_header>
-          <.card_content>
-            <p
-              :if={@deliveries == []}
-              class="text-sm text-gray-500 dark:text-gray-400"
-              data-testid="no-deliveries"
-            >
-              Nenhuma entrega ainda.
-            </p>
-            <ul :if={@deliveries != []} class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
-              <li
-                :for={delivery <- @deliveries}
-                class="py-3"
-                data-testid={"delivery-#{key(delivery.external_id)}"}
-              >
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div class="min-w-0">
-                    <p class="text-gray-900 dark:text-white">
-                      <.badge
-                        size="xs"
-                        variant="soft"
-                        color={status_color(delivery.status)}
-                        label={status_name(delivery.status)}
-                        data-testid={"delivery-status-#{key(delivery.external_id)}"}
-                      />
-                      <span class="ml-1">{kind_name(delivery.kind)}</span>
-                      <span
-                        :if={delivery.repo_full_name}
-                        class="font-mono text-gray-600 dark:text-gray-300"
-                      >
-                        {delivery.repo_full_name}<span :if={delivery.issue_number}>#{delivery.issue_number}</span>
-                      </span>
-                    </p>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")} · {delivery.source}
-                      <span :if={delivery.outcome}>· {delivery.outcome}</span>
-                      <.link
-                        :if={delivery.task_id}
-                        navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{delivery.task_id}"}
-                        class="text-primary-600 hover:underline dark:text-primary-400"
-                      >
-                        · abrir a tarefa
-                      </.link>
-                      <.link
-                        :if={delivery.proposal_job_id}
-                        navigate={
-                          ~p"/w/#{@current_scope.workspace.slug}/proposals/#{delivery.proposal_job_id}"
-                        }
-                        class="text-primary-600 hover:underline dark:text-primary-400"
-                        data-testid={"delivery-proposal-#{key(delivery.external_id)}"}
-                      >
-                        · abrir a triagem
-                      </.link>
-                    </p>
-                  </div>
-                  <div class="flex gap-2">
-                    <.button
-                      size="xs"
-                      variant="ghost"
-                      color="gray"
-                      icon="hero-code-bracket"
-                      phx-click="toggle_payload"
-                      phx-value-id={delivery.id}
-                      data-testid={"delivery-payload-toggle-#{key(delivery.external_id)}"}
-                    >
-                      Payload
-                    </.button>
+                    Nenhum repositório encontrado.
+                  </li>
+                  <li :for={repo <- @results} class="flex items-center justify-between gap-3 py-2">
+                    <span class="font-mono text-gray-900 dark:text-white">{repo.full_name}</span>
                     <.button
                       size="xs"
                       variant="outline"
                       color="gray"
-                      icon="hero-arrow-path"
-                      phx-click="replay"
-                      phx-value-id={delivery.id}
-                      data-testid={"delivery-replay-#{key(delivery.external_id)}"}
+                      phx-click="pick"
+                      phx-value-full-name={repo.full_name}
+                      data-testid={"repo-option-#{key(repo.full_name)}"}
                     >
-                      Reprocessar
+                      Escolher
                     </.button>
+                  </li>
+                </ul>
+                <.form
+                  :if={@picked}
+                  for={@link_form}
+                  id="repo-link-form"
+                  phx-submit="link"
+                  class="space-y-4"
+                >
+                  <input type="hidden" name="repo[full_name]" value={@picked} />
+                  <p class="text-sm text-gray-600 dark:text-gray-300" data-testid="repo-picked">
+                    <.icon name="hero-code-bracket-square" class="size-4 text-primary-500" />
+                    <span class="font-mono">{@picked}</span>
+                  </p>
+                  <p
+                    :for={{message, _} <- Keyword.get_values(@link_form.errors, :full_name)}
+                    class="text-sm text-danger-600 dark:text-danger-400"
+                  >
+                    {message}
+                  </p>
+                  <.icon_field
+                    field={@link_form[:project_id]}
+                    icon="hero-folder"
+                    type="select"
+                    label="Projeto"
+                    prompt="Escolha o projeto (o diretório do runner)"
+                    options={Enum.map(@projects, &{"#{&1.name} (#{&1.directory})", &1.id})}
+                    data-testid="repo-project"
+                  />
+                  <div class="flex justify-end gap-2">
+                    <.button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      color="gray"
+                      phx-click="close_link"
+                    >
+                      Cancelar
+                    </.button>
+                    <.button size="sm" icon="hero-link" data-testid="repo-link-save">Vincular</.button>
                   </div>
+                </.form>
+                <div :if={!@picked} class="flex justify-end">
+                  <.button type="button" size="sm" variant="ghost" color="gray" phx-click="close_link">
+                    Cancelar
+                  </.button>
                 </div>
-                <div
-                  :if={@open_payload && @open_payload.id == delivery.id}
-                  id={"delivery-payload-#{delivery.id}"}
-                  phx-hook="Highlight"
-                  class="mt-2"
-                  data-testid={"delivery-payload-#{key(delivery.external_id)}"}
-                >
-                  <pre class="max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"><code class="language-json text-gray-800 dark:text-gray-100">{Jason.encode!(@open_payload.payload, pretty: true)}</code></pre>
-                </div>
-              </li>
-            </ul>
-          </.card_content>
-        </.card>
+              </div>
 
-        <.card :if={@connection.provider != "github"} variant="outline">
-          <.card_header
-            title="Webhook"
-            description="Para um repositório sem webhook criado pela plataforma: no Forgejo, Configurações → Webhooks → Forgejo, content type JSON, eventos de issues, comentários e pull requests."
-          />
-          <.card_content>
-            <dl class="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
-              <dt class="text-gray-500 dark:text-gray-400">URL</dt>
-              <dd
-                class="break-all font-mono text-gray-900 dark:text-white"
-                data-testid="integration-webhook-url"
+              <p
+                :if={@repos == [] and !@linking}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="no-repos"
               >
-                {webhook_url(@connection)}
-              </dd>
-              <dt class="text-gray-500 dark:text-gray-400">Segredo</dt>
-              <dd class="flex flex-wrap items-center gap-2">
-                <span
+                Nenhum repositório vinculado ainda.
+              </p>
+              <ul :if={@repos != []} class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
+                <li
+                  :for={repo <- @repos}
+                  class="flex flex-wrap items-center justify-between gap-3 py-3"
+                  data-testid={"repo-#{key(repo.full_name)}"}
+                >
+                  <div class="min-w-0">
+                    <.link
+                      navigate={
+                        ~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}/repos/#{repo.id}"
+                      }
+                      class="font-mono font-medium text-gray-900 hover:underline dark:text-white"
+                      data-testid={"repo-link-#{key(repo.full_name)}"}
+                    >
+                      {repo.full_name}
+                    </.link>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {plural(
+                        length(repo.triggers),
+                        "gatilho",
+                        "gatilhos"
+                      )}
+                    </p>
+                  </div>
+                  <.webhook_status repo={repo} testid={"repo-webhook-#{key(repo.full_name)}"} />
+                </li>
+              </ul>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel id="entregas" active={@tab} testid="integration">
+          <.card variant="outline">
+            <.card_header
+              title="Entregas"
+              description="Cada evento do host que chegou (ou que a reconciliação achou) e o que a plataforma fez com ele."
+            >
+              <:action>
+                <.form
+                  :let={f}
+                  for={to_form(%{"status" => @delivery_status}, as: "deliveries")}
+                  id="deliveries-filter"
+                  phx-change="filter_deliveries"
+                >
+                  <.icon_field
+                    field={f[:status]}
+                    icon="hero-funnel"
+                    type="select"
+                    label="Status"
+                    hide_label
+                    prompt="Todas"
+                    options={for status <- Delivery.statuses(), do: {status_name(status), status}}
+                    data-testid="deliveries-status"
+                  />
+                </.form>
+              </:action>
+            </.card_header>
+            <.card_content>
+              <p
+                :if={@deliveries == []}
+                class="text-sm text-gray-500 dark:text-gray-400"
+                data-testid="no-deliveries"
+              >
+                Nenhuma entrega ainda.
+              </p>
+              <ul
+                :if={@deliveries != []}
+                class="divide-y divide-gray-100 text-sm dark:divide-gray-800"
+              >
+                <li
+                  :for={delivery <- @deliveries}
+                  class="py-3"
+                  data-testid={"delivery-#{key(delivery.external_id)}"}
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-gray-900 dark:text-white">
+                        <.badge
+                          size="xs"
+                          variant="soft"
+                          color={status_color(delivery.status)}
+                          label={status_name(delivery.status)}
+                          data-testid={"delivery-status-#{key(delivery.external_id)}"}
+                        />
+                        <span class="ml-1">{kind_name(delivery.kind)}</span>
+                        <span
+                          :if={delivery.repo_full_name}
+                          class="font-mono text-gray-600 dark:text-gray-300"
+                        >
+                          {delivery.repo_full_name}<span :if={delivery.issue_number}>#{delivery.issue_number}</span>
+                        </span>
+                      </p>
+                      <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")} · {delivery.source}
+                        <span :if={delivery.outcome}>· {delivery.outcome}</span>
+                        <.link
+                          :if={delivery.task_id}
+                          navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{delivery.task_id}"}
+                          class="text-primary-600 hover:underline dark:text-primary-400"
+                        >
+                          · abrir a tarefa
+                        </.link>
+                        <.link
+                          :if={delivery.proposal_job_id}
+                          navigate={
+                            ~p"/w/#{@current_scope.workspace.slug}/proposals/#{delivery.proposal_job_id}"
+                          }
+                          class="text-primary-600 hover:underline dark:text-primary-400"
+                          data-testid={"delivery-proposal-#{key(delivery.external_id)}"}
+                        >
+                          · abrir a triagem
+                        </.link>
+                      </p>
+                    </div>
+                    <div class="flex gap-2">
+                      <.button
+                        size="xs"
+                        variant="ghost"
+                        color="gray"
+                        icon="hero-code-bracket"
+                        phx-click="toggle_payload"
+                        phx-value-id={delivery.id}
+                        data-testid={"delivery-payload-toggle-#{key(delivery.external_id)}"}
+                      >
+                        Payload
+                      </.button>
+                      <.button
+                        size="xs"
+                        variant="outline"
+                        color="gray"
+                        icon="hero-arrow-path"
+                        phx-click="replay"
+                        phx-value-id={delivery.id}
+                        data-testid={"delivery-replay-#{key(delivery.external_id)}"}
+                      >
+                        Reprocessar
+                      </.button>
+                    </div>
+                  </div>
+                  <div
+                    :if={@open_payload && @open_payload.id == delivery.id}
+                    id={"delivery-payload-#{delivery.id}"}
+                    phx-hook="Highlight"
+                    class="mt-2"
+                    data-testid={"delivery-payload-#{key(delivery.external_id)}"}
+                  >
+                    <pre class="max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"><code class="language-json text-gray-800 dark:text-gray-100">{Jason.encode!(@open_payload.payload, pretty: true)}</code></pre>
+                  </div>
+                </li>
+              </ul>
+            </.card_content>
+          </.card>
+        </.tab_panel>
+
+        <.tab_panel
+          :if={@connection.provider != "github"}
+          id="webhook"
+          active={@tab}
+          testid="integration"
+        >
+          <.card variant="outline">
+            <.card_header
+              title="Webhook"
+              description="Para um repositório sem webhook criado pela plataforma: no Forgejo, Configurações → Webhooks → Forgejo, content type JSON, eventos de issues, comentários e pull requests."
+            />
+            <.card_content>
+              <dl class="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
+                <dt class="text-gray-500 dark:text-gray-400">URL</dt>
+                <dd
                   class="break-all font-mono text-gray-900 dark:text-white"
-                  data-testid="integration-webhook-secret"
+                  data-testid="integration-webhook-url"
                 >
-                  {if @show_secret, do: Connection.webhook_secret(@connection), else: "••••••••••••"}
-                </span>
-                <.button
-                  size="xs"
-                  variant="ghost"
-                  color="gray"
-                  icon={if @show_secret, do: "hero-eye-slash", else: "hero-eye"}
-                  phx-click="toggle_secret"
-                  data-testid="integration-webhook-secret-reveal"
-                >
-                  {if @show_secret, do: "Esconder", else: "Mostrar"}
-                </.button>
-                <.button
-                  size="xs"
-                  variant="ghost"
-                  color="warning"
-                  icon="hero-arrow-path"
-                  phx-click="rotate_secret"
-                  data-confirm="Gerar um segredo novo? Webhooks criados à mão precisam ser atualizados."
-                  data-testid="integration-webhook-secret-rotate"
-                >
-                  Gerar outro
-                </.button>
-              </dd>
-            </dl>
-          </.card_content>
-        </.card>
+                  {webhook_url(@connection)}
+                </dd>
+                <dt class="text-gray-500 dark:text-gray-400">Segredo</dt>
+                <dd class="flex flex-wrap items-center gap-2">
+                  <span
+                    class="break-all font-mono text-gray-900 dark:text-white"
+                    data-testid="integration-webhook-secret"
+                  >
+                    {if @show_secret, do: Connection.webhook_secret(@connection), else: "••••••••••••"}
+                  </span>
+                  <.button
+                    size="xs"
+                    variant="ghost"
+                    color="gray"
+                    icon={if @show_secret, do: "hero-eye-slash", else: "hero-eye"}
+                    phx-click="toggle_secret"
+                    data-testid="integration-webhook-secret-reveal"
+                  >
+                    {if @show_secret, do: "Esconder", else: "Mostrar"}
+                  </.button>
+                  <.button
+                    size="xs"
+                    variant="ghost"
+                    color="warning"
+                    icon="hero-arrow-path"
+                    phx-click="rotate_secret"
+                    data-confirm="Gerar um segredo novo? Webhooks criados à mão precisam ser atualizados."
+                    data-testid="integration-webhook-secret-rotate"
+                  >
+                    Gerar outro
+                  </.button>
+                </dd>
+              </dl>
+            </.card_content>
+          </.card>
+        </.tab_panel>
       </div>
     </Layouts.app>
     """
