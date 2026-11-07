@@ -51,6 +51,7 @@ defmodule PipeMaestroWeb.TaskComponents do
   defp stage_label(:failed), do: {"Falhou", "danger"}
   defp stage_label(:blocked), do: {"Bloqueada", "warning"}
   defp stage_label(:canceled), do: {"Cancelada", "gray"}
+  defp stage_label(:lost), do: {"Perdida (runner)", "warning"}
 
   @doc "Where the task is: `2/6 · Investigação`, or how it ended."
   @spec stage_progress(Task.t()) :: String.t()

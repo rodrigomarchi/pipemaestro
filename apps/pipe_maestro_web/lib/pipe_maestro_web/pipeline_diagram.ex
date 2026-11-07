@@ -151,8 +151,8 @@ defmodule PipeMaestroWeb.PipelineDiagram do
   def task_states(%Task{} = task) do
     last_runs =
       task.stage_runs
-      |> Enum.sort_by(& &1.attempt)
-      |> Map.new(&{&1.index, &1.status})
+      |> Enum.sort_by(&{&1.attempt, &1.requeue})
+      |> Map.new(&{&1.index, state_of(&1.status)})
 
     for index <- 0..(length(task.stages) - 1)//1, into: %{} do
       state =
@@ -163,6 +163,10 @@ defmodule PipeMaestroWeb.PipelineDiagram do
       {index, state}
     end
   end
+
+  # A run its runner lost waits like a block: on the runner, or a person.
+  defp state_of(:lost), do: :blocked
+  defp state_of(status), do: status
 
   @doc "What a stage is, in short: model, attempts, time limit, gates, rules, group, agent."
   @spec chips(Stage.t()) :: [chip()]

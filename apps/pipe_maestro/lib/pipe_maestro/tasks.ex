@@ -771,7 +771,7 @@ defmodule PipeMaestro.Tasks do
         stage_run
         |> Ecto.Changeset.change(
           status: :lost,
-          error: "O runner reiniciou ou caiu durante a execução."
+          error: "Perdida: o runner reiniciou ou caiu durante a execução."
         )
         |> Repo.update!()
 
