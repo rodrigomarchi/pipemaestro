@@ -230,9 +230,11 @@ O par `(job_id, seq)` é único, então um evento reenviado é ignorado.
 resposta e, depois de cada join, reenvia em ordem o que não foi respondido. Uma
 resposta `error` também encerra a mensagem, porque reenviar não mudaria a resposta. O
 control plane é idempotente: `seq` repetido é ignorado, e um `job:started` ou
-`job:finished` repetido responde `not_queued` ou `finished`. Um job com mensagens não
-confirmadas entra em `running_job_ids` do `Hello`, para que a reconciliação não o
-falhe antes do reenvio. O `job:finished` e o `worktree:removed` também ficam num
+`job:finished` repetido responde `not_queued` ou `finished`. Um job cujo `job:finished`
+ainda não foi confirmado entra em `running_job_ids` do `Hello`, para que a
+reconciliação não o falhe antes do reenvio. Só o início ou os eventos pendentes não
+bastam: um job parado como perdido na drenagem tem só esses, e precisa faltar no
+`Hello` para contar como perda. O `job:finished` e o `worktree:removed` também ficam num
 arquivo e sobrevivem a um reinício do runner; antes de uma atualização, a outbox
 inteira vai para o arquivo. Um crash da conexão não a perde: ela vive num processo
 próprio, e só a conexão é reiniciada.

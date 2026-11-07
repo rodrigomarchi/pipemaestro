@@ -48,7 +48,9 @@ Recusado por versão, o runner não reconecta (a igualdade de versão da ADR 002
 Ele para de iniciar jobs, espera os que rodam terminarem até `--drain-timeout` minutos
 (30 por padrão), grava a outbox inteira no arquivo e registra `update_draining` no log.
 Só então se atualiza, e o runner novo entrega o que ficou. Se o prazo vence, os jobs
-restantes são parados sem reportar o fim e contam como perdidos (D3).
+restantes são parados sem reportar o fim e contam como perdidos (D3). Por isso o
+`Hello` só conta como rodando o job cujo `job:finished` está pendente na outbox, não
+qualquer job com mensagens pendentes.
 
 Durante a drenagem não há conexão, então a credencial git não é renovada: um job que
 entrega depois de ela vencer falha na entrega, como uma tentativa normal. O prazo
