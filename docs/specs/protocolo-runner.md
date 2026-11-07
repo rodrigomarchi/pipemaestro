@@ -128,6 +128,8 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
   - `capabilities` (opcional): o que o runner suporta além da versão do protocolo
     (vazio se omitido). Hoje, `"scratch"`: roda um job num worktree descartável (§4.4); e
     `"git_credential"`: recebe a credencial git do job e a renovação dela (§4.4);
+    `"resume_session"`: guarda a sessão do CLI de um job e a retoma num job seguinte
+    (`persist_session`, `resume_session_id`, §4.4);
     `"health"`, `"logs"` e `"doctor"`: envia a saúde, o log e o diagnóstico (§4.7).
     O control plane só oferece uma funcionalidade a quem a anuncia, o que permite
     acrescentar campos ao job sem quebrar runners antigos.
@@ -188,6 +190,8 @@ Para a auditoria (ADR 0015), o `job:finished` também traz o que a execução co
 si:
 
 - `session_id`, `cli_version`, `model`, `stop_reason` e `result_subtype`;
+- `session_resumed`, só num job que pediu `resume_session_id`: `true` quando o agente
+  retomou a sessão, `false` quando o CLI não a tinha e o job rodou do zero;
 - os tempos `duration_api_ms`, `ttft_ms` e `wall_ms` (o processo do agente, medido
   pelo runner);
 - `usage` (`fresh_input`, `cache_read`, `cache_creation`, `output`, `thinking`) e
@@ -260,6 +264,8 @@ plane antigo ainda mande.
 | `artifacts` | `[{"path", "content"}]`: os artefatos das etapas anteriores, como o control plane os guardou. Antes do agente, o runner grava os que faltam no disco |
 | `git_credential` | `{"host", "username", "password", "expires_at"?}`: a credencial do repositório vinculado da tarefa ([ADR 0037](../adr/0037-credencial-git-por-job.md)). O runner a grava em `<workdir>/credentials/<job_id>` (`0600`) e a entrega ao git, o seu e o do agente, por um credential helper configurado em variáveis `GIT_CONFIG_*`, nunca na URL do remoto; o arquivo sai quando o job termina. A senha entra na verificação `no_secrets`. Só vai a um runner com a capacidade `"git_credential"`, e nunca numa proposta |
 | `scratch` | `true` numa análise (ADR 0021): roda num worktree descartável do `directory`, em `<workdir>/scratch/<job_id>`, destacado no `HEAD` (`git worktree add --detach`) e removido quando o job termina. Recebe só a cópia de dependências do `setup`, sem comando, e não reporta `changes`. Exige `directory` e não aceita `worktree` nem `delivery`. O control plane só manda `scratch` a um runner que anunciou a capacidade `"scratch"` no `Hello`: um runner antigo descartaria o campo e rodaria no próprio diretório |
+| `persist_session` | `true` quando a etapa seguinte continua esta: o CLI guarda a sessão do job na máquina do runner (sem `--no-session-persistence`), e o `session_id` do `job:finished` a identifica ([ADR 0041](../adr/0041-continuar-a-sessao-da-etapa-anterior.md)). Só vai a um runner com a capacidade `"resume_session"` |
+| `resume_session_id` | o `session_id` (1 a 100 bytes: letras, números, `-` e `_`) da etapa anterior, que o agente continua (`--resume <id> --fork-session`), com o prompt deste job como a próxima mensagem. Se o CLI termina com erro antes de abrir sessão alguma (ele não tem aquela sessão), o runner roda o job de novo, uma vez, do zero, no mesmo lugar, e o `job:finished` traz `session_resumed: false`. Não aceita `scratch`. Só vai a um runner com a capacidade `"resume_session"`; um runner antigo ignora o campo e roda do zero |
 | `parallel` | `true` numa etapa de um grupo (ADR 0014): roda junto com as irmãs no worktree da tarefa, sem esperar por elas |
 | `env` | `{"NOME": "valor"}`: os segredos do workspace (ADR 0012), só no envio; o runner os passa ao processo do agente e não os guarda |
 | `gates` | `[{"command", "expect"}]` (até 10, `expect` igual a `pass` ou `fail`): comandos que o runner roda no diretório de trabalho, em ordem, **depois que o agente termina bem**. O `job:finished` traz `gates` com cada um mais `exit_code`, `output` (o fim), `passed` e `duration_ms`. O runner só informa; quem decide é o control plane |
