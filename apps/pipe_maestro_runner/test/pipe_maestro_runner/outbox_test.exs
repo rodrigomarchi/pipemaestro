@@ -118,4 +118,16 @@ defmodule PipeMaestroRunner.OutboxTest do
     outbox = add_all(Outbox.new(), [{"job:event", %{"job_id" => "j1", "seq" => 1}}])
     assert Outbox.persist_all(outbox) == :ok
   end
+
+  test "only a job whose end is still to confirm counts as running" do
+    outbox =
+      add_all(Outbox.new(), [
+        {"job:started", %{"job_id" => "j1"}},
+        {"job:event", %{"job_id" => "j1", "seq" => 1}},
+        {"job:started", %{"job_id" => "j2"}},
+        {"job:finished", %{"job_id" => "j2", "status" => "succeeded"}}
+      ])
+
+    assert Outbox.finished_job_ids(outbox) == ["j2"]
+  end
 end
