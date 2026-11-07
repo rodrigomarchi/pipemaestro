@@ -17,7 +17,9 @@ defmodule PipeMaestro.Maintenance do
     * the runners' health samples older than `:health_days` (default 7) go
       (`PipeMaestro.RunnerTelemetry.prune_health/1`), and so do their log
       lines past their workspace's retention and their events past 30 days
-      (`PipeMaestro.RunnerTelemetry.prune_logs/1`).
+      (`PipeMaestro.RunnerTelemetry.prune_logs/1`);
+    * notifications read more than `:notifications_days` ago (default 30)
+      go (`PipeMaestro.Notifications.delete_read_before/1`); unread ones stay.
 
   When it starts, it also closes the runners' sessions the previous run of
   the control plane left open (`PipeMaestro.RunnerTelemetry.close_orphan_sessions/1`).
@@ -29,7 +31,7 @@ defmodule PipeMaestro.Maintenance do
 
   import Ecto.Query
 
-  alias PipeMaestro.{Audit, Insights, Integrations, Repo, RunnerTelemetry}
+  alias PipeMaestro.{Audit, Insights, Integrations, Notifications, Repo, RunnerTelemetry}
   alias PipeMaestro.Jobs.{Event, Job, Telemetry}
   alias PipeMaestro.Runners.DeviceAuthorization
 
@@ -44,6 +46,7 @@ defmodule PipeMaestro.Maintenance do
     audit_days = Keyword.get(opts, :audit_days, 365)
     deliveries_days = Keyword.get(opts, :deliveries_days, 30)
     health_days = Keyword.get(opts, :health_days, 7)
+    notifications_days = Keyword.get(opts, :notifications_days, 30)
     batch = Keyword.get(opts, :batch, 500)
 
     {device_authorizations, _} =
@@ -84,7 +87,9 @@ defmodule PipeMaestro.Maintenance do
       job_telemetry: job_telemetry,
       audit_events: Audit.prune(DateTime.add(now, -audit_days, :day)),
       deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day)),
-      health_samples: RunnerTelemetry.prune_health(DateTime.add(now, -health_days, :day))
+      health_samples: RunnerTelemetry.prune_health(DateTime.add(now, -health_days, :day)),
+      notifications:
+        Notifications.delete_read_before(DateTime.add(now, -notifications_days, :day))
     }
     |> Map.merge(runner_logs(RunnerTelemetry.prune_logs(now)))
   end

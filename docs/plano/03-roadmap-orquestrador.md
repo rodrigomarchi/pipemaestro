@@ -138,7 +138,8 @@ A tarefa deve ser lida como uma conversa entre a pessoa e o pipeline.
    - O que espera alguém, em todo o workspace, com o motivo e a ação direta.
    - Contador no menu, que já existe e hoje é fixo.
 8. **✓ Notificações** (ADR 0010): toast ao vivo e notificação do navegador quando uma tarefa pausa ou
-   termina.
+   termina. A central de notificações (ADR 0044) guarda os avisos numa caixa por pessoa e mostra, no
+   top bar, o que está rodando agora.
 9. **✓ Ações sobre tarefas** (ADR 0010): reexecutar (nova tarefa com o mesmo pedido), duplicar com
    outro pipeline ou diretório, buscar no histórico.
 10. **Decidido no ADR 0010: as execuções avulsas continuam.** **Execuções avulsas** viram uma tarefa com o pipeline "Prompt único", para haver um

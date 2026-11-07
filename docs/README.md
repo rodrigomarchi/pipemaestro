@@ -68,6 +68,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0041 | [Continuar a sessão da etapa anterior](adr/0041-continuar-a-sessao-da-etapa-anterior.md) | Aceita |
 | 0042 | [Arquivos gerados pela etapa sobem como anexos](adr/0042-arquivos-gerados-pela-etapa.md) | Aceita |
 | 0043 | [Runner resiliente a reinícios e à atualização](adr/0043-runner-resiliente-a-reinicios.md) | Aceita |
+| 0044 | [Central de notificações](adr/0044-central-de-notificacoes.md) | Aceita |
 
 ## Specs
 

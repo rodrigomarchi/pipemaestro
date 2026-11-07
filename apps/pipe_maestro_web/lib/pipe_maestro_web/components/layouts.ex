@@ -119,6 +119,11 @@ defmodule PipeMaestroWeb.Layouts do
   attr :title, :string, required: true, doc: "the page title shown in the top bar"
   attr :pending_decisions, :integer, default: 0, doc: "badge on the decisions item"
 
+  attr :notification_center, :map,
+    default: %{unread: 0, active: []},
+    doc:
+      "the bell's unread count and what runs now (`PipeMaestroWeb.NotificationHooks`); every workspace page hands it on"
+
   attr :focus, :boolean,
     default: false,
     doc: "the page follows work in progress: the sidebar closes to its icons to give it room"
@@ -301,6 +306,12 @@ defmodule PipeMaestroWeb.Layouts do
         </div>
         <.header_actions actions={@actions} />
         <div class="flex shrink-0 items-center gap-2">
+          <.live_component
+            module={PipeMaestroWeb.NotificationCenter}
+            id="notification-center"
+            center={@notification_center}
+            current_scope={@current_scope}
+          />
           <.color_scheme_switch id="app-scheme" variant="dropdown" />
           <.account_menu name={@current_scope.user.name} email={@current_scope.user.email}>
             <.dropdown_menu_item
@@ -483,10 +494,13 @@ defmodule PipeMaestroWeb.Layouts do
   # The top bar. Narrower than xl the page's actions take a row of their own
   # under the title, wrapping as needed, so they never push the page wider than
   # the screen; on a phone it scrolls away with the page instead of pinning
-  # rows of buttons over the content.
+  # rows of buttons over the content. The blur sits on a layer of its own: a
+  # backdrop filter on the header would hold the notification panel (fixed)
+  # inside it.
   defp header_class do
-    "z-20 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-200 bg-white/80 px-4 py-3 " <>
-      "backdrop-blur sm:px-6 md:sticky md:top-0 xl:h-16 xl:flex-nowrap xl:py-0 " <>
+    "relative z-20 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-200 bg-white/80 px-4 py-3 " <>
+      "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] " <>
+      "sm:px-6 md:sticky md:top-0 xl:h-16 xl:flex-nowrap xl:py-0 " <>
       "dark:border-gray-800 dark:bg-gray-950/80"
   end
 

@@ -117,6 +117,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Form do
     <Layouts.app
       flash={@flash}
       pending_decisions={@pending_decisions}
+      notification_center={@notification_center}
       current_scope={@current_scope}
       workspaces={@workspaces}
       active={:integrations}

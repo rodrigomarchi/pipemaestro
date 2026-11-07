@@ -21,6 +21,7 @@ defmodule PipeMaestro.Jobs do
   alias PipeMaestro.Insights
   alias PipeMaestro.Jobs.{Event, Job}
   alias PipeMaestro.Jobs.Telemetry, as: JobTelemetry
+  alias PipeMaestro.Notifications
   alias PipeMaestro.{Projects, Repo, Runners}
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Runners.Runner
@@ -136,6 +137,7 @@ defmodule PipeMaestro.Jobs do
       job = preload(job)
       broadcast({:workspace, job.workspace_id}, {:job_updated, job})
       broadcast({:runner, job.runner_id}, {:job_assign, job})
+      proposal_changed(job)
       {:ok, job}
     end
   end
@@ -563,12 +565,12 @@ defmodule PipeMaestro.Jobs do
   defp get_job(id), do: Repo.get!(Job, id)
 
   # A job that runs a task's stage moves its task along once it ends; the
-  # analysis of a paused task's failure gives it its questionnaire; a task
-  # proposal may become its task.
+  # analysis of a paused task's failure gives it its questionnaire; any other
+  # proposal is ready for review, and a task proposal may become its task.
   defp finished(%Job{stage_run_id: nil, context: %{"proposal" => %{"kind" => "analysis"}}} = job),
     do: PipeMaestro.Tasks.analysis_finished(job)
 
-  defp finished(%Job{stage_run_id: nil, context: %{"proposal" => %{"kind" => "task"}}} = job),
+  defp finished(%Job{stage_run_id: nil, context: %{"proposal" => %{}}} = job),
     do: PipeMaestro.Proposals.job_finished(job)
 
   defp finished(%Job{stage_run_id: nil}), do: :ok
@@ -620,7 +622,14 @@ defmodule PipeMaestro.Jobs do
   defp notify(job) do
     broadcast({:job, job.id}, {:job_updated, job})
     broadcast({:workspace, job.workspace_id}, {:job_updated, job})
+    proposal_changed(job)
   end
+
+  # A proposal is under way in the workspace's notification center.
+  defp proposal_changed(%Job{stage_run_id: nil, context: %{"proposal" => %{}}} = job),
+    do: Notifications.executions_changed(job.workspace_id)
+
+  defp proposal_changed(%Job{}), do: :ok
 
   defp preload(job), do: Repo.preload(job, [:runner, :created_by_user, :project], force: true)
 

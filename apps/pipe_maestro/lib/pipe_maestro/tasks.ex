@@ -33,7 +33,10 @@ defmodule PipeMaestro.Tasks do
   `{:pending_decisions, count}`, the workspace's tasks waiting for a decision.
   `{:events, id}` gets `{:task_event, %{id, title, kind, reason}}` when a task
   starts waiting for a decision (`kind: :awaiting`) or ends (`:succeeded`,
-  `:failed`, `:canceled`), for notifications.
+  `:failed`, `:canceled`), for notifications; those events are also kept in
+  the inbox of the task's people (`PipeMaestro.Notifications`), and every
+  change tells the workspace's notification center
+  (`PipeMaestro.Notifications.executions_changed/1`).
   """
 
   import Ecto.Query
@@ -46,7 +49,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
-  alias PipeMaestro.Pipelines
+  alias PipeMaestro.Notifications
   alias PipeMaestro.Pipelines
   alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage}
   alias PipeMaestro.Projects
@@ -94,6 +97,7 @@ defmodule PipeMaestro.Tasks do
       {:task_event, %{id: task.id, title: task.title, kind: kind, reason: task.decision_reason}}
     )
 
+    Notifications.notify_task(task, kind)
     task
   end
 
@@ -114,6 +118,8 @@ defmodule PipeMaestro.Tasks do
       "tasks:decisions:" <> task.workspace_id,
       {:pending_decisions, count_awaiting(%Workspace{id: task.workspace_id})}
     )
+
+    Notifications.executions_changed(task.workspace_id)
   end
 
   # ── Reading ───────────────────────────────────────────────────────────────
