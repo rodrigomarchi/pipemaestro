@@ -5,7 +5,8 @@ defmodule PipeMaestro.Notifications.Notification do
 
   `kind` says what happened: a task paused for a decision
   (`:task_awaiting_decision`), ended (`:task_succeeded`, `:task_failed`,
-  `:task_canceled`), or a proposal is ready for review (`:proposal_ready`).
+  `:task_canceled`), or a proposal is ready for review (`:proposal_ready`)
+  or failed (`:proposal_failed`).
   `task_id` or `job_id` is what it leads to; `body` is Markdown.
   """
   use PipeMaestro.Schema
@@ -20,7 +21,8 @@ defmodule PipeMaestro.Notifications.Notification do
     :task_succeeded,
     :task_failed,
     :task_canceled,
-    :proposal_ready
+    :proposal_ready,
+    :proposal_failed
   ]
 
   @type kind ::
@@ -29,6 +31,7 @@ defmodule PipeMaestro.Notifications.Notification do
           | :task_failed
           | :task_canceled
           | :proposal_ready
+          | :proposal_failed
 
   @type t :: %__MODULE__{
           id: Ecto.UUID.t() | nil,

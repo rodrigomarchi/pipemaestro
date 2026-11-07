@@ -254,11 +254,29 @@ defmodule PipeMaestro.NotificationsTest do
       assert job_id == job.id
     end
 
-    test "a failed proposal notifies nobody", ctx do
+    test "a failed proposal tells who asked, with the error", ctx do
       job = ask(ctx, "pipeline", %{"request" => "Um pipeline com PR"})
       finish(ctx, job, %{"status" => "failed", "error" => "sem créditos"})
 
-      assert Notifications.list_for(scope(ctx.member, ctx.workspace)) == []
+      assert [
+               %{
+                 __struct__: Notification,
+                 kind: :proposal_failed,
+                 job_id: job_id,
+                 task_id: nil,
+                 body: "sem créditos"
+               }
+             ] = Notifications.list_for(scope(ctx.member, ctx.workspace))
+
+      assert job_id == job.id
+    end
+
+    test "a failed proposal does not reach someone who did not ask", ctx do
+      job = ask(ctx, "pipeline", %{"request" => "Um pipeline com PR"})
+      finish(ctx, job, %{"status" => "failed", "error" => "sem créditos"})
+
+      someone_else = member_fixture(ctx.workspace, %{}, :member)
+      assert Notifications.list_for(scope(someone_else, ctx.workspace)) == []
     end
 
     test "a task proposal approved on its own becomes a task, not a notification", ctx do

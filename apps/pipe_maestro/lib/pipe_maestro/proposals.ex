@@ -480,9 +480,10 @@ defmodule PipeMaestro.Proposals do
   What happens as a proposal's job ends: a task proposal asked with
   `auto_approve`, if ready and with a pipeline, becomes its task, created and
   started (or queued) on behalf of who asked. Else it waits for review, and
-  the reason is kept with it. A proposal that succeeded and waits for review
-  is told to who asked (`PipeMaestro.Notifications.notify_proposal/1`); an
-  analysis of a failure is not one (its task tells of its pause).
+  the reason is kept with it. Who asked is told how it ended: a proposal that
+  succeeded waits for review (`PipeMaestro.Notifications.notify_proposal/1`),
+  one that failed says so (`notify_proposal_failed/1`); a cancellation is not
+  told. An analysis of a failure is not one (its task tells of its pause).
   """
   @spec job_finished(Job.t()) :: :ok
   def job_finished(%Job{context: %{"proposal" => %{"kind" => "task"}}} = job) do
@@ -492,7 +493,7 @@ defmodule PipeMaestro.Proposals do
          do: auto_create(job),
          else: :not_created
 
-    if created == :not_created, do: ready(job)
+    if created == :not_created, do: tell_requester(job)
 
     # A triage of a linked issue tells the issue how it ended.
     Feedback.triage_finished(job)
@@ -502,14 +503,15 @@ defmodule PipeMaestro.Proposals do
   def job_finished(%Job{context: %{"proposal" => %{"kind" => "analysis"}}}), do: :ok
 
   def job_finished(%Job{context: %{"proposal" => %{}}} = job) do
-    ready(job)
+    tell_requester(job)
     :ok
   end
 
   def job_finished(%Job{}), do: :ok
 
-  defp ready(%Job{status: :succeeded} = job), do: Notifications.notify_proposal(job)
-  defp ready(%Job{}), do: []
+  defp tell_requester(%Job{status: :succeeded} = job), do: Notifications.notify_proposal(job)
+  defp tell_requester(%Job{status: :failed} = job), do: Notifications.notify_proposal_failed(job)
+  defp tell_requester(%Job{}), do: []
 
   # `:created` when the proposal became its task, now or before.
   defp auto_create(job) do

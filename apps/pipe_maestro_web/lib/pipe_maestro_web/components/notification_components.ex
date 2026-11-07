@@ -28,6 +28,9 @@ defmodule PipeMaestroWeb.NotificationComponents do
   def kind_style(:proposal_ready),
     do: {"hero-light-bulb", "text-primary-600 dark:text-primary-400"}
 
+  def kind_style(:proposal_failed),
+    do: {"hero-exclamation-triangle", "text-danger-600 dark:text-danger-400"}
+
   def kind_style(_kind), do: {"hero-bell", "text-gray-500 dark:text-gray-400"}
 
   @doc "Where a notification leads: its task or its proposal."

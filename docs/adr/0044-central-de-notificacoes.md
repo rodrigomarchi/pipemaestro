@@ -20,7 +20,7 @@ estava rodando naquele momento.
      runner, criador e tempo decorrido.
    - **Notificações** é uma caixa persistente por pessoa e por workspace (tabela
      `notifications`). Tem os tipos: tarefa aguardando decisão, concluída, falhou,
-     cancelada e proposta pronta. Sobrevive a reload e a novo login.
+     cancelada, proposta pronta e proposta que falhou. Sobrevive a reload e a novo login.
 2. **Destinatários.**
    - Uma tarefa avisa o criador e o dono da decisão, sem repetir a mesma pessoa, e só
      se ainda forem membros do workspace.
@@ -28,12 +28,14 @@ estava rodando naquele momento.
      admins do workspace.
    - Ninguém lê nem marca a notificação de outra pessoa ou de outro workspace: o escopo
      fica na consulta.
-3. **`proposal_ready` vai para quem pediu a proposta**, quando ela termina com
-   sucesso e alguém precisa revisá-la. Ficam de fora:
+3. **`proposal_ready` e `proposal_failed` vão para quem pediu a proposta**, quando ela
+   termina com sucesso (para revisar) ou falha (para saber que não chegou a lugar
+   nenhum e pode ser pedida de novo). O erro da execução vai no corpo. Ficam de fora:
    - a análise de uma falha, que vira o questionário da tarefa, já notificada como
      pausada;
    - a proposta de tarefa auto-aprovada que virou tarefa: não há o que revisar, e a
-     tarefa avisa por conta própria.
+     tarefa avisa por conta própria;
+   - a proposta cancelada: não é falha, e esta decisão não a cobre.
 4. **Retenção.** A `PipeMaestro.Maintenance` apaga as notificações lidas há mais de 30
    dias (`:notifications_days`). As não lidas ficam.
 5. **Um tópico próprio para o que roda** (`notifications:activity:<workspace>`).
@@ -56,6 +58,14 @@ estava rodando naquele momento.
    acende o ponto.
 9. **Tempos no cliente.** O hook JS `Elapsed` atualiza o tempo decorrido e o relativo a
    partir de `data-since`. O servidor renderiza o primeiro valor e não mantém timer.
+
+10. **Eventos novos entram caso a caso, nunca por padrão.** Cada evento da plataforma
+    que passar a avisar pela caixa precisa de uma linha nesta ADR, com o motivo.
+    - Eventos de runner e de integração entram só quando exigem ação de quem os
+      recebe (um runner que parou e precisa de atenção, uma integração que pede
+      reconexão). Um evento informativo fica de fora.
+    - Esses avisos vão para **todos os membros** do workspace, não só para quem
+      configurou o runner ou a integração.
 
 ## Como acrescentar um tipo
 

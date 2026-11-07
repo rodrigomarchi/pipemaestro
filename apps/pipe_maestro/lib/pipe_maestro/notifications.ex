@@ -8,8 +8,8 @@ defmodule PipeMaestro.Notifications do
   A task's pause and end (`notify_task/2`) reach its creator and the owner
   of its decision, while they are still members of the workspace; a task
   nobody of the workspace created (one from an issue) reaches the
-  workspace's admins. A proposal ready for review (`notify_proposal/1`)
-  reaches who asked for it.
+  workspace's admins. A proposal ready for review (`notify_proposal/1`) or
+  failed (`notify_proposal_failed/1`) reaches who asked for it.
 
   Every read and write takes a scope (`PipeMaestro.Accounts.Scope`): a person
   only sees and marks their own notifications, in the scope's workspace.
@@ -120,18 +120,32 @@ defmodule PipeMaestro.Notifications do
   @doc "Notifies who asked for a proposal that it is ready for review."
   @spec notify_proposal(Job.t()) :: [Notification.t()]
   def notify_proposal(%Job{} = job) do
-    recipients =
-      if job.created_by_user_id,
-        do: members(job.workspace_id, [job.created_by_user_id]),
-        else: []
-
-    create(job.workspace_id, recipients, %{
+    create(job.workspace_id, requester_recipients(job), %{
       kind: :proposal_ready,
       title: "Proposta pronta para revisão: " <> Proposals.title(job),
       body: nil,
       job_id: job.id
     })
   end
+
+  @doc """
+  Notifies who asked for a proposal that failed, so that it does not vanish
+  from what runs without a word. The job's error is the body.
+  """
+  @spec notify_proposal_failed(Job.t()) :: [Notification.t()]
+  def notify_proposal_failed(%Job{} = job) do
+    create(job.workspace_id, requester_recipients(job), %{
+      kind: :proposal_failed,
+      title: "Proposta falhou: " <> Proposals.title(job),
+      body: job.error,
+      job_id: job.id
+    })
+  end
+
+  defp requester_recipients(%Job{created_by_user_id: nil}), do: []
+
+  defp requester_recipients(%Job{} = job),
+    do: members(job.workspace_id, [job.created_by_user_id])
 
   defp members(_workspace_id, []), do: []
 
