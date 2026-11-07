@@ -777,6 +777,28 @@ defmodule PipeMaestroWeb.PipelineComponents do
     """
   end
 
+  attr :pipelines, :list, required: true
+  attr :id, :any, required: true, doc: "the chosen pipeline's id, from a select"
+  attr :testid, :string, required: true
+
+  @doc "The pipeline chosen in a select, as a small diagram; nothing before one is chosen."
+  def pipeline_preview(assigns) do
+    assigns = assign(assigns, pipeline: Enum.find(assigns.pipelines, &(&1.id == assigns.id)))
+
+    ~H"""
+    <div
+      :if={@pipeline}
+      class="-mt-2 mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 dark:border-gray-700 dark:bg-gray-950"
+    >
+      <.pipeline_diagram
+        diagram={PipelineDiagram.build(@pipeline)}
+        mode={:compact}
+        testid={@testid}
+      />
+    </div>
+    """
+  end
+
   # ── Stage and pipeline facts ──────────────────────────────────────────────
 
   attr :chips, :list, required: true, doc: "`PipeMaestroWeb.PipelineDiagram.chips/1`"

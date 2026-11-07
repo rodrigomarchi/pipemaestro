@@ -243,6 +243,16 @@ defmodule PipeMaestroWeb.IntegrationLiveTest do
 
       view |> element("[data-testid=trigger-new]") |> render_click()
       view |> form("#trigger-form", trigger: %{kind: "comment"}) |> render_change()
+      refute has_element?(view, "[data-testid=trigger-pipeline-preview]")
+
+      view
+      |> form("#trigger-form", trigger: %{kind: "comment", pipeline_id: ctx.pipeline.id})
+      |> render_change()
+
+      assert has_element?(
+               view,
+               "[data-testid=trigger-pipeline-preview] [data-testid=diagram-stage-0]"
+             )
 
       view
       |> form("#trigger-form",

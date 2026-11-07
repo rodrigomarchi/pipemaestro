@@ -91,6 +91,15 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=new-task]") |> render_click()
       refute has_element?(view, "[data-testid=task-no-projects]")
       assert has_element?(view, "[data-testid=task-issue-url]")
+      refute has_element?(view, "[data-testid=task-pipeline-preview]")
+
+      view |> form("#new-task-form", task: %{pipeline_id: ctx.pipeline.id}) |> render_change()
+
+      assert has_element?(
+               view,
+               "[data-testid=task-pipeline-preview] [data-testid=diagram-stage-1]",
+               "Etapa B"
+             )
 
       {:error, {:live_redirect, %{to: path}}} =
         view

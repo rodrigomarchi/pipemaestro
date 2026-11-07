@@ -11,6 +11,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.TaskComponents
+  import PipeMaestroWeb.PipelineComponents, only: [pipeline_preview: 1]
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
 
   alias Phoenix.Socket.Broadcast
@@ -345,6 +346,11 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             prompt="Escolha um pipeline"
             options={Enum.map(@pipelines, &{&1.name, &1.id})}
             data-testid="task-pipeline"
+          />
+          <.pipeline_preview
+            pipelines={@pipelines}
+            id={@form[:pipeline_id].value}
+            testid="task-pipeline-preview"
           />
           <.icon_field
             field={@form[:project_id]}

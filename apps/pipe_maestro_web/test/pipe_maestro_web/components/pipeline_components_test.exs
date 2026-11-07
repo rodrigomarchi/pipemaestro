@@ -348,4 +348,30 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert count(panel, "[phx-click=close_panel][phx-target='#explorer']") == 1
     end
   end
+
+  describe "pipeline_preview/1" do
+    test "the chosen pipeline, small; nothing before one is chosen" do
+      pipelines = [%Pipeline{id: "p1", name: "Bug", stages: [stage("a")]}]
+
+      html =
+        render_component(&PipelineComponents.pipeline_preview/1,
+          pipelines: pipelines,
+          id: "p1",
+          testid: "preview"
+        )
+
+      assert count(html, "[data-testid=preview] [data-testid=diagram-stage-0]") == 1
+
+      for id <- [nil, "", "other"] do
+        html =
+          render_component(&PipelineComponents.pipeline_preview/1,
+            pipelines: pipelines,
+            id: id,
+            testid: "preview"
+          )
+
+        assert count(html, "[data-testid=preview]") == 0
+      end
+    end
+  end
 end
