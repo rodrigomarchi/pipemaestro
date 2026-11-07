@@ -43,11 +43,33 @@
 # can tell where it ran, and, like a pipeline stage, writes its artifact to
 # $CP_ARTIFACT_PATH when that is set. In a task's worktree it commits them
 # (see below), and a prompt with "[sujo]" leaves sujo.txt uncommitted.
+#
+# Given FAKE_CLAUDE_ARGS_FILE, it writes its arguments there, one per line, so
+# a test can see how it was called. Asked to `--resume` a session whose id
+# starts with "ausente", it fails as the CLI does for a session it does not
+# have: a line on stderr and exit 1, before any line on stdout.
 
 if [ "$1" = "--version" ]; then
   echo "0.0.0-fake (Claude Code)"
   exit 0
 fi
+
+if [ -n "$FAKE_CLAUDE_ARGS_FILE" ]; then
+  printf '%s\n' "$@" > "$FAKE_CLAUDE_ARGS_FILE"
+fi
+
+resume=""
+next_is_resume=""
+for arg in "$@"; do
+  if [ -n "$next_is_resume" ]; then resume="$arg"; next_is_resume=""; fi
+  if [ "$arg" = "--resume" ]; then next_is_resume=1; fi
+done
+case "$resume" in
+  ausente*)
+    echo "No conversation found with session ID: $resume" >&2
+    exit 1
+    ;;
+esac
 
 prompt="$2"
 printf '%s\n' "$prompt" > fake-claude.txt

@@ -800,6 +800,92 @@ defmodule PipeMaestroRunner.JobRunnerTest do
     assert finished["error"] =~ "não foi encontrado"
   end
 
+  describe "continuing the previous stage's session" do
+    defp resume_job(id, prompt, dir, fields) do
+      {:ok, job} =
+        Job.from_map(
+          Map.merge(
+            %{
+              "id" => id,
+              "prompt" => prompt,
+              "env" => %{"FAKE_CLAUDE_ARGS_FILE" => Path.join(dir, "#{id}-args.txt")}
+            },
+            fields
+          )
+        )
+
+      job
+    end
+
+    defp args_seen(dir, id),
+      do: dir |> Path.join("#{id}-args.txt") |> File.read!() |> String.split("\n", trim: true)
+
+    test "a job that resumes a session forks it and says so", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(
+        runner,
+        resume_job("jr", "continue", dir, %{"resume_session_id" => "s-1"})
+      )
+
+      {_messages, finished} = collect_until_finished("jr")
+      assert finished["status"] == "succeeded"
+      assert finished["session_resumed"] == true
+
+      args = args_seen(dir, "jr")
+      assert ["--resume", "s-1", "--fork-session"] in Enum.chunk_every(args, 3, 1)
+      refute "--no-session-persistence" in args
+    end
+
+    test "a session the CLI does not have: the job runs again fresh, once", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(
+        runner,
+        resume_job("ja", "continue", dir, %{
+          "resume_session_id" => "ausente-1",
+          "persist_session" => true
+        })
+      )
+
+      {messages, finished} = collect_until_finished("ja")
+      assert finished["status"] == "succeeded"
+      assert finished["exit_code"] == 0
+      assert finished["session_resumed"] == false
+      assert finished["session_id"] == "fake-session"
+
+      events = for {"job:event", e} <- messages, do: e["seq"]
+      assert events == Enum.to_list(1..length(events))
+
+      args = args_seen(dir, "ja")
+      refute "--resume" in args
+      refute "--no-session-persistence" in args
+    end
+
+    test "a run that fails after resuming is not run again", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(
+        runner,
+        resume_job("jf", "quebre [falha]", dir, %{"resume_session_id" => "s-1"})
+      )
+
+      {_messages, finished} = collect_until_finished("jf")
+      assert finished["status"] == "failed"
+      assert finished["session_resumed"] == true
+      assert "--resume" in args_seen(dir, "jf")
+    end
+
+    test "a job that asks for no resume says nothing about it", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+      JobRunner.enqueue(runner, resume_job("jn", "diga oi", dir, %{}))
+
+      {_messages, finished} = collect_until_finished("jn")
+      refute Map.has_key?(finished, "session_resumed")
+      assert "--no-session-persistence" in args_seen(dir, "jn")
+    end
+  end
+
   describe "Claude" do
     test "argv runs headless, streaming JSON, with every permission" do
       argv = Claude.argv(job("j", "diga oi"))
@@ -832,6 +918,18 @@ defmodule PipeMaestroRunner.JobRunnerTest do
                "0.5"
              ] =
                Enum.drop(argv, 8)
+    end
+
+    test "argv keeps the session for the next stage, or resumes the previous one" do
+      {:ok, keep} = Job.from_map(%{"id" => "j", "prompt" => "p", "persist_session" => true})
+      argv = Claude.argv(keep)
+      refute "--no-session-persistence" in argv
+      refute "--resume" in argv
+
+      {:ok, resume} = Job.from_map(%{"id" => "j", "prompt" => "p", "resume_session_id" => "s-1"})
+      argv = Claude.argv(resume)
+      refute "--no-session-persistence" in argv
+      assert ["--resume", "s-1", "--fork-session"] in Enum.chunk_every(argv, 3, 1)
     end
 
     test "argv has no budget when the job carries none" do
