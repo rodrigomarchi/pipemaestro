@@ -312,6 +312,19 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     end
   end
 
+  def handle_event("retry_merge", _params, socket) do
+    case Tasks.retry_merge(socket.assigns.task, socket.assigns.current_scope.user) do
+      {:ok, task} ->
+        {:noreply,
+         socket
+         |> assign(task: task)
+         |> put_flash(:info, "A plataforma vai esperar os checks e tentar o merge de novo.")}
+
+      {:error, :not_blocked} ->
+        {:noreply, put_flash(socket, :error, "O merge desta tarefa não está parado.")}
+    end
+  end
+
   def handle_event("remove_worktree", _params, socket) do
     case Tasks.remove_worktree(socket.assigns.task) do
       {:ok, _task} ->
@@ -568,6 +581,12 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     >
       <:status>
         <.task_status task={@task} data-testid="task-status" />
+        <.merge_state
+          :if={@task.merge_state}
+          task={@task}
+          title={@task.merge_reason}
+          data-testid="task-merge-state"
+        />
         <.badge
           size="sm"
           variant="outline"
@@ -598,6 +617,17 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           data-testid="task-rerun"
         >
           Reexecutar
+        </.button>
+        <.button
+          :if={@task.merge_state == "blocked" and @task.status == :succeeded}
+          size="sm"
+          variant="outline"
+          color="gray"
+          icon="hero-arrows-pointing-in"
+          phx-click="retry_merge"
+          data-testid="task-merge-retry"
+        >
+          Tentar o merge de novo
         </.button>
         <.button
           size="sm"
@@ -1032,6 +1062,13 @@ defmodule PipeMaestroWeb.TaskLive.Show do
                     >
                       Pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
                     </a>
+                  </dd>
+                  <dd
+                    :if={@task.merge_state == "blocked" and @task.merge_reason}
+                    class="mt-1 text-xs text-gray-600 dark:text-gray-300"
+                    data-testid="task-merge-reason"
+                  >
+                    O merge parou: {@task.merge_reason}
                   </dd>
                   <dd :if={@task.issue_url} class="mt-1 text-xs">
                     <a

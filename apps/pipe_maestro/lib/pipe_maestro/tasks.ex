@@ -1182,10 +1182,39 @@ defmodule PipeMaestro.Tasks do
       decision_analysis_job_id: nil,
       finished_at: now()
     )
+    |> Ecto.Changeset.change(merge_fields(task, status))
     |> Repo.update!()
     |> announce(status)
+    |> tap(&tell_merge_blocked/1)
     |> tap(&start_next_queued(&1.workspace_id))
   end
+
+  defp tell_merge_blocked(%Task{status: :succeeded, merge_state: "blocked"} = task),
+    do: Notifications.notify_task(task, :merge_blocked)
+
+  defp tell_merge_blocked(_task), do: []
+
+  # With `auto_merge`, a task that succeeded waits for the host's checks to
+  # merge its pull request (`PipeMaestro.Integrations.AutoMerge`), which only
+  # the platform can do: without a connection that lets it call the host,
+  # the merge is blocked from the start. A task canceled while it was being
+  # fixed for the merge no longer waits for it.
+  defp merge_fields(%Task{pipeline_context: %{"auto_merge" => true}} = task, :succeeded) do
+    if Integrations.keeps_pull_request?(task),
+      do: [merge_state: "waiting_checks", merge_reason: nil, merge_waiting_since: now()],
+      else: [
+        merge_state: "blocked",
+        merge_reason:
+          "o repositório não está vinculado por uma integração que deixe a plataforma fazer o merge",
+        merge_waiting_since: nil
+      ]
+  end
+
+  defp merge_fields(%Task{merge_state: state}, :canceled)
+       when state in ["waiting_checks", "fixing"],
+       do: [merge_state: nil, merge_waiting_since: nil]
+
+  defp merge_fields(_task, _status), do: []
 
   # ── The analysis of a failure ─────────────────────────────────────────────
 
@@ -1618,7 +1647,8 @@ defmodule PipeMaestro.Tasks do
           by: User.t() | nil,
           via: String.t() | nil,
           runner_id: String.t() | nil,
-          runner_online?: boolean()
+          runner_online?: boolean(),
+          merge_fix: boolean()
         ]
 
   @typedoc "Why a task's stage could not be run again."
@@ -1658,7 +1688,7 @@ defmodule PipeMaestro.Tasks do
   end
 
   @correction_prompt """
-  Esta tarefa já passou pelas etapas do pipeline. Uma pessoa pediu uma correção: ela está nas instruções abaixo e é o objetivo desta etapa.
+  Esta tarefa já passou pelas etapas do pipeline. Foi pedida uma correção: ela está nas instruções abaixo e é o objetivo desta etapa.
 
   # O que fazer
   1. Entenda onde a tarefa está: leia os artefatos das etapas anteriores e veja a branch (`git status`, `git fetch origin` e `git log --oneline origin/main..HEAD`).
@@ -1673,7 +1703,10 @@ defmodule PipeMaestro.Tasks do
   canceled), in its worktree and branch: a stage "Correção N" is added at the
   end of the task, with the gates, attempts, model and timeout of its last
   stage, and runs like any stage (gates, delivery, decisions). Options as in
-  `redo_from/4`.
+  `redo_from/4`, plus `merge_fix: true` when it fixes what kept the platform
+  from merging the pull request (`PipeMaestro.Integrations.AutoMerge`): the
+  task counts it in `merge_fixes` and is `"fixing"` until it succeeds again.
+  A person's correction leaves the merge to be worked out again then.
   """
   @spec correct(Task.t(), String.t() | nil, rerun_opts()) ::
           {:ok, Task.t()} | {:error, rerun_error()}
@@ -1694,7 +1727,7 @@ defmodule PipeMaestro.Tasks do
 
           task =
             task
-            |> Ecto.Changeset.change()
+            |> Ecto.Changeset.change(correction_merge_fields(task, opts[:merge_fix]))
             |> Ecto.Changeset.put_embed(:stages, task.stages ++ [stage])
             |> Repo.update!()
 
@@ -1716,6 +1749,76 @@ defmodule PipeMaestro.Tasks do
           {:ok, task}
         end
     end
+  end
+
+  defp correction_merge_fields(task, true),
+    do: [
+      merge_state: "fixing",
+      merge_fixes: task.merge_fixes + 1,
+      merge_reason: nil,
+      merge_waiting_since: nil
+    ]
+
+  defp correction_merge_fields(_task, _merge_fix),
+    do: [merge_state: nil, merge_reason: nil, merge_waiting_since: nil]
+
+  @doc """
+  Has the platform try again to merge the pull request of a task whose merge
+  was blocked: it waits for the host's checks again, with its corrections
+  counted from zero.
+  """
+  @spec retry_merge(Task.t(), User.t() | nil) :: {:ok, Task.t()} | {:error, :not_blocked}
+  def retry_merge(%Task{} = task, by) do
+    case Repo.get!(Task, task.id) do
+      %Task{status: :succeeded, merge_state: "blocked"} = task ->
+        Audit.record(task.workspace_id, by, "task.merge_retried", task)
+
+        task =
+          task
+          |> Ecto.Changeset.change(merge_fields(task, :succeeded))
+          |> Ecto.Changeset.change(merge_fixes: 0)
+          |> Repo.update!()
+          |> preload()
+
+        notify(task)
+        {:ok, task}
+
+      _other ->
+        {:error, :not_blocked}
+    end
+  end
+
+  @doc """
+  Records what the platform found trying to merge a task's pull request:
+  `attrs` among `merge_state`, `merge_reason` (`PipeMaestro.Integrations.AutoMerge`).
+  A merge done or blocked tells the task's people.
+  """
+  @spec put_merge(Task.t(), map()) :: Task.t()
+  def put_merge(%Task{} = task, attrs) do
+    task =
+      task
+      |> Ecto.Changeset.change(Map.take(attrs, [:merge_state, :merge_reason]))
+      |> Repo.update!()
+      |> preload()
+
+    case attrs[:merge_state] do
+      "merged" ->
+        Audit.record(task.workspace_id, nil, "task.merged", task)
+        Notifications.notify_task(task, :merged)
+
+      "blocked" ->
+        Audit.record(task.workspace_id, nil, "task.merge_blocked", task, %{
+          "reason" => task.merge_reason
+        })
+
+        Notifications.notify_task(task, :merge_blocked)
+
+      _other ->
+        []
+    end
+
+    notify(task)
+    task
   end
 
   defp correction_stage(task) do

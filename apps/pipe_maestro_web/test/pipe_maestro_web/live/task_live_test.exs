@@ -1033,6 +1033,48 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     end
   end
 
+  describe "merging the pull request" do
+    test "shows where the merge is and tries a blocked one again", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "name" => "Com merge",
+          "delivery" => "pr",
+          "auto_merge" => "true"
+        })
+
+      task = create_task(%{ctx | pipeline: pipeline})
+
+      task =
+        task
+        |> Ecto.Changeset.change(
+          status: :succeeded,
+          merge_state: "blocked",
+          merge_reason: "falharam os checks: `ci/test`, depois de 3 correções",
+          merge_fixes: 3
+        )
+        |> PipeMaestro.Repo.update!()
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(view, "[data-testid=task-merge-state]", "Merge parado")
+      assert has_element?(view, "[data-testid=task-merge-reason]", "ci/test")
+
+      view |> element("[data-testid=task-merge-retry]") |> render_click()
+
+      # Without an integration the platform can call, it is blocked again, from zero.
+      assert %{merge_state: "blocked", merge_fixes: 0} = PipeMaestro.Repo.reload!(task)
+      assert render(view) =~ "tentar o merge de novo"
+
+      PipeMaestro.Repo.reload!(task)
+      |> Ecto.Changeset.change(merge_state: "merged")
+      |> PipeMaestro.Repo.update!()
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=task-merge-state]", "Integrado")
+      refute has_element?(view, "[data-testid=task-merge-retry]")
+    end
+  end
+
   describe "a stage lost by a restarted runner" do
     test "shows the lost run apart from a failure, and the run again under the same attempt",
          ctx do

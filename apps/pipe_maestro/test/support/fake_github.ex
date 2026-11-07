@@ -59,6 +59,36 @@ defmodule PipeMaestro.FakeGitHub do
   @spec repo(pid(), String.t()) :: map()
   def repo(fake, name), do: state(fake).repos[name]
 
+  @doc "Changes a pull request as a person would on the host."
+  @spec edit_pull(pid(), String.t(), pos_integer(), (map() -> map())) :: :ok
+  def edit_pull(fake, name, number, fun) do
+    edit = &if(&1["number"] == number, do: fun.(&1), else: &1)
+    update_repo(fake, name, &Map.update!(&1, :pulls, fn pulls -> Enum.map(pulls, edit) end))
+  end
+
+  @doc "Adds a commit status, as a CI would."
+  @spec put_status(pid(), String.t(), String.t(), String.t(), String.t()) :: :ok
+  def put_status(fake, name, sha, context, state) do
+    status = %{"sha" => sha, "context" => context, "state" => state, "description" => state}
+    update_repo(fake, name, &Map.update!(&1, :statuses, fn all -> all ++ [status] end))
+  end
+
+  @doc "Adds a check run of another app, as a CI would."
+  @spec put_check_run(pid(), String.t(), String.t(), String.t(), String.t() | nil) :: :ok
+  def put_check_run(fake, name, sha, check, conclusion) do
+    run = %{
+      "id" => System.unique_integer([:positive]),
+      "name" => check,
+      "head_sha" => sha,
+      "status" => if(conclusion, do: "completed", else: "in_progress"),
+      "conclusion" => conclusion,
+      "details_url" => "https://github.test/#{name}/actions/runs/1",
+      "output" => %{"title" => "#{check} #{conclusion || "rodando"}"}
+    }
+
+    update_repo(fake, name, &Map.update!(&1, :check_runs, fn runs -> runs ++ [run] end))
+  end
+
   @doc "The token handed for an installation, with what it was given."
   @spec tokens(pid()) :: [map()]
   def tokens(fake), do: fake |> state() |> Map.fetch!(:tokens) |> Map.values()
@@ -72,6 +102,7 @@ defmodule PipeMaestro.FakeGitHub do
         comments: [],
         reactions: [],
         check_runs: [],
+        statuses: [],
         pulls: []
       },
       repo
@@ -364,7 +395,13 @@ defmodule PipeMaestro.FakeGitHub do
 
   defp repo_path(conn, _fake, _token, _full, repo, "GET", ["commits", sha, "check-runs"]) do
     name = conn.query_params["check_name"]
-    runs = Enum.filter(repo.check_runs, &(&1["head_sha"] == sha and &1["name"] == name))
+
+    runs =
+      Enum.filter(
+        repo.check_runs,
+        &(&1["head_sha"] == sha and (name == nil or &1["name"] == name))
+      )
+
     respond(conn, 200, %{"total_count" => length(runs), "check_runs" => runs})
   end
 
@@ -417,6 +454,54 @@ defmodule PipeMaestro.FakeGitHub do
 
     update_repo(fake, full, &Map.update!(&1, :pulls, fn pulls -> Enum.map(pulls, edit) end))
     respond(conn, 200, Enum.find(repo(fake, full).pulls, &(&1["number"] == number)))
+  end
+
+  defp repo_path(conn, _fake, _token, _full, repo, "GET", ["pulls", number]) do
+    case Enum.find(repo.pulls, &(to_string(&1["number"]) == number)) do
+      nil ->
+        respond(conn, 404, %{"message" => "Not Found"})
+
+      pull ->
+        respond(
+          conn,
+          200,
+          pull |> Map.put_new("mergeable", true) |> Map.put_new("merged", false)
+        )
+    end
+  end
+
+  defp repo_path(conn, fake, _token, full, repo, "PUT", ["pulls", number, "merge"]) do
+    number = String.to_integer(number)
+    pull = Enum.find(repo.pulls, &(&1["number"] == number))
+
+    cond do
+      pull["mergeable"] == false ->
+        respond(conn, 405, %{"message" => "Pull Request is not mergeable"})
+
+      conn.body_params["sha"] != get_in(pull, ["head", "sha"]) ->
+        respond(conn, 409, %{"message" => "Head branch was modified"})
+
+      true ->
+        merged =
+          &if(&1["number"] == number,
+            do:
+              Map.merge(&1, %{"merged" => true, "state" => "closed", "merge" => conn.body_params}),
+            else: &1
+          )
+
+        update_repo(fake, full, &Map.update!(&1, :pulls, fn pulls -> Enum.map(pulls, merged) end))
+        respond(conn, 200, %{"merged" => true})
+    end
+  end
+
+  defp repo_path(conn, _fake, _token, _full, repo, "GET", ["commits", sha, "status"]) do
+    statuses =
+      repo.statuses
+      |> Enum.filter(&(&1["sha"] == sha))
+      |> Enum.reverse()
+      |> Enum.uniq_by(& &1["context"])
+
+    respond(conn, 200, %{"sha" => sha, "statuses" => statuses})
   end
 
   defp repo_path(conn, _fake, _token, _full, _repo, _method, _path),

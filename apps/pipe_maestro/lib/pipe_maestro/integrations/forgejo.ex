@@ -166,7 +166,11 @@ defmodule PipeMaestro.Integrations.Forgejo do
       body: pr["body"] || "",
       url: pr["html_url"],
       head: get_in(pr, ["head", "ref"]),
+      head_sha: get_in(pr, ["head", "sha"]),
+      base: get_in(pr, ["base", "ref"]),
+      state: pr["state"],
       merged: pr["merged"] == true,
+      mergeable: pr["mergeable"],
       draft: String.starts_with?(title, @draft)
     }
   end
@@ -435,6 +439,29 @@ defmodule PipeMaestro.Integrations.Forgejo do
              ),
            do: {:ok, pull(updated)}
     end
+  end
+
+  @impl true
+  def get_pr(client, full_name, number) do
+    with {:ok, pr, _} <- Client.request(client, url: "/repos/#{full_name}/pulls/#{number}"),
+         do: {:ok, pull(pr)}
+  end
+
+  # Forgejo Actions and other CIs report as commit statuses.
+  @impl true
+  def pr_checks(client, full_name, sha) do
+    with {:ok, combined, _} <-
+           Client.request(client, url: "/repos/#{full_name}/commits/#{sha}/status"),
+         do: {:ok, status_checks(combined)}
+  end
+
+  @impl true
+  def merge_pr(client, full_name, number, %{method: method, sha: sha}) do
+    request_ok(client,
+      method: :post,
+      url: "/repos/#{full_name}/pulls/#{number}/merge",
+      json: %{Do: method, head_commit_id: sha}
+    )
   end
 
   defp all_pages(client, path, params, limit \\ @page_size) do

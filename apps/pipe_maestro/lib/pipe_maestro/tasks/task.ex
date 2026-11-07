@@ -21,6 +21,13 @@ defmodule PipeMaestro.Tasks.Task do
   is `pr_url`, and a decision waits in `pending_issue_comment` to be commented
   on the issue with the next stage.
 
+  With a pipeline that merges its pull request (`auto_merge`), a task that
+  succeeded has a `merge_state`: `"waiting_checks"` (since
+  `merge_waiting_since`) until the host's checks end, `"fixing"` while a
+  correction stage works on a check that failed or a conflict (`merge_fixes`
+  counts them), `"merged"`, or `"blocked"` with the reason in
+  `merge_reason` (`PipeMaestro.Integrations.AutoMerge`).
+
   A task waiting for a decision has someone to decide (`decision_owner`, its
   creator unless passed on) and a deadline (`decision_due_at`). When it
   paused because a stage blocked or failed, it may also have questions for
@@ -74,6 +81,10 @@ defmodule PipeMaestro.Tasks.Task do
           linked_repo_id: Ecto.UUID.t() | nil,
           linked_repo: LinkedRepo.t() | Ecto.Association.NotLoaded.t() | nil,
           pause_requested: boolean(),
+          merge_state: String.t() | nil,
+          merge_fixes: non_neg_integer(),
+          merge_reason: String.t() | nil,
+          merge_waiting_since: DateTime.t() | nil,
           status: status(),
           current_stage: non_neg_integer(),
           decision_reason: String.t() | nil,
@@ -120,6 +131,10 @@ defmodule PipeMaestro.Tasks.Task do
     field :issue_feedback, :map, default: %{}
     field :head_sha, :string
     field :pause_requested, :boolean, default: false
+    field :merge_state, :string
+    field :merge_fixes, :integer, default: 0
+    field :merge_reason, :string
+    field :merge_waiting_since, :utc_datetime
 
     field :status, Ecto.Enum,
       values: [:queued, :running, :awaiting_decision, :succeeded, :failed, :canceled],

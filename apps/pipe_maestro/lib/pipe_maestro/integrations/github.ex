@@ -352,7 +352,11 @@ defmodule PipeMaestro.Integrations.GitHub do
       body: pr["body"] || "",
       url: pr["html_url"],
       head: get_in(pr, ["head", "ref"]),
+      head_sha: get_in(pr, ["head", "sha"]),
+      base: get_in(pr, ["base", "ref"]),
+      state: pr["state"],
       merged: pr["merged"] == true,
+      mergeable: pr["mergeable"],
       draft: pr["draft"] == true
     }
   end
@@ -640,6 +644,65 @@ defmodule PipeMaestro.Integrations.GitHub do
   end
 
   defp mark_ready(_client, _pr, _ready), do: :ok
+
+  @impl true
+  def get_pr(client, full_name, number) do
+    with {:ok, pr, _} <- Client.request(client, url: "/repos/#{full_name}/pulls/#{number}"),
+         do: {:ok, pull(pr)}
+  end
+
+  @impl true
+  def pr_checks(client, full_name, sha) do
+    with {:ok, combined, _} <-
+           Client.request(client, url: "/repos/#{full_name}/commits/#{sha}/status"),
+         {:ok, runs} <- check_runs(client, "/repos/#{full_name}/commits/#{sha}/check-runs") do
+      {:ok, status_checks(combined) ++ Enum.map(runs, &run_check/1)}
+    end
+  end
+
+  # The latest run of each check, every page of them.
+  defp check_runs(client, path) do
+    Enum.reduce_while(1..@max_pages, {:ok, []}, fn page, {:ok, acc} ->
+      case Client.request(client,
+             url: path,
+             params: [filter: "latest", per_page: @per_page, page: page]
+           ) do
+        {:ok, %{"check_runs" => runs}, _} when length(runs) < @per_page ->
+          {:halt, {:ok, acc ++ runs}}
+
+        {:ok, %{"check_runs" => runs}, _} ->
+          {:cont, {:ok, acc ++ runs}}
+
+        {:error, _} = error ->
+          {:halt, error}
+      end
+    end)
+  end
+
+  defp run_check(run) do
+    %{
+      name: run["name"],
+      state: run_check_state(run["status"], run["conclusion"]),
+      url: run["details_url"] || run["html_url"],
+      summary: get_in(run, ["output", "title"]) || get_in(run, ["output", "summary"])
+    }
+  end
+
+  defp run_check_state("completed", conclusion)
+       when conclusion in ["success", "neutral", "skipped"],
+       do: :success
+
+  defp run_check_state("completed", _failed), do: :failure
+  defp run_check_state(_queued_or_in_progress, _conclusion), do: :pending
+
+  @impl true
+  def merge_pr(client, full_name, number, %{method: method, sha: sha}) do
+    request_ok(client,
+      method: :put,
+      url: "/repos/#{full_name}/pulls/#{number}/merge",
+      json: %{merge_method: method, sha: sha}
+    )
+  end
 
   defp all_pages(client, path, params) do
     Enum.reduce_while(1..@max_pages, {:ok, []}, fn page, {:ok, acc} ->

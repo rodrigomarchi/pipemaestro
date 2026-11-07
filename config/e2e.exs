@@ -50,6 +50,9 @@ config :pipe_maestro, PipeMaestro.Integrations,
   allow_private_hosts: true,
   public_url: "http://localhost:#{e2e_http_port}"
 
+# A pull request waiting to merge is looked at every second, not every minute.
+config :pipe_maestro, PipeMaestro.Integrations.AutoMergeWorker, every: 1_000
+
 # The platform's GitHub App, against the suite's fake GitHub (e2e/helpers/fakeGitHub.ts).
 github_url = "http://localhost:#{System.get_env("E2E_GITHUB_PORT", "4014")}"
 github_key = :public_key.generate_key({:rsa, 2048, 65_537})

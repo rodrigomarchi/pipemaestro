@@ -22,6 +22,9 @@ defmodule PipeMaestro.Pipelines.Yaml do
       {"system_prompt", pipeline.system_prompt},
       {"max_task_cost_usd", decimal(pipeline.max_task_cost_usd)},
       {"delivery", if(pipeline.delivery == "none", do: nil, else: pipeline.delivery)},
+      {"auto_merge", if(pipeline.auto_merge, do: true)},
+      {"merge_method", if(pipeline.auto_merge, do: pipeline.merge_method)},
+      {"max_merge_fixes", if(pipeline.auto_merge, do: pipeline.max_merge_fixes)},
       {"mcp_config", pipeline.mcp_config},
       {"agents", pipeline.agents}
     ]
@@ -123,20 +126,23 @@ defmodule PipeMaestro.Pipelines.Yaml do
   @spec from_map(map()) :: map()
   def from_map(%{} = map) do
     map
-    |> Map.take(~w(name description system_prompt max_task_cost_usd delivery))
+    |> Map.take(
+      ~w(name description system_prompt max_task_cost_usd delivery auto_merge merge_method max_merge_fixes)
+    )
     |> put_json(map, "mcp_config")
     |> put_json(map, "agents")
     |> Map.put("stages", Enum.map(List.wrap(map["stages"]), &stage_attrs/1))
   end
 
   @doc """
-  `attrs` (from `from_map/1`) without cost caps: no `max_task_cost_usd` and no
-  `max_budget_usd` on any stage. A cap is only what a person sets.
+  `attrs` (from `from_map/1`) without what only a person sets: no cost caps
+  (`max_task_cost_usd`, `max_budget_usd` on any stage) and no merge of the
+  pull request by the platform (`auto_merge` and its settings).
   """
   @spec without_caps(map()) :: map()
   def without_caps(%{} = attrs) do
     attrs
-    |> Map.delete("max_task_cost_usd")
+    |> Map.drop(~w(max_task_cost_usd auto_merge merge_method max_merge_fixes))
     |> Map.update("stages", [], fn stages ->
       Enum.map(stages, &Map.delete(&1, "max_budget_usd"))
     end)

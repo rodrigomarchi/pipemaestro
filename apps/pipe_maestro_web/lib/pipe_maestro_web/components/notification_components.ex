@@ -25,6 +25,12 @@ defmodule PipeMaestroWeb.NotificationComponents do
   def kind_style(:task_failed), do: {"hero-x-circle", "text-danger-600 dark:text-danger-400"}
   def kind_style(:task_canceled), do: {"hero-no-symbol", "text-gray-500 dark:text-gray-400"}
 
+  def kind_style(:task_merged),
+    do: {"hero-arrows-pointing-in", "text-success-600 dark:text-success-400"}
+
+  def kind_style(:task_merge_blocked),
+    do: {"hero-exclamation-triangle", "text-warning-600 dark:text-warning-400"}
+
   def kind_style(:proposal_ready),
     do: {"hero-light-bulb", "text-primary-600 dark:text-primary-400"}
 

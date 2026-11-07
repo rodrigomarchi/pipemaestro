@@ -54,7 +54,10 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
 
   attr :form, Phoenix.HTML.Form, required: true
 
-  @doc "The pipeline's cost cap and delivery, with the platform's checks."
+  @doc """
+  The pipeline's cost cap and delivery, with the platform's checks and, for a
+  delivery in PR, whether the platform merges it.
+  """
   def execution_fields(assigns) do
     assigns = assign(assigns, delivery: delivery(assigns.form[:delivery].value))
 
@@ -106,8 +109,53 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
         Etapas em grupo (paralelas) ficam de fora.
       </p>
     </div>
+    <div
+      :if={@form[:delivery].value == "pr"}
+      class="mt-4 space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+      data-testid="pipeline-auto-merge-section"
+    >
+      <.field
+        field={@form[:auto_merge]}
+        type="switch"
+        label="Fazer o merge do PR sozinha"
+        no_margin
+        data-testid="pipeline-auto-merge"
+      />
+      <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="pipeline-auto-merge-help">
+        Ao fim do pipeline, a plataforma espera os checks do repositório e faz o merge quando todos
+        passam e não há conflito. Um check que falha ou um conflito volta ao agente numa etapa de
+        correção. Precisa de um repositório vinculado por uma integração.
+      </p>
+      <div
+        :if={checked?(@form[:auto_merge].value)}
+        class="grid gap-3 sm:grid-cols-2"
+        data-testid="pipeline-auto-merge-settings"
+      >
+        <.icon_field
+          field={@form[:merge_method]}
+          icon="hero-arrows-pointing-in"
+          type="select"
+          label="Como fazer o merge"
+          options={[{"Squash", "squash"}, {"Merge commit", "merge"}, {"Rebase", "rebase"}]}
+          no_margin
+          data-testid="pipeline-merge-method"
+        />
+        <.icon_field
+          field={@form[:max_merge_fixes]}
+          icon="hero-wrench-screwdriver"
+          type="number"
+          min="0"
+          max="10"
+          label="Correções antes de desistir"
+          no_margin
+          data-testid="pipeline-max-merge-fixes"
+        />
+      </div>
+    </div>
     """
   end
+
+  defp checked?(value), do: value in [true, "true"]
 
   defp delivery_options, do: Enum.map(@deliveries, fn {value, label, _, _} -> {label, value} end)
 

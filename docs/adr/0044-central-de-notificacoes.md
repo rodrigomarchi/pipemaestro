@@ -28,7 +28,10 @@ estava rodando naquele momento.
      admins do workspace.
    - Ninguém lê nem marca a notificação de outra pessoa ou de outro workspace: o escopo
      fica na consulta.
-3. **`proposal_ready` e `proposal_failed` vão para quem pediu a proposta**, quando ela
+3. **`task_merged` e `task_merge_blocked`** vão para as mesmas pessoas da tarefa,
+   quando a plataforma faz o merge do PR ou desiste dele, com o motivo no corpo
+   ([ADR 0045](0045-merge-automatico-do-pr.md)).
+4. **`proposal_ready` e `proposal_failed` vão para quem pediu a proposta**, quando ela
    termina com sucesso (para revisar) ou falha (para saber que não chegou a lugar
    nenhum e pode ser pedida de novo). O erro da execução vai no corpo. Ficam de fora:
    - a análise de uma falha, que vira o questionário da tarefa, já notificada como
@@ -36,9 +39,9 @@ estava rodando naquele momento.
    - a proposta de tarefa auto-aprovada que virou tarefa: não há o que revisar, e a
      tarefa avisa por conta própria;
    - a proposta cancelada: não é falha, e esta decisão não a cobre.
-4. **Retenção.** A `PipeMaestro.Maintenance` apaga as notificações lidas há mais de 30
+5. **Retenção.** A `PipeMaestro.Maintenance` apaga as notificações lidas há mais de 30
    dias (`:notifications_days`). As não lidas ficam.
-5. **Um tópico próprio para o que roda** (`notifications:activity:<workspace>`).
+6. **Um tópico próprio para o que roda** (`notifications:activity:<workspace>`).
    - `Tasks` e `Jobs` publicam `{:executions_changed, workspace_id}` a cada mudança de
      uma tarefa ou de uma proposta.
    - O hook das telas (`PipeMaestroWeb.NotificationHooks`) consome essa mensagem e a
@@ -46,20 +49,20 @@ estava rodando naquele momento.
    - Ele não assina `tasks:workspace`: as telas que já assinam esse tópico receberiam
      cada mensagem em dobro, e as que não tratam `{:task_updated, _}` quebrariam.
    - A lista é reconsultada uma vez a cada rajada de mudanças, com debounce de 300 ms.
-6. **O toast e a notificação do navegador continuam.** Eles avisam na hora quem está
+7. **O toast e a notificação do navegador continuam.** Eles avisam na hora quem está
    na tela; a caixa guarda o histórico. Os três saem do mesmo evento da tarefa.
-7. **O painel é um LiveComponent no layout** (`PipeMaestroWeb.NotificationCenter`).
+8. **O painel é um LiveComponent no layout** (`PipeMaestroWeb.NotificationCenter`).
    - Aberto ou fechado, aba, "Minhas/Todas", filtro e páginas são estado dele:
      abrir e fechar o painel não toca no estado da página.
    - As abas não usam `?aba=`, porque um overlay não muda a URL da página de baixo.
    - A página `/notifications` guarda o filtro em `?filtro=`.
-8. **O ponto pulsante do sino indica trabalho do agente**: tarefa ou proposta rodando
+9. **O ponto pulsante do sino indica trabalho do agente**: tarefa ou proposta rodando
    ou na fila. Uma tarefa que espera uma pessoa aparece em "Em andamento", mas não
    acende o ponto.
-9. **Tempos no cliente.** O hook JS `Elapsed` atualiza o tempo decorrido e o relativo a
+10. **Tempos no cliente.** O hook JS `Elapsed` atualiza o tempo decorrido e o relativo a
    partir de `data-since`. O servidor renderiza o primeiro valor e não mantém timer.
 
-10. **Eventos novos entram caso a caso, nunca por padrão.** Cada evento da plataforma
+11. **Eventos novos entram caso a caso, nunca por padrão.** Cada evento da plataforma
     que passar a avisar pela caixa precisa de uma linha nesta ADR, com o motivo.
     - Eventos de runner e de integração entram só quando exigem ação de quem os
       recebe (um runner que parou e precisa de atenção, uma integração que pede

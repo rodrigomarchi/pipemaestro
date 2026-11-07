@@ -105,6 +105,15 @@ defmodule PipeMaestro.Integrations.IngestTest do
   end
 
   # What a background step left, once it shows.
+  # Other tests run background work too: past a second, it stops waiting.
+  defp background_done(tries \\ 50) do
+    if Elixir.Task.Supervisor.children(PipeMaestro.Integrations.TaskSupervisor) != [] and
+         tries > 0 do
+      Process.sleep(20)
+      background_done(tries - 1)
+    end
+  end
+
   defp eventually(read, done?, tries \\ 50) do
     value = read.()
 
@@ -202,6 +211,9 @@ defmodule PipeMaestro.Integrations.IngestTest do
       assert {task.linked_repo_id, task.issue_number} == {ctx.repo.id, 3}
       assert task.issue_url == "https://forge.test/acme/app/issues/3"
       assert task.created_by_user_id == ctx.user.id
+
+      # The triage's end is told in the background: it must not outlive the test.
+      background_done()
     end
 
     test "a triage that is not ready asks its questions on the issue", ctx do

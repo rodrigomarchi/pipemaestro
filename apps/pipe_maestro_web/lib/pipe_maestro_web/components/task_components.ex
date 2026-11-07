@@ -33,6 +33,33 @@ defmodule PipeMaestroWeb.TaskComponents do
   defp task_label(:failed), do: {"Falhou", "danger"}
   defp task_label(:canceled), do: {"Cancelada", "gray"}
 
+  @doc """
+  Where the platform is with merging the task's pull request
+  (`PipeMaestro.Tasks.Task` `merge_state`), as a badge.
+  """
+  attr :task, Task, required: true
+  attr :rest, :global
+
+  @spec merge_state(map()) :: Phoenix.LiveView.Rendered.t()
+  def merge_state(assigns) do
+    {label, color} = merge_label(assigns.task)
+    assigns = assign(assigns, label: label, color: color)
+
+    ~H"""
+    <.badge size="sm" variant="soft" color={@color} dot label={@label} {@rest} />
+    """
+  end
+
+  defp merge_label(%Task{merge_state: "waiting_checks"}), do: {"Merge: aguardando checks", "info"}
+
+  defp merge_label(%Task{merge_state: "fixing"} = task),
+    do:
+      {"Merge: corrigindo (#{task.merge_fixes}/#{task.pipeline_context["max_merge_fixes"]})",
+       "warning"}
+
+  defp merge_label(%Task{merge_state: "merged"}), do: {"Integrado", "success"}
+  defp merge_label(%Task{}), do: {"Merge parado", "danger"}
+
   @doc "A stage attempt's status as a badge."
   attr :run, StageRun, required: true
   attr :rest, :global

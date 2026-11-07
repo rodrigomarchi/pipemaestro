@@ -5,7 +5,8 @@ defmodule PipeMaestro.Notifications.Notification do
 
   `kind` says what happened: a task paused for a decision
   (`:task_awaiting_decision`), ended (`:task_succeeded`, `:task_failed`,
-  `:task_canceled`), or a proposal is ready for review (`:proposal_ready`)
+  `:task_canceled`), its pull request was merged by the platform
+  (`:task_merged`) or the merge stopped (`:task_merge_blocked`), or a proposal is ready for review (`:proposal_ready`)
   or failed (`:proposal_failed`).
   `task_id` or `job_id` is what it leads to; `body` is Markdown.
   """
@@ -21,6 +22,8 @@ defmodule PipeMaestro.Notifications.Notification do
     :task_succeeded,
     :task_failed,
     :task_canceled,
+    :task_merged,
+    :task_merge_blocked,
     :proposal_ready,
     :proposal_failed
   ]
@@ -30,6 +33,8 @@ defmodule PipeMaestro.Notifications.Notification do
           | :task_succeeded
           | :task_failed
           | :task_canceled
+          | :task_merged
+          | :task_merge_blocked
           | :proposal_ready
           | :proposal_failed
 

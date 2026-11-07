@@ -89,6 +89,20 @@ defmodule PipeMaestro.FakeForgejo do
     )
   end
 
+  @doc "Adds a commit status, as a CI would."
+  @spec put_status(pid(), String.t(), String.t(), String.t(), String.t()) :: :ok
+  def put_status(fake, name, sha, context, state) do
+    status = %{
+      "sha" => sha,
+      "context" => context,
+      "state" => state,
+      "description" => "#{context}: #{state}",
+      "target_url" => "#{@base}/#{name}/actions/runs/1"
+    }
+
+    Agent.update(fake, &update_in(&1, [:repos, name, :statuses], fn all -> all ++ [status] end))
+  end
+
   @doc "Makes the next `times` calls to `method path` answer `status`."
   @spec fail(pid(), {String.t(), String.t()}, pos_integer(), pos_integer()) :: :ok
   def fail(fake, {method, path}, status, times \\ 1_000) do
@@ -440,6 +454,40 @@ defmodule PipeMaestro.FakeForgejo do
     changes = Map.take(conn.body_params, ~w(title body))
     update_item(fake, full, :pulls, &(&1["number"] == number), &Map.merge(&1, changes))
     respond(conn, 200, Enum.find(repo(fake, full).pulls, &(&1["number"] == number)))
+  end
+
+  defp repo_route(conn, _fake, _full, repo, "GET", ["pulls", number]) do
+    case Enum.find(repo.pulls, &(to_string(&1["number"]) == number)) do
+      nil -> respond(conn, 404, %{"message" => "not found"})
+      pull -> respond(conn, 200, Map.put_new(pull, "mergeable", true))
+    end
+  end
+
+  defp repo_route(conn, fake, full, repo, "POST", ["pulls", number, "merge"]) do
+    number = String.to_integer(number)
+    pull = Enum.find(repo.pulls, &(&1["number"] == number))
+
+    if pull["mergeable"] == false or pull["merged"] do
+      respond(conn, 405, %{"message" => "Please try again later"})
+    else
+      merged =
+        &Map.merge(&1, %{"merged" => true, "state" => "closed", "merge" => conn.body_params})
+
+      update_item(fake, full, :pulls, &(&1["number"] == number), merged)
+      send_resp(conn, 200, "")
+    end
+  end
+
+  # The latest status of each context on the commit.
+  defp repo_route(conn, _fake, _full, repo, "GET", ["commits", sha, "status"]) do
+    statuses =
+      repo.statuses
+      |> Enum.filter(&(&1["sha"] == sha))
+      |> Enum.reverse()
+      |> Enum.uniq_by(& &1["context"])
+      |> Enum.map(&Map.put(&1, "status", &1["state"]))
+
+    respond(conn, 200, %{"sha" => sha, "statuses" => statuses})
   end
 
   defp repo_route(conn, _fake, _full, _repo, _method, _rest),

@@ -14,7 +14,11 @@ defmodule PipeMaestro.Pipelines.Pipeline do
   `delivery` is what the runner does with a stage that passed, in a git
   directory: `"none"` (whatever the prompts say), `"commit"` (a commit per
   stage) or `"pr"` (also push the branch and keep a draft pull request,
-  ready after the last stage).
+  ready after the last stage). With `"pr"`, `auto_merge` has the platform
+  merge the pull request once the host's checks pass and it has no conflict
+  (`merge_method`: `"merge"`, `"squash"` or `"rebase"`); a check that fails
+  or a conflict sends the task to a correction stage, up to
+  `max_merge_fixes` times (`PipeMaestro.Integrations.AutoMerge`).
 
   `version` goes up on every save. A task keeps a snapshot of the pipeline it
   started with, so editing one never changes a task already running.
@@ -38,6 +42,9 @@ defmodule PipeMaestro.Pipelines.Pipeline do
           agents_json: String.t() | nil,
           max_task_cost_usd: Decimal.t() | nil,
           delivery: String.t(),
+          auto_merge: boolean(),
+          merge_method: String.t(),
+          max_merge_fixes: non_neg_integer(),
           stages: [Stage.t()],
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
@@ -58,6 +65,9 @@ defmodule PipeMaestro.Pipelines.Pipeline do
     field :agents_json, :string, virtual: true
     field :max_task_cost_usd, :decimal
     field :delivery, :string, default: "none"
+    field :auto_merge, :boolean, default: false
+    field :merge_method, :string, default: "squash"
+    field :max_merge_fixes, :integer, default: 3
 
     embeds_many :stages, Stage, on_replace: :delete
 
@@ -80,9 +90,21 @@ defmodule PipeMaestro.Pipelines.Pipeline do
       :mcp_config_json,
       :agents_json,
       :max_task_cost_usd,
-      :delivery
+      :delivery,
+      :auto_merge,
+      :merge_method,
+      :max_merge_fixes
     ])
     |> validate_inclusion(:delivery, ~w(none commit pr), message: "escolha como entregar")
+    |> validate_inclusion(:merge_method, ~w(merge squash rebase),
+      message: "escolha como fazer o merge"
+    )
+    |> validate_number(:max_merge_fixes,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 10,
+      message: "use um valor de 0 a 10"
+    )
+    |> validate_auto_merge()
     |> validate_number(:max_task_cost_usd, greater_than: 0, message: "use um valor positivo")
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name], message: "dê um nome ao pipeline")
@@ -127,8 +149,18 @@ defmodule PipeMaestro.Pipelines.Pipeline do
       "agents" => pipeline.agents,
       "max_cost_usd" =>
         pipeline.max_task_cost_usd && Decimal.to_string(pipeline.max_task_cost_usd),
-      "delivery" => pipeline.delivery
+      "delivery" => pipeline.delivery,
+      "auto_merge" => pipeline.auto_merge,
+      "merge_method" => pipeline.merge_method,
+      "max_merge_fixes" => pipeline.max_merge_fixes
     }
+  end
+
+  # Merging needs a pull request.
+  defp validate_auto_merge(changeset) do
+    if get_field(changeset, :auto_merge) and get_field(changeset, :delivery) != "pr",
+      do: add_error(changeset, :auto_merge, "o merge automático precisa da entrega em PR"),
+      else: changeset
   end
 
   defp mcp_config?(%{"mcpServers" => servers}) when is_map(servers), do: true
