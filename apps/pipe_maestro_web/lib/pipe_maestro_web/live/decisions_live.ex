@@ -10,6 +10,7 @@ defmodule PipeMaestroWeb.DecisionsLive do
 
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
   import PipeMaestroWeb.QuestionnaireComponents, only: [analysis_state: 1, decode_answers: 1]
+  import PipeMaestroWeb.TaskComponents, only: [task_progress: 1]
 
   alias PipeMaestro.{Tasks, Workspaces}
   alias PipeMaestro.Tasks.Task
@@ -126,13 +127,6 @@ defmodule PipeMaestroWeb.DecisionsLive do
   defp overdue?(%Task{decision_due_at: nil}, _now), do: false
   defp overdue?(%Task{decision_due_at: due}, now), do: DateTime.compare(due, now) == :lt
 
-  defp stage_name(%Task{stages: stages, current_stage: index}) do
-    case Enum.at(stages, index) do
-      nil -> "—"
-      stage -> "#{index + 1}/#{length(stages)} · #{stage.name}"
-    end
-  end
-
   @impl true
   def render(assigns) do
     ~H"""
@@ -193,8 +187,13 @@ defmodule PipeMaestroWeb.DecisionsLive do
                 >
                   {task.title}
                 </.link>
+                <.task_progress
+                  task={task}
+                  class="mt-1 text-sm text-gray-500 dark:text-gray-400"
+                  testid={"decision-progress-#{task.id}"}
+                />
                 <p class="text-sm text-gray-500 dark:text-gray-400">
-                  {task.pipeline_name} · {stage_name(task)} ·
+                  {task.pipeline_name} ·
                   <span data-testid={"decision-project-#{task.id}"}>
                     {(task.project || %{})["name"] || task.directory}
                   </span>

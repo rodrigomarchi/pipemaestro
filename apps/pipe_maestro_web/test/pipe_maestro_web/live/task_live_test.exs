@@ -152,6 +152,11 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=task-progress-#{task.id}]", "2/2 · Etapa B")
 
+      assert has_element?(
+               view,
+               "[data-testid=task-progress-#{task.id}] [data-testid=diagram-dot-0][data-state=passed]"
+             )
+
       # Each attempt shows its tokens and leads to its audit.
       {:ok, show, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
 

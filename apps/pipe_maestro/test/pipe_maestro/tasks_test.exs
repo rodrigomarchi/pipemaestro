@@ -119,7 +119,9 @@ defmodule PipeMaestro.TasksTest do
       assert job.context["output_schema"]["required"] == ["status", "resumo"]
       assert job.context["timeout_ms"] == 60 * 60_000
 
-      assert [%Task{}] = Tasks.list_tasks(ctx.workspace)
+      # The list carries each task's attempts, for where it is in its stages.
+      assert [%Task{stage_runs: [%StageRun{index: 0, attempt: 1}]}] =
+               Tasks.list_tasks(ctx.workspace)
     end
 
     test "a directory with a project sets up the worktree and fills {{projeto.*}}", ctx do
@@ -1401,7 +1403,10 @@ defmodule PipeMaestro.TasksTest do
       colleague = member_fixture(ctx.workspace)
       assert {:ok, %Task{decision_owner_id: id}} = Tasks.assign_decision(task, colleague)
       assert id == colleague.id
-      assert [%Task{decision_owner: %{id: ^id}}] = Tasks.list_awaiting(ctx.workspace)
+
+      assert [%Task{decision_owner: %{id: ^id}, stage_runs: [%StageRun{status: :blocked}]}] =
+               Tasks.list_awaiting(ctx.workspace)
+
       assert {:error, :not_a_member} = Tasks.assign_decision(task, user_fixture())
 
       {:ok, task} = Tasks.retry_stage(task, nil)

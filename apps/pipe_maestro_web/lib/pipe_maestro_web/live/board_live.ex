@@ -10,12 +10,14 @@ defmodule PipeMaestroWeb.BoardLive do
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.RunnerComponents
-  import PipeMaestroWeb.TaskComponents, only: [task_status: 1]
+
+  import PipeMaestroWeb.TaskComponents,
+    only: [stage_progress: 1, task_progress: 1, task_status: 1]
+
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
 
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.{Jobs, Pipelines, Projects, Runners, RunnerTelemetry, Tasks, Workspaces}
-  alias PipeMaestro.Tasks.Task
   alias PipeMaestroWeb.RunnerStatus
 
   @period_days 7
@@ -147,13 +149,6 @@ defmodule PipeMaestroWeb.BoardLive do
   end
 
   defp column_tasks(tasks, column), do: Enum.filter(tasks, &(&1.status in column.statuses))
-
-  defp stage_label(%Task{stages: stages, current_stage: index}) do
-    case Enum.at(stages, index) do
-      nil -> "#{length(stages)} etapas"
-      stage -> "#{index + 1}/#{length(stages)} · #{stage.name}"
-    end
-  end
 
   defp options(values, prompt), do: [{prompt, ""} | values]
 
@@ -317,7 +312,7 @@ defmodule PipeMaestroWeb.BoardLive do
                     <span class="block text-sm font-semibold text-gray-900 dark:text-white">
                       {task.title}
                       <span class="font-normal text-gray-500 dark:text-gray-400">
-                        · {stage_label(task)}
+                        · {stage_progress(task)}
                       </span>
                     </span>
                     <span class="block text-sm text-gray-600 dark:text-gray-400">
@@ -571,8 +566,13 @@ defmodule PipeMaestroWeb.BoardLive do
             {task.title}
           </p>
           <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-            {task.pipeline_name} · {stage_label(task)}
+            {task.pipeline_name}
           </p>
+          <.task_progress
+            task={task}
+            class="mt-1.5 text-xs text-gray-500 dark:text-gray-400"
+            testid={"board-task-progress-#{task.id}"}
+          />
           <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
             <span class="flex min-w-0 items-center gap-1">
               <.icon name="hero-folder-micro" class="size-3.5 shrink-0" />

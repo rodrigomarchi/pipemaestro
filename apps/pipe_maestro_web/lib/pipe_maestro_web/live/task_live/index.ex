@@ -251,9 +251,11 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             <.task_status task={task} data-testid={"task-status-#{task.id}"} />
           </:col>
           <:col :let={task} label="Etapa">
-            <span class="text-gray-600 dark:text-gray-300" data-testid={"task-progress-#{task.id}"}>
-              {stage_progress(task)}
-            </span>
+            <.task_progress
+              task={task}
+              class="text-gray-600 dark:text-gray-300"
+              testid={"task-progress-#{task.id}"}
+            />
           </:col>
           <:col :let={task} label="Projeto">
             <span class="text-gray-900 dark:text-white">{(task.project || %{})["name"]}</span>

@@ -74,6 +74,11 @@ defmodule PipeMaestroWeb.BoardLiveTest do
 
       assert has_element?(
                view,
+               "[data-testid=board-task-progress-#{running.id}] [data-testid=diagram-dot-0][data-state=running]"
+             )
+
+      assert has_element?(
+               view,
                "[data-testid=board-task-#{running.id}] [data-testid=board-card-project]",
                "app"
              )
