@@ -125,6 +125,23 @@ defmodule PipeMaestro.JobsTest do
       assert Jobs.finish_job(ctx.runner, job.id, %{"status" => "failed"}) == {:error, :finished}
     end
 
+    test "keeps how many of the job's files did not reach the platform", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      assert {:ok, finished} =
+               Jobs.finish_job(ctx.runner, job.id, %{"status" => "succeeded", "files_failed" => 2})
+
+      assert Map.get(finished, :files_failed) == 2
+
+      other = job_fixture(ctx.runner, ctx.user)
+
+      assert {:ok, finished} =
+               Jobs.finish_job(ctx.runner, other.id, %{"status" => "succeeded"})
+
+      assert Map.fetch(finished, :files_failed) == {:ok, nil}
+    end
+
     test "refuses an unknown status", ctx do
       job = job_fixture(ctx.runner, ctx.user)
 
@@ -194,6 +211,18 @@ defmodule PipeMaestro.JobsTest do
       assert job.subagents["spawned"] == 1
       assert job.environment["tools"] == ["Bash"]
       assert job.stderr == "aviso"
+    end
+
+    test "the outcome keeps whether the run resumed the previous stage's session", ctx do
+      {:ok, job} =
+        Jobs.finish_job(ctx.runner, ctx.job.id, %{
+          "status" => "succeeded",
+          "session_id" => "s-2",
+          "session_resumed" => false
+        })
+
+      assert Map.get(job, :session_resumed) == false
+      assert Map.get(Jobs.get_job!(ctx.workspace, job.id), :session_resumed) == false
     end
 
     test "telemetry is stored and its metrics summed, also after the job ended", ctx do

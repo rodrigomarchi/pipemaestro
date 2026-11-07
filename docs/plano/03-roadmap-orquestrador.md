@@ -71,7 +71,7 @@ descartável".
      manter os que falharam.
    - Botão "remover worktree" na tarefa.
    - O runner informa o uso de disco.
-4. **✓ Entrega confiável de eventos** (ADR 0006; jobs perdidos num restart: [ADR 0041](../adr/0041-runner-resiliente-a-reinicios.md); a outbox ainda não sobrevive a um
+4. **✓ Entrega confiável de eventos** (ADR 0006; jobs perdidos num restart: [ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md); a outbox ainda não sobrevive a um
    restart do runner).
    - Uma *outbox* no runner guarda `job:event`, `job:started` e `job:finished` até o
      `ok` do servidor e reenvia depois de reconectar. O servidor já é idempotente por

@@ -63,7 +63,7 @@ protocolo §4.6) **não é tentativa**:
 | job de etapa perdido, abaixo do limite de perdas | `lost` ("Perdida (runner)") | a etapa roda de novo na **mesma** tentativa (`requeue + 1`), sem gate e sem análise |
 | o mesmo, no limite (`max_lost_requeues`, 3) | `lost` | `awaiting_decision` com o motivo da perda, sem análise |
 
-Ver a [ADR 0041](../adr/0041-runner-resiliente-a-reinicios.md).
+Ver a [ADR 0043](../adr/0043-runner-resiliente-a-reinicios.md).
 
 **Verificações da plataforma.** Numa etapa que entrega (git, entrega `commit` ou `pr`,
 fora de grupo), o runner roda antes dos gates as verificações do contrato

@@ -36,6 +36,10 @@ defmodule PipeMaestroWeb.AuditComponents do
           <.heading>Sessão</.heading>
           <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-3" data-testid="job-audit-session">
             <.fact label="Sessão do CLI" mono>{@job.session_id || "—"}</.fact>
+            <.fact :if={@job.context["resume_session_id"]} label="Retomou a sessão" mono>
+              {@job.context["resume_session_id"]}{if @job.session_resumed == false,
+                do: " (indisponível: começou do zero)"}
+            </.fact>
             <.fact label="Versão do CLI" mono>{@job.cli_version || "—"}</.fact>
             <.fact label="Modelo" mono>{@job.model || "—"}</.fact>
             <.fact label="Permissões" mono>{@environment["permission_mode"] || "—"}</.fact>

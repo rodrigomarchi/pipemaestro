@@ -235,6 +235,38 @@ defmodule PipeMaestroWeb.JobLiveTest do
     refute has_element?(view, "[data-testid=job-audit-timing-gates]")
   end
 
+  test "the audit names the session a stage resumed, and says when it was not there", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    job
+    |> Ecto.Changeset.change(
+      context: Map.put(job.context || %{}, "resume_session_id", "sessao-a")
+    )
+    |> PipeMaestro.Repo.update!()
+
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+
+    {:ok, _} =
+      Jobs.finish_job(runner, job.id, %{
+        "status" => "succeeded",
+        "session_id" => "sessao-b",
+        "session_resumed" => false
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+
+    assert has_element?(view, "[data-testid=job-audit-session]", "Retomou a sessão")
+
+    assert has_element?(
+             view,
+             "[data-testid=job-audit-session]",
+             "sessao-a (indisponível: começou do zero)"
+           )
+  end
+
   test "what else the run reported: MCP, permission decisions, subagents, API origins", %{
     conn: conn,
     workspace: workspace,

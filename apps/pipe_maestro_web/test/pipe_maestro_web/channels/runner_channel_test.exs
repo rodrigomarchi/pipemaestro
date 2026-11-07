@@ -520,6 +520,25 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
       assert job_id == job.id
     end
 
+    test "a finished job keeps how many of its files did not reach the platform", ctx do
+      channel = join_runner(ctx.socket, ctx.runner)
+      job = job_fixture(ctx.runner, ctx.user)
+      assert_push "job:assign", %{"id" => _id}
+      ref = push(channel, "job:started", %{"job_id" => job.id})
+      assert_reply ref, :ok
+
+      ref =
+        push(channel, "job:finished", %{
+          "job_id" => job.id,
+          "status" => "succeeded",
+          "exit_code" => 0,
+          "files_failed" => 2
+        })
+
+      assert_reply ref, :ok
+      assert Map.get(Repo.get!(Job, job.id), :files_failed) == 2
+    end
+
     test "new and canceled jobs reach the runner; its reports are stored", ctx do
       channel = join_runner(ctx.socket, ctx.runner)
 

@@ -189,8 +189,11 @@ defmodule PipeMaestroRunner.Connection do
   @spec job_runner_opts(keyword(), Path.t(), GenServer.server()) :: keyword()
   def job_runner_opts(opts, workdir, owner) do
     %Hello{capacity: capacity} = Keyword.fetch!(opts, :hello)
+    %{url: url, token: token} = Keyword.fetch!(opts, :config)
     job_opts = Keyword.take(opts, [:executable, :kill_after, :root, :telemetry])
-    [owner: owner, workdir: workdir, capacity: capacity] ++ job_opts
+    # The job's files go to the same control plane, as this runner.
+    files = %{url: url, token: token}
+    [owner: owner, workdir: workdir, capacity: capacity, files: files] ++ job_opts
   end
 
   @impl Slipstream

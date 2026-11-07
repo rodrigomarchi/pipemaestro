@@ -3,6 +3,7 @@ defmodule PipeMaestroRunner.JobRunnerTest do
 
   alias PipeMaestroProtocol.Job
   alias PipeMaestroRunner.{Claude, JobRunner}
+  alias PipeMaestroRunner.Test.FilesServer
 
   @fake Path.expand("../support/fake_claude", __DIR__)
 
@@ -332,6 +333,161 @@ defmodule PipeMaestroRunner.JobRunnerTest do
     {_messages, finished} = collect_until_finished("j2")
     assert finished["status"] == "succeeded"
     refute_received {:job_out, "job:started", %{"job_id" => "j1"}}
+  end
+
+  describe "the job's files" do
+    @png Base.decode64!(
+           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+         )
+
+    setup %{tmp_dir: dir} do
+      server = FilesServer.start()
+      %{server: server, workdir: Path.join(dir, "workdir")}
+    end
+
+    defp start_uploading(ctx, opts \\ []) do
+      start_runner(
+        ctx.workdir,
+        [
+          files: %{url: ctx.server.url, token: "cpr_teste"},
+          files_req_options: [retry_delay: fn _attempt -> 0 end]
+        ] ++ opts
+      )
+    end
+
+    defp uploads(server), do: Enum.map(FilesServer.requests(server), &{&1.job_id, &1.path})
+
+    test "uploads what the agent left in CP_FILES_DIR, skips symlinks and drops the folder",
+         ctx do
+      runner = start_uploading(ctx)
+
+      JobRunner.enqueue(runner, job("j1", "tire as telas [arquivos]"))
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+      refute Map.has_key?(finished, "files_failed")
+      assert uploads(ctx.server) == [{"j1", "a.png"}, {"j1", "dados/r.csv"}]
+
+      [png, csv] = FilesServer.requests(ctx.server)
+      assert png.method == "PUT"
+      assert png.authorization == "Bearer cpr_teste"
+      assert png.content_type =~ "application/octet-stream"
+      assert png.body == @png
+      assert csv.body == "tela,ok\nlogin,sim\n"
+
+      wait_until(fn -> not File.exists?(Path.join([ctx.workdir, "files", "j1"])) end)
+    end
+
+    test "the folder is outside the job's directory, and a fresh one per job", ctx do
+      runner = start_uploading(ctx)
+
+      JobRunner.enqueue(runner, job("j1", "[arquivos]"))
+      collect_until_finished("j1")
+      JobRunner.enqueue(runner, job("j2", "nada"))
+      collect_until_finished("j2")
+
+      assert uploads(ctx.server) == [{"j1", "a.png"}, {"j1", "dados/r.csv"}]
+      refute File.exists?(Path.join(ctx.workdir, "a.png"))
+    end
+
+    test "a failed job also uploads its files", ctx do
+      runner = start_uploading(ctx)
+
+      JobRunner.enqueue(runner, job("j1", "[arquivos] [falha]"))
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "failed"
+      assert uploads(ctx.server) == [{"j1", "a.png"}, {"j1", "dados/r.csv"}]
+    end
+
+    test "a control plane without the endpoint: tried once, counted, the job ends as it would",
+         ctx do
+      FilesServer.respond(ctx.server, 404)
+      runner = start_uploading(ctx)
+
+      JobRunner.enqueue(runner, job("j1", "[arquivos]"))
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+      assert finished["files_failed"] == 2
+      assert uploads(ctx.server) == [{"j1", "a.png"}, {"j1", "dados/r.csv"}]
+    end
+
+    test "a server error is tried again, then counted", ctx do
+      FilesServer.respond(ctx.server, 500)
+      runner = start_uploading(ctx)
+
+      JobRunner.enqueue(runner, job("j1", "[arquivos]"))
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+      assert finished["files_failed"] == 2
+
+      tries = Enum.frequencies(uploads(ctx.server))
+      assert tries[{"j1", "a.png"}] > 1
+      assert tries[{"j1", "dados/r.csv"}] > 1
+    end
+
+    test "without an upload configured, the agent gets no folder and nothing is sent", ctx do
+      runner = start_runner(ctx.workdir)
+
+      JobRunner.enqueue(runner, job("j1", "[arquivos]"))
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+      refute Map.has_key?(finished, "files_failed")
+      assert FilesServer.requests(ctx.server) == []
+      refute File.exists?(Path.join([ctx.workdir, "files", "j1"]))
+    end
+
+    test "leftovers of an earlier run are cleared when the runner starts", ctx do
+      stale = Path.join([ctx.workdir, "files", "velho"])
+      File.mkdir_p!(stale)
+      File.write!(Path.join(stale, "x.txt"), "x")
+
+      start_uploading(ctx)
+      refute File.exists?(stale)
+    end
+
+    test "in a task's worktree nothing reaches git, and the checks still pass",
+         %{tmp_dir: dir} =
+           ctx do
+      root = Path.join(dir, "src")
+      git_repo!(Path.join(root, "app"))
+      runner = start_uploading(ctx, root: root)
+      worktree = Path.join([ctx.workdir, "worktrees", "t1"])
+
+      stage = %Job{
+        id: "j1",
+        prompt: "etapa [arquivos]",
+        directory: "app",
+        worktree: %{"task_id" => "t1", "branch" => "cp/t1"},
+        output_schema: %{"type" => "object"},
+        artifact_path: ".control-plane/t1/01-a.md",
+        checks: [
+          %{"id" => "clean"},
+          %{"id" => "artifact_committed", "path" => ".control-plane/t1/01-a.md"}
+        ]
+      }
+
+      JobRunner.enqueue(runner, stage)
+      {_messages, finished} = collect_until_finished("j1")
+
+      assert finished["status"] == "succeeded"
+
+      assert [
+               %{"id" => "clean", "passed" => true},
+               %{"id" => "artifact_committed", "passed" => true}
+             ] =
+               finished["gates"]
+
+      {status, 0} = System.cmd("git", ["-C", worktree, "status", "--porcelain"])
+      assert status == ""
+      {tracked, 0} = System.cmd("git", ["-C", worktree, "ls-files"])
+      refute tracked =~ "a.png"
+      refute tracked =~ "r.csv"
+      assert uploads(ctx.server) == [{"j1", "a.png"}, {"j1", "dados/r.csv"}]
+    end
   end
 
   describe "worktree setup" do
@@ -800,6 +956,92 @@ defmodule PipeMaestroRunner.JobRunnerTest do
     assert finished["error"] =~ "não foi encontrado"
   end
 
+  describe "continuing the previous stage's session" do
+    defp resume_job(id, prompt, dir, fields) do
+      {:ok, job} =
+        Job.from_map(
+          Map.merge(
+            %{
+              "id" => id,
+              "prompt" => prompt,
+              "env" => %{"FAKE_CLAUDE_ARGS_FILE" => Path.join(dir, "#{id}-args.txt")}
+            },
+            fields
+          )
+        )
+
+      job
+    end
+
+    defp args_seen(dir, id),
+      do: dir |> Path.join("#{id}-args.txt") |> File.read!() |> String.split("\n", trim: true)
+
+    test "a job that resumes a session forks it and says so", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(
+        runner,
+        resume_job("jr", "continue", dir, %{"resume_session_id" => "s-1"})
+      )
+
+      {_messages, finished} = collect_until_finished("jr")
+      assert finished["status"] == "succeeded"
+      assert finished["session_resumed"] == true
+
+      args = args_seen(dir, "jr")
+      assert ["--resume", "s-1", "--fork-session"] in Enum.chunk_every(args, 3, 1)
+      refute "--no-session-persistence" in args
+    end
+
+    test "a session the CLI does not have: the job runs again fresh, once", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(
+        runner,
+        resume_job("ja", "continue", dir, %{
+          "resume_session_id" => "ausente-1",
+          "persist_session" => true
+        })
+      )
+
+      {messages, finished} = collect_until_finished("ja")
+      assert finished["status"] == "succeeded"
+      assert finished["exit_code"] == 0
+      assert finished["session_resumed"] == false
+      assert finished["session_id"] == "fake-session"
+
+      events = for {"job:event", e} <- messages, do: e["seq"]
+      assert events == Enum.to_list(1..length(events))
+
+      args = args_seen(dir, "ja")
+      refute "--resume" in args
+      refute "--no-session-persistence" in args
+    end
+
+    test "a run that fails after resuming is not run again", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+
+      JobRunner.enqueue(
+        runner,
+        resume_job("jf", "quebre [falha]", dir, %{"resume_session_id" => "s-1"})
+      )
+
+      {_messages, finished} = collect_until_finished("jf")
+      assert finished["status"] == "failed"
+      assert finished["session_resumed"] == true
+      assert "--resume" in args_seen(dir, "jf")
+    end
+
+    test "a job that asks for no resume says nothing about it", %{tmp_dir: dir} do
+      runner = start_runner(Path.join(dir, "workdir"))
+      JobRunner.enqueue(runner, resume_job("jn", "diga oi", dir, %{}))
+
+      {_messages, finished} = collect_until_finished("jn")
+      refute Map.has_key?(finished, "session_resumed")
+      assert "--no-session-persistence" in args_seen(dir, "jn")
+    end
+  end
+
   describe "Claude" do
     test "argv runs headless, streaming JSON, with every permission" do
       argv = Claude.argv(job("j", "diga oi"))
@@ -832,6 +1074,18 @@ defmodule PipeMaestroRunner.JobRunnerTest do
                "0.5"
              ] =
                Enum.drop(argv, 8)
+    end
+
+    test "argv keeps the session for the next stage, or resumes the previous one" do
+      {:ok, keep} = Job.from_map(%{"id" => "j", "prompt" => "p", "persist_session" => true})
+      argv = Claude.argv(keep)
+      refute "--no-session-persistence" in argv
+      refute "--resume" in argv
+
+      {:ok, resume} = Job.from_map(%{"id" => "j", "prompt" => "p", "resume_session_id" => "s-1"})
+      argv = Claude.argv(resume)
+      refute "--no-session-persistence" in argv
+      assert ["--resume", "s-1", "--fork-session"] in Enum.chunk_every(argv, 3, 1)
     end
 
     test "argv has no budget when the job carries none" do
@@ -909,6 +1163,13 @@ defmodule PipeMaestroRunner.JobRunnerTest do
       assert {~c"__BURRITO", false} in env
       assert {~c"CP_ARTIFACT_PATH", ~c".cp/a.md"} in env
       assert {~c"CP_ARTIFACT_PATH", false} in Claude.env(job("j", "p"))
+    end
+
+    test "env gives the job's files folder, absolute, only when there is one" do
+      env = Claude.env(job("j", "p"), nil, "/w/files/j")
+      assert {~c"CP_FILES_DIR", ~c"/w/files/j"} in env
+      assert {~c"CP_FILES_DIR", false} in Claude.env(job("j", "p"))
+      assert {~c"CP_FILES_DIR", false} in Claude.env(job("j", "p"), nil, nil)
     end
 
     test "the runner's own API key goes to the CLI, and the agent says how it signs in" do

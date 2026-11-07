@@ -1,4 +1,5 @@
 Code.require_file("support/download_server.exs", __DIR__)
+Code.require_file("support/files_server.exs", __DIR__)
 Code.require_file("support/forgejo_server.exs", __DIR__)
 
 # A job's git credential reaches git through these variables

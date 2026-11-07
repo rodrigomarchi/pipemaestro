@@ -18,7 +18,9 @@ e da parte de jobs do protocolo (§5.4).
    canal do runner (`job:assign`). Jobs ainda na fila são reenviados a cada join.
 2. **O agente é o `claude` CLI em modo headless**:
    `claude -p <prompt> --output-format stream-json --verbose
-   --dangerously-skip-permissions --no-session-persistence`. Ele roda num `Port`, com
+   --dangerously-skip-permissions --no-session-persistence`. (Uma etapa que continua a
+   anterior guarda e retoma a sessão: [ADR 0041](0041-continuar-a-sessao-da-etapa-anterior.md).)
+   Ele roda num `Port`, com
    stdin em `/dev/null`, porque o CLI lê o stdin em pipe como parte do prompt. As
    variáveis de sessão aninhada (`CLAUDECODE`) também são removidas, assim como a
    `__BURRITO` do binário único: com ela, uma VM Elixir que o agente inicie e que

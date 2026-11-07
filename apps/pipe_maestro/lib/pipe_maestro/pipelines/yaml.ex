@@ -43,6 +43,7 @@ defmodule PipeMaestro.Pipelines.Yaml do
           {"timeout_minutes", stage.timeout_minutes},
           {"agent", stage.agent},
           {"group", stage.group},
+          {"context", if(stage.context == "continue", do: "continue")},
           {"gates", lines_of(Stage.gates_text(stage))},
           {"rules", lines_of(Stage.rules_text(stage))},
           {"output_schema", stage.output_schema}
@@ -143,7 +144,8 @@ defmodule PipeMaestro.Pipelines.Yaml do
 
   defp stage_attrs(%{} = stage) do
     stage
-    |> Map.take(~w(key name prompt max_attempts model max_budget_usd timeout_minutes agent group))
+    |> Map.take(~w(key name prompt max_attempts model max_budget_usd timeout_minutes agent group
+                  context))
     |> put_lines(stage, "gates")
     |> put_lines(stage, "rules")
     |> put_json(stage, "output_schema")

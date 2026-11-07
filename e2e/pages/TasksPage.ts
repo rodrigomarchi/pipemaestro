@@ -206,4 +206,50 @@ export class TasksPage {
   listStatus(taskId: string): Locator {
     return this.page.getByTestId(`task-status-${taskId}`);
   }
+
+  /** Opens one of the task's tabs by its `aba`: "etapas", "resumo", "pedido", "arquivos", "anexos" or "decisoes". */
+  async openTab(tab: "etapas" | "resumo" | "pedido" | "arquivos" | "anexos" | "decisoes") {
+    await this.page.getByTestId(`task-tab-${tab}`).click();
+    await expect(this.page.getByTestId(`task-panel-${tab}`)).toBeVisible();
+  }
+
+  /** The counter beside a tab's name. */
+  tabCount(tab: string): Locator {
+    return this.page.getByTestId(`task-tab-count-${tab}`);
+  }
+
+  /** The files an attempt sent from the runner (`$CP_FILES_DIR`), beside its artifact. */
+  stageRunFiles(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-files-${key}-${attempt}`);
+  }
+
+  /** One of an attempt's files, by its path in the job's folder. */
+  stageRunFile(key: string, attempt: number, path: string): Locator {
+    return this.page.getByTestId(`stage-run-file-${key}-${attempt}-${path}`);
+  }
+
+  /** An image file's thumbnail (an `<img>`). */
+  stageRunFileThumb(key: string, attempt: number, path: string): Locator {
+    return this.page.getByTestId(`stage-run-file-thumb-${key}-${attempt}-${path}`);
+  }
+
+  /** The link that downloads one of an attempt's files. */
+  stageRunFileDownload(key: string, attempt: number, path: string): Locator {
+    return this.page.getByTestId(`stage-run-file-download-${key}-${attempt}-${path}`);
+  }
+
+  /** The warning that some of an attempt's files did not reach the platform. */
+  stageRunFilesFailed(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-files-failed-${key}-${attempt}`);
+  }
+
+  /** An attempt's group in the "Anexos" tab. */
+  attachments(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`task-attachments-${key}-${attempt}`);
+  }
+
+  /** What the "Anexos" tab says while no attempt sent a file. */
+  get noAttachments(): Locator {
+    return this.page.getByTestId("task-no-attachments");
+  }
 }

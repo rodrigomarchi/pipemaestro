@@ -137,6 +137,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
       "rules_text" => Stage.rules_text(stage),
       "agent" => stage.agent || "",
       "group" => stage.group || "",
+      "context" => stage.context,
       "output_schema_json" =>
         if(stage.output_schema, do: Json.pretty(stage.output_schema), else: "")
     }
@@ -417,7 +418,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           </.inputs_for>
         </div>
 
-        <div class="sticky bottom-0 z-10 -mx-1 flex justify-between gap-2 rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
+        <div class="sticky bottom-0 z-10 -mx-1 flex flex-wrap justify-between gap-2 rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
           <.button
             type="button"
             variant="outline"

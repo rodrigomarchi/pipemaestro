@@ -56,6 +56,8 @@ defmodule PipeMaestro.MixProject do
       {:req, "~> 0.7.5"},
       # The GitHub App's JWT (RS256), for its installation tokens.
       {:jose, "~> 1.11"},
+      # The content type of a job's files, by extension.
+      {:mime, "~> 2.0"},
       {:plug, "~> 1.18", only: :test},
       {:pipe_maestro_protocol, in_umbrella: true}
     ]

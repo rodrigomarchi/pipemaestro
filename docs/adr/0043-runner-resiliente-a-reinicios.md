@@ -1,4 +1,4 @@
-# 0041 — Runner resiliente a reinícios e à atualização
+# 0043 — Runner resiliente a reinícios e à atualização
 
 - **Status:** aceita
 - **Data:** 07/11/2026

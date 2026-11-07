@@ -266,13 +266,28 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
         </div>
       </div>
 
-      <details class="group">
-        <summary class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300">
+      <details class="group" open={@stage[:context].errors != []}>
+        <summary
+          class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300"
+          data-testid={"stage-advanced-#{@stage.index}"}
+        >
           <.icon name="hero-chevron-right" class="size-4 transition group-open:rotate-90" />
           <.icon name="hero-adjustments-horizontal" class="size-4" />
-          Avançado: agente, grupo em paralelo e saída estruturada
+          Avançado: contexto, agente, grupo em paralelo e saída estruturada
         </summary>
         <div class="mt-4 space-y-4">
+          <.icon_field
+            field={@stage[:context]}
+            icon="hero-arrow-uturn-right"
+            type="select"
+            label="Contexto"
+            options={[
+              {"Começar do zero", "fresh"},
+              {"Continuar a etapa anterior", "continue"}
+            ]}
+            help_text="Continuar retoma a conversa do agente da etapa anterior, que não pode estar num grupo em paralelo. Do zero, o agente só recebe os artefatos."
+            data-testid={"stage-context-#{@stage.index}"}
+          />
           <div class="grid gap-4 sm:grid-cols-2">
             <.icon_field
               field={@stage[:agent]}

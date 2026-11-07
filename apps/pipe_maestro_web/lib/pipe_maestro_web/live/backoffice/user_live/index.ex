@@ -147,7 +147,7 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Index do
             viewable
             data-testid="user-form-password"
           />
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <.button
               to={~p"/backoffice/users"}
               link_type="live_patch"

@@ -58,6 +58,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Tasks.{Contract, Decision, Engine, Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces
   alias PipeMaestro.Workspaces.Workspace
+  alias PipeMaestroProtocol.JobFiles
 
   @pubsub PipeMaestro.PubSub
   @list_limit 100
@@ -493,7 +494,8 @@ defmodule PipeMaestro.Tasks do
         instructions: stage_run.instructions,
         feedback: stage_run.feedback,
         answers: stage_run.answers,
-        contract: if(place = contract_place(task, index), do: Contract.prompt(place))
+        contract: if(place = contract_place(task, index), do: Contract.prompt(place)),
+        files: uploads_files?(task)
       })
 
     Jobs.create_stage_job(%{
@@ -518,6 +520,19 @@ defmodule PipeMaestro.Tasks do
       pending_issue_comment: nil,
       finished_at: nil
     )
+  end
+
+  # Whether the task's runner, as of its latest hello, sends a job's files.
+  defp uploads_files?(%Task{runner: %Runner{} = runner}),
+    do: Runners.capable?(runner, JobFiles.capability())
+
+  defp uploads_files?(%Task{runner_id: nil}), do: false
+
+  defp uploads_files?(%Task{runner_id: runner_id}) do
+    case Repo.get(Runner, runner_id) do
+      %Runner{} = runner -> Runners.capable?(runner, JobFiles.capability())
+      nil -> false
+    end
   end
 
   defp join_instructions(texts) do
@@ -568,7 +583,49 @@ defmodule PipeMaestro.Tasks do
       "sync" => if(task.git, do: true),
       "artifacts" => earlier_artifacts(task, index)
     }
+    |> Map.merge(session_context(task, stage, index))
     |> Map.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  # The agent's session: kept when the next stage continues it, resumed when
+  # this stage continues the one before.
+  defp session_context(task, stage, index) do
+    if resumable?(task) do
+      %{
+        "persist_session" => if(continued?(task, index + 1), do: true),
+        "resume_session_id" =>
+          if(stage.context == "continue", do: previous_session_id(task, index))
+      }
+    else
+      %{}
+    end
+  end
+
+  # Whether the task's runner keeps and resumes the agent's sessions (ADR
+  # 0041): one that does not runs every stage from scratch.
+  defp resumable?(%Task{runner_id: nil}), do: false
+
+  defp resumable?(%Task{runner_id: runner_id}) do
+    case Repo.get(Runner, runner_id) do
+      %Runner{} = runner -> Runners.capable?(runner, "resume_session")
+      nil -> false
+    end
+  end
+
+  defp continued?(task, index),
+    do: match?(%Stage{context: "continue"}, Enum.at(task.stages, index))
+
+  # The session of the stage before, as its last passed attempt reported it:
+  # a new attempt of this stage resumes the same one.
+  defp previous_session_id(task, index) do
+    Repo.one(
+      from r in StageRun,
+        join: j in assoc(r, :job),
+        where: r.task_id == ^task.id and r.index == ^(index - 1) and r.status == :passed,
+        order_by: [desc: r.attempt],
+        limit: 1,
+        select: j.session_id
+    )
   end
 
   # Where a stage held to the platform's contract (`Contract`) is in its task:
