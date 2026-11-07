@@ -64,16 +64,12 @@ defmodule PipeMaestroRunner.JobFiles do
 
           :secret ->
             # The path itself carries the secret: it is not written anywhere.
-            Logger.warning("Um arquivo do job não sobe: o nome traz um segredo.",
-              runner_event: "job_file_skipped"
-            )
+            Logger.warning("Um arquivo do job não sobe: o nome traz um segredo.")
 
             {kept, skipped + 1, total}
 
           reason ->
-            Logger.warning("O arquivo #{file.path} do job não sobe: #{reason}.",
-              runner_event: "job_file_skipped"
-            )
+            Logger.warning("O arquivo #{file.path} do job não sobe: #{reason}.")
 
             {kept, skipped + 1, total}
         end
@@ -153,9 +149,7 @@ defmodule PipeMaestroRunner.JobFiles do
       true
     else
       failure ->
-        Logger.warning("O arquivo #{file.path} do job não subiu: #{reason(failure)}.",
-          runner_event: "job_file_upload_failed"
-        )
+        Logger.warning("O arquivo #{file.path} do job não subiu: #{reason(failure)}.")
 
         false
     end
