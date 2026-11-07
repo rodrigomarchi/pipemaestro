@@ -254,7 +254,8 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
         render_diagram(diagram([stage("a"), stage("b")]), link: &"#stage-#{&1.key}")
 
       assert count(html, "a[data-testid=diagram-select-1][href='#stage-b']") == 1
-      assert count(html, "[phx-click=select_node]") == 1
+      # Nothing opens a panel: the page has none.
+      assert count(html, "[phx-click=select_node]") == 0
     end
 
     test "metrics show on their node" do

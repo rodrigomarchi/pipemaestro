@@ -851,6 +851,30 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert render_click(view, "decide", %{"action" => "retry"}) =~ "não está aguardando"
     end
 
+    test "the pipeline's diagram follows the task, live, and leads to each stage", ctx do
+      task = create_task(ctx)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "[data-testid=task-diagram] [data-testid=diagram-stage-0][data-state=running]"
+             )
+
+      assert has_element?(
+               view,
+               "[data-testid=task-diagram] [data-testid=diagram-stage-1][data-state=pending]"
+             )
+
+      assert has_element?(view, ~s([data-testid=diagram-select-1][href="#stage-b"]))
+      assert has_element?(view, "[data-testid=stage-b][id=stage-b]")
+
+      finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
+
+      assert has_element?(view, "[data-testid=diagram-stage-0][data-state=awaiting]")
+      assert has_element?(view, "[data-testid=diagram-edge-0-failure][data-active]")
+      assert has_element?(view, "[data-testid=diagram-rail][data-waiting]")
+    end
+
     test "a running task warns while its runner is offline, live", ctx do
       tracker = spawn(fn -> Process.sleep(:infinity) end)
       {:ok, _ref} = RunnerStatus.track(tracker, ctx.runner)

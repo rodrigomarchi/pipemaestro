@@ -223,7 +223,11 @@ defmodule PipeMaestroWeb.PipelineComponents do
 
   defp column(%{column: {:entry}} = assigns) do
     ~H"""
-    <.entry_node entry={@diagram.entry} mode={@mode} selected={@selected == :entry} />
+    <.entry_node
+      entry={@diagram.entry}
+      mode={if @link, do: :compact, else: @mode}
+      selected={@selected == :entry}
+    />
     """
   end
 

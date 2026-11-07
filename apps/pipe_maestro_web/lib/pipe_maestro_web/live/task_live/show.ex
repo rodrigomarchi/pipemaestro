@@ -39,7 +39,17 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   alias PipeMaestro.{Insights, Jobs, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.{StageRun, Task}
-  alias PipeMaestroWeb.{Markdown, ProposalRequest, QuestionnaireLive, RunnerStatus}
+
+  alias PipeMaestroWeb.{
+    Markdown,
+    PipelineDiagram,
+    ProposalRequest,
+    QuestionnaireLive,
+    RunnerStatus
+  }
+
+  import PipeMaestroWeb.PipelineComponents,
+    only: [pipeline_diagram: 1, stage_state_badge: 1, stage_state_marker: 1]
 
   @live_every 2_000
 
@@ -483,20 +493,20 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   defp stage_rows(%Task{} = task) do
     runs_by_stage = Enum.group_by(task.stage_runs, & &1.index)
+    states = PipelineDiagram.task_states(task)
 
     task.stages
     |> Enum.with_index()
     |> Enum.map(fn {stage, index} ->
-      runs = Map.get(runs_by_stage, index, [])
-      %{index: index, stage: stage, runs: runs, state: stage_state(task, index, runs)}
+      %{index: index, stage: stage, runs: Map.get(runs_by_stage, index, []), state: states[index]}
     end)
   end
 
-  defp stage_state(%Task{current_stage: index, status: :awaiting_decision}, index, _runs),
-    do: :awaiting
-
-  defp stage_state(_task, _index, []), do: :pending
-  defp stage_state(_task, _index, runs), do: List.last(runs).status
+  defp task_diagram(%Task{} = task),
+    do:
+      PipelineDiagram.build(PipelineDiagram.for_task(task),
+        states: PipelineDiagram.task_states(task)
+      )
 
   @impl true
   def render(assigns) do
@@ -742,10 +752,21 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           </.card_content>
         </.card>
 
+        <.card variant="outline">
+          <.card_content class="!p-0">
+            <.pipeline_diagram
+              diagram={task_diagram(@task)}
+              link={&"#stage-#{&1.key}"}
+              testid="task-diagram"
+            />
+          </.card_content>
+        </.card>
+
         <ol class="relative space-y-0" data-testid="task-pipeline">
           <li
             :for={row <- stage_rows(@task)}
-            class="relative flex gap-4 pb-8 last:pb-0"
+            id={"stage-#{row.stage.key}"}
+            class="relative flex scroll-mt-20 gap-4 pb-8 last:pb-0"
             data-testid={"stage-#{row.stage.key}"}
           >
             <div
@@ -753,7 +774,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
               class="absolute left-4 top-9 -bottom-0 w-px bg-gray-200 dark:bg-gray-800"
               aria-hidden="true"
             />
-            <.stage_marker state={row.state} number={row.index + 1} />
+            <.stage_state_marker state={row.state} number={row.index + 1} />
 
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
@@ -1112,54 +1133,6 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       help_text="Outro runner monta o worktree a partir da branch da tarefa no origin."
       data-testid={@testid}
     />
-    """
-  end
-
-  attr :state, :atom, required: true
-  attr :number, :integer, required: true
-
-  defp stage_marker(assigns) do
-    ~H"""
-    <div class={[
-      "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ring-4 ring-gray-50 dark:ring-gray-950",
-      marker_class(@state)
-    ]}>
-      <.icon :if={@state == :passed} name="hero-check" class="size-4" />
-      <.icon :if={@state in [:failed, :canceled]} name="hero-x-mark" class="size-4" />
-      <.icon :if={@state in [:awaiting, :blocked]} name="hero-hand-raised" class="size-4" />
-      <.icon :if={@state == :running} name="hero-arrow-path" class="size-4 animate-spin" />
-      <span :if={@state == :pending}>{@number}</span>
-    </div>
-    """
-  end
-
-  defp marker_class(:passed), do: "bg-success-500 text-white"
-  defp marker_class(:running), do: "bg-info-500 text-white"
-  defp marker_class(state) when state in [:awaiting, :blocked], do: "bg-warning-400 text-gray-900"
-  defp marker_class(state) when state in [:failed, :canceled], do: "bg-danger-500 text-white"
-
-  defp marker_class(:pending),
-    do: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-
-  attr :state, :atom, required: true
-  attr :rest, :global
-
-  defp stage_state_badge(assigns) do
-    {label, color} =
-      case assigns.state do
-        :pending -> {"Aguardando", "gray"}
-        :running -> {"Executando", "info"}
-        :awaiting -> {"Aguardando decisão", "warning"}
-        :passed -> {"Concluída", "success"}
-        :blocked -> {"Bloqueada", "warning"}
-        :failed -> {"Falhou", "danger"}
-        :canceled -> {"Cancelada", "gray"}
-      end
-
-    assigns = assign(assigns, label: label, color: color)
-
-    ~H"""
-    <.badge size="xs" variant="soft" color={@color} label={@label} {@rest} />
     """
   end
 
