@@ -53,6 +53,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Tasks.{Contract, Decision, Engine, Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces
   alias PipeMaestro.Workspaces.Workspace
+  alias PipeMaestroProtocol.JobFiles
 
   @pubsub PipeMaestro.PubSub
   @list_limit 100
@@ -456,7 +457,8 @@ defmodule PipeMaestro.Tasks do
         instructions: stage_run.instructions,
         feedback: stage_run.feedback,
         answers: stage_run.answers,
-        contract: if(place = contract_place(task, index), do: Contract.prompt(place))
+        contract: if(place = contract_place(task, index), do: Contract.prompt(place)),
+        files: uploads_files?(task)
       })
 
     Jobs.create_stage_job(%{
@@ -484,6 +486,19 @@ defmodule PipeMaestro.Tasks do
     # Written even when the struct already says nil (a step clears it first).
     |> Ecto.Changeset.force_change(:pending_instructions, nil)
     |> Repo.update!()
+  end
+
+  # Whether the task's runner, as of its latest hello, sends a job's files.
+  defp uploads_files?(%Task{runner: %Runner{} = runner}),
+    do: Runners.capable?(runner, JobFiles.capability())
+
+  defp uploads_files?(%Task{runner_id: nil}), do: false
+
+  defp uploads_files?(%Task{runner_id: runner_id}) do
+    case Repo.get(Runner, runner_id) do
+      %Runner{} = runner -> Runners.capable?(runner, JobFiles.capability())
+      nil -> false
+    end
   end
 
   defp join_instructions(texts) do

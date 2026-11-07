@@ -11,7 +11,8 @@ defmodule PipeMaestro.Jobs do
       `{:job_cancel, job_id}`. The runner's channel subscribes to it.
 
   The functions a runner calls take the runner first and only touch that
-  runner's jobs.
+  runner's jobs. The files a job leaves for people to see are
+  `PipeMaestro.Jobs.Files`.
   """
 
   import Ecto.Query
