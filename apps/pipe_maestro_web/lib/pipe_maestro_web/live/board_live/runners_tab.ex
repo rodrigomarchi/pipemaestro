@@ -37,6 +37,7 @@ defmodule PipeMaestroWeb.BoardLive.RunnersTab do
       </.card_header>
       <.table
         :if={@runners != []}
+        class="mt-4"
         id="board-runners"
         rows={@runners}
         row_id={&"board-runner-#{&1.id}"}
