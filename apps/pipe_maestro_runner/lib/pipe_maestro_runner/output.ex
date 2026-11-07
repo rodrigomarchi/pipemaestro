@@ -6,20 +6,23 @@ defmodule PipeMaestroRunner.Output do
   with `fail!/1`, which says what to do next.
   """
 
-  alias PipeMaestroRunner.{CommandError, Config}
+  alias PipeMaestroRunner.{CommandError, Config, LogCollector}
 
-  @doc "Writes to stdout (the Mix shell under Mix)."
+  @doc """
+  Writes to stdout (the Mix shell under Mix), and to the runner's log for the
+  control plane (`PipeMaestroRunner.LogCollector`).
+  """
   @spec info(String.t()) :: :ok
   def info(message) do
     if mix?(), do: Mix.shell().info(message), else: IO.puts(message)
-    :ok
+    LogCollector.capture(:info, message)
   end
 
-  @doc "Writes to stderr (the Mix shell under Mix)."
+  @doc "Writes to stderr (the Mix shell under Mix), and to the runner's log."
   @spec error(String.t()) :: :ok
   def error(message) do
     if mix?(), do: Mix.shell().error(message), else: IO.puts(:stderr, message)
-    :ok
+    LogCollector.capture(:error, message)
   end
 
   @doc """

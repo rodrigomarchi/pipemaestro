@@ -4,7 +4,7 @@ defmodule PipeMaestroWeb.RunnerVersionTest do
 
   import Phoenix.ConnTest, only: [build_conn: 0, post: 3, json_response: 2]
 
-  alias PipeMaestro.{Jobs, Runners}
+  alias PipeMaestro.{Jobs, Runners, RunnerTelemetry}
   alias PipeMaestroProtocol.Hello
   alias PipeMaestroWeb.{RunnerChannel, RunnerSocket, RunnerStatus}
 
@@ -54,10 +54,13 @@ defmodule PipeMaestroWeb.RunnerVersionTest do
              "download_url" => PipeMaestroWeb.Endpoint.url()
            }
 
-    # Nothing of it is recorded, and it is not online: its queued job waits.
+    # Only the refusal is recorded, and it is not online: its queued job waits.
     refute MapSet.member?(RunnerStatus.online_ids(ctx.workspace.id), ctx.runner.id)
     assert Runners.get_runner!(ctx.workspace, ctx.runner.id).runner_version == @current
     assert Jobs.get_job!(ctx.workspace, job.id).status == :queued
+
+    assert [%{end_reason: "outdated", runner_version: "2026-11-03.01"}] =
+             RunnerTelemetry.sessions(ctx.runner, ~U[2000-01-01 00:00:00Z])
   end
 
   test "a runner on the control plane's version is refused, told the runner's version", ctx do

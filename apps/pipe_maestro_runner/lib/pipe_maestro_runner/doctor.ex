@@ -6,12 +6,20 @@ defmodule PipeMaestroRunner.Doctor do
   directories, the free space for worktrees and whether the platform answers.
 
   Each check is `:ok`, a `:warning` (it runs, but something deserves a look) or
-  an `:error` (jobs would fail), with what was found or what to do.
+  an `:error` (jobs would fail), with what was found or what to do, and a
+  stable `key` (`version`, `claude`, `auth`, `git`, `gh`, `config`,
+  `directories`, `disk`, `platform`), by which the control plane follows a
+  check from one run to the next (ADR 0039).
   """
 
   alias PipeMaestroRunner.{Claude, Config, Directories, Disk, Version}
 
-  @type check :: %{name: String.t(), status: :ok | :warning | :error, detail: String.t()}
+  @type check :: %{
+          key: String.t(),
+          name: String.t(),
+          status: :ok | :warning | :error,
+          detail: String.t()
+        }
 
   @low_disk_bytes 5 * 1024 * 1024 * 1024
 
@@ -31,7 +39,7 @@ defmodule PipeMaestroRunner.Doctor do
     agent = Claude.agent(executable, Keyword.get_lazy(opts, :api_key, &Claude.api_key/0))
 
     [
-      check("versão", :ok, Version.version()),
+      check("version", "versão", :ok, Version.version()),
       agent_check(agent),
       auth_check(agent),
       git_check(),
@@ -52,16 +60,30 @@ defmodule PipeMaestroRunner.Doctor do
   def ok?(checks), do: Enum.all?(checks, &(&1.status != :error))
 
   defp agent_check(%{"cli_version" => nil}),
-    do: check("Agente (claude)", :error, "não encontrado: instale o claude ou defina CLAUDE_BIN")
+    do:
+      check(
+        "claude",
+        "Agente (claude)",
+        :error,
+        "não encontrado: instale o claude ou defina CLAUDE_BIN"
+      )
 
-  defp agent_check(%{"cli_version" => version}), do: check("Agente (claude)", :ok, version)
+  defp agent_check(%{"cli_version" => version}),
+    do: check("claude", "Agente (claude)", :ok, version)
 
   defp auth_check(%{"auth" => "api_key"}),
-    do: check("Credencial do agente", :ok, "chave de API do runner (RUNNER_ANTHROPIC_API_KEY)")
+    do:
+      check(
+        "auth",
+        "Credencial do agente",
+        :ok,
+        "chave de API do runner (RUNNER_ANTHROPIC_API_KEY)"
+      )
 
   defp auth_check(_login),
     do:
       check(
+        "auth",
         "Credencial do agente",
         :warning,
         "login pessoal de quem roda o claude; para uma chave própria, defina RUNNER_ANTHROPIC_API_KEY"
@@ -70,17 +92,25 @@ defmodule PipeMaestroRunner.Doctor do
   defp git_check do
     case System.find_executable("git") do
       nil ->
-        check("git", :error, "não encontrado: as tarefas precisam de git para os worktrees")
+        check(
+          "git",
+          "git",
+          :error,
+          "não encontrado: as tarefas precisam de git para os worktrees"
+        )
 
       git ->
-        {version, 0} = System.cmd(git, ["--version"])
-        check("git", :ok, String.trim(version))
+        case System.cmd(git, ["--version"], stderr_to_stdout: true) do
+          {version, 0} -> check("git", "git", :ok, String.trim(version))
+          {output, _code} -> check("git", "git", :error, "não roda: #{String.trim(output)}")
+        end
     end
   end
 
   defp gh_check(nil),
     do:
       check(
+        "gh",
         "GitHub CLI (gh)",
         :warning,
         "não encontrado: só é preciso para pipelines com entrega em PR"
@@ -92,10 +122,16 @@ defmodule PipeMaestroRunner.Doctor do
         lines = String.split(output, "\n", trim: true)
         signed_in = Enum.find(lines, List.first(lines, "ok"), &(&1 =~ "Logged in"))
         # gh marks the line with its own check mark.
-        check("GitHub CLI (gh)", :ok, signed_in |> String.trim() |> String.trim_leading("✓ "))
+        check(
+          "gh",
+          "GitHub CLI (gh)",
+          :ok,
+          signed_in |> String.trim() |> String.trim_leading("✓ ")
+        )
 
       _not_signed_in ->
         check(
+          "gh",
           "GitHub CLI (gh)",
           :warning,
           "sem login: rode gh auth login para pipelines com entrega em PR"
@@ -106,32 +142,50 @@ defmodule PipeMaestroRunner.Doctor do
   defp config_check({:ok, config}),
     do:
       check(
+        "config",
         "Credenciais do runner",
         :ok,
         "#{config.runner_name} em #{config.workspace_name} (#{config.url})"
       )
 
   defp config_check({:error, :not_found}),
-    do: check("Credenciais do runner", :error, "nenhuma: rode pipemaestro login")
+    do: check("config", "Credenciais do runner", :error, "nenhuma: rode pipemaestro login")
 
   defp config_check({:error, :invalid}),
     do:
-      check("Credenciais do runner", :error, "#{Config.path()} é inválido: rode o login de novo")
+      check(
+        "config",
+        "Credenciais do runner",
+        :error,
+        "#{Config.path()} é inválido: rode o login de novo"
+      )
 
   defp directories_check({:ok, %{root: root}}) when is_binary(root) do
     case Directories.scan(root) do
       [] ->
-        check("Diretórios", :warning, "#{root} não tem subdiretórios para oferecer")
+        check(
+          "directories",
+          "Diretórios",
+          :warning,
+          "#{root} não tem subdiretórios para oferecer"
+        )
 
       dirs ->
         git = Enum.count(dirs, & &1["git"])
-        check("Diretórios", :ok, "#{count(length(dirs), "diretório")} em #{root}, #{git} com git")
+
+        check(
+          "directories",
+          "Diretórios",
+          :ok,
+          "#{count(length(dirs), "diretório")} em #{root}, #{git} com git"
+        )
     end
   end
 
   defp directories_check(_config),
     do:
       check(
+        "directories",
         "Diretórios",
         :warning,
         "sem raiz: rode pipemaestro start --root ~/src para oferecer diretórios às tarefas"
@@ -144,13 +198,18 @@ defmodule PipeMaestroRunner.Doctor do
 
     case usage["free_bytes"] do
       nil ->
-        check("Disco", :warning, "#{worktrees}; espaço livre desconhecido")
+        check("disk", "Disco", :warning, "#{worktrees}; espaço livre desconhecido")
 
       free when free < @low_disk_bytes ->
-        check("Disco", :warning, "#{worktrees}; pouco espaço livre (#{div(free, 1_048_576)} MB)")
+        check(
+          "disk",
+          "Disco",
+          :warning,
+          "#{worktrees}; pouco espaço livre (#{div(free, 1_048_576)} MB)"
+        )
 
       free ->
-        check("Disco", :ok, "#{worktrees}; #{div(free, 1_073_741_824)} GB livres")
+        check("disk", "Disco", :ok, "#{worktrees}; #{div(free, 1_073_741_824)} GB livres")
     end
   end
 
@@ -158,13 +217,14 @@ defmodule PipeMaestroRunner.Doctor do
     url = String.trim_trailing(config.url, "/") <> "/healthz"
 
     case reach.(url) do
-      :ok -> check("Plataforma", :ok, "#{config.url} responde")
-      {:error, reason} -> check("Plataforma", :error, "#{reason} (#{url})")
+      :ok -> check("platform", "Plataforma", :ok, "#{config.url} responde")
+      {:error, reason} -> check("platform", "Plataforma", :error, "#{reason} (#{url})")
     end
   end
 
   defp platform_check(_no_config, _reach),
-    do: check("Plataforma", :warning, "sem credenciais, não há plataforma para testar")
+    do:
+      check("platform", "Plataforma", :warning, "sem credenciais, não há plataforma para testar")
 
   defp reach(url) do
     case Req.get(url, retry: false, receive_timeout: 5_000) do
@@ -177,5 +237,6 @@ defmodule PipeMaestroRunner.Doctor do
   defp count(1, noun), do: "1 #{noun}"
   defp count(n, noun), do: "#{n} #{noun}s"
 
-  defp check(name, status, detail), do: %{name: name, status: status, detail: detail}
+  defp check(key, name, status, detail),
+    do: %{key: key, name: name, status: status, detail: detail}
 end

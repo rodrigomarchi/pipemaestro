@@ -28,10 +28,15 @@ defmodule PipeMaestroRunner.Commands.Start do
     Connection,
     Directories,
     Host,
+    LogCollector,
     Output,
     SelfUpdate,
     Update
   }
+
+  require Logger
+
+  alias PipeMaestroProtocol.{RunnerDoctor, RunnerHealth}
 
   @switches [root: :string, auto_update: :boolean]
   @spec run([String.t()]) :: no_return()
@@ -42,6 +47,9 @@ defmodule PipeMaestroRunner.Commands.Start do
     Output.info("pipemaestro #{Host.runner_version()}")
     if bin = System.get_env("__BURRITO_BIN_PATH"), do: SelfUpdate.clean_stale(bin)
     config = config_with_root(Output.config!(), opts[:root])
+    start_log(config)
+    marker = Path.join(Config.dir(), "update.json")
+    tell_update(Update.take_marker(marker))
     agent = Claude.agent(Claude.executable())
 
     {:ok, hello} =
@@ -70,11 +78,22 @@ defmodule PipeMaestroRunner.Commands.Start do
         outbox_path: Path.join(Config.dir(), "outbox.bin"),
         root: config.root,
         # The CLI's OpenTelemetry, received on this machine and relayed.
-        telemetry: true
+        telemetry: true,
+        health_every: interval("RUNNER_HEALTH_EVERY_MS", RunnerHealth.interval_ms()),
+        doctor_every: interval("RUNNER_DOCTOR_EVERY_MS", RunnerDoctor.interval_ms()),
+        # This runner's own log, for the control plane.
+        logs: true
       )
 
     ref = Process.monitor(pid)
-    update = [argv: ["start" | args], auto_update: opts[:auto_update], platform_url: config.url]
+
+    update = [
+      argv: ["start" | args],
+      auto_update: opts[:auto_update],
+      platform_url: config.url,
+      marker: marker
+    ]
+
     loop(config, ref, update)
   end
 
@@ -109,6 +128,40 @@ defmodule PipeMaestroRunner.Commands.Start do
 
       {:DOWN, ^ref, :process, _pid, reason} ->
         Output.fail!("A conexão terminou: #{inspect(reason)}")
+    end
+  end
+
+  # The runner's own log goes to the control plane, without the secrets this
+  # machine holds (ADR 0039).
+  defp start_log(config) do
+    {:ok, _pid} =
+      LogCollector.start_link(secrets: Enum.reject([config.token, Claude.api_key()], &is_nil/1))
+
+    :ok = LogCollector.install_handler()
+  end
+
+  # What the update before this start did, for the log.
+  defp tell_update(nil), do: :ok
+
+  defp tell_update({:applied, marker}) do
+    Logger.info("Runner atualizado de #{marker["from"]} para #{marker["to"]}.",
+      runner_event: "update_applied",
+      event_attrs: marker
+    )
+  end
+
+  defp tell_update({:failed, marker}) do
+    Logger.error("A atualização para #{marker["to"]} falhou: #{marker["reason"]}",
+      runner_event: "update_failed",
+      event_attrs: marker
+    )
+  end
+
+  # A shorter interval, for the screen tests; never in normal use.
+  defp interval(env, default) do
+    case Integer.parse(System.get_env(env) || "") do
+      {ms, ""} when ms >= 1_000 -> ms
+      _unset -> default
     end
   end
 

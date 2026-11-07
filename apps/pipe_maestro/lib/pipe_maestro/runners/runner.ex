@@ -28,6 +28,7 @@ defmodule PipeMaestro.Runners.Runner do
           worktree_usage: map() | nil,
           agent: map() | nil,
           rate_limit: map() | nil,
+          doctor: map() | nil,
           last_connected_at: DateTime.t() | nil,
           last_seen_at: DateTime.t() | nil,
           revoked_at: DateTime.t() | nil,
@@ -51,6 +52,7 @@ defmodule PipeMaestro.Runners.Runner do
     field :worktree_usage, :map
     field :agent, :map
     field :rate_limit, :map
+    field :doctor, :map
     field :last_connected_at, :utc_datetime
     field :last_seen_at, :utc_datetime
     field :revoked_at, :utc_datetime

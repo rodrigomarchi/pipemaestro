@@ -36,6 +36,28 @@ defmodule PipeMaestroRunner.Connection do
   after every join and then every `:usage_every` ms (default five minutes)
   when it changed.
 
+  With `:health_every` (ms; `runner.start` passes
+  `PipeMaestroProtocol.RunnerHealth.interval_ms/0`), it samples this
+  machine's health (`PipeMaestroRunner.Health`) after every join and then
+  at that interval, and sends it (`runner:health`) while joined; a sample
+  taken while disconnected is dropped.
+
+  With `:doctor_every` (ms; `runner.start` passes
+  `PipeMaestroProtocol.RunnerDoctor.interval_ms/0`), it runs the runner's
+  diagnosis (`PipeMaestroRunner.Doctor`) after every join, at that interval
+  and when the platform asks (`runner:doctor`, answered with the request's
+  id), and sends it while joined. Connected, the platform is known to
+  answer, so that check is not run; `:doctor_opts` go to `Doctor.run/1`
+  (for tests).
+
+  With `logs: true`, it is the sink of the runner's log
+  (`PipeMaestroRunner.LogCollector`): after every join it attaches to the
+  collector, sending all the lines or, when the join's reply says the
+  workspace keeps no log, only the events; the batches go through the outbox
+  (`runner:log`). It also tells the log when its connection drops
+  (`connection_lost`) and, at most once a minute, when the outbox dropped
+  messages for lack of room (`outbox_dropped`).
+
   Progress is reported to `:notify` (a pid) as `{:runner_connection, event}`
   with `event` one of `{:joined, reply}`, `{:disconnected, reason}`,
   `:rejected`, `{:outdated, refusal}`, `{:job_started, job_id}` and
@@ -45,8 +67,18 @@ defmodule PipeMaestroRunner.Connection do
 
   require Logger
 
-  alias PipeMaestroProtocol.{Hello, Job, Worktree}
-  alias PipeMaestroRunner.{Directories, Disk, JobRunner, Outbox}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerDoctor, RunnerHealth, RunnerLog, Worktree}
+
+  alias PipeMaestroRunner.{
+    Config,
+    Directories,
+    Disk,
+    Doctor,
+    Health,
+    JobRunner,
+    LogCollector,
+    Outbox
+  }
 
   @doc "Starts the connection with the runner's credentials and hello."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -89,6 +121,18 @@ defmodule PipeMaestroRunner.Connection do
         usage_every: Keyword.get(opts, :usage_every, 300_000),
         usage: nil,
         measuring: nil,
+        config: config,
+        doctor_every: Keyword.get(opts, :doctor_every),
+        doctor_opts: Keyword.get(opts, :doctor_opts, []),
+        doctor: nil,
+        doctor_request: nil,
+        doctor_timer: nil,
+        logs: Keyword.get(opts, :logs, false),
+        drops_told: {0, nil},
+        health_every: Keyword.get(opts, :health_every),
+        sampling: nil,
+        health_timer: nil,
+        cpu: nil,
         outbox: Outbox.new(20_000, Keyword.get(opts, :outbox_path))
       )
 
@@ -160,6 +204,7 @@ defmodule PipeMaestroRunner.Connection do
   @impl Slipstream
   def handle_join(_topic, reply, socket) do
     notify(socket, {:joined, reply})
+    if socket.assigns.logs, do: LogCollector.attach(self(), RunnerLog.logs?(reply))
     # The platform forgets nothing it was told, but this is a new channel
     # process: the next measure is pushed even if unchanged.
     socket = assign(socket, usage: nil, outbox: Outbox.forget_refs(socket.assigns.outbox))
@@ -169,7 +214,7 @@ defmodule PipeMaestroRunner.Connection do
         send_out(acc, id, event, payload)
       end)
 
-    {:ok, measure_usage(socket)}
+    {:ok, socket |> measure_usage() |> sample_health() |> run_doctor(nil)}
   end
 
   @impl Slipstream
@@ -188,6 +233,11 @@ defmodule PipeMaestroRunner.Connection do
 
   def handle_disconnect(reason, socket) do
     notify(socket, {:disconnected, reason})
+
+    LogCollector.capture(:warning, "Conexão com a plataforma perdida: #{inspect(reason)}", %{
+      runner_event: "connection_lost",
+      event_attrs: %{"reason" => inspect(reason, limit: 5)}
+    })
 
     case reconnect(socket) do
       {:ok, socket} -> {:ok, socket}
@@ -253,6 +303,10 @@ defmodule PipeMaestroRunner.Connection do
     {:ok, socket}
   end
 
+  def handle_message(_topic, "runner:doctor", %{"request_id" => id}, socket)
+      when is_binary(id) and is_integer(socket.assigns.doctor_every),
+      do: {:ok, run_doctor(socket, id)}
+
   def handle_message(_topic, event, _payload, socket) do
     Logger.warning("Mensagem da plataforma ignorada por este runner: #{event}")
     {:ok, socket}
@@ -274,6 +328,35 @@ defmodule PipeMaestroRunner.Connection do
   end
 
   def handle_info(:measure_usage, socket), do: {:noreply, measure_usage(socket)}
+
+  def handle_info(:sample_health, socket),
+    do: {:noreply, sample_health(assign(socket, health_timer: nil))}
+
+  def handle_info(:run_doctor, socket),
+    do: {:noreply, run_doctor(assign(socket, doctor_timer: nil), nil)}
+
+  def handle_info({ref, checks}, %{assigns: %{doctor: ref}} = socket) do
+    Process.demonitor(ref, [:flush])
+    %{doctor_request: request, doctor_every: every} = socket.assigns
+
+    if joined?(socket, socket.assigns.topic) do
+      payload = RunnerDoctor.to_map(checks, DateTime.utc_now(:second), request)
+      _pushed = push(socket, socket.assigns.topic, RunnerDoctor.event(), payload)
+    end
+
+    timer = Process.send_after(self(), :run_doctor, every)
+    {:noreply, assign(socket, doctor: nil, doctor_request: nil, doctor_timer: timer)}
+  end
+
+  def handle_info({ref, {sample, cpu}}, %{assigns: %{sampling: ref}} = socket) do
+    Process.demonitor(ref, [:flush])
+
+    if joined?(socket, socket.assigns.topic),
+      do: _pushed = push(socket, socket.assigns.topic, RunnerHealth.event(), sample)
+
+    timer = Process.send_after(self(), :sample_health, socket.assigns.health_every)
+    {:noreply, assign(socket, sampling: nil, cpu: cpu, health_timer: timer)}
+  end
 
   # What the agent is writing: worth showing now or never, so it skips the
   # outbox and is dropped while disconnected.
@@ -300,8 +383,7 @@ defmodule PipeMaestroRunner.Connection do
   # What the job runner reports goes to the platform through the outbox; while
   # disconnected it waits there for the next join.
   def handle_info({:job_out, event, payload}, socket) do
-    {id, outbox} = Outbox.add(socket.assigns.outbox, event, payload)
-    socket = send_out(assign(socket, outbox: outbox), id, event, payload)
+    socket = add_out(socket, event, payload)
 
     case event do
       "job:started" -> notify(socket, {:job_started, payload["job_id"]})
@@ -310,6 +392,33 @@ defmodule PipeMaestroRunner.Connection do
     end
 
     {:noreply, socket}
+  end
+
+  # The runner's log, in batches (`PipeMaestroRunner.LogCollector`).
+  def handle_info({:runner_log, lines}, socket),
+    do: {:noreply, add_out(socket, RunnerLog.event(), %{"lines" => lines})}
+
+  defp add_out(socket, event, payload) do
+    {id, outbox} = Outbox.add(socket.assigns.outbox, event, payload)
+    socket |> assign(outbox: outbox) |> tell_drops() |> send_out(id, event, payload)
+  end
+
+  # Telling the log takes room in the outbox too: once a minute at most.
+  defp tell_drops(%{assigns: %{outbox: outbox, drops_told: {told, at}}} = socket) do
+    dropped = Outbox.dropped(outbox)
+    now = System.monotonic_time(:millisecond)
+
+    if dropped > told and (at == nil or now - at >= 60_000) do
+      LogCollector.capture(
+        :warning,
+        "A fila de envio encheu: #{dropped - told} mensagens descartadas.",
+        %{runner_event: "outbox_dropped", event_attrs: %{"count" => dropped - told}}
+      )
+
+      assign(socket, drops_told: {dropped, now})
+    else
+      socket
+    end
   end
 
   defp send_out(socket, id, event, payload) do
@@ -328,6 +437,51 @@ defmodule PipeMaestroRunner.Connection do
   defp measure_usage(socket) do
     workdir = socket.assigns.workdir
     assign(socket, measuring: Task.async(fn -> Disk.usage(workdir) end).ref)
+  end
+
+  # The diagnosis runs commands (`gh auth status` may reach the network): in a
+  # task, one at a time. A request while one runs is answered by it.
+  defp run_doctor(%{assigns: %{doctor_every: nil}} = socket, _request), do: socket
+
+  defp run_doctor(%{assigns: %{doctor: ref}} = socket, request) when is_reference(ref),
+    do: if(request, do: assign(socket, doctor_request: request), else: socket)
+
+  defp run_doctor(%{assigns: assigns} = socket, request) do
+    if assigns.doctor_timer, do: Process.cancel_timer(assigns.doctor_timer)
+
+    opts =
+      Keyword.merge(
+        [
+          config: {:ok, assigns.config},
+          workdir: assigns.workdir || Config.workdir(),
+          reach: fn _url -> :ok end
+        ],
+        assigns.doctor_opts
+      )
+
+    task = Task.async(fn -> Doctor.run(opts) end)
+    assign(socket, doctor: task.ref, doctor_request: request, doctor_timer: nil)
+  end
+
+  # Commands that may take a moment (`ps`, `df`): in a task, one at a time.
+  # A join samples at once; the timer it replaces is dropped.
+  defp sample_health(%{assigns: %{health_every: nil}} = socket), do: socket
+  defp sample_health(%{assigns: %{sampling: ref}} = socket) when is_reference(ref), do: socket
+
+  defp sample_health(%{assigns: assigns} = socket) do
+    if assigns.health_timer, do: Process.cancel_timer(assigns.health_timer)
+
+    running =
+      if assigns.job_runner, do: length(JobRunner.running_job_ids(assigns.job_runner)), else: 0
+
+    opts = [
+      workdir: assigns.workdir,
+      outbox_pending: Outbox.size(assigns.outbox),
+      running_jobs: running,
+      cpu: assigns.cpu
+    ]
+
+    assign(socket, sampling: Task.async(fn -> Health.sample(opts) end).ref, health_timer: nil)
   end
 
   defp notify(%{assigns: %{notify: pid}}, event) when is_pid(pid),

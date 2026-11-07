@@ -203,6 +203,20 @@ defmodule PipeMaestroRunner.UpdateTest do
     refute_received {:relaunch, _bin, _argv, _mode}
   end
 
+  test "with a marker, an update leaves what happened for the next start", ctx do
+    marker = Path.join(ctx.bin_dir, "update.json")
+    opts = ctx.opts |> Keyword.delete(:auto_update) |> Keyword.put(:marker, marker)
+
+    assert Update.handle(ctx.refusal, opts) == :relaunched
+    assert {:applied, %{"to" => "dev+def5678", "from" => _from}} = Update.take_marker(marker)
+    assert Update.take_marker(marker) == nil
+
+    DownloadServer.behave(ctx.server, "SHA256SUMS", :missing)
+    assert {:fail, _message} = Update.handle(ctx.refusal, opts)
+    assert {:failed, %{"reason" => reason}} = Update.take_marker(marker)
+    assert reason =~ "404"
+  end
+
   test "a failed download says why, keeps the binary and does not run again", ctx do
     DownloadServer.behave(ctx.server, "SHA256SUMS", :missing)
     opts = answering(ctx.opts, "s\n")

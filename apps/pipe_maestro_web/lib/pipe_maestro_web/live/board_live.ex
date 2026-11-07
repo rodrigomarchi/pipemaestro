@@ -14,7 +14,7 @@ defmodule PipeMaestroWeb.BoardLive do
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
 
   alias Phoenix.Socket.Broadcast
-  alias PipeMaestro.{Jobs, Pipelines, Projects, Runners, Tasks, Workspaces}
+  alias PipeMaestro.{Jobs, Pipelines, Projects, Runners, RunnerTelemetry, Tasks, Workspaces}
   alias PipeMaestro.Tasks.Task
   alias PipeMaestroWeb.RunnerStatus
 
@@ -106,7 +106,15 @@ defmodule PipeMaestroWeb.BoardLive do
   # ends by itself, capped at @max_alerts_wait (it recomputes and waits again).
   defp load_alerts(socket) do
     workspace = socket.assigns.current_scope.workspace
-    alerts = Tasks.alerts(workspace, RunnerStatus.online_ids(workspace.id))
+    online = RunnerStatus.online_ids(workspace.id)
+
+    degraded =
+      workspace
+      |> Runners.list_runners()
+      |> Enum.filter(&MapSet.member?(online, &1.id))
+      |> RunnerTelemetry.degraded_alerts()
+
+    alerts = Tasks.alerts(workspace, online) ++ degraded
 
     if timer = socket.assigns.alerts_timer, do: Process.cancel_timer(timer)
 
@@ -433,6 +441,9 @@ defmodule PipeMaestroWeb.BoardLive do
   defp alert_testid({:near_budget, task, _spent, _cap}), do: "board-alert-budget-#{task.id}"
   defp alert_testid({:runner_near_limit, task, _runner}), do: "board-alert-limit-#{task.id}"
 
+  defp alert_testid({:runner_degraded, runner, _reasons}),
+    do: "board-alert-degraded-#{runner.name}"
+
   attr :alert, :any, required: true
   attr :slug, :string, required: true
 
@@ -481,6 +492,21 @@ defmodule PipeMaestroWeb.BoardLive do
       {@task.title}
     </.link>
     roda no runner {@runner.name}, cuja conta está perto do limite de uso.
+    """
+  end
+
+  defp alert_line(%{alert: {:runner_degraded, runner, reasons}} = assigns) do
+    assigns = assign(assigns, runner: runner, reasons: reasons)
+
+    ~H"""
+    <.icon name="hero-heart" class="size-4 text-danger-500" /> O runner
+    <.link
+      navigate={~p"/w/#{@slug}/runners/#{@runner.id}?aba=saude"}
+      class="font-medium hover:underline"
+    >
+      {@runner.name}
+    </.link>
+    está degradado: {Enum.map_join(@reasons, "; ", &reason_label/1)}.
     """
   end
 

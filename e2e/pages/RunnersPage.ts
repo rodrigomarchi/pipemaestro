@@ -99,6 +99,86 @@ export class RunnersPage {
     return this.page.getByTestId(part ? `runner-recent-job-${part}-${jobId}` : `runner-recent-job-${jobId}`);
   }
 
+  /** The runner's uptime over the last 7 days, in the list. */
+  uptime(name: string): Locator {
+    return this.page.getByTestId(`runner-uptime-${name}`);
+  }
+
+  /** On the runner's page, opens a tab by its `aba` id (visao, conexoes...). */
+  async openTab(tab: string) {
+    await this.page.getByTestId(`runner-tab-${tab}`).click();
+    await expect(this.page).toHaveURL(tab === "visao" ? /\/runners\/[^?]+$/ : new RegExp(`aba=${tab}`));
+  }
+
+  /** The "Conexões" tab. */
+  get connections(): Locator {
+    return this.page.getByTestId("runner-connections");
+  }
+
+  /** How each session listed in the "Conexões" tab ended, newest first. */
+  get sessionReasons(): Locator {
+    return this.page.getByTestId("runner-session-reason");
+  }
+
+  get uptimeDay(): Locator {
+    return this.page.getByTestId("runner-uptime-day");
+  }
+
+  get dropsDay(): Locator {
+    return this.page.getByTestId("runner-drops-day");
+  }
+
+  /** The "Saúde" tab. */
+  get health(): Locator {
+    return this.page.getByTestId("runner-health");
+  }
+
+  /** The latest value of a measure in the "Saúde" tab: cpu, memory, load or disk. */
+  healthValue(measure: "cpu" | "memory" | "load" | "disk"): Locator {
+    return this.page.getByTestId(`runner-health-${measure}-value`);
+  }
+
+  /** A number of the week's jobs in the "Saúde" tab: runs, failures, setup, queue, gates or outbox. */
+  runStat(stat: "runs" | "failures" | "setup" | "queue" | "gates" | "outbox"): Locator {
+    return this.page.getByTestId(`runner-stat-${stat}`);
+  }
+
+  /** The runner's share of failed jobs over the last 7 days, in the list. */
+  failures(name: string): Locator {
+    return this.page.getByTestId(`runner-failures-${name}`);
+  }
+
+  /** An event of `kind` (setup_failed, connection_lost...) in the "Eventos e logs" tab. */
+  event(kind: string): Locator {
+    return this.page.getByTestId(`runner-event-${kind}`);
+  }
+
+  /** The lines of the runner's log in the "Eventos e logs" tab, newest first. */
+  get logLines(): Locator {
+    return this.page.getByTestId("runner-log-line");
+  }
+
+  /** Filters the events by a group: tudo, errors, setup, git, update, connection, worktree, doctor. */
+  async filterEvents(group: string) {
+    await this.page.getByTestId(`runner-event-group-${group}`).click();
+    await expect(this.page).toHaveURL(new RegExp(`grupo=${group}`));
+  }
+
+  /** A check of the runner's diagnosis (git, disk, claude...), in the "Diagnóstico" tab. */
+  doctorCheck(key: string): Locator {
+    return this.page.getByTestId(`runner-doctor-check-${key}`);
+  }
+
+  /** The "Rodar agora" button of the "Diagnóstico" tab. */
+  get runDoctor(): Locator {
+    return this.page.getByTestId("runner-doctor-run");
+  }
+
+  /** The "degradado" badge of a runner in the list. */
+  degraded(name: string): Locator {
+    return this.page.getByTestId(`runner-degraded-${name}`);
+  }
+
   async rename(from: string, to: string) {
     await this.page.getByTestId(`runner-rename-${from}`).click();
     await this.page.getByTestId("rename-name").fill(to);

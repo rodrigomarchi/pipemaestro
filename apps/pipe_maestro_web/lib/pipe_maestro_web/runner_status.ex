@@ -48,6 +48,55 @@ defmodule PipeMaestroWeb.RunnerStatus do
     Phoenix.PubSub.broadcast(PipeMaestro.PubSub, topic(workspace_id), :runners_changed)
   end
 
+  @doc "The PubSub topic of one runner's telemetry (ADR 0039)."
+  @spec telemetry_topic(Ecto.UUID.t()) :: String.t()
+  def telemetry_topic(runner_id), do: "runner_telemetry:" <> runner_id
+
+  @doc """
+  Subscribes the caller to one runner's telemetry: it receives
+  `{:runner_telemetry, kind}` (`:health`, `:log`, `:doctor`) when the runner
+  reports something new.
+  """
+  @spec subscribe_telemetry(Ecto.UUID.t()) :: :ok
+  def subscribe_telemetry(runner_id),
+    do: Phoenix.PubSub.subscribe(PipeMaestro.PubSub, telemetry_topic(runner_id))
+
+  @doc "Tells the screens following a runner that it reported `kind` of telemetry."
+  @spec notify_telemetry(Ecto.UUID.t(), atom()) :: :ok
+  def notify_telemetry(runner_id, kind),
+    do:
+      Phoenix.PubSub.broadcast(
+        PipeMaestro.PubSub,
+        telemetry_topic(runner_id),
+        {:runner_telemetry, kind}
+      )
+
+  @doc "The PubSub topic of what the screens ask of a runner's channel."
+  @spec commands_topic(Ecto.UUID.t()) :: String.t()
+  def commands_topic(runner_id), do: "runner_commands:" <> runner_id
+
+  @doc "Subscribes the caller (a runner's channel) to what the screens ask of it."
+  @spec subscribe_commands(Ecto.UUID.t()) :: :ok
+  def subscribe_commands(runner_id),
+    do: Phoenix.PubSub.subscribe(PipeMaestro.PubSub, commands_topic(runner_id))
+
+  @doc """
+  Asks the runner, through its open channel, to run its diagnosis now.
+  Returns the request's id, which the answer carries.
+  """
+  @spec request_doctor(Ecto.UUID.t()) :: String.t()
+  def request_doctor(runner_id) do
+    request_id = Ecto.UUID.generate()
+
+    Phoenix.PubSub.broadcast(
+      PipeMaestro.PubSub,
+      commands_topic(runner_id),
+      {:doctor_request, request_id}
+    )
+
+    request_id
+  end
+
   @doc "Closes the runner's open connection, if it has one."
   @spec disconnect(Runner.t()) :: :ok
   def disconnect(%Runner{id: id}) do

@@ -24,12 +24,29 @@ defmodule PipeMaestroWeb.RunnerChannel do
 
   The runner also sends `runner:directories` when the code directories it
   offers change while it is online.
+
+  A runner that announces it reports its machine's health
+  (`runner:health`, `PipeMaestroProtocol.RunnerHealth`) and its own log
+  (`runner:log`, `PipeMaestroProtocol.RunnerLog`), stored and passed on to
+  the screens following that runner; the join's reply says whether the
+  workspace keeps the log lines. The events in a finished job's report (a
+  setup or a delivery that failed) and a worktree that could not be removed
+  are stored as the runner's events. The runner's diagnosis
+  (`runner:doctor`, `PipeMaestroProtocol.RunnerDoctor`) is stored as its
+  latest, and a screen asking for a new one (`RunnerStatus.request_doctor/1`)
+  reaches the runner through this channel. When what it reports changes
+  whether the runner is degraded (`RunnerTelemetry.degraded/2`), the
+  workspace's screens reload, the board's alerts with them.
+
+  Each accepted join opens a session (`PipeMaestro.RunnerTelemetry`), closed
+  with the reason the channel ended; a refused join is recorded as a session
+  that ends as it starts (ADR 0039).
   """
   use Phoenix.Channel
 
-  alias PipeMaestro.{Integrations, Jobs, Runners, Secrets, Tasks}
+  alias PipeMaestro.{Integrations, Jobs, Runners, RunnerTelemetry, Secrets, Tasks}
   alias PipeMaestro.Jobs.Event
-  alias PipeMaestroProtocol.{Hello, Job, Worktree}
+  alias PipeMaestroProtocol.{Hello, Job, RunnerDoctor, RunnerLog, Worktree}
   alias PipeMaestroWeb.{RunnerStatus, RunnerUpdate}
 
   @impl true
@@ -40,17 +57,45 @@ defmodule PipeMaestroWeb.RunnerChannel do
          {:ok, hello} <- Hello.from_map(payload),
          :ok <- Runners.version_check(hello.runner_version) do
       {:ok, runner} = Runners.record_hello(runner, hello)
+      session = RunnerTelemetry.open_session(runner)
+      :ok = RunnerStatus.subscribe_commands(runner.id)
       send(self(), {:after_join, hello})
 
-      {:ok,
-       %{"runner_id" => runner.id, "name" => runner.name, "workspace" => runner.workspace.name},
-       assign(socket, runner: runner, joined: true)}
+      reply = %{
+        "runner_id" => runner.id,
+        "name" => runner.name,
+        "workspace" => runner.workspace.name,
+        "telemetry" => RunnerLog.telemetry_reply(RunnerTelemetry.keep_logs?(runner))
+      }
+
+      socket =
+        assign(socket,
+          runner: runner,
+          joined: true,
+          session_id: session.id,
+          degraded: RunnerTelemetry.degraded(runner)
+        )
+
+      {:ok, reply, socket}
     else
-      false -> {:error, %{"reason" => "unauthorized"}}
-      {:error, reason} -> {:error, %{"reason" => "invalid_hello", "detail" => reason}}
-      # Nothing is recorded: the runner stays offline until it runs the current version.
-      {:outdated, expected} -> {:error, RunnerUpdate.refusal(payload["runner_version"], expected)}
+      false ->
+        {:error, %{"reason" => "unauthorized"}}
+
+      {:error, reason} ->
+        refused(runner, "invalid_hello", payload)
+        {:error, %{"reason" => "invalid_hello", "detail" => reason}}
+
+      # Only the refusal is recorded: the runner stays offline until it runs
+      # the current version.
+      {:outdated, expected} ->
+        refused(runner, "outdated", payload)
+        {:error, RunnerUpdate.refusal(payload["runner_version"], expected)}
     end
+  end
+
+  defp refused(runner, reason, payload) do
+    version = if is_map(payload), do: payload["runner_version"]
+    RunnerTelemetry.record_refusal(runner, reason, version)
   end
 
   @impl true
@@ -92,6 +137,14 @@ defmodule PipeMaestroWeb.RunnerChannel do
     {:noreply, socket}
   end
 
+  # Only a runner that knows the request is asked.
+  def handle_info({:doctor_request, request_id}, socket) do
+    if Runners.capable?(socket.assigns.runner, "doctor"),
+      do: push(socket, RunnerDoctor.event(), %{"request_id" => request_id})
+
+    {:noreply, socket}
+  end
+
   def handle_info({:job_cancel, job_id}, socket) do
     push(socket, Job.cancel_event(), %{"job_id" => job_id})
     {:noreply, socket}
@@ -122,7 +175,15 @@ defmodule PipeMaestroWeb.RunnerChannel do
   end
 
   def handle_in("job:finished", %{"job_id" => job_id} = payload, socket) do
-    socket.assigns.runner |> Jobs.finish_job(job_id, payload) |> reply_to(socket)
+    runner = socket.assigns.runner
+    result = Jobs.finish_job(runner, job_id, payload)
+
+    with {:ok, _job} <- result,
+         [_ | _] <- RunnerTelemetry.record_job_outcome(runner, job_id, payload),
+         do: RunnerStatus.notify_telemetry(runner.id, :log)
+
+    socket = if match?({:ok, _job}, result), do: check_degraded(socket), else: socket
+    reply_to(result, socket)
   end
 
   def handle_in("job:telemetry", %{"job_id" => job_id, "records" => records}, socket)
@@ -145,9 +206,16 @@ defmodule PipeMaestroWeb.RunnerChannel do
   end
 
   def handle_in("worktree:removed", %{"task_id" => task_id} = payload, socket) do
-    socket.assigns.runner
-    |> Tasks.worktree_removed(task_id, payload["error"])
-    |> reply_to(socket)
+    runner = socket.assigns.runner
+    result = Tasks.worktree_removed(runner, task_id, payload["error"])
+
+    with {:ok, _task} <- result,
+         error when is_binary(error) <- payload["error"] do
+      RunnerTelemetry.record_worktree_failure(runner, task_id, error)
+      RunnerStatus.notify_telemetry(runner.id, :log)
+    end
+
+    reply_to(result, socket)
   end
 
   def handle_in("worktree:usage", usage, socket) do
@@ -161,8 +229,61 @@ defmodule PipeMaestroWeb.RunnerChannel do
     end
   end
 
+  def handle_in("runner:health", payload, socket) do
+    runner = socket.assigns.runner
+
+    case RunnerTelemetry.record_health(runner, payload) do
+      {:ok, _sample} ->
+        RunnerStatus.notify_telemetry(runner.id, :health)
+        {:reply, :ok, check_degraded(socket)}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("runner:doctor", payload, socket) do
+    runner = socket.assigns.runner
+
+    case RunnerTelemetry.record_doctor(runner, payload) do
+      {:ok, runner} ->
+        RunnerStatus.notify_telemetry(runner.id, :doctor)
+        {:reply, :ok, check_degraded(assign(socket, runner: runner))}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
+  def handle_in("runner:log", payload, socket) do
+    runner = socket.assigns.runner
+
+    case RunnerTelemetry.record_log(runner, payload) do
+      {:ok, _count} ->
+        RunnerStatus.notify_telemetry(runner.id, :log)
+        {:reply, :ok, socket}
+
+      {:error, _reason} ->
+        {:reply, {:error, %{"reason" => "invalid"}}, socket}
+    end
+  end
+
   def handle_in(_event, _payload, socket),
     do: {:reply, {:error, %{"reason" => "unknown_message"}}, socket}
+
+  # A job that failed, a full disk, a check in error: the workspace's screens
+  # (and the board's alerts) reload when the runner turns degraded or back.
+  defp check_degraded(socket) do
+    %{runner: runner, degraded: before} = socket.assigns
+    now = RunnerTelemetry.degraded(runner)
+
+    if now != before do
+      RunnerStatus.notify_changed(runner.workspace_id)
+      assign(socket, degraded: now)
+    else
+      socket
+    end
+  end
 
   defp reply_to({:ok, _result}, socket), do: {:reply, :ok, socket}
 
@@ -215,10 +336,19 @@ defmodule PipeMaestroWeb.RunnerChannel do
   # Phoenix calls terminate after a refused join too; only a runner that was
   # actually online has a "last seen" to record.
   @impl true
-  def terminate(_reason, %{assigns: %{joined: true, runner: runner}}) do
+  def terminate(reason, %{assigns: %{joined: true, runner: runner, session_id: session_id}}) do
     Runners.touch_last_seen(runner)
-    :ok
+    RunnerTelemetry.close_session(session_id, end_reason(runner, reason))
   end
 
   def terminate(_reason, _socket), do: :ok
+
+  # A revoked runner's connection is closed by the control plane itself.
+  defp end_reason(runner, reason) do
+    cond do
+      Runners.revoked?(runner.id) -> "revoked"
+      match?({:shutdown, _}, reason) or reason == :normal -> "closed"
+      true -> "crashed"
+    end
+  end
 end

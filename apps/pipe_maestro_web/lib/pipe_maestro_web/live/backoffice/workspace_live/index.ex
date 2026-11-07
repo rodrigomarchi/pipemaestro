@@ -194,6 +194,16 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
             help_text="Passado esse número, novas tarefas esperam na fila."
             data-testid="workspace-max-running-tasks"
           />
+          <.icon_field
+            field={@form[:runner_log_retention_days]}
+            icon="hero-document-text"
+            type="number"
+            min="0"
+            max="90"
+            label="Dias de log dos runners"
+            help_text="Quanto tempo o log que os runners enviam fica guardado. Com 0, nenhuma linha é guardada, só os eventos."
+            data-testid="workspace-runner-log-retention"
+          />
           <div class="flex justify-end gap-2">
             <.button
               to={~p"/backoffice/workspaces"}

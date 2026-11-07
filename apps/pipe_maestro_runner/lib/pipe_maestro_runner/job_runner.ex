@@ -52,6 +52,7 @@ defmodule PipeMaestroRunner.JobRunner do
     Delivery,
     Gates,
     GitCredential,
+    LogCollector,
     RepoState,
     Setup,
     Shell,
@@ -59,6 +60,8 @@ defmodule PipeMaestroRunner.JobRunner do
   }
 
   alias PipeMaestroRunner.Telemetry.Receiver
+
+  require Logger
 
   @line_bytes 1_048_576
   @artifact_bytes 65_536
@@ -409,6 +412,8 @@ defmodule PipeMaestroRunner.JobRunner do
 
   defp start(state, job) do
     job = GitCredential.prepare(job, state.workdir)
+    # The job's secrets never reach the runner's log as they are.
+    LogCollector.add_secrets(job.id, job |> GitCredential.secrets() |> Enum.map(&elem(&1, 1)))
     out(state, Job.started_event(), %{"job_id" => job.id})
     runner = self()
     %{root: root, workdir: workdir, executable: executable} = state
@@ -555,6 +560,7 @@ defmodule PipeMaestroRunner.JobRunner do
 
     out(state, Job.finished_event(), payload)
     discard_scratch(state, run.job)
+    LogCollector.forget_secrets(run.job.id)
     start_ready(%{state | running: Map.delete(state.running, run.job.id)})
   end
 
@@ -673,6 +679,7 @@ defmodule PipeMaestroRunner.JobRunner do
     out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
     GitCredential.remove(state.workdir, current.job.id)
     discard_scratch(state, current.job)
+    LogCollector.forget_secrets(current.job.id)
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
   end
 
@@ -680,7 +687,17 @@ defmodule PipeMaestroRunner.JobRunner do
   # the background: deleting copied dependencies can take a while.
   defp discard_scratch(state, %Job{scratch: true} = job) do
     %{root: root, workdir: workdir} = state
-    {:ok, _pid} = Task.start(fn -> Workspace.remove_scratch(job, root, workdir) end)
+
+    {:ok, _pid} =
+      Task.start(fn ->
+        with {:error, reason} <- Workspace.remove_scratch(job, root, workdir) do
+          Logger.warning("O worktree descartável do job #{job.id} não saiu: #{reason}",
+            runner_event: "scratch_remove_failed",
+            event_attrs: %{"job_id" => job.id}
+          )
+        end
+      end)
+
     :ok
   end
 

@@ -68,6 +68,11 @@ export class AppPage {
     return this.page.getByTestId(`board-alert-${kind}-${taskId}`);
   }
 
+  /** The board's alert about a degraded runner, by its name. */
+  degradedAlert(runnerName: string): Locator {
+    return this.page.getByTestId(`board-alert-degraded-${runnerName}`);
+  }
+
   async openAccountMenu() {
     await this.page.getByTestId("account-menu-trigger").click();
     await expect(this.page.getByTestId("account-email")).toBeVisible();

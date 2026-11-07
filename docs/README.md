@@ -18,6 +18,8 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 01 | [Visão de arquitetura](plano/01-visao-arquitetura.md) | Rascunho v0.1 — 03/11/2026 |
 | 02 | [Contexto de discovery](plano/02-contexto-discovery.md) | v0.1 — 03/11/2026 |
 | 03 | [Roadmap do orquestrador](plano/03-roadmap-orquestrador.md) | v0.3 — 03/11/2026 |
+| 04 | [Integração com Forgejo e GitHub](plano/04-integracao-forges.md) | v0.1 — 06/11/2026 |
+| 05 | [Telemetria do runner](plano/05-telemetria-do-runner.md) | v0.2 — 06/11/2026 |
 
 ## Decisões (ADR)
 
@@ -61,16 +63,20 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0036 | [Integrações com hosts git](adr/0036-integracoes-com-hosts-git.md) | Aceita |
 | 0037 | [Credencial git por job](adr/0037-credencial-git-por-job.md) | Aceita |
 | 0038 | [Atualização automática por padrão](adr/0038-atualizacao-automatica-por-padrao.md) | Aceita |
+| 0039 | [Telemetria do runner](adr/0039-telemetria-do-runner.md) | Aceita |
 
 ## Specs
 
-- [Protocolo runner ↔ control plane (v3)](specs/protocolo-runner.md)
+- [Protocolo runner ↔ control plane (v4)](specs/protocolo-runner.md)
+- [Integrações com hosts git](specs/integracoes.md)
 - [Máquina de estados da tarefa](specs/maquina-de-estados-tarefa.md)
 
 ## Guias
 
 - [Instalação: control plane, runners e o primeiro pipeline](guias/instalacao.md)
 - [Deploy em produção (pipemaestro.app)](guias/deploy.md)
+- [Conectar um Forgejo](guias/integracoes-forgejo.md)
+- [O GitHub App da plataforma](guias/github-app.md)
 - [Phoenix 1.8](guias/phoenix.md)
 - [UI com petal_components](guias/ui-petal.md)
 - [Testes de tela (e2e) e auditoria visual](../e2e/README.md)

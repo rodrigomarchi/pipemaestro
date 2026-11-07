@@ -13,7 +13,14 @@ defmodule PipeMaestro.Maintenance do
       the rest go on the next.
     * audit entries older than `:audit_days` (default 365) go;
     * the integrations' deliveries older than `:deliveries_days` (default 30)
-      go (`PipeMaestro.Integrations.prune_deliveries/1`).
+      go (`PipeMaestro.Integrations.prune_deliveries/1`);
+    * the runners' health samples older than `:health_days` (default 7) go
+      (`PipeMaestro.RunnerTelemetry.prune_health/1`), and so do their log
+      lines past their workspace's retention and their events past 30 days
+      (`PipeMaestro.RunnerTelemetry.prune_logs/1`).
+
+  When it starts, it also closes the runners' sessions the previous run of
+  the control plane left open (`PipeMaestro.RunnerTelemetry.close_orphan_sessions/1`).
 
   A process on each node of the control plane; with more than one node, a
   shared job queue would keep two from doing the same work.
@@ -22,7 +29,7 @@ defmodule PipeMaestro.Maintenance do
 
   import Ecto.Query
 
-  alias PipeMaestro.{Audit, Insights, Integrations, Repo}
+  alias PipeMaestro.{Audit, Insights, Integrations, Repo, RunnerTelemetry}
   alias PipeMaestro.Jobs.{Event, Job, Telemetry}
   alias PipeMaestro.Runners.DeviceAuthorization
 
@@ -36,6 +43,7 @@ defmodule PipeMaestro.Maintenance do
     job_events_days = Keyword.get(opts, :job_events_days, 30)
     audit_days = Keyword.get(opts, :audit_days, 365)
     deliveries_days = Keyword.get(opts, :deliveries_days, 30)
+    health_days = Keyword.get(opts, :health_days, 7)
     batch = Keyword.get(opts, :batch, 500)
 
     {device_authorizations, _} =
@@ -75,15 +83,27 @@ defmodule PipeMaestro.Maintenance do
       job_events: job_events,
       job_telemetry: job_telemetry,
       audit_events: Audit.prune(DateTime.add(now, -audit_days, :day)),
-      deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day))
+      deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day)),
+      health_samples: RunnerTelemetry.prune_health(DateTime.add(now, -health_days, :day))
     }
+    |> Map.merge(runner_logs(RunnerTelemetry.prune_logs(now)))
   end
+
+  defp runner_logs(%{lines: lines, events: events}),
+    do: %{runner_log_lines: lines, runner_events: events}
 
   @impl true
   def init(opts) do
     every = Keyword.get(opts, :every, :timer.hours(1))
     Process.send_after(self(), :run, every)
-    {:ok, %{every: every, opts: opts}}
+    {:ok, %{every: every, opts: opts}, {:continue, {:close_orphans, DateTime.utc_now()}}}
+  end
+
+  # Only sessions opened before this start: a runner already back has a new one.
+  @impl true
+  def handle_continue({:close_orphans, started}, state) do
+    _closed = RunnerTelemetry.close_orphan_sessions(started)
+    {:noreply, state}
   end
 
   @impl true

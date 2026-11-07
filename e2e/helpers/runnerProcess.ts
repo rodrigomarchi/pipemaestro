@@ -52,6 +52,11 @@ export class RunnerProcess {
     this.extraEnv = options.env ?? {};
   }
 
+  /** Runs the next commands' jobs with the agent CLI at `path` (which may not exist). */
+  useClaudeBin(path: string): void {
+    this.claudeBin = path;
+  }
+
   /** Builds the next commands as `version`. */
   useVersion(version: string): void {
     this.version = version;

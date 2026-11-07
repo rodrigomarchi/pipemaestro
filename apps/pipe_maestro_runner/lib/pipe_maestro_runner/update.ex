@@ -11,9 +11,40 @@ defmodule PipeMaestroRunner.Update do
   Otherwise (Mix, a release, `--no-auto-update` without a terminal, a "no")
   it says which version it runs, which one the platform wants, and where to
   download it.
+
+  With a `:marker` path, an attempt to update leaves there what happened
+  (`take_marker/1`), for the runner that starts next to tell its log
+  (`update_applied` or `update_failed`, ADR 0039).
   """
 
-  alias PipeMaestroRunner.{Output, SelfUpdate}
+  alias PipeMaestroRunner.{Host, Output, SelfUpdate}
+
+  @doc """
+  Reads and removes what the last attempt to update left at `path`:
+  `{:applied | :failed, %{"from", "to", "reason"?}}`, or `nil`.
+  """
+  @spec take_marker(Path.t()) :: {:applied | :failed, map()} | nil
+  def take_marker(path) do
+    with {:ok, binary} <- File.read(path),
+         _removed <- File.rm(path),
+         {:ok, %{"result" => result} = marker} when result in ["applied", "failed"] <-
+           JSON.decode(binary) do
+      {String.to_existing_atom(result), Map.delete(marker, "result")}
+    else
+      _none -> nil
+    end
+  end
+
+  defp mark(nil, _result, _refusal, _reason), do: :ok
+
+  defp mark(path, result, refusal, reason) do
+    marker =
+      %{"result" => result, "from" => Host.runner_version(), "to" => refusal["version"]}
+      |> then(&if(reason, do: Map.put(&1, "reason", reason), else: &1))
+
+    _written = File.write(path, JSON.encode!(marker))
+    :ok
+  end
 
   @doc ~s(The message for a refusal: `%{"version", "runner_version", "download_url"}`.)
   @spec message(map()) :: String.t()
@@ -67,7 +98,7 @@ defmodule PipeMaestroRunner.Update do
   from `--no-auto-update`, asks in a terminal and otherwise gives the message;
   omitted or `true`, it updates without asking),
   `:platform_url` (where the runner connects; the binary comes only from its
-  origin), and what comes from the environment by default: `:env`
+  origin), `:marker` (where to leave what happened), and what comes from the environment by default: `:env`
   (`System.get_env/0`), `:tty?` (`Output.tty?/0`), `:gets` (reads the answer
   to the question, `Output.ask/1`) and `:relaunch`
   (`SelfUpdate.relaunch/3`, then exits with the new binary's status).
@@ -124,16 +155,20 @@ defmodule PipeMaestroRunner.Update do
       case SelfUpdate.install(bin, urls: urls, target: target, progress: &Output.progress/1) do
         :ok ->
           Output.info("Atualizado para a versão #{refusal["version"]}. Rodando de novo...")
+          mark(opts[:marker], "applied", refusal, nil)
           opts[:relaunch].(bin, opts[:argv], mode)
 
-        {:error, {:not_writable, _dir}} ->
+        {:error, {:not_writable, dir}} ->
+          mark(opts[:marker], "failed", refusal, "sem permissão de escrita em #{dir}")
           {:fail, manual(urls, bin)}
 
         {:error, reason} ->
+          mark(opts[:marker], "failed", refusal, describe(reason))
           {:fail, "Não foi possível atualizar: #{describe(reason)}.\n\n" <> message(refusal)}
       end
     else
       {:error, reason} ->
+        mark(opts[:marker], "failed", refusal, describe(reason))
         {:fail, "Não foi possível atualizar: #{describe(reason)}.\n\n" <> message(refusal)}
     end
   end

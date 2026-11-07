@@ -2,7 +2,8 @@
 
 > Status: v4, implementada em `apps/pipe_maestro_protocol`, que é a fonte da
 > verdade das constantes e dos formatos `Hello`, `Job` e `JobEvent`. Ela cobre login,
-> conexão, jobs (seção 4) e o contexto das etapas de tarefa (seção 4.4). Leases e
+> conexão, jobs (seção 4), o contexto das etapas de tarefa (seção 4.4) e a telemetria do
+runner (seção 4.7). Leases e
 > dispatcher entram em versões seguintes. As versões anteriores nunca foram
 > distribuídas: v1 cobria só login e conexão, e v2 trazia jobs sem contexto.
 
@@ -126,12 +127,15 @@ reconecta com backoff (0,5 s, 1 s, 2 s, 5 s, 10 s e depois 30 s).
     runner) ou `login` (o login da máquina);
   - `capabilities` (opcional): o que o runner suporta além da versão do protocolo
     (vazio se omitido). Hoje, `"scratch"`: roda um job num worktree descartável (§4.4); e
-    `"git_credential"`: recebe a credencial git do job e a renovação dela (§4.4).
+    `"git_credential"`: recebe a credencial git do job e a renovação dela (§4.4);
+    `"health"`, `"logs"` e `"doctor"`: envia a saúde, o log e o diagnóstico (§4.7).
     O control plane só oferece uma funcionalidade a quem a anuncia, o que permite
     acrescentar campos ao job sem quebrar runners antigos.
 
   O runner manda um `Hello` novo a cada (re)join. A resposta é
-  `{"runner_id", "name", "workspace"}`. Entrar no tópico de outro runner dá
+  `{"runner_id", "name", "workspace", "telemetry"}`, onde `telemetry` é `{"logs"}`:
+  `false` quando o workspace não guarda o log dos runners, e então o runner só envia
+  as linhas que são eventos (§4.7). Um runner antigo ignora o campo. Entrar no tópico de outro runner dá
   `{"reason": "unauthorized"}`, e um `Hello` inválido dá `{"reason": "invalid_hello"}`.
   Um runner fora da versão de runner que o control plane exige recebe o mesmo payload do `409` do login
   (`{"reason": "outdated", "version", "runner_version", "download_url"}`). Nada dele é
@@ -302,6 +306,22 @@ queued ──job:started──► running ──job:finished──► succeeded 
 
 No join, um job `running` daquele runner que não está em `running_job_ids` vira
 `failed`, porque o runner reiniciou e perdeu o processo.
+
+### 4.7 Telemetria do runner
+
+A saúde, o log e o diagnóstico do próprio runner
+([ADR 0039](../adr/0039-telemetria-do-runner.md)). Só um runner que anuncia `health`,
+`logs` ou `doctor` envia a mensagem correspondente, e o control plane só pede o
+diagnóstico a quem anuncia `doctor`.
+
+| Evento | Sentido | Payload |
+|---|---|---|
+| `runner:health` | runner → control plane | `{"at", "cpu_pct", "load1", "mem_used_bytes", "mem_total_bytes", "disk_free_bytes", "disk_total_bytes", "outbox_pending", "running_jobs", "beam_bytes"}` (`PipeMaestroProtocol.RunnerHealth`). Cada número pode ser `null` quando a máquina não o informa. Enviado depois de cada join e a cada 60 s, fora da outbox |
+| `runner:log` | runner → control plane | `{"lines"}`: até 200 linhas `{"at", "level", "message", "event"?, "attrs"?}` (`PipeMaestroProtocol.RunnerLog`), `level` igual a `debug`, `info`, `warning` ou `error`, `message` de até 4 KB, já com os segredos redigidos. `event` vem de uma lista fechada (`update_applied`, `update_failed`, `scratch_remove_failed`, `outbox_dropped`, `connection_lost`, `log_dropped`), com `attrs` de valores simples. Um lote sai a cada 5 s ou 200 linhas, e o runner envia no máximo 1 000 linhas por minuto. Passa pela outbox, que o descarta primeiro, como `job:event`, quando enche. Com `"logs": false` na resposta do join, só as linhas com `event` são enviadas |
+| `runner:doctor` | control plane → runner | `{"request_id"}`: roda o diagnóstico agora |
+| `runner:doctor` | runner → control plane | `{"request_id"?, "at", "checks"}`: `checks` é `[{"key", "name", "status", "detail"}]` (`PipeMaestroProtocol.RunnerDoctor`), `status` igual a `ok`, `warning` ou `error`. Enviado depois de cada join, a cada hora e em resposta a um pedido, com o `request_id` dele. Fora da outbox |
+
+As respostas são as da §4.2 (`ok`, ou `error` com `invalid`).
 
 ## 5. Versionamento
 

@@ -387,6 +387,12 @@ defmodule PipeMaestro.Runners do
     :ok
   end
 
+  @doc "Whether the runner `id` has been revoked."
+  @spec revoked?(Ecto.UUID.t()) :: boolean()
+  def revoked?(id) do
+    Repo.exists?(from r in Runner, where: r.id == ^id and not is_nil(r.revoked_at))
+  end
+
   @doc "A changeset for the rename form."
   @spec change_runner_name(Runner.t(), map()) :: Ecto.Changeset.t()
   def change_runner_name(%Runner{} = runner, attrs \\ %{}),
