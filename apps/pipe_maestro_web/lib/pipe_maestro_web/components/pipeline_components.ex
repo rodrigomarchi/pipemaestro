@@ -119,6 +119,8 @@ defmodule PipeMaestroWeb.PipelineComponents do
     default: nil,
     doc: "a function from a node to the href it links to, instead of opening its panel"
 
+  attr :target, :any, default: nil, doc: "where `select_node` goes (`phx-target`)"
+
   attr :class, :any, default: nil
   attr :testid, :string, default: "pipeline-diagram"
   attr :rest, :global
@@ -183,6 +185,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
           total={@total}
           diagram={@diagram}
           link={@link}
+          target={@target}
         />
         <%= if @mode != :compact do %>
           <.rail_stub :for={column <- @columns} column={column} edges={@diagram.rail.edges} />
@@ -220,6 +223,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :total, :integer, required: true
   attr :diagram, :map, required: true
   attr :link, :any, required: true
+  attr :target, :any, required: true
 
   defp column(%{column: {:entry}} = assigns) do
     ~H"""
@@ -227,6 +231,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
       entry={@diagram.entry}
       mode={if @link, do: :compact, else: @mode}
       selected={@selected == :entry}
+      target={@target}
     />
     """
   end
@@ -276,6 +281,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
         total={@total}
         parallel?={false}
         link={@link}
+        target={@target}
       />
       <span
         :for={node <- @step.nodes}
@@ -299,6 +305,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
             total={@total}
             parallel?={@step.parallel?}
             link={@link}
+            target={@target}
           />
         </div>
       </div>
@@ -388,6 +395,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :entry, :map, required: true
   attr :mode, :atom, required: true
   attr :selected, :boolean, required: true
+  attr :target, :any, default: nil
 
   defp entry_node(%{mode: :compact} = assigns) do
     ~H"""
@@ -420,6 +428,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
     <button
       type="button"
       phx-click="select_node"
+      phx-target={@target}
       phx-value-node="entry"
       aria-pressed={to_string(@selected)}
       class={[
@@ -451,6 +460,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :total, :integer, required: true
   attr :parallel?, :boolean, required: true
   attr :link, :any, default: nil
+  attr :target, :any, default: nil
 
   defp stage_node(%{mode: :compact} = assigns) do
     ~H"""
@@ -474,7 +484,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
       data-testid={"diagram-stage-#{@node.index}"}
       data-state={@node.state}
     >
-      <.node_target node={@node} selected={@selected} link={@link}>
+      <.node_target node={@node} selected={@selected} link={@link} target={@target}>
         <span class="flex items-center gap-2">
           <.stage_state_marker
             state={@node.state || :pending}
@@ -554,6 +564,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :node, :map, required: true
   attr :selected, :boolean, required: true
   attr :link, :any, required: true
+  attr :target, :any, default: nil
   slot :inner_block, required: true
 
   # What a click on a node does: open its panel, or follow its link.
@@ -562,6 +573,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
     <button
       type="button"
       phx-click="select_node"
+      phx-target={@target}
       phx-value-node={@node.index}
       aria-pressed={to_string(@selected)}
       class="flex-1 p-3 text-left"
@@ -879,6 +891,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :description, :string, default: nil
   attr :open, :boolean, required: true
   attr :testid, :string, default: nil
+  attr :target, :any, default: nil, doc: "where `close_panel` goes (`phx-target`)"
   slot :inner_block, required: true
   slot :footer
 
@@ -897,6 +910,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
       role="dialog"
       aria-labelledby={"#{@id}-title"}
       phx-window-keydown={@open && "close_panel"}
+      phx-target={@target}
       phx-key="escape"
       data-testid={@testid}
     >
@@ -909,6 +923,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
           <button
             type="button"
             phx-click="close_panel"
+            phx-target={@target}
             class="pc-slideover__header__button"
             data-testid={@testid && "#{@testid}-close"}
           >

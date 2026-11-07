@@ -330,4 +330,22 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert marker =~ "3"
     end
   end
+
+  describe "a target for the events" do
+    test "the diagram's and the panel's events go to a component, when given one" do
+      html = render_diagram(diagram([stage("a")]), target: "#explorer")
+      assert count(html, "[phx-click=select_node][phx-target='#explorer']") == 2
+
+      panel =
+        render_component(&PipelineComponents.side_panel/1,
+          id: "p",
+          title: "Etapa",
+          open: true,
+          target: "#explorer",
+          inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
+        )
+
+      assert count(panel, "[phx-click=close_panel][phx-target='#explorer']") == 1
+    end
+  end
 end
