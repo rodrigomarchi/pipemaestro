@@ -74,8 +74,14 @@ defmodule PipeMaestroRunner.JobFilesTest do
       write!(dir, "token-s3cr3t-valor.txt", "x")
       write!(dir, "ok.txt", "x")
 
-      assert {files, 1} = JobFiles.collect(dir, %{"GRAFANA_TOKEN" => "s3cr3t-valor"})
-      assert Enum.map(files, & &1.path) == ["ok.txt"]
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {files, 1} = JobFiles.collect(dir, %{"GRAFANA_TOKEN" => "s3cr3t-valor"})
+          assert Enum.map(files, & &1.path) == ["ok.txt"]
+        end)
+
+      assert log =~ "segredo"
+      refute log =~ "s3cr3t-valor"
     end
 
     test "a folder that does not exist has nothing", %{tmp_dir: dir} do
