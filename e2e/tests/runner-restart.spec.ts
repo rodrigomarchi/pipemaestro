@@ -87,6 +87,7 @@ test.describe("Runner restart", () => {
 
     await app.page.goto(`/w/${workspace.slug}/tasks/${taskId}`);
     await app.page.getByTestId("task-cancel").click();
-    await expect(tasks.status).toHaveText("Cancelada");
+    // The runner stops the running agent first: SIGTERM, then SIGKILL after 5 s.
+    await expect(tasks.status).toHaveText("Cancelada", { timeout: 15_000 });
   });
 });
