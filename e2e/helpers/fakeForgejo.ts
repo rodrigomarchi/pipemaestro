@@ -9,8 +9,12 @@
  *   - the API under `/api/v1` and OAuth under `/login/oauth`, the parts the
  *     platform uses, signed in with `fakeForgejo.token` (the bot
  *     `pipemaestro-bot`) or a token the OAuth flow handed out;
- *   - `/__e2e/*`, for the specs: create a repository or an issue, and read
- *     what the platform did (`GET /__e2e/state?repo=owner/name`).
+ *   - `/__e2e/*`, for the specs: create a repository or an issue, set what
+ *     the repository's CI reports (`POST /__e2e/ci`), and read what the
+ *     platform did (`GET /__e2e/state?repo=owner/name`).
+ *
+ * A pull request's head is the last commit the platform set a status on (the
+ * fake knows no git), and it always merges cleanly.
  *
  * The authorize page answers at once with a code, as if the person clicked
  * "authorize". Specs create repositories with unique names, so they share
@@ -38,6 +42,8 @@ interface Repo {
   reactions: Json[];
   statuses: Json[];
   pulls: Json[];
+  /** What the repository's CI (`ci/test`) reports on every commit, if anything. */
+  ci: string | null;
 }
 
 const repos = new Map<string, Repo>();
@@ -48,7 +54,7 @@ let nextId = 1000;
 function repoOf(fullName: string): Repo {
   let repo = repos.get(fullName);
   if (!repo) {
-    repo = { id: nextId++, fullName, labels: [], hooks: [], issues: new Map(), comments: [], reactions: [], statuses: [], pulls: [] };
+    repo = { id: nextId++, fullName, labels: [], hooks: [], issues: new Map(), comments: [], reactions: [], statuses: [], pulls: [], ci: null };
     repos.set(fullName, repo);
   }
   return repo;
@@ -109,6 +115,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       repo.issues.set(body.number, { ...body });
       return send(res, 201, issueJson(repo, body));
     }
+    if (method === "POST" && parts[1] === "ci") {
+      repoOf(body.repo).ci = body.state;
+      return send(res, 200, { ci: body.state });
+    }
     if (method === "GET" && parts[1] === "state") {
       const repo = repoOf(url.searchParams.get("repo") || "");
       return send(res, 200, {
@@ -166,6 +176,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const rest = api.slice(3);
   const route = `${method} ${rest.map((part) => (/^\d+$/.test(part) ? ":n" : part)).join("/")}`;
   const n = Number(rest.find((part) => /^\d+$/.test(part)));
+
+  // The latest status of each context on a commit, the CI's included.
+  if (method === "GET" && rest[0] === "commits" && rest[2] === "status") {
+    const sha = rest[1];
+    const latest = new Map<string, Json>();
+    for (const status of repo.statuses.filter((candidate) => candidate.sha === sha)) latest.set(status.context, status);
+    if (repo.ci) latest.set("ci/test", { sha, context: "ci/test", state: repo.ci, description: `ci/test: ${repo.ci}` });
+    const statuses = [...latest.values()].map((status) => ({ ...status, status: status.state }));
+    return send(res, 200, { sha, statuses });
+  }
 
   switch (route) {
     case "GET ":
@@ -249,6 +269,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       repo.pulls.push(pull);
       return send(res, 201, pull);
     }
+    case "GET pulls/:n": {
+      const pull = repo.pulls.find((candidate) => candidate.number === n);
+      if (!pull) return send(res, 404, { message: "pull not found" });
+      const head = repo.statuses.at(-1)?.sha;
+      return send(res, 200, { mergeable: true, merged: false, ...pull, head: { ...pull.head, sha: head } });
+    }
+    case "POST pulls/:n/merge": {
+      const pull = repo.pulls.find((candidate) => candidate.number === n);
+      if (!pull) return send(res, 404, { message: "pull not found" });
+      Object.assign(pull, { merged: true, state: "closed", merge: body });
+      return send(res, 200, {});
+    }
     case "PATCH pulls/:n": {
       const pull = repo.pulls.find((candidate) => candidate.number === n);
       if (!pull) return send(res, 404, { message: "pull not found" });
@@ -298,5 +330,14 @@ export async function createForgejoIssue(issue: { repo: string; number: number; 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(issue),
+  });
+}
+
+/** Sets what the repository's CI (`ci/test`) reports on every commit: "pending", "success", "failure", or null for no CI. */
+export async function setForgejoCi(repo: string, state: string | null): Promise<void> {
+  await fetch(`${fakeForgejo.url}/__e2e/ci`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ repo, state }),
   });
 }

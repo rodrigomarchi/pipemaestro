@@ -865,9 +865,15 @@ defmodule PipeMaestroWeb.PipelineComponents do
     """
   end
 
+  defp merge_method_label("merge"), do: "merge commit"
+  defp merge_method_label(method), do: method
+
   attr :pipeline, Pipeline, required: true
 
-  @doc "A pipeline's own settings, read-only: delivery, cost cap and context."
+  @doc """
+  A pipeline's own settings, read-only: delivery, cost cap, the merge of the
+  pull request and context.
+  """
   def pipeline_summary(assigns) do
     assigns =
       assign(assigns,
@@ -888,6 +894,16 @@ defmodule PipeMaestroWeb.PipelineComponents do
         <div class="flex items-center gap-1" data-testid="pipeline-summary-cost">
           <dt><.icon name="hero-banknotes" class="size-4" /></dt>
           <dd>{budget_label(@pipeline.max_task_cost_usd)}</dd>
+        </div>
+        <div
+          :if={@pipeline.auto_merge}
+          class="flex items-center gap-1"
+          data-testid="pipeline-summary-auto-merge"
+        >
+          <dt><.icon name="hero-arrows-pointing-in" class="size-4" /></dt>
+          <dd>
+            Merge sozinha ({merge_method_label(@pipeline.merge_method)}, até {@pipeline.max_merge_fixes} correções)
+          </dd>
         </div>
       </dl>
       <div :if={@pipeline.system_prompt not in [nil, ""]}>

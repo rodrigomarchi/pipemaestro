@@ -116,6 +116,9 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
       "description" => pipeline.description || "",
       "system_prompt" => pipeline.system_prompt || "",
       "delivery" => pipeline.delivery,
+      "auto_merge" => to_string(pipeline.auto_merge),
+      "merge_method" => pipeline.merge_method,
+      "max_merge_fixes" => to_string(pipeline.max_merge_fixes),
       "max_task_cost_usd" =>
         if(pipeline.max_task_cost_usd, do: to_string(pipeline.max_task_cost_usd), else: ""),
       "mcp_config_json" => Pipeline.mcp_config_json(pipeline),

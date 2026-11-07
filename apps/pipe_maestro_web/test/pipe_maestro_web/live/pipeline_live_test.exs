@@ -220,6 +220,48 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     assert %{"mcpServers" => %{"grafana" => _}} = pipeline.mcp_config
   end
 
+  test "a delivery in PR offers to merge it, with its settings", %{
+    conn: conn,
+    workspace: workspace
+  } do
+    pipeline = pipeline_fixture(workspace, %{"name" => "Com PR", "delivery" => "commit"})
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+    refute has_element?(view, "[data-testid=pipeline-auto-merge]")
+
+    view |> form("#pipeline-form", pipeline: %{delivery: "pr"}) |> render_change()
+    assert has_element?(view, "[data-testid=pipeline-auto-merge]")
+    refute has_element?(view, "[data-testid=pipeline-merge-method]")
+
+    view
+    |> form("#pipeline-form", pipeline: %{delivery: "pr", auto_merge: "true"})
+    |> render_change()
+
+    assert has_element?(view, "[data-testid=pipeline-merge-method]")
+
+    {:error, {:live_redirect, _}} =
+      view
+      |> form("#pipeline-form",
+        pipeline: %{
+          delivery: "pr",
+          auto_merge: "true",
+          merge_method: "rebase",
+          max_merge_fixes: "1"
+        }
+      )
+      |> render_submit()
+
+    assert %{auto_merge: true, merge_method: "rebase", max_merge_fixes: 1} =
+             Pipelines.get_pipeline!(workspace, pipeline.id)
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+    assert has_element?(
+             view,
+             "[data-testid=pipeline-merge-method] option[value=rebase][selected]"
+           )
+  end
+
   test "edits a pipeline, bumping its version, and deletes it", %{
     conn: conn,
     workspace: workspace
