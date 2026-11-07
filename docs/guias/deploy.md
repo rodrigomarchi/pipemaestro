@@ -9,7 +9,7 @@ repositório `retro_hex_chat_infra`, do mesmo jeito que os outros apps Elixir de
 - **HAProxy:** 14008.
 - **nginx e certificado:** `pipemaestro.app`. O `www` responde 301. O `server` precisa
   de `client_max_body_size 12m;`, porque os runners sobem os arquivos dos jobs (até
-  10 MiB cada, [ADR 0041](../adr/0041-arquivos-gerados-pela-etapa.md)). Com o padrão de
+  10 MiB cada, [ADR 0042](../adr/0042-arquivos-gerados-pela-etapa.md)). Com o padrão de
   1 MB, os maiores voltam com 413 e aparecem na tarefa como "não chegaram".
 
 Os segredos ficam no vault da infra e entram no ambiente do app pelo DeployEx:

@@ -19,8 +19,10 @@ defmodule PipeMaestroProtocol.Hello do
   `capabilities` names what this runner supports beyond the protocol version,
   so the control plane offers a feature only to runners that have it:
   `"scratch"` runs a job in a disposable worktree (`PipeMaestroProtocol.Job`),
-  and `"files"` sends the files a job leaves in its folder
-  (`PipeMaestroProtocol.JobFiles`). A runner that sends none has none.
+  `"resume_session"` keeps the agent CLI's session of a job and resumes it in
+  a later one (`persist_session`, `resume_session_id`), and `"files"` sends the
+  files a job leaves in its folder (`PipeMaestroProtocol.JobFiles`).
+  A runner that sends none has none.
   """
 
   @enforce_keys [:protocol_version, :runner_version, :hostname, :os, :arch, :labels, :capacity]
@@ -51,7 +53,8 @@ defmodule PipeMaestroProtocol.Hello do
 
   @doc "What a runner of this build supports (`capabilities`)."
   @spec capabilities() :: [String.t()]
-  def capabilities, do: ["doctor", "files", "git_credential", "health", "logs", "scratch"]
+  def capabilities,
+    do: ["doctor", "files", "git_credential", "health", "logs", "resume_session", "scratch"]
 
   @doc """
   Builds a validated hello from a map with atom or string keys. Labels are

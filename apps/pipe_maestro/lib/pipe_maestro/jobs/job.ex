@@ -17,7 +17,9 @@ defmodule PipeMaestro.Jobs.Job do
   not reach the platform (the ones that did are `PipeMaestro.Jobs.JobFile`).
 
   For auditing how the agent worked, the job also keeps what its run reported
-  about itself: the CLI's `session_id` and `cli_version`, the `model`, how it
+  about itself: the CLI's `session_id` (and, for a job that asked to resume
+  the previous stage's session, `session_resumed`: whether it did or started
+  from scratch) and `cli_version`, the `model`, how it
   stopped (`stop_reason`, `result_subtype`), its times (`duration_api_ms`,
   `ttft_ms`, `wall_ms` timed by the runner), its tokens (fresh input, cache
   read and written, output, thinking), `model_usage` (tokens and cost per
@@ -67,6 +69,7 @@ defmodule PipeMaestro.Jobs.Job do
           delivery: map() | nil,
           files_failed: non_neg_integer() | nil,
           session_id: String.t() | nil,
+          session_resumed: boolean() | nil,
           cli_version: String.t() | nil,
           model: String.t() | nil,
           stop_reason: String.t() | nil,
@@ -123,6 +126,7 @@ defmodule PipeMaestro.Jobs.Job do
     field :delivery, :map
     field :files_failed, :integer
     field :session_id, :string
+    field :session_resumed, :boolean
     field :cli_version, :string
     field :model, :string
     field :stop_reason, :string
@@ -228,6 +232,7 @@ defmodule PipeMaestro.Jobs.Job do
       :delivery,
       :files_failed,
       :session_id,
+      :session_resumed,
       :cli_version,
       :model,
       :stop_reason,

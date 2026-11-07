@@ -42,6 +42,11 @@ defmodule PipeMaestroRunner.JobRunner do
   Each message's tokens go once: a message split over several lines keeps
   them on its first event.
 
+  A job that resumes an earlier session (`resume_session_id`) whose CLI ends
+  in error before opening any session (the CLI does not have that session on
+  this machine) runs once more, from scratch, in the same place and with the
+  same prompt; its outcome says whether it resumed (`session_resumed`).
+
   Canceling a waiting job drops it; canceling a running one (in its setup or
   in the CLI) sends SIGTERM, then SIGKILL if it is still there after
   `:kill_after` ms. A job past its `timeout_ms` is stopped the same way and
@@ -284,7 +289,38 @@ defmodule PipeMaestroRunner.JobRunner do
   # What follows the agent's exit: the job ends now, or once the checks, the
   # gates, the delivery and the changes are measured.
   defp after_exit(state, run, code) do
-    run = %{run | wall_ms: wall_ms(run)}
+    if resume_missed?(run, code),
+      do: relaunch_fresh(state, run),
+      else: agent_exited(state, %{run | wall_ms: wall_ms(run)}, code)
+  end
+
+  # The CLI could not open the session it was asked to resume: it ended in
+  # error before reporting a session of its own.
+  defp resume_missed?(run, code),
+    do:
+      run.resume == :requested and code != 0 and not run.canceled and not run.timed_out and
+        run.session == nil
+
+  # The same job, from scratch: the setup, the sync and the notes of its
+  # prompt are already done, and the events keep counting.
+  defp relaunch_fresh(state, run) do
+    job = %{run.job | resume_session_id: nil}
+    elapsed = System.monotonic_time(:millisecond) - run.launched_at
+    timeout_ms = job.timeout_ms && max(job.timeout_ms - elapsed, 1)
+    {port, os_pid} = open_port(state, job, run.path, run.dir, timeout_ms)
+
+    put_run(state, %{
+      run
+      | job: job,
+        port: port,
+        os_pid: os_pid,
+        partial: "",
+        stderr: [],
+        resume: :fell_back
+    })
+  end
+
+  defp agent_exited(state, run, code) do
     {checks, gates, delivery} = after_steps(run, code)
 
     if run.tracking == nil and gates == [] and checks == [] and delivery == nil and
@@ -476,7 +512,9 @@ defmodule PipeMaestroRunner.JobRunner do
       messages: MapSet.new(),
       launched_at: nil,
       wall_ms: nil,
-      files_dir: files_dir
+      files_dir: files_dir,
+      path: nil,
+      resume: if(job.resume_session_id, do: :requested, else: :none)
     })
   end
 
@@ -546,7 +584,23 @@ defmodule PipeMaestroRunner.JobRunner do
 
   defp launch(state, run, {:ok, path, dir, setup, tracking, notes}) do
     job = if notes, do: %{run.job | prompt: run.job.prompt <> "\n\n" <> notes}, else: run.job
+    {port, os_pid} = open_port(state, job, path, dir, job.timeout_ms)
 
+    put_run(state, %{
+      run
+      | job: job,
+        path: path,
+        dir: dir,
+        setup: setup,
+        tracking: tracking,
+        port: port,
+        os_pid: os_pid,
+        launched_at: System.monotonic_time(:millisecond)
+    })
+  end
+
+  # The CLI in a port, with the job's deadline (`timeout_ms` from now).
+  defp open_port(state, job, path, dir, timeout_ms) do
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
         :binary,
@@ -565,18 +619,8 @@ defmodule PipeMaestroRunner.JobRunner do
         nil -> nil
       end
 
-    if job.timeout_ms, do: Process.send_after(self(), {:timeout, job.id, port}, job.timeout_ms)
-
-    put_run(state, %{
-      run
-      | job: job,
-        dir: dir,
-        setup: setup,
-        tracking: tracking,
-        port: port,
-        os_pid: os_pid,
-        launched_at: System.monotonic_time(:millisecond)
-    })
+    if timeout_ms, do: Process.send_after(self(), {:timeout, job.id, port}, timeout_ms)
+    {port, os_pid}
   end
 
   defp wall_ms(%{launched_at: nil}), do: nil
@@ -701,7 +745,7 @@ defmodule PipeMaestroRunner.JobRunner do
       "workdir" => current.dir
     }
 
-    payload = Map.merge(payload, audit(current, result))
+    payload = payload |> Map.merge(audit(current, result)) |> Map.merge(resumed(current))
 
     payload =
       for {key, value} <- Map.put(measured, "setup", current.setup),
@@ -773,6 +817,11 @@ defmodule PipeMaestroRunner.JobRunner do
       "stderr" => stderr(current)
     }
   end
+
+  # Whether a job that asked to resume a session did.
+  defp resumed(%{resume: :requested}), do: %{"session_resumed" => true}
+  defp resumed(%{resume: :fell_back}), do: %{"session_resumed" => false}
+  defp resumed(_run), do: %{}
 
   defp stderr(%{stderr: []}), do: nil
 

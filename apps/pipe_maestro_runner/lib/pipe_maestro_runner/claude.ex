@@ -1,9 +1,13 @@
 defmodule PipeMaestroRunner.Claude do
   @moduledoc """
   How the runner invokes the agent CLI for a job: `claude -p <prompt>` in
-  headless mode, printing one JSON event per line (`stream-json`), with nothing
-  saved as a resumable session, and every permission granted: pipelines run
+  headless mode, printing one JSON event per line (`stream-json`), and every
+  permission granted: pipelines run
   on their own, and nobody would answer a permission prompt in a headless run.
+
+  The CLI saves no resumable session, unless the job keeps it for the next
+  stage (`persist_session`) or resumes an earlier one (`resume_session_id`,
+  forked so the earlier session stays as it was: ADR 0041).
 
   `$CLAUDE_BIN` points to another executable (tests use a fake that prints the
   same kind of lines).
@@ -31,9 +35,15 @@ defmodule PipeMaestroRunner.Claude do
       "stream-json",
       "--verbose"
     ] ++
-      ["--dangerously-skip-permissions", "--no-session-persistence", "--include-partial-messages"] ++
-      optional(job)
+      ["--dangerously-skip-permissions"] ++
+      session(job) ++ ["--include-partial-messages"] ++ optional(job)
   end
+
+  defp session(%Job{resume_session_id: id}) when is_binary(id),
+    do: ["--resume", id, "--fork-session"]
+
+  defp session(%Job{persist_session: true}), do: []
+  defp session(_job), do: ["--no-session-persistence"]
 
   defp optional(job) do
     Enum.flat_map(

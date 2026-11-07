@@ -1235,7 +1235,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
               online={@online}
               testid="stage-redo-runner"
             />
-            <div class="flex justify-end gap-2">
+            <div class="flex flex-wrap justify-end gap-2">
               <.button type="button" variant="ghost" color="gray" phx-click="close_redo">
                 Cancelar
               </.button>
@@ -1293,6 +1293,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         <span>
           <span :if={@many}>Tentativa {@run.attempt} · </span>
           <.stage_run_status run={@run} data-testid={"stage-run-status-#{@run.key}-#{@run.attempt}"} />
+          <.stage_run_session run={@run} />
         </span>
         <span :if={@run.job} class="flex items-center gap-3">
           <span

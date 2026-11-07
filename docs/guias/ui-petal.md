@@ -135,6 +135,21 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
   quando ele termina, ela não abre sozinha, para a tela não pular. Uma tela nova com
   trabalho vivo segue a mesma regra.
 
+## Celular
+
+- Abaixo de `md` a sidebar é uma gaveta que trava o scroll da página (uma classe no
+  `<body>`, fora do que o LiveView atualiza). Seguir um link dela navega sem fechá-la, por
+  isso `closeSheetsOnNavigation` (`assets/js/sidebar.js`) fecha toda gaveta aberta quando
+  a navegação começa.
+- A barra superior põe as ações (`:actions`) numa linha própria, abaixo do título, até
+  `xl`, e elas quebram linha; no celular a barra rola com a página em vez de ficar presa.
+- Nada pode deixar a página mais larga que a tela: o celular afasta o zoom e a página
+  passa a rolar de lado. Uma fileira de botões leva `flex-wrap`; um diagrama, uma tabela
+  ou um bloco de código rola dentro do próprio contêiner (`overflow-x-auto`).
+- `e2e/tests/mobile-navigation.spec.ts` (projeto `mobile-chrome`) passa por todas as telas
+  do workspace num celular, e `expectFitsPhone` (`e2e/helpers/phone.ts`) confere uma tela
+  de detalhe na largura de um celular.
+
 ## Texto do agente e de pessoas
 
 - Prompts, resumos, motivos, instruções, perguntas e artefatos são Markdown:

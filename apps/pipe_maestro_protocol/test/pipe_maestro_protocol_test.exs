@@ -89,6 +89,7 @@ defmodule PipeMaestroProtocolTest do
 
       assert {:error, "capabilities" <> _} = Hello.new(Map.put(@valid, :capabilities, "scratch"))
       assert "scratch" in Hello.capabilities()
+      assert "resume_session" in Hello.capabilities()
     end
 
     test "a runner of this build announces that it uploads the job's files" do

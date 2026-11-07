@@ -213,6 +213,18 @@ defmodule PipeMaestro.JobsTest do
       assert job.stderr == "aviso"
     end
 
+    test "the outcome keeps whether the run resumed the previous stage's session", ctx do
+      {:ok, job} =
+        Jobs.finish_job(ctx.runner, ctx.job.id, %{
+          "status" => "succeeded",
+          "session_id" => "s-2",
+          "session_resumed" => false
+        })
+
+      assert Map.get(job, :session_resumed) == false
+      assert Map.get(Jobs.get_job!(ctx.workspace, job.id), :session_resumed) == false
+    end
+
     test "telemetry is stored and its metrics summed, also after the job ended", ctx do
       records = [
         %{

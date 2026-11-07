@@ -1157,6 +1157,84 @@ defmodule PipeMaestro.TasksTest do
     end
   end
 
+  describe "a stage that continues the previous stage's session" do
+    setup ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "A"},
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "B", "context" => "continue"},
+            %{"key" => "c", "name" => "Etapa C", "prompt" => "C"}
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    defp resumable(ctx, capabilities \\ ["resume_session"]) do
+      {:ok, runner} =
+        PipeMaestro.Runners.record_hello(
+          ctx.runner,
+          hello_fixture(%{
+            capabilities: capabilities,
+            directories: [
+              %{"name" => "app", "git" => true},
+              %{"name" => "notas", "git" => false}
+            ]
+          })
+        )
+
+      %{ctx | runner: runner}
+    end
+
+    test "the stage before keeps its session and the stage resumes it, also on a new attempt",
+         ctx do
+      ctx = resumable(ctx)
+      task = create_task(ctx)
+
+      first = current_job(task)
+      assert first.context["persist_session"] == true
+      refute Map.has_key?(first.context, "resume_session_id")
+
+      task = run_current(ctx, task, %{"session_id" => "sessao-a"})
+      second = current_job(task)
+      assert second.context["resume_session_id"] == "sessao-a"
+      refute Map.has_key?(second.context, "persist_session")
+
+      task = run_current(ctx, task, %{"status" => "failed", "exit_code" => 1, "error" => "boom"})
+      assert %Task{current_stage: 1} = task
+      retry = current_job(task)
+      assert retry.id != second.id
+      assert retry.context["resume_session_id"] == "sessao-a"
+
+      task = run_current(ctx, task, %{"session_id" => "sessao-b"})
+      third = current_job(task)
+      refute Map.has_key?(third.context, "resume_session_id")
+      refute Map.has_key?(third.context, "persist_session")
+    end
+
+    test "a runner that cannot resume runs every stage fresh", ctx do
+      ctx = resumable(ctx, ["scratch"])
+      task = create_task(ctx)
+
+      assert Tasks.get_task!(ctx.workspace, task.id).stages |> Enum.map(& &1.context) ==
+               ["fresh", "continue", "fresh"]
+
+      refute Map.has_key?(current_job(task).context, "persist_session")
+      task = run_current(ctx, task, %{"session_id" => "sessao-a"})
+      refute Map.has_key?(current_job(task).context, "resume_session_id")
+    end
+
+    test "with no session from the stage before, the stage runs fresh", ctx do
+      ctx = resumable(ctx)
+      task = create_task(ctx)
+
+      assert current_job(task).context["persist_session"] == true
+      task = run_current(ctx, task, %{})
+      refute Map.has_key?(current_job(task).context, "resume_session_id")
+    end
+  end
+
   describe "stages in parallel" do
     setup ctx do
       pipeline =
