@@ -246,7 +246,13 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-3">
                   <h3 class="truncate font-semibold text-gray-900 dark:text-white">
-                    {pipeline.name}
+                    <.link
+                      navigate={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}"}
+                      class="hover:text-primary-600 dark:hover:text-primary-400"
+                      data-testid={"pipeline-open-#{pipeline.name}"}
+                    >
+                      {pipeline.name}
+                    </.link>
                   </h3>
                   <.badge
                     size="sm"

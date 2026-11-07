@@ -73,8 +73,11 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-gates-${index}`);
   }
 
+  /** Saves, lands on the pipeline's page, and goes back to the list. */
   async save() {
     await this.page.getByTestId("pipeline-save").click();
+    await expect(this.page.getByTestId("pipeline-diagram")).toBeVisible();
+    await this.page.getByTestId("pipeline-page-back").click();
     await expect(this.page.getByTestId("create-default-pipelines")).toBeVisible();
   }
 }

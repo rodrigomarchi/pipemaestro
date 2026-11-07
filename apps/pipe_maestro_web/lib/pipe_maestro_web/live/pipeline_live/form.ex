@@ -29,7 +29,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         {:ok,
          socket
          |> put_flash(:error, "Só admins do workspace mudam os pipelines.")
-         |> push_navigate(to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/pipelines")}
+         |> push_navigate(to: denied_path(socket.assigns.current_scope.workspace, params))}
   end
 
   defp mount_form(params, _session, socket) do
@@ -47,6 +47,10 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
      |> assign(collapsed: MapSet.new(), from_proposal: from_proposal?(params))
      |> put_params(starting_params(pipeline, params, workspace), nil)}
   end
+
+  # Someone who cannot edit a pipeline still sees it.
+  defp denied_path(workspace, %{"id" => id}), do: ~p"/w/#{workspace.slug}/pipelines/#{id}"
+  defp denied_path(workspace, _params), do: ~p"/w/#{workspace.slug}/pipelines"
 
   defp from_proposal?(params), do: is_binary(params["proposta"])
 
@@ -215,7 +219,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         {:noreply,
          socket
          |> put_flash(:info, "Pipeline #{pipeline.name} salvo (v#{pipeline.version}).")
-         |> push_navigate(to: ~p"/w/#{workspace.slug}/pipelines")}
+         |> push_navigate(to: ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, params: params, form: to_form(changeset))}

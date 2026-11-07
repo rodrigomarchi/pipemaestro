@@ -56,9 +56,8 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     {:error, {:live_redirect, %{to: path}}} =
       view |> form("#pipeline-form") |> render_submit()
 
-    assert path == "/w/#{workspace.slug}/pipelines"
-
     [pipeline] = Pipelines.list_pipelines(workspace)
+    assert path == "/w/#{workspace.slug}/pipelines/#{pipeline.id}"
     assert pipeline.name == "Revisão"
     assert Enum.map(pipeline.stages, & &1.key) == ["escrever", "ler"]
     assert Enum.map(pipeline.stages, & &1.timeout_minutes) == [60, 20]
@@ -301,6 +300,105 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       assert html =~ "Um teto de custo, se quiser, e o que vira do código."
       assert html =~ "Teto de custo (US$, opcional)"
       refute html =~ "Orçamento"
+    end
+  end
+
+  describe "the pipeline page" do
+    setup %{workspace: workspace} do
+      pipeline =
+        pipeline_fixture(workspace, %{
+          "name" => "Bug",
+          "delivery" => "pr",
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça **A**"},
+            %{
+              "key" => "b",
+              "name" => "Etapa B",
+              "prompt" => "Faça B",
+              "gates_text" => "mix test",
+              "rules_text" => "risco == alto"
+            }
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    test "shows the pipeline as a diagram", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+
+      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      assert has_element?(view, "[data-testid=diagram-stage-0]", "Etapa A")
+      assert has_element?(view, "[data-testid=diagram-edge-1-rule-0]", "risco == alto")
+      assert has_element?(view, "[data-testid=diagram-delivery]", "Pull request")
+      assert has_element?(view, "[data-testid=pipeline-page-version]", "v1")
+    end
+
+    test "a stage opens in the side panel, and closes", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+      refute has_element?(view, "[data-testid=pipeline-panel]")
+
+      view |> element("[data-testid=diagram-select-1]") |> render_click()
+      assert has_element?(view, "[data-testid=pipeline-panel]", "Etapa B")
+      assert has_element?(view, "[data-testid=stage-details-gates]", "mix test")
+      assert has_element?(view, "[data-testid=diagram-select-1][aria-pressed=true]")
+
+      view |> element("[data-testid=pipeline-panel-close]") |> render_click()
+      refute has_element?(view, "[data-testid=pipeline-panel]")
+
+      view |> element("[data-testid=diagram-entry]") |> render_click()
+      assert has_element?(view, "[data-testid=pipeline-summary-delivery]", "Pull request")
+    end
+
+    test "an admin can edit it from there", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+
+      assert has_element?(
+               view,
+               ~s([data-testid=pipeline-page-edit][href="/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit"])
+             )
+    end
+
+    test "a pipeline of another workspace is not found", %{conn: conn, workspace: workspace} do
+      other = pipeline_fixture(workspace_fixture(%{name: "Outro"}))
+
+      assert_raise Ecto.NoResultsError, fn ->
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{other.id}")
+      end
+    end
+
+    test "the list leads to it", %{conn: conn, workspace: workspace, pipeline: pipeline} do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines")
+
+      assert has_element?(
+               view,
+               ~s([data-testid=pipeline-open-Bug][href="/w/#{workspace.slug}/pipelines/#{pipeline.id}"])
+             )
+    end
+
+    test "saving an edit leads back to it", %{
+      conn: conn,
+      workspace: workspace,
+      pipeline: pipeline
+    } do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               view |> form("#pipeline-form", pipeline: %{description: "x"}) |> render_submit()
+
+      assert to == "/w/#{workspace.slug}/pipelines/#{pipeline.id}"
     end
   end
 end
