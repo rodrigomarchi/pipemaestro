@@ -59,6 +59,17 @@ defmodule PipeMaestroProtocol.Job do
   sends it only to runners that announce the `"scratch"` capability
   (`PipeMaestroProtocol.Hello`).
 
+  `persist_session` keeps the agent CLI's session of this job on the runner's
+  machine, so a later stage can continue it; without it the CLI keeps none.
+  `resume_session_id` names the session of an earlier job (the `session_id` it
+  reported) the agent continues, forked into a session of its own, with this
+  job's prompt as the next message. When the CLI does not have that session,
+  the runner runs the job once more from scratch and reports
+  `"session_resumed" => false` in `"job:finished"` (`true` when it resumed).
+  A job of a scratch run resumes nothing. Only a runner with the capability
+  `"resume_session"` gets these fields; an older one ignores them and runs the
+  job from scratch.
+
   `setup` prepares a task's worktree once, when the runner creates it:
   `"copy"` names paths of the directory (dependencies, build output) the runner
   clones into the worktree, copy-on-write where the file system allows, and
@@ -101,7 +112,8 @@ defmodule PipeMaestroProtocol.Job do
       `cost_usd`), `permission_denials`, `environment` (what the agent had at
       hand: `tools`, `mcp_servers`, `agents`, `skills`, `slash_commands`,
       `plugins`, `permission_mode`, `auth`, `output_style`), `subagents` and
-      `stderr` (the last of what the CLI wrote there).
+      `stderr` (the last of what the CLI wrote there), and `session_resumed`
+      when the job asked to resume a session.
     * `"job:telemetry"` — what the CLI's OpenTelemetry reported
       (`PipeMaestroProtocol.Telemetry`); may arrive after
       `"job:finished"`.
@@ -132,7 +144,9 @@ defmodule PipeMaestroProtocol.Job do
                 checks: nil,
                 sync: nil,
                 artifacts: nil,
-                git_credential: nil
+                git_credential: nil,
+                persist_session: nil,
+                resume_session_id: nil
               ]
 
   @type worktree :: %{String.t() => String.t()}
@@ -161,7 +175,9 @@ defmodule PipeMaestroProtocol.Job do
           checks: [map()] | nil,
           sync: boolean() | nil,
           artifacts: [%{String.t() => String.t()}] | nil,
-          git_credential: %{String.t() => String.t()} | nil
+          git_credential: %{String.t() => String.t()} | nil,
+          persist_session: boolean() | nil,
+          resume_session_id: String.t() | nil
         }
 
   @optional [
@@ -185,7 +201,9 @@ defmodule PipeMaestroProtocol.Job do
     :checks,
     :sync,
     :artifacts,
-    :git_credential
+    :git_credential,
+    :persist_session,
+    :resume_session_id
   ]
 
   @check_ids ~w(branch no_operation contains_origin clean artifact_committed no_artifacts no_secrets)
@@ -198,6 +216,8 @@ defmodule PipeMaestroProtocol.Job do
                    PIPEMAESTRO_GIT_CREDENTIAL_FILE)
 
   @max_gates 10
+
+  @session_id ~r/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/
 
   @max_timeout_ms 24 * 60 * 60 * 1000
 
@@ -309,10 +329,22 @@ defmodule PipeMaestroProtocol.Job do
        when worktree != nil or delivery != nil,
        do: {:error, "scratch takes no worktree nor delivery"}
 
+  defp consistent(%__MODULE__{scratch: true, resume_session_id: id}) when id != nil,
+    do: {:error, "scratch resumes no session"}
+
   defp consistent(%__MODULE__{} = job), do: {:ok, job}
 
   defp check(:scratch, value) when is_boolean(value), do: :ok
   defp check(:scratch, _value), do: {:error, "must be a boolean"}
+
+  defp check(:persist_session, value) when is_boolean(value), do: :ok
+  defp check(:persist_session, _value), do: {:error, "must be true or false"}
+
+  defp check(:resume_session_id, value) when is_binary(value) do
+    if value =~ @session_id, do: :ok, else: {:error, "must be a session id"}
+  end
+
+  defp check(:resume_session_id, _value), do: {:error, "must be a session id"}
 
   defp check(:directory, value) do
     if Hello.valid_directory_name?(value), do: :ok, else: {:error, "must be a directory name"}
