@@ -307,7 +307,7 @@ defmodule PipeMaestroRunner.JobRunner do
     job = %{run.job | resume_session_id: nil}
     elapsed = System.monotonic_time(:millisecond) - run.launched_at
     timeout_ms = job.timeout_ms && max(job.timeout_ms - elapsed, 1)
-    {port, os_pid} = open_port(state, job, run.path, run.dir, timeout_ms)
+    {port, os_pid} = open_port(state, job, run.path, run.dir, timeout_ms, run.files_dir)
 
     put_run(state, %{
       run
@@ -584,7 +584,7 @@ defmodule PipeMaestroRunner.JobRunner do
 
   defp launch(state, run, {:ok, path, dir, setup, tracking, notes}) do
     job = if notes, do: %{run.job | prompt: run.job.prompt <> "\n\n" <> notes}, else: run.job
-    {port, os_pid} = open_port(state, job, path, dir, job.timeout_ms)
+    {port, os_pid} = open_port(state, job, path, dir, job.timeout_ms, run.files_dir)
 
     put_run(state, %{
       run
@@ -600,7 +600,7 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   # The CLI in a port, with the job's deadline (`timeout_ms` from now).
-  defp open_port(state, job, path, dir, timeout_ms) do
+  defp open_port(state, job, path, dir, timeout_ms, files_dir) do
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
         :binary,
@@ -608,7 +608,7 @@ defmodule PipeMaestroRunner.JobRunner do
         :stderr_to_stdout,
         {:line, @line_bytes},
         {:cd, dir},
-        {:env, Claude.env(job, state.telemetry_endpoint, run.files_dir)},
+        {:env, Claude.env(job, state.telemetry_endpoint, files_dir)},
         {:args, ["-c", @launcher, path | Claude.argv(job)]}
       ])
 
