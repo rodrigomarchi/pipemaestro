@@ -44,6 +44,18 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert count(html, "[data-testid=diagram-join-1] path") == 3
     end
 
+    test "the diagram contains what it positions, so nothing widens the page" do
+      html = render_diagram(diagram([stage("a")]), mode: :edit)
+      assert count(html, "[data-testid=pipeline-diagram].relative.overflow-x-auto") == 1
+    end
+
+    test "a stage alone draws its line down to the rail; a group's stages do not" do
+      html = render_diagram(diagram([stage("a"), stage("b", group: "r"), stage("c", group: "r")]))
+
+      assert count(html, "[data-testid=diagram-step-0] [data-testid=diagram-drop-0]") == 1
+      assert count(html, "[data-testid=diagram-step-1] [data-testid^=diagram-drop-]") == 0
+    end
+
     test "a node shows its attempts loop" do
       html = render_diagram(diagram([stage("a", max_attempts: 3)]))
       assert text(html, "[data-testid=diagram-attempts-0]") =~ "3"

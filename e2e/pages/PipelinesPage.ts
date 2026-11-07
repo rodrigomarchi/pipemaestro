@@ -83,7 +83,7 @@ export class PipelinesPage {
   /** Saves, lands on the pipeline's page, and goes back to the list. */
   async save() {
     await this.page.getByTestId("pipeline-save").click();
-    await expect(this.page.getByTestId("pipeline-diagram")).toBeVisible();
+    await expect(this.page.getByTestId("pipeline-page-version")).toBeVisible();
     await this.page.getByTestId("pipeline-page-back").click();
     await expect(this.page.getByTestId("create-default-pipelines")).toBeVisible();
   }
@@ -91,7 +91,7 @@ export class PipelinesPage {
   /** A pipeline's page, from the list: the diagram. */
   async openPage(name: string) {
     await this.page.getByTestId(`pipeline-open-${name}`).click();
-    await expect(this.diagram).toBeVisible();
+    await expect(this.page.getByTestId("pipeline-page-version")).toBeVisible();
     await waitForLiveView(this.page);
   }
 

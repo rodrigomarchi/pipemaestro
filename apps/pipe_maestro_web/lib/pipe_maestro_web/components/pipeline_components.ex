@@ -50,6 +50,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
     doc: "`:entry`, `{:stage, index}` or nil: the node whose panel is open"
 
   attr :class, :any, default: nil
+  attr :testid, :string, default: "pipeline-diagram"
   attr :rest, :global
 
   @doc "A pipeline as connected nodes, over the rail of a person's decisions."
@@ -65,7 +66,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
       )
 
     ~H"""
-    <div class={["overflow-x-auto", @class]} data-testid="pipeline-diagram" {@rest}>
+    <div class={["relative overflow-x-auto", @class]} data-testid={@testid} {@rest}>
       <div
         class={[
           "grid min-w-max items-center",
@@ -149,6 +150,27 @@ defmodule PipeMaestroWeb.PipelineComponents do
 
     ~H"""
     <div
+      :if={not @step.parallel? and @mode != :compact}
+      class="flex flex-col items-center self-stretch"
+      data-testid={"diagram-step-#{@i}"}
+    >
+      <span class="flex-1"></span>
+      <.stage_node
+        :for={node <- @step.nodes}
+        node={node}
+        mode={@mode}
+        selected={@selected == {:stage, node.index}}
+        total={@total}
+        parallel?={false}
+      />
+      <span
+        :for={node <- @step.nodes}
+        class="w-0 flex-1 border-l-2 border-dashed border-warning-400 dark:border-warning-600"
+        data-testid={"diagram-drop-#{node.index}"}
+      ></span>
+    </div>
+    <div
+      :if={@step.parallel? or @mode == :compact}
       class="flex items-stretch"
       data-testid={"diagram-step-#{@i}"}
       data-parallel={@step.parallel?}
@@ -329,7 +351,8 @@ defmodule PipeMaestroWeb.PipelineComponents do
     ~H"""
     <div
       class={[
-        "flex h-full w-60 flex-col rounded-xl border bg-white shadow-sm transition dark:bg-gray-900",
+        "flex w-60 flex-col rounded-xl border bg-white shadow-sm transition dark:bg-gray-900",
+        @parallel? && "h-full",
         (@selected && "border-primary-500 ring-2 ring-primary-500/40") ||
           "border-gray-200 hover:border-primary-400 dark:border-gray-700"
       ]}
@@ -351,7 +374,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
             {@node.name}
           </span>
         </span>
-        <.stage_chips chips={tl(@node.chips)} class="mt-2" />
+        <.stage_chips :if={@node.chips != []} chips={@node.chips} class="mt-2" />
       </button>
       <div class="flex items-center gap-2 border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
         <span

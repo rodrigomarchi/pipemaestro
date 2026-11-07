@@ -119,8 +119,15 @@ defmodule PipeMaestroWeb.PipelineDiagram do
       rules: Enum.map(stage.rules || [], &rule_label/1),
       agent: stage.agent,
       delivers?: delivery != :none and not parallel?,
-      chips: chips(stage)
+      chips: node_chips(stage)
     }
+  end
+
+  # The node shows its attempts apart, and a model only when one is set.
+  defp node_chips(stage) do
+    Enum.reject(chips(stage), fn {icon, _text} ->
+      icon == "hero-arrow-path" or (icon == "hero-sparkles" and not present?(stage.model))
+    end)
   end
 
   defp edges(steps) do

@@ -302,7 +302,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
       assert has_element?(
                view,
-               "[data-testid=pipeline-Editor] [data-testid=pipeline-diagram] [data-testid=diagram-stage-0]"
+               "[data-testid=pipeline-preview-Editor] [data-testid=diagram-stage-0]"
              )
 
       refute has_element?(view, "[data-testid=pipeline-Editor] [data-testid=diagram-rail]")

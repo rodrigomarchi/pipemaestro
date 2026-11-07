@@ -31,6 +31,7 @@ test.describe("Pipeline diagram", () => {
     const pipelines = new PipelinesPage(adminApp.page);
     await pipelines.open(workspace.slug);
     await pipelines.createDefaults();
+    await shot(adminApp.page, "pipelines-list");
 
     // Flow A: a member reads the pipeline as a diagram.
     const memberApp = new AppPage(await (await browser.newContext()).newPage());

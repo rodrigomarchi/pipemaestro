@@ -51,6 +51,14 @@ defmodule PipeMaestroWeb.PipelineDiagramTest do
       assert %{attempts: 3, model: "opus", timeout_minutes: 30, gates: 1} = node
     end
 
+    test "a node's chips leave out what the node shows apart: attempts, the default model" do
+      assert %{steps: [%{nodes: [plain]}, %{nodes: [opus]}]} =
+               PipelineDiagram.build(pipeline([stage("a"), stage("b", model: "opus")]))
+
+      assert plain.chips == [{"hero-clock", "60 min"}]
+      assert opus.chips == [{"hero-sparkles", "opus"}, {"hero-clock", "60 min"}]
+    end
+
     test "the entry lists the pipeline's context" do
       diagram =
         PipelineDiagram.build(
