@@ -277,7 +277,8 @@ defmodule PipeMaestroWeb.Layouts do
         </.sidebar_nav>
       </:sidebar>
 
-      <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
+      <%!-- The blur sits on a layer of its own: a backdrop filter on the header would hold the notification panel (fixed) inside it. --%>
+      <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
         <.sidebar_trigger for="app-sidebar" target="mobile" class="md:hidden" />
         <.sidebar_trigger
           for="app-sidebar"
@@ -448,7 +449,8 @@ defmodule PipeMaestroWeb.Layouts do
         </.sidebar_nav>
       </:sidebar>
 
-      <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
+      <%!-- The blur sits on a layer of its own: a backdrop filter on the header would hold the notification panel (fixed) inside it. --%>
+      <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-gray-200 bg-white/80 px-4 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] sm:px-6 dark:border-gray-800 dark:bg-gray-950/80">
         <.sidebar_trigger for="backoffice-sidebar" target="mobile" class="md:hidden" />
         <.sidebar_trigger
           for="backoffice-sidebar"

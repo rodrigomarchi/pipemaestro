@@ -156,6 +156,9 @@ defmodule PipeMaestroWeb.NotificationComponents do
           </span>
         </span>
         <span class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+          <.badge size="xs" color={status_color(@execution.status)} dot>
+            {status_label(@execution.status)}
+          </.badge>
           <span :if={@execution.type == :task}>
             etapa {@execution.stage} de {@execution.stage_count}
           </span>
@@ -171,6 +174,14 @@ defmodule PipeMaestroWeb.NotificationComponents do
     </li>
     """
   end
+
+  defp status_label(:running), do: "Rodando"
+  defp status_label(:awaiting_decision), do: "Aguardando decisão"
+  defp status_label(:queued), do: "Na fila"
+
+  defp status_color(:running), do: "info"
+  defp status_color(:awaiting_decision), do: "warning"
+  defp status_color(:queued), do: "gray"
 
   defp execution_path(slug, %Execution{type: :task, id: id}), do: ~p"/w/#{slug}/tasks/#{id}"
 

@@ -146,7 +146,6 @@ defmodule PipeMaestroWeb.NotificationCenter do
           <span class="relative inline-flex size-2.5 rounded-full bg-success-500"></span>
         </span>
       </.button>
-
       <SlideOver.slide_over
         :if={@open}
         id="notifications-panel"
@@ -156,155 +155,156 @@ defmodule PipeMaestroWeb.NotificationCenter do
         close_slide_over_target={"##{@id}"}
         on_close={JS.pop_focus()}
         class="max-sm:!max-w-full"
-        data-testid="notifications-panel"
       >
-        <.tabs variant="segmented" class="mb-4" data-testid="notifications-tabs">
-          <.tab
-            link_type="button"
-            variant="segmented"
-            is_active={@tab == :active}
-            number={length(@center.active)}
-            phx-click="tab"
-            phx-value-tab="active"
-            phx-target={@myself}
-            data-testid="notifications-tab-active"
-          >
-            Em andamento
-          </.tab>
-          <.tab
-            link_type="button"
-            variant="segmented"
-            is_active={@tab == :inbox}
-            number={if @unread > 0, do: @unread}
-            phx-click="tab"
-            phx-value-tab="inbox"
-            phx-target={@myself}
-            data-testid="notifications-tab-inbox"
-          >
-            Notificações
-          </.tab>
-        </.tabs>
-
-        <div :if={@tab == :active} class="space-y-4">
-          <div class="flex justify-end">
-            <.button
-              size="xs"
-              color="white"
-              variant="outline"
-              icon={if @mine, do: "hero-user", else: "hero-users"}
-              phx-click="toggle_mine"
+        <div data-testid="notifications-panel">
+          <.tabs variant="segmented" class="mb-4" data-testid="notifications-tabs">
+            <.tab
+              link_type="button"
+              variant="segmented"
+              is_active={@tab == :active}
+              number={length(@center.active)}
+              phx-click="tab"
+              phx-value-tab="active"
               phx-target={@myself}
-              aria-pressed={to_string(@mine)}
-              data-testid="notifications-mine-toggle"
+              data-testid="notifications-tab-active"
             >
-              {if @mine, do: "Minhas", else: "Todas"}
-            </.button>
-          </div>
-
-          <div
-            :if={@empty_active?}
-            class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
-            data-testid="notifications-empty-active"
-          >
-            <.icon name="hero-moon" class="mx-auto size-8 text-gray-400" />
-            <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-              Nada rodando agora
-            </p>
-            <.link
-              navigate={~p"/w/#{@slug}/tasks"}
-              class="mt-2 inline-block text-sm text-primary-600 hover:underline dark:text-primary-400"
-            >
-              Criar uma tarefa
-            </.link>
-          </div>
-
-          <.execution_group
-            :for={
-              {key, testid, label} <- [
-                {:running, "running", "Rodando"},
-                {:awaiting_decision, "awaiting", "Aguardando decisão"},
-                {:queued, "queued", "Na fila"}
-              ]
-            }
-            :if={@groups[key] != []}
-            testid={testid}
-            label={label}
-            executions={@groups[key]}
-            slug={@slug}
-          />
-        </div>
-
-        <div :if={@tab == :inbox} class="space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <.tabs variant="segmented">
-              <.tab
-                link_type="button"
-                variant="segmented"
-                is_active={not @unread_only}
-                phx-click="filter"
-                phx-value-filter="all"
-                phx-target={@myself}
-                data-testid="notifications-filter-all"
-              >
-                Todas
-              </.tab>
-              <.tab
-                link_type="button"
-                variant="segmented"
-                is_active={@unread_only}
-                phx-click="filter"
-                phx-value-filter="unread"
-                phx-target={@myself}
-                data-testid="notifications-filter-unread"
-              >
-                Não lidas
-              </.tab>
-            </.tabs>
-            <.button
-              :if={@unread > 0}
-              size="xs"
-              color="white"
-              variant="outline"
-              icon="hero-check"
-              phx-click="mark_all_read"
+              Em andamento
+            </.tab>
+            <.tab
+              link_type="button"
+              variant="segmented"
+              is_active={@tab == :inbox}
+              number={if @unread > 0, do: @unread}
+              phx-click="tab"
+              phx-value-tab="inbox"
               phx-target={@myself}
-              data-testid="notifications-mark-all-read"
+              data-testid="notifications-tab-inbox"
             >
-              Marcar todas como lidas
-            </.button>
-          </div>
+              Notificações
+            </.tab>
+          </.tabs>
 
-          <div
-            :if={@inbox == []}
-            class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
-            data-testid="notifications-empty-inbox"
-          >
-            <.icon name="hero-inbox" class="mx-auto size-8 text-gray-400" />
-            <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-              {if @unread_only, do: "Nenhuma notificação não lida", else: "Nenhuma notificação"}
-            </p>
-          </div>
+          <div :if={@tab == :active} class="space-y-4">
+            <div class="flex justify-end">
+              <.button
+                size="xs"
+                color="white"
+                variant="outline"
+                icon={if @mine, do: "hero-user", else: "hero-users"}
+                phx-click="toggle_mine"
+                phx-target={@myself}
+                aria-pressed={to_string(@mine)}
+                data-testid="notifications-mine-toggle"
+              >
+                {if @mine, do: "Minhas", else: "Todas"}
+              </.button>
+            </div>
 
-          <ul :if={@inbox != []} role="list" class="space-y-1">
-            <NotificationComponents.notification_item
-              :for={notification <- @inbox}
-              notification={notification}
-              event="open_notification"
-              target={@myself}
+            <div
+              :if={@empty_active?}
+              class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
+              data-testid="notifications-empty-active"
+            >
+              <.icon name="hero-moon" class="mx-auto size-8 text-gray-400" />
+              <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                Nada rodando agora
+              </p>
+              <.link
+                navigate={~p"/w/#{@slug}/tasks"}
+                class="mt-2 inline-block text-sm text-primary-600 hover:underline dark:text-primary-400"
+              >
+                Criar uma tarefa
+              </.link>
+            </div>
+
+            <.execution_group
+              :for={
+                {key, testid, label} <- [
+                  {:running, "running", "Rodando"},
+                  {:awaiting_decision, "awaiting", "Aguardando decisão"},
+                  {:queued, "queued", "Na fila"}
+                ]
+              }
+              :if={@groups[key] != []}
+              testid={testid}
+              label={label}
+              executions={@groups[key]}
+              slug={@slug}
             />
-          </ul>
+          </div>
 
-          <div :if={@more} class="flex justify-center">
-            <.button
-              size="sm"
-              color="white"
-              variant="outline"
-              phx-click="load_more"
-              phx-target={@myself}
-              data-testid="notifications-load-more"
+          <div :if={@tab == :inbox} class="space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <.tabs variant="segmented">
+                <.tab
+                  link_type="button"
+                  variant="segmented"
+                  is_active={not @unread_only}
+                  phx-click="filter"
+                  phx-value-filter="all"
+                  phx-target={@myself}
+                  data-testid="notifications-filter-all"
+                >
+                  Todas
+                </.tab>
+                <.tab
+                  link_type="button"
+                  variant="segmented"
+                  is_active={@unread_only}
+                  phx-click="filter"
+                  phx-value-filter="unread"
+                  phx-target={@myself}
+                  data-testid="notifications-filter-unread"
+                >
+                  Não lidas
+                </.tab>
+              </.tabs>
+              <.button
+                :if={@unread > 0}
+                size="xs"
+                color="white"
+                variant="outline"
+                icon="hero-check"
+                phx-click="mark_all_read"
+                phx-target={@myself}
+                data-testid="notifications-mark-all-read"
+              >
+                Marcar todas como lidas
+              </.button>
+            </div>
+
+            <div
+              :if={@inbox == []}
+              class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-gray-700"
+              data-testid="notifications-empty-inbox"
             >
-              Carregar mais
-            </.button>
+              <.icon name="hero-inbox" class="mx-auto size-8 text-gray-400" />
+              <p class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                {if @unread_only, do: "Nenhuma notificação não lida", else: "Nenhuma notificação"}
+              </p>
+            </div>
+
+            <ul :if={@inbox != []} role="list" class="space-y-1">
+              <NotificationComponents.notification_item
+                :for={notification <- @inbox}
+                notification={notification}
+                event="open_notification"
+                target={@myself}
+              />
+            </ul>
+
+            <div :if={@more} class="flex justify-center">
+              <.button
+                size="sm"
+                color="white"
+                variant="outline"
+                phx-click="load_more"
+                phx-target={@myself}
+                data-testid="notifications-load-more"
+              >
+                Carregar mais
+              </.button>
+            </div>
           </div>
         </div>
 
