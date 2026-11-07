@@ -71,6 +71,7 @@ O produto não substitui a revisão humana: ele a concentra nos pontos onde ela 
 - O PR é aberto (em rascunho) no início do pipeline, num branch dedicado à tarefa.
 - Cada etapa commita seus artefatos como arquivos Markdown/JSON numa pasta convencionada do branch (ex.: resultado da triagem, hipótese de causa raiz, plano, relatório de auditoria).
 - A descrição do PR é atualizada a cada etapa com um resumo do estado e links para os artefatos.
+- O que não cabe no Markdown nem deve ir para o git (screenshots, relatórios, CSVs) o agente copia para a pasta do job, `CP_FILES_DIR`, fora do worktree; o runner sobe esses arquivos e a tarefa os mostra como anexos da etapa ([ADR 0041](../adr/0041-arquivos-gerados-pela-etapa.md)).
 - Ao final, o PR sai de rascunho e é marcado como pronto para revisão humana. O produto nunca faz merge nem deploy.
 
 ### 4.5 Decisões humanas

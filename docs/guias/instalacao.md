@@ -58,11 +58,14 @@ location / {
   proxy_set_header Host $host;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_read_timeout 1h;
+  client_max_body_size 12m;
 }
 ```
 
 O `proxy_read_timeout` longo evita que o proxy derrube runners ociosos. O runner
-reconecta sozinho, mas cada queda é uma reconexão à toa.
+reconecta sozinho, mas cada queda é uma reconexão à toa. O `client_max_body_size`
+deixa passar os arquivos que os runners sobem dos jobs, de até 10 MiB cada. O padrão do
+nginx, 1 MB, os recusaria com 413.
 
 ### Primeiro operador, workspace e pessoas
 

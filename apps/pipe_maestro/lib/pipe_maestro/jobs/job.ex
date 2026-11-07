@@ -12,7 +12,9 @@ defmodule PipeMaestro.Jobs.Job do
   output schema, model, budget, artifact path); `structured_output`,
   `artifact`, `workdir`, `setup` (how it prepared a new worktree) and
   `changes` (what the stage changed in the worktree) and `gates` (the stage's
-  gate commands and how each went) are what the runner reported back.
+  gate commands and how each went) are what the runner reported back, with
+  `files_failed`, how many of the files the agent left in `CP_FILES_DIR` did
+  not reach the platform (the ones that did are `PipeMaestro.Jobs.JobFile`).
 
   For auditing how the agent worked, the job also keeps what its run reported
   about itself: the CLI's `session_id` (and, for a job that asked to resume
@@ -65,6 +67,7 @@ defmodule PipeMaestro.Jobs.Job do
           changes: map() | nil,
           gates: [map()] | nil,
           delivery: map() | nil,
+          files_failed: non_neg_integer() | nil,
           session_id: String.t() | nil,
           session_resumed: boolean() | nil,
           cli_version: String.t() | nil,
@@ -121,6 +124,7 @@ defmodule PipeMaestro.Jobs.Job do
     field :changes, :map
     field :gates, {:array, :map}
     field :delivery, :map
+    field :files_failed, :integer
     field :session_id, :string
     field :session_resumed, :boolean
     field :cli_version, :string
@@ -226,6 +230,7 @@ defmodule PipeMaestro.Jobs.Job do
       :changes,
       :gates,
       :delivery,
+      :files_failed,
       :session_id,
       :session_resumed,
       :cli_version,
@@ -250,6 +255,7 @@ defmodule PipeMaestro.Jobs.Job do
     |> validate_inclusion(:status, @finished)
     |> validate_number(:duration_ms, greater_than_or_equal_to: 0)
     |> validate_number(:num_turns, greater_than_or_equal_to: 0)
+    |> validate_number(:files_failed, greater_than_or_equal_to: 0)
     |> put_change(:finished_at, now)
   end
 

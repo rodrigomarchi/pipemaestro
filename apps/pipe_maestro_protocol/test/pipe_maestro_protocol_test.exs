@@ -92,6 +92,10 @@ defmodule PipeMaestroProtocolTest do
       assert "resume_session" in Hello.capabilities()
     end
 
+    test "a runner of this build announces that it uploads the job's files" do
+      assert "files" in Hello.capabilities()
+    end
+
     test "directories are validated, deduplicated and sorted" do
       dirs = [
         %{"name" => "b", "git" => false},

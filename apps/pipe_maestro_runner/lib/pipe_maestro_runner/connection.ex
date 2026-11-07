@@ -175,7 +175,10 @@ defmodule PipeMaestroRunner.Connection do
     case Keyword.fetch(opts, :workdir) do
       {:ok, workdir} ->
         %Hello{capacity: capacity} = Keyword.fetch!(opts, :hello)
+        config = Keyword.fetch!(opts, :config)
         job_opts = Keyword.take(opts, [:executable, :kill_after, :root, :telemetry])
+        # The job's files go to the same control plane, as this runner.
+        job_opts = [files: %{url: config.url, token: config.token}] ++ job_opts
 
         {:ok, pid} =
           JobRunner.start_link([owner: self(), workdir: workdir, capacity: capacity] ++ job_opts)

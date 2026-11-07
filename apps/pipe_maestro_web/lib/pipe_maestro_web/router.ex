@@ -44,6 +44,8 @@ defmodule PipeMaestroWeb.Router do
     get "/integrations/oauth/callback", IntegrationOAuthController, :callback
     # Where GitHub sends whoever installed the platform's App.
     get "/integrations/github/setup", IntegrationOAuthController, :github_setup
+    # A file a job left, for a member of its workspace.
+    get "/w/:workspace_slug/files/:id", JobFileController, :show
 
     live_session :user, on_mount: [{PipeMaestroWeb.UserAuth, :require_authenticated}] do
       live "/workspaces", WorkspacePickerLive
@@ -131,6 +133,7 @@ defmodule PipeMaestroWeb.Router do
     post "/api/integrations/:connection_id/webhook", IntegrationWebhookController, :receive_event
     post "/api/runner/device/code", RunnerDeviceController, :create_code
     post "/api/runner/device/token", RunnerDeviceController, :create_token
+    put "/api/runner/jobs/:job_id/files", RunnerFileController, :create
   end
 
   # Enable LiveDashboard in development

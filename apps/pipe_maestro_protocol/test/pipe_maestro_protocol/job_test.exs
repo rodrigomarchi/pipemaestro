@@ -160,6 +160,7 @@ defmodule PipeMaestroProtocol.JobTest do
 
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"lower" => "x"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"PATH" => "x"}))
+      assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"CP_FILES_DIR" => "/tmp"}))
       assert {:error, "env" <> _} = Job.new(Map.put(base, :env, %{"OK" => 1}))
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, "mix test"))
       assert {:error, "gates" <> _} = Job.new(Map.put(base, :gates, [%{"command" => "x"}]))

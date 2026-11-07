@@ -124,6 +124,26 @@ defmodule PipeMaestro.TasksTest do
                Tasks.list_tasks(ctx.workspace)
     end
 
+    test "the prompt mentions CP_FILES_DIR only to a runner that uploads files", ctx do
+      :ok = Jobs.subscribe({:runner, ctx.runner.id})
+      _task = create_task(ctx)
+      assert_receive {:job_assign, job}
+      refute job.prompt =~ "CP_FILES_DIR"
+
+      {:ok, _runner} =
+        PipeMaestro.Runners.record_hello(
+          ctx.runner,
+          hello_fixture(%{
+            capabilities: ["files"],
+            directories: [%{"name" => "app", "git" => true}, %{"name" => "notas", "git" => false}]
+          })
+        )
+
+      _task = create_task(ctx, %{"title" => "Tirar as screenshots"})
+      assert_receive {:job_assign, job}
+      assert job.prompt =~ "$CP_FILES_DIR"
+    end
+
     test "a directory with a project sets up the worktree and fills {{projeto.*}}", ctx do
       {:ok, project} =
         PipeMaestro.Projects.update_project(ctx.projects["app"], %{

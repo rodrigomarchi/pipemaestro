@@ -28,6 +28,12 @@ defmodule PipeMaestroRunner.JobRunner do
   job's records as `{:job_out, "job:telemetry", %{"job_id", "records"}}`, in
   batches; they may follow the job's outcome.
 
+  With `:files`, each job gets a folder of its own outside any worktree
+  (`CP_FILES_DIR`). After the agent, whether it succeeded, failed or was
+  canceled, what it left there is sent to the control plane over HTTP, off
+  this process, and the folder goes once the job reported. `files_failed`
+  counts the files that did not arrive.
+
   The outcome (`job:finished`) carries, besides the result, what the run
   reported about itself for auditing: the session, the CLI's version, the
   model, the tokens with the cache apart, the cost per model, the denied
@@ -57,6 +63,7 @@ defmodule PipeMaestroRunner.JobRunner do
     Delivery,
     Gates,
     GitCredential,
+    JobFiles,
     LogCollector,
     RepoState,
     Setup,
@@ -84,7 +91,9 @@ defmodule PipeMaestroRunner.JobRunner do
   `:root` (where the code directories are, `PipeMaestroRunner.Workspace`),
   `:executable` (default: `Claude.executable/0`), `:kill_after` (default 5000),
   `:capacity` (jobs at once, default 1), `:telemetry` (receive the CLI's
-  OpenTelemetry, default false).
+  OpenTelemetry, default false), `:files` (`%{url, token}`: where each job's
+  files go, `PipeMaestroRunner.JobFiles`; without it, jobs get no folder for
+  them) and `:files_req_options` (passed to `Req` on each upload).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -122,6 +131,7 @@ defmodule PipeMaestroRunner.JobRunner do
     File.mkdir_p!(workdir)
     :ok = Workspace.clear_scratch(workdir)
     :ok = GitCredential.clear(workdir)
+    :ok = JobFiles.clear(workdir)
 
     endpoint =
       if Keyword.get(opts, :telemetry, false) do
@@ -138,6 +148,8 @@ defmodule PipeMaestroRunner.JobRunner do
        kill_after: Keyword.get(opts, :kill_after, 5_000),
        capacity: Keyword.get(opts, :capacity) || 1,
        telemetry_endpoint: endpoint,
+       files: Keyword.get(opts, :files),
+       files_req_options: Keyword.get(opts, :files_req_options, []),
        queue: [],
        running: %{}
      }}
@@ -295,7 +307,7 @@ defmodule PipeMaestroRunner.JobRunner do
     job = %{run.job | resume_session_id: nil}
     elapsed = System.monotonic_time(:millisecond) - run.launched_at
     timeout_ms = job.timeout_ms && max(job.timeout_ms - elapsed, 1)
-    {port, os_pid} = open_port(state, job, run.path, run.dir, timeout_ms)
+    {port, os_pid} = open_port(state, job, run.path, run.dir, timeout_ms, run.files_dir)
 
     put_run(state, %{
       run
@@ -311,9 +323,10 @@ defmodule PipeMaestroRunner.JobRunner do
   defp agent_exited(state, run, code) do
     {checks, gates, delivery} = after_steps(run, code)
 
-    if run.tracking == nil and gates == [] and checks == [] and delivery == nil,
-      do: finish(state, run, code, %{}),
-      else: put_run(state, after_agent(run, code, {checks, gates}, delivery))
+    if run.tracking == nil and gates == [] and checks == [] and delivery == nil and
+         run.files_dir == nil,
+       do: finish(state, run, code, %{}),
+       else: put_run(state, after_agent(state, run, code, {checks, gates}, delivery))
   end
 
   # The gates follow an agent that ended well; the checks and the delivery,
@@ -334,11 +347,12 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   # After the agent, off this process (they take a while): the platform's
-  # checks, the gates, the delivery when all passed, then what the stage
-  # changed.
-  defp after_agent(run, code, steps, delivery) do
+  # checks, the gates, the delivery when all passed, what the stage changed,
+  # then the files it left for the platform.
+  defp after_agent(state, run, code, steps, delivery) do
     runner = self()
-    %{dir: dir, tracking: tracking, job: job} = run
+    %{dir: dir, tracking: tracking, job: job, files_dir: files_dir} = run
+    %{files: files, files_req_options: req_options} = state
 
     task =
       Task.async(fn ->
@@ -350,10 +364,26 @@ defmodule PipeMaestroRunner.JobRunner do
             do: Delivery.deliver(dir, delivery, env: delivery_env(job))
 
         changes = if tracking, do: Changes.report(dir, tracking)
-        %{"gates" => results, "changes" => changes, "delivery" => delivered}
+
+        %{
+          "gates" => results,
+          "changes" => changes,
+          "delivery" => delivered,
+          "files_failed" => upload_files(files_dir, files, job, req_options)
+        }
       end)
 
     %{run | port: nil, os_pid: nil, finishing: {task.ref, code}}
+  end
+
+  # How many of the files the agent left did not reach the control plane, or
+  # nil when they all did.
+  defp upload_files(nil, _files, _job, _req_options), do: nil
+
+  defp upload_files(files_dir, %{url: url, token: token}, job, req_options) do
+    {files, skipped} = JobFiles.collect(files_dir, job.env)
+    %{failed: failed} = JobFiles.upload(files, url, token, job.id, req_options)
+    if skipped + failed > 0, do: skipped + failed
   end
 
   # The checks, then the gates when the checks hold (a gate run on a worktree
@@ -451,6 +481,7 @@ defmodule PipeMaestroRunner.JobRunner do
     # The job's secrets never reach the runner's log as they are.
     LogCollector.add_secrets(job.id, job |> GitCredential.secrets() |> Enum.map(&elem(&1, 1)))
     out(state, Job.started_event(), %{"job_id" => job.id})
+    files_dir = if state.files, do: JobFiles.prepare(state.workdir, job.id)
     runner = self()
     %{root: root, workdir: workdir, executable: executable} = state
 
@@ -481,6 +512,7 @@ defmodule PipeMaestroRunner.JobRunner do
       messages: MapSet.new(),
       launched_at: nil,
       wall_ms: nil,
+      files_dir: files_dir,
       path: nil,
       resume: if(job.resume_session_id, do: :requested, else: :none)
     })
@@ -552,7 +584,7 @@ defmodule PipeMaestroRunner.JobRunner do
 
   defp launch(state, run, {:ok, path, dir, setup, tracking, notes}) do
     job = if notes, do: %{run.job | prompt: run.job.prompt <> "\n\n" <> notes}, else: run.job
-    {port, os_pid} = open_port(state, job, path, dir, job.timeout_ms)
+    {port, os_pid} = open_port(state, job, path, dir, job.timeout_ms, run.files_dir)
 
     put_run(state, %{
       run
@@ -568,7 +600,7 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   # The CLI in a port, with the job's deadline (`timeout_ms` from now).
-  defp open_port(state, job, path, dir, timeout_ms) do
+  defp open_port(state, job, path, dir, timeout_ms, files_dir) do
     port =
       Port.open({:spawn_executable, "/bin/sh"}, [
         :binary,
@@ -576,7 +608,7 @@ defmodule PipeMaestroRunner.JobRunner do
         :stderr_to_stdout,
         {:line, @line_bytes},
         {:cd, dir},
-        {:env, Claude.env(job, state.telemetry_endpoint)},
+        {:env, Claude.env(job, state.telemetry_endpoint, files_dir)},
         {:args, ["-c", @launcher, path | Claude.argv(job)]}
       ])
 
@@ -604,6 +636,7 @@ defmodule PipeMaestroRunner.JobRunner do
 
     out(state, Job.finished_event(), payload)
     discard_scratch(state, run.job)
+    discard_files(run)
     LogCollector.forget_secrets(run.job.id)
     start_ready(%{state | running: Map.delete(state.running, run.job.id)})
   end
@@ -723,6 +756,7 @@ defmodule PipeMaestroRunner.JobRunner do
     GitCredential.remove(state.workdir, current.job.id)
     out(state, Job.finished_event(), maybe_error(payload, status, exit_code, current))
     discard_scratch(state, current.job)
+    discard_files(current)
     LogCollector.forget_secrets(current.job.id)
     start_ready(%{state | running: Map.delete(state.running, current.job.id)})
   end
@@ -746,6 +780,14 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   defp discard_scratch(_state, _job), do: :ok
+
+  # The job's folder goes once it reported, in the background.
+  defp discard_files(%{files_dir: nil}), do: :ok
+
+  defp discard_files(%{files_dir: dir}) do
+    {:ok, _pid} = Task.start(fn -> File.rm_rf(dir) end)
+    :ok
+  end
 
   # What the run reported about itself, from its first and last lines and the
   # runner's own measures.

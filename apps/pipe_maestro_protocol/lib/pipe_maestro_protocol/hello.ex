@@ -20,7 +20,8 @@ defmodule PipeMaestroProtocol.Hello do
   so the control plane offers a feature only to runners that have it:
   `"scratch"` runs a job in a disposable worktree (`PipeMaestroProtocol.Job`),
   `"resume_session"` keeps the agent CLI's session of a job and resumes it in
-  a later one (`persist_session`, `resume_session_id`).
+  a later one (`persist_session`, `resume_session_id`), and `"files"` sends the
+  files a job leaves in its folder (`PipeMaestroProtocol.JobFiles`).
   A runner that sends none has none.
   """
 
@@ -53,7 +54,7 @@ defmodule PipeMaestroProtocol.Hello do
   @doc "What a runner of this build supports (`capabilities`)."
   @spec capabilities() :: [String.t()]
   def capabilities,
-    do: ["doctor", "git_credential", "health", "logs", "resume_session", "scratch"]
+    do: ["doctor", "files", "git_credential", "health", "logs", "resume_session", "scratch"]
 
   @doc """
   Builds a validated hello from a map with atom or string keys. Labels are

@@ -22,6 +22,10 @@
 #     five-hour window at 86%)
 #   a prompt with "[nao-pronta]" has the task proposal ("task" below) answer
 #     that the task is not ready, with one question
+#   a prompt with "[arquivos]" writes, when CP_FILES_DIR is set, a 1×1 PNG
+#     (a.png) and a CSV in a subfolder (dados/r.csv) there, plus a symlink
+#     (atalho.png) the runner must skip; this happens before "[falha]" is
+#     honored, so a failed stage also leaves its files
 #
 # A JSON Schema whose "$comment" is "pipemaestro-kind:<kind>" (a proposal,
 # PipeMaestro.Proposals)
@@ -114,6 +118,17 @@ case "$prompt" in
     sleep 3
     echo '{"type":"assistant","message":{"id":"msg_3","model":"fake-model","usage":{"input_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":3},"content":[{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"ls","description":"Lista o workdir"}}]}}'
     echo '{"type":"user","tool_result_meta":[{"id":"toolu_2","permission_decision":{"decision":"accept","source":"config"}}],"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_2","content":"fake-claude.txt","is_error":false}]}}'
+    ;;
+esac
+
+case "$prompt" in
+  *"[arquivos]"*)
+    if [ -n "$CP_FILES_DIR" ]; then
+      mkdir -p "$CP_FILES_DIR/dados"
+      printf '\211\120\116\107\015\012\032\012\000\000\000\015\111\110\104\122\000\000\000\001\000\000\000\001\010\006\000\000\000\037\025\304\211\000\000\000\015\111\104\101\124\170\332\143\144\370\317\120\017\000\003\206\001\200\132\064\175\153\000\000\000\000\111\105\116\104\256\102\140\202' > "$CP_FILES_DIR/a.png"
+      printf 'tela,ok\nlogin,sim\n' > "$CP_FILES_DIR/dados/r.csv"
+      ln -sf "$CP_FILES_DIR/a.png" "$CP_FILES_DIR/atalho.png"
+    fi
     ;;
 esac
 
