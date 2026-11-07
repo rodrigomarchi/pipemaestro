@@ -303,7 +303,12 @@ defmodule PipeMaestroRunner.SelfUpdateTest do
 
     test "detached: starts the new binary on its own, then exits 0" do
       test = self()
-      spawn = fn bin, argv -> send(test, {:spawn, bin, argv}) && :ok end
+
+      spawn = fn bin, argv ->
+        send(test, {:spawn, bin, argv})
+        :ok
+      end
+
       halt = fn status -> send(test, {:halt, status}) end
 
       SelfUpdate.relaunch("/opt/pipemaestro", ["start", "--root", "/x"], :detached,

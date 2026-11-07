@@ -6,8 +6,10 @@ defmodule PipeMaestroRunner.Update do
 
   As a single binary (Burrito's `__BURRITO_BIN_PATH`) it offers to download
   and install that version in its place, and runs the same command
-  again (`PipeMaestroRunner.SelfUpdate`), without asking, in a terminal or
-  not (the service). With `--no-auto-update` it asks in a terminal instead.
+  again without asking, in a terminal or not: how the new binary runs comes
+  from `PipeMaestroRunner.SelfUpdate.mode/2` (the service manager, the runner
+  waiting in the terminal, or on its own), so it always comes back. With
+  `--no-auto-update` it asks in a terminal instead.
   Otherwise (Mix, a release, `--no-auto-update` without a terminal, a "no")
   it says which version it runs, which one the platform wants, and where to
   download it.
@@ -108,8 +110,8 @@ defmodule PipeMaestroRunner.Update do
     opts = Keyword.merge(defaults(), opts)
 
     with {:ok, bin} <- single_binary(opts[:env]),
-         {:ok, mode} <- consent(refusal, opts) do
-      install(refusal, bin, mode, opts)
+         :ok <- consent(refusal, opts) do
+      install(refusal, bin, SelfUpdate.mode(opts[:env], opts[:tty?] == true), opts)
     else
       :refused -> {:fail, message(refusal)}
     end
@@ -135,9 +137,9 @@ defmodule PipeMaestroRunner.Update do
 
   defp consent(refusal, opts) do
     cond do
-      opts[:auto_update] != false -> {:ok, if(opts[:tty?], do: :interactive, else: :service)}
+      opts[:auto_update] != false -> :ok
       opts[:tty?] != true -> :refused
-      yes?(opts[:gets].(prompt(refusal))) -> {:ok, :interactive}
+      yes?(opts[:gets].(prompt(refusal))) -> :ok
       true -> :refused
     end
   end
@@ -184,11 +186,13 @@ defmodule PipeMaestroRunner.Update do
   defp describe({:download, url, exception}), do: "#{url}: #{Exception.message(exception)}"
   defp describe({:file, path, reason}), do: "#{path}: #{:file.format_error(reason)}"
 
-  # The new binary takes over: this one exits with its status.
-  @spec relaunch(Path.t(), [String.t()], SelfUpdate.mode()) :: no_return()
+  # The new binary takes over: this one exits with its status, or stops with
+  # why the new one could not start.
+  @spec relaunch(Path.t(), [String.t()], SelfUpdate.mode()) :: {:fail, String.t()}
   defp relaunch(bin, argv, mode) do
     case SelfUpdate.relaunch(bin, argv, mode) do
       status when is_integer(status) -> System.halt(status)
+      {:error, reason} -> {:fail, "Atualizado, mas o binário novo não subiu: #{reason}."}
     end
   end
 end
