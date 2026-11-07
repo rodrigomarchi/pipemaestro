@@ -90,8 +90,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   # The tabs, by their `aba` parameter, first on the page: the stages (with
   # the runner's alerts, the decision to take and what to do next), the summary
   # (cost, project, branch, pull request, worktree), the request, the files
-  # changed, the files the stages sent and the decisions taken. The status and the cost sit beside the
-  # title, seen from every tab.
+  # changed, the files the stages sent and the decisions taken. The status and
+  # the cost sit beside the title, seen from every tab.
   @tabs [
     {"etapas", "Etapas", "hero-queue-list"},
     {"resumo", "Resumo", "hero-information-circle"},
