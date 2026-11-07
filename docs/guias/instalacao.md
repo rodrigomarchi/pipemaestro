@@ -133,6 +133,30 @@ O login mostra um código. Um **admin** do workspace o aprova em
 - **Histórico:** a página do runner lista as últimas execuções que ele terminou, com
   duração, custo, tokens e cache; cada uma abre a auditoria da execução.
 
+### O que o runner envia sobre si
+
+Conectado, o runner manda à plataforma a própria telemetria
+([ADR 0039](../adr/0039-telemetria-do-runner.md)), que aparece nas abas da página
+dele:
+
+| Aba | O que o runner envia | Quando |
+|---|---|---|
+| Saúde | CPU, load, memória e disco da máquina, mensagens na fila de envio e jobs em execução | a cada minuto |
+| Eventos e logs | o próprio log (o mesmo do `runner.log`) e os eventos: atualização, queda de conexão, worktree descartável que não saiu | em lotes, a cada 5 s, até 1 000 linhas por minuto |
+| Diagnóstico | o resultado do `pipemaestro doctor` | ao conectar, a cada hora e pelo botão "Rodar agora" |
+
+A aba Conexões não depende do runner: a plataforma registra cada conexão, quando
+caiu e por quê.
+
+- **Segredos:** antes de sair da máquina, o log troca por `[redigido]` o token do
+  runner, a `RUNNER_ANTHROPIC_API_KEY` e os segredos e a credencial git de cada job.
+  Outro conteúdo, como caminhos e trechos que o runner registre, sai como está.
+- **Sem o log:** no backoffice, o workspace tem "Dias de log dos runners" (padrão 7).
+  Com 0, a plataforma não guarda nenhuma linha e o runner só envia os eventos.
+- **Runner degradado:** com pouco disco livre, memória cheia, quedas seguidas, muitos
+  jobs falhando ou um erro no diagnóstico, o runner ganha o selo "degradado" na lista e
+  um alerta no Board.
+
 ## 3. O primeiro projeto e o primeiro pipeline
 
 Todo trabalho roda num **projeto**: um runner e um dos diretórios dele

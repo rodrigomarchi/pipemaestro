@@ -1,6 +1,6 @@
 # Plano — Telemetria do runner
 
-> Versão 0.1 — 06/11/2026
+> Versão 0.2 — 06/11/2026 (fases 0 a 6 implementadas)
 > Decisões: [ADR 0039](../adr/0039-telemetria-do-runner.md). Mensagens:
 > [`specs/protocolo-runner.md`](../specs/protocolo-runner.md) §4.7.
 

@@ -19,7 +19,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 02 | [Contexto de discovery](plano/02-contexto-discovery.md) | v0.1 — 03/11/2026 |
 | 03 | [Roadmap do orquestrador](plano/03-roadmap-orquestrador.md) | v0.3 — 03/11/2026 |
 | 04 | [Integração com Forgejo e GitHub](plano/04-integracao-forges.md) | v0.1 — 06/11/2026 |
-| 05 | [Telemetria do runner](plano/05-telemetria-do-runner.md) | v0.1 — 06/11/2026 |
+| 05 | [Telemetria do runner](plano/05-telemetria-do-runner.md) | v0.2 — 06/11/2026 |
 
 ## Decisões (ADR)
 
