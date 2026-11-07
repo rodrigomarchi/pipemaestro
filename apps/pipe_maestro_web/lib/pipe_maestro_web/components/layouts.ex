@@ -119,6 +119,11 @@ defmodule PipeMaestroWeb.Layouts do
   attr :title, :string, required: true, doc: "the page title shown in the top bar"
   attr :pending_decisions, :integer, default: 0, doc: "badge on the decisions item"
 
+  attr :notification_center, :map,
+    default: %{unread: 0, active: []},
+    doc:
+      "the bell's unread count and what runs now (`PipeMaestroWeb.NotificationHooks`); every workspace page hands it on"
+
   attr :focus, :boolean,
     default: false,
     doc: "the page follows work in progress: the sidebar closes to its icons to give it room"
@@ -296,6 +301,12 @@ defmodule PipeMaestroWeb.Layouts do
         </div>
         <div class="ml-auto flex items-center gap-2">
           {render_slot(@actions)}
+          <.live_component
+            module={PipeMaestroWeb.NotificationCenter}
+            id="notification-center"
+            center={@notification_center}
+            current_scope={@current_scope}
+          />
           <.color_scheme_switch id="app-scheme" variant="dropdown" />
           <.account_menu name={@current_scope.user.name} email={@current_scope.user.email}>
             <.dropdown_menu_item

@@ -13,6 +13,7 @@ defmodule PipeMaestroWeb.UserAuth do
   alias PipeMaestro.Accounts
   alias PipeMaestro.Accounts.{Scope, User}
   alias PipeMaestro.{Tasks, Workspaces}
+  alias PipeMaestroWeb.NotificationHooks
 
   @remember_me_cookie "_pipe_maestro_user_remember_me"
   @remember_me_options [
@@ -142,13 +143,16 @@ defmodule PipeMaestroWeb.UserAuth do
          |> LiveView.redirect(to: ~p"/workspaces")}
 
       workspace ->
+        scope = Scope.put_workspace(scope, workspace, Workspaces.role(workspace, user))
+
         {:cont,
          socket
          |> Phoenix.Component.assign(
-           current_scope: Scope.put_workspace(scope, workspace, Workspaces.role(workspace, user)),
+           current_scope: scope,
            workspaces: Workspaces.list_workspaces_for_user(user)
          )
-         |> follow_pending_decisions(workspace)}
+         |> follow_pending_decisions(workspace)
+         |> NotificationHooks.follow(scope)}
     end
   end
 

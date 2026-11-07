@@ -47,7 +47,8 @@ defmodule PipeMaestroWeb.NotificationCenterTest do
       Jobs.finish_job(ctx.runner, job.id, %{
         "status" => "succeeded",
         "exit_code" => 0,
-        "structured_output" => output
+        "structured_output" => output,
+        "artifact" => "# Artefato"
       })
 
     Tasks.get_task!(ctx.workspace, task.id)

@@ -80,6 +80,7 @@ defmodule PipeMaestroWeb.Router do
       live "/w/:workspace_slug/pipelines/:id", PipelineLive.Show
       live "/w/:workspace_slug/proposals", ProposalLive.Index
       live "/w/:workspace_slug/proposals/:id", ProposalLive.Show
+      live "/w/:workspace_slug/notifications", NotificationLive
       live "/w/:workspace_slug/pipelines/:id/edit", PipelineLive.Form, :edit
     end
   end
