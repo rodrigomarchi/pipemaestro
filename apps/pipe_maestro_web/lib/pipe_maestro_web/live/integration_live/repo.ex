@@ -7,6 +7,7 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.IntegrationComponents
+  import PipeMaestroWeb.PipelineComponents, only: [pipeline_preview: 1]
 
   alias PipeMaestro.{Integrations, Pipelines, Projects, Workspaces}
   alias PipeMaestro.Integrations.{Reconciler, Trigger}
@@ -388,6 +389,11 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
                   data-testid="trigger-pipeline"
                 />
               </div>
+              <.pipeline_preview
+                pipelines={@pipelines}
+                id={@trigger_form[:pipeline_id].value}
+                testid="trigger-pipeline-preview"
+              />
               <.icon_field
                 :if={@trigger_mode == "triage"}
                 field={@trigger_form[:auto_approve]}

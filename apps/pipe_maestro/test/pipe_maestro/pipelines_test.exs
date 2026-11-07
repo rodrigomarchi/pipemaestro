@@ -317,6 +317,30 @@ defmodule PipeMaestro.PipelinesTest do
     end
   end
 
+  describe "steps/1" do
+    defp groups(groups), do: Enum.map(groups, &%Stage{group: &1})
+
+    test "a stage without a group is a step of its own" do
+      assert Pipelines.steps(groups([nil, "", nil])) == [[0], [1], [2]]
+    end
+
+    test "consecutive stages with the same group are one step" do
+      assert Pipelines.steps(groups([nil, "revisoes", "revisoes", nil])) == [[0], [1, 2], [3]]
+    end
+
+    test "adjacent groups with different names are different steps" do
+      assert Pipelines.steps(groups([nil, "a", "a", "b", "b"])) == [[0], [1, 2], [3, 4]]
+    end
+
+    test "the same name, apart, is two steps" do
+      assert Pipelines.steps(groups([nil, "a", nil, "a"])) == [[0], [1], [2], [3]]
+    end
+
+    test "no stages, no steps" do
+      assert Pipelines.steps([]) == []
+    end
+  end
+
   describe "Prompt" do
     @context %{
       task_id: "t1",

@@ -140,6 +140,11 @@ test.describe("Task pipeline", () => {
     await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
     await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded");
+    // The pipeline's diagram over the stages: every one passed, each a link to its stage.
+    const taskDiagram = app.page.getByTestId("task-diagram");
+    await expect(taskDiagram.getByTestId("diagram-stage-0")).toHaveAttribute("data-state", "passed");
+    await expect(taskDiagram.getByTestId("diagram-stage-5")).toHaveAttribute("data-state", "passed");
+    await expect(taskDiagram.getByTestId("diagram-select-1")).toHaveAttribute("href", "#stage-investigacao");
 
     // Flow H: a finished stage's steps; an icon opens its panel, another
     // switches, the same closes; the reasoning filter keeps only thinking.
@@ -193,12 +198,27 @@ test.describe("Task pipeline", () => {
 
     await expect(tasks.status).toHaveText("Aguardando decisão");
     await expect(tasks.decisionReason).toContainText("Preciso saber qual navegador");
+    await expect(app.page.getByTestId("task-diagram").getByTestId("diagram-stage-0")).toHaveAttribute(
+      "data-state",
+      "awaiting",
+    );
+    await expect(app.page.getByTestId("task-diagram").getByTestId("diagram-rail")).toHaveAttribute("data-waiting");
     await shot(app.page, "task-awaiting-decision");
+
+    // The board's tasks tab shows where each task is, a dot per stage.
+    await app.openBoard(workspace.slug, "tarefas");
+    await expect(
+      app.page.getByTestId(`board-task-progress-${blockedId}`).getByTestId("diagram-dot-0"),
+    ).toHaveAttribute("data-state", "awaiting");
+    await shot(app.page, "board-progress");
 
     // Flow F: the Decisions page lists it, the menu counts it.
     await expect(app.page.getByTestId("sidebar-decisions")).toContainText("1");
     await app.page.getByTestId("sidebar-decisions").click();
     await expect(app.page.getByTestId(`decision-${blockedId}`)).toContainText("Preciso saber qual navegador");
+    await expect(
+      app.page.getByTestId(`decision-progress-${blockedId}`).getByTestId("diagram-dot-0"),
+    ).toHaveAttribute("data-state", "awaiting");
     await shot(app.page, "decisions");
     await app.page.getByTestId(`decision-link-${blockedId}`).click();
     await expect(tasks.status).toHaveText("Aguardando decisão");
@@ -325,6 +345,9 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("usage-stage-queue-executar")).not.toHaveText("—");
     await app.page.getByTestId("usage-pipeline").selectOption("Correção de bug");
     await expect(app.page.getByTestId("usage-period-label")).toContainText("Correção de bug");
+    // The pipeline, stage by stage, with what each one spent.
+    await expect(app.page.getByTestId("usage-pipeline-diagram").getByTestId("diagram-metrics-0")).toContainText("US$");
+    await shot(app.page, "usage-pipeline-diagram");
     await app.page.getByTestId("usage-period").selectOption("90");
     await expect(app.page.getByTestId("usage-period-label")).toContainText("90 dias");
     await expect(app.page.getByTestId("usage-period-label")).toContainText("Correção de bug");

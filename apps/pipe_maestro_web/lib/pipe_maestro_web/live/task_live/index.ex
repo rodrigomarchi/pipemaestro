@@ -11,6 +11,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.TaskComponents
+  import PipeMaestroWeb.PipelineComponents, only: [pipeline_preview: 1]
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
 
   alias Phoenix.Socket.Broadcast
@@ -251,9 +252,11 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             <.task_status task={task} data-testid={"task-status-#{task.id}"} />
           </:col>
           <:col :let={task} label="Etapa">
-            <span class="text-gray-600 dark:text-gray-300" data-testid={"task-progress-#{task.id}"}>
-              {stage_progress(task)}
-            </span>
+            <.task_progress
+              task={task}
+              class="text-gray-600 dark:text-gray-300"
+              testid={"task-progress-#{task.id}"}
+            />
           </:col>
           <:col :let={task} label="Projeto">
             <span class="text-gray-900 dark:text-white">{(task.project || %{})["name"]}</span>
@@ -343,6 +346,11 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             prompt="Escolha um pipeline"
             options={Enum.map(@pipelines, &{&1.name, &1.id})}
             data-testid="task-pipeline"
+          />
+          <.pipeline_preview
+            pipelines={@pipelines}
+            id={@form[:pipeline_id].value}
+            testid="task-pipeline-preview"
           />
           <.icon_field
             field={@form[:project_id]}

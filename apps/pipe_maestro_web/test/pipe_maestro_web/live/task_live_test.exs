@@ -91,6 +91,15 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=new-task]") |> render_click()
       refute has_element?(view, "[data-testid=task-no-projects]")
       assert has_element?(view, "[data-testid=task-issue-url]")
+      refute has_element?(view, "[data-testid=task-pipeline-preview]")
+
+      view |> form("#new-task-form", task: %{pipeline_id: ctx.pipeline.id}) |> render_change()
+
+      assert has_element?(
+               view,
+               "[data-testid=task-pipeline-preview] [data-testid=diagram-stage-1]",
+               "Etapa B"
+             )
 
       {:error, {:live_redirect, %{to: path}}} =
         view
@@ -151,6 +160,11 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       })
 
       assert has_element?(view, "[data-testid=task-progress-#{task.id}]", "2/2 · Etapa B")
+
+      assert has_element?(
+               view,
+               "[data-testid=task-progress-#{task.id}] [data-testid=diagram-dot-0][data-state=passed]"
+             )
 
       # Each attempt shows its tokens and leads to its audit.
       {:ok, show, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
@@ -849,6 +863,30 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-status-b-1]", "Executando")
       assert render_click(view, "decide", %{"action" => "retry"}) =~ "não está aguardando"
+    end
+
+    test "the pipeline's diagram follows the task, live, and leads to each stage", ctx do
+      task = create_task(ctx)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+
+      assert has_element?(
+               view,
+               "[data-testid=task-diagram] [data-testid=diagram-stage-0][data-state=running]"
+             )
+
+      assert has_element?(
+               view,
+               "[data-testid=task-diagram] [data-testid=diagram-stage-1][data-state=pending]"
+             )
+
+      assert has_element?(view, ~s([data-testid=diagram-select-1][href="#stage-b"]))
+      assert has_element?(view, "[data-testid=stage-b][id=stage-b]")
+
+      finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
+
+      assert has_element?(view, "[data-testid=diagram-stage-0][data-state=awaiting]")
+      assert has_element?(view, "[data-testid=diagram-edge-0-failure][data-active]")
+      assert has_element?(view, "[data-testid=diagram-rail][data-waiting]")
     end
 
     test "a running task warns while its runner is offline, live", ctx do

@@ -8,9 +8,9 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
+  import PipeMaestroWeb.TaskComponents, only: [task_progress: 1]
 
   alias PipeMaestro.{Pipelines, Projects, Tasks, Workspaces}
-  alias PipeMaestro.Tasks.Task
   alias PipeMaestro.Workspaces.Workspace
 
   @columns [
@@ -48,15 +48,6 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
       pipelines: Pipelines.list_pipelines(workspace),
       members: Workspaces.list_members(workspace)
     }
-  end
-
-  @doc "Where `task` is in its stages, as `\"2/3 · Revisão\"`."
-  @spec stage_label(Task.t()) :: String.t()
-  def stage_label(%Task{stages: stages, current_stage: index}) do
-    case Enum.at(stages, index) do
-      nil -> "#{length(stages)} etapas"
-      stage -> "#{index + 1}/#{length(stages)} · #{stage.name}"
-    end
   end
 
   attr :data, :map, required: true
@@ -168,8 +159,13 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
             {task.title}
           </p>
           <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-            {task.pipeline_name} · {stage_label(task)}
+            {task.pipeline_name}
           </p>
+          <.task_progress
+            task={task}
+            class="mt-1.5 text-xs text-gray-500 dark:text-gray-400"
+            testid={"board-task-progress-#{task.id}"}
+          />
           <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
             <span class="flex min-w-0 items-center gap-1">
               <.icon name="hero-folder-micro" class="size-3.5 shrink-0" />

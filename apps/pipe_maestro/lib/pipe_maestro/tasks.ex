@@ -41,6 +41,8 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Pipelines
+  alias PipeMaestro.Pipelines
   alias PipeMaestro.Pipelines.{Pipeline, Prompt, Stage}
   alias PipeMaestro.Projects
   alias PipeMaestro.Projects.Project
@@ -109,9 +111,10 @@ defmodule PipeMaestro.Tasks do
   # ── Reading ───────────────────────────────────────────────────────────────
 
   @doc """
-  The workspace's most recent tasks, newest first. `filters` (blank values
-  ignored): `"pipeline"` (its name), `"runner_id"`, `"project_id"`, `"user_id"`
-  (who created it), `"q"` (text in the title or the prompt).
+  The workspace's most recent tasks, newest first, with their attempts
+  (without the jobs). `filters` (blank values ignored): `"pipeline"` (its
+  name), `"runner_id"`, `"project_id"`, `"user_id"` (who created it), `"q"`
+  (text in the title or the prompt).
   """
   @spec list_tasks(Workspace.t(), map()) :: [Task.t()]
   def list_tasks(%Workspace{id: workspace_id}, filters \\ %{}) do
@@ -120,7 +123,7 @@ defmodule PipeMaestro.Tasks do
         where: t.workspace_id == ^workspace_id,
         order_by: [desc: t.inserted_at, desc: t.id],
         limit: @list_limit,
-        preload: [:runner, :created_by_user]
+        preload: [:runner, :created_by_user, stage_runs: ^attempts_query()]
 
     filters
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
@@ -167,16 +170,21 @@ defmodule PipeMaestro.Tasks do
     )
   end
 
-  @doc "The workspace's tasks waiting for a decision, the longest waiting first."
+  @doc """
+  The workspace's tasks waiting for a decision, the longest waiting first,
+  with their attempts (without the jobs).
+  """
   @spec list_awaiting(Workspace.t()) :: [Task.t()]
   def list_awaiting(%Workspace{id: workspace_id}) do
     Repo.all(
       from t in Task,
         where: t.workspace_id == ^workspace_id and t.status == :awaiting_decision,
         order_by: [asc: t.updated_at, asc: t.id],
-        preload: [:runner, :created_by_user, :decision_owner]
+        preload: [:runner, :created_by_user, :decision_owner, stage_runs: ^attempts_query()]
     )
   end
+
+  defp attempts_query, do: from(r in StageRun, order_by: [asc: r.index, asc: r.attempt])
 
   @doc """
   The workspace in numbers: tasks running and waiting now, tasks that
@@ -849,25 +857,8 @@ defmodule PipeMaestro.Tasks do
   def step_indexes(%Task{} = task, index), do: step(task, index)
 
   # The indexes of the step `index` belongs to, in order.
-  defp step(task, index) do
-    case group_of(task, index) do
-      nil ->
-        [index]
-
-      group ->
-        same = fn i -> group_of(task, i) == group end
-
-        first =
-          index
-          |> Stream.iterate(&(&1 - 1))
-          |> Enum.take_while(&(&1 >= 0 and same.(&1)))
-          |> List.last()
-
-        first
-        |> Stream.iterate(&(&1 + 1))
-        |> Enum.take_while(&(&1 < length(task.stages) and same.(&1)))
-    end
-  end
+  defp step(task, index),
+    do: task.stages |> Pipelines.steps() |> Enum.find([index], &(index in &1))
 
   defp step_first(task, index), do: task |> step(index) |> hd()
   defp step_last(task, index), do: task |> step(index) |> List.last()

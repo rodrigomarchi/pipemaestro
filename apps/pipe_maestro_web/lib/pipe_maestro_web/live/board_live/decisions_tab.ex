@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.BoardLive.DecisionsTab do
 
   alias PipeMaestro.Tasks
   alias PipeMaestro.Workspaces.Workspace
-  alias PipeMaestroWeb.BoardLive.TasksTab
+  import PipeMaestroWeb.TaskComponents, only: [stage_progress: 1]
 
   @doc "The tasks of `workspace` waiting for a decision."
   @spec load(Workspace.t()) :: [Tasks.Task.t()]
@@ -77,7 +77,7 @@ defmodule PipeMaestroWeb.BoardLive.DecisionsTab do
           <span class="block text-sm font-semibold text-gray-900 dark:text-white">
             {task.title}
             <span class="font-normal text-gray-500 dark:text-gray-400">
-              · {TasksTab.stage_label(task)}
+              · {stage_progress(task)}
             </span>
           </span>
           <span class="block text-sm text-gray-600 dark:text-gray-400">

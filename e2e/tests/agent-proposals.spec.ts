@@ -140,6 +140,8 @@ test.describe("Agent proposals", () => {
     await proposal.submitRequest({ project: "App", focus: "Verificar os testes." });
     await proposal.waitForAnswer();
     await expect(app.page.getByTestId("proposal-changes")).toContainText("Nenhuma tarefa verificou os testes");
+    // The revision drawn against the pipeline as it is.
+    await expect(app.page.getByTestId("proposal-diagram")).toBeVisible();
     await shot(app.page, "improve-proposal-review");
     await proposal.saveNotes();
     await proposal.reviewPipeline();

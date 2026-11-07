@@ -22,11 +22,12 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.ProposalComponents
 
-  alias PipeMaestro.{Audit, Jobs, Projects, Proposals, Tasks}
+  alias PipeMaestro.{Audit, Jobs, Pipelines, Projects, Proposals, Tasks}
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Pipelines.Pipeline
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals.DecisionKind
-  alias PipeMaestroWeb.{Markdown, QuestionnaireComponents}
+  alias PipeMaestroWeb.{Markdown, PipelineExplorer, QuestionnaireComponents}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -82,7 +83,9 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         task: nil,
         current: false,
         created_task_id: nil,
-        auto_approve: nil
+        auto_approve: nil,
+        proposed: nil,
+        current_pipeline: nil
       )
 
     if Job.active?(job) do
@@ -105,7 +108,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     )
   end
 
-  defp assign_review(socket, "pipeline"), do: socket
+  defp assign_review(%{assigns: %{result: result}} = socket, "pipeline"),
+    do: assign(socket, proposed: proposed(result.pipeline), current_pipeline: nil)
 
   defp assign_review(%{assigns: %{result: result}} = socket, "decision") do
     task = Tasks.get_task!(socket.assigns.current_scope.workspace, result.task_id)
@@ -128,7 +132,10 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
     assign(socket,
       project: project,
-      form: to_form(%{"notes" => result.notes}, as: "notes")
+      form: to_form(%{"notes" => result.notes}, as: "notes"),
+      proposed: proposed(result.pipeline),
+      current_pipeline:
+        Pipelines.get_pipeline(socket.assigns.current_scope.workspace.id, result.pipeline_id)
     )
   end
 
@@ -146,6 +153,13 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       auto_approve: Proposals.auto_approve(job)
     )
   end
+
+  # The pipeline the agent proposed (a form's attributes), as one to draw.
+  defp proposed(attrs),
+    do: %Pipeline{} |> Pipelines.change_pipeline(attrs) |> Ecto.Changeset.apply_changes()
+
+  defp compare(nil), do: []
+  defp compare(pipeline), do: [compare_to: pipeline]
 
   @impl true
   def handle_info({:job_updated, %Job{} = job}, socket) do
@@ -468,6 +482,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       <.pipeline_review
         :if={@result && @kind == "pipeline"}
         result={@result}
+        proposed={@proposed}
         job={@job}
         workspace={@current_scope.workspace}
       />
@@ -497,6 +512,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       <.improve_review
         :if={@result && @kind == "improve"}
         result={@result}
+        proposed={@proposed}
+        current={@current_pipeline}
         form={@form}
         project={@project}
         input={@input}
@@ -561,6 +578,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   end
 
   attr :result, :map, required: true
+  attr :proposed, Pipeline, required: true, doc: "the pipeline proposed, to draw"
   attr :job, :any, required: true
   attr :workspace, :any, required: true
 
@@ -582,7 +600,12 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               title={"Pipeline: #{@result.pipeline["name"]}"}
               description={@result.pipeline["description"]}
             />
-            <.stages pipeline={@result.pipeline} />
+            <.live_component
+              module={PipelineExplorer}
+              id="proposal-explorer"
+              pipeline={@proposed}
+              testid="proposal"
+            />
             <div class="mt-4 flex justify-end">
               <.button
                 link_type="live_redirect"
@@ -923,6 +946,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   end
 
   attr :result, :map, required: true
+  attr :proposed, Pipeline, required: true, doc: "the revised pipeline, to draw"
+  attr :current, Pipeline, default: nil, doc: "the pipeline as it is, to compare"
   attr :form, :any, required: true
   attr :project, :any, required: true
   attr :input, :map, required: true
@@ -946,7 +971,13 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               icon="hero-squares-2x2"
               title={"Pipeline revisado: #{@result.pipeline["name"]}"}
             />
-            <.stages pipeline={@result.pipeline} />
+            <.live_component
+              module={PipelineExplorer}
+              id="proposal-explorer"
+              pipeline={@proposed}
+              opts={compare(@current)}
+              testid="proposal"
+            />
             <div class="mt-5 flex justify-end">
               <.button
                 link_type="live_redirect"

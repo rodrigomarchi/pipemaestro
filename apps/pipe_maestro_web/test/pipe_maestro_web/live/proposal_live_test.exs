@@ -255,7 +255,27 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       succeed(ctx, job, @pipeline_output)
       assert has_element?(view, "[data-testid=proposal-analysis] strong", "Phoenix")
       assert has_element?(view, "[data-testid=proposal-checks]", "2 avisos")
-      assert has_element?(view, "[data-testid=proposal-stage-1]", "{{projeto.teste}}")
+
+      assert has_element?(
+               view,
+               "[data-testid=proposal-diagram] [data-testid=diagram-stage-1]",
+               "Código"
+             )
+
+      refute has_element?(view, "[data-testid=proposal-panel]")
+
+      view
+      |> element("[data-testid=proposal-diagram] [data-testid=diagram-select-1]")
+      |> render_click()
+
+      assert has_element?(
+               view,
+               "[data-testid=proposal-panel] [data-testid=stage-details-gates]",
+               "{{projeto.teste}}"
+             )
+
+      view |> element("[data-testid=proposal-panel-close]") |> render_click()
+      refute has_element?(view, "[data-testid=proposal-panel]")
 
       refute has_element?(view, "#proposal-project-form")
 
@@ -691,6 +711,20 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
       {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
       assert has_element?(view, "[data-testid=proposal-changes]", "falhou 3x")
+
+      # The revision against the pipeline as it is: every stage new, the old ones gone.
+      assert has_element?(
+               view,
+               "[data-testid=proposal-diagram] [data-testid=diagram-diff-0]",
+               "nova"
+             )
+
+      assert has_element?(
+               view,
+               "[data-testid=proposal-diagram] [data-testid=diagram-removed]",
+               "Etapa A"
+             )
+
       view |> form("#proposal-notes-form", notes: %{notes: "Rode mix test."}) |> render_submit()
       assert Projects.get_project!(ctx.workspace, ctx.app.id).notes == "Rode mix test."
 

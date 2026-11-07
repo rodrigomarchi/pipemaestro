@@ -75,7 +75,10 @@ export class IntegrationsPage {
     await this.page.getByTestId("trigger-kind").selectOption(trigger.kind);
     if (trigger.label) await this.page.getByTestId("trigger-label").fill(trigger.label);
     if (trigger.command) await this.page.getByTestId("trigger-command").fill(trigger.command);
-    if (trigger.pipeline) await this.page.getByTestId("trigger-pipeline").selectOption({ label: trigger.pipeline });
+    if (trigger.pipeline) {
+      await this.page.getByTestId("trigger-pipeline").selectOption({ label: trigger.pipeline });
+      await expect(this.page.getByTestId("trigger-pipeline-preview")).toBeVisible();
+    }
     if (trigger.autoApprove === false) await this.page.getByTestId("trigger-auto-approve").uncheck();
     if (options.shot) await shot(this.page, options.shot);
     await this.page.getByTestId("trigger-save").click();

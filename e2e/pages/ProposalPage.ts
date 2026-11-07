@@ -71,8 +71,22 @@ export class ProposalPage {
     return this.page.getByTestId("proposal-checks");
   }
 
+  /** A stage of the proposed pipeline, as a node of its diagram. */
   stage(index: number): Locator {
-    return this.page.getByTestId(`proposal-stage-${index}`);
+    return this.page.getByTestId("proposal-diagram").getByTestId(`diagram-stage-${index}`);
+  }
+
+  /** Opens a proposed stage's details (prompt, gates) in the side panel. */
+  async openStage(index: number): Promise<Locator> {
+    await this.page.getByTestId("proposal-diagram").getByTestId(`diagram-select-${index}`).click();
+    const panel = this.page.getByTestId("proposal-panel");
+    await expect(panel).toBeVisible();
+    return panel;
+  }
+
+  async closeStage() {
+    await this.page.getByTestId("proposal-panel-close").click();
+    await expect(this.page.getByTestId("proposal-panel")).toHaveCount(0);
   }
 
   /** Project: a field of the project form the agent filled. */
@@ -86,6 +100,8 @@ export class ProposalPage {
     await this.page.waitForURL(/\/pipelines\/new\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
+    await this.page.getByTestId("pipeline-view-form").click();
+    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
   }
 
   /** Project: saves the project as reviewed and lands on the list of projects. */
@@ -132,5 +148,7 @@ export class ProposalPage {
     await this.page.waitForURL(/\/edit\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
+    await this.page.getByTestId("pipeline-view-form").click();
+    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
   }
 }

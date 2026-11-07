@@ -6,8 +6,10 @@ defmodule PipeMaestroWeb.TaskComponents do
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.JobComponents, only: [patch: 1]
+  import PipeMaestroWeb.PipelineComponents, only: [pipeline_diagram: 1]
 
   alias PipeMaestro.Tasks.{StageRun, Task}
+  alias PipeMaestroWeb.PipelineDiagram
 
   @doc "The task's status as a badge."
   attr :task, Task, required: true
@@ -59,6 +61,33 @@ defmodule PipeMaestroWeb.TaskComponents do
 
   def stage_progress(%Task{stages: [_one]}), do: "1 etapa"
   def stage_progress(%Task{} = task), do: "#{length(task.stages)} etapas"
+
+  @doc """
+  Where a task is, at a glance: a dot per stage of its pipeline with the
+  stage's state (`PipeMaestroWeb.PipelineDiagram.task_states/1`, a group's
+  stacked), and `stage_progress/1`. Needs the task's `stage_runs`.
+  """
+  attr :task, Task, required: true
+  attr :testid, :string, required: true
+  attr :class, :any, default: nil
+
+  @spec task_progress(map()) :: Phoenix.LiveView.Rendered.t()
+  def task_progress(assigns) do
+    assigns =
+      assign(assigns,
+        diagram:
+          PipelineDiagram.build(PipelineDiagram.for_task(assigns.task),
+            states: PipelineDiagram.task_states(assigns.task)
+          )
+      )
+
+    ~H"""
+    <span class={["flex min-w-0 items-center gap-2", @class]} data-testid={@testid}>
+      <.pipeline_diagram diagram={@diagram} mode={:micro} testid={"#{@testid}-diagram"} />
+      <span class="truncate">{stage_progress(@task)}</span>
+    </span>
+    """
+  end
 
   @doc """
   The files a stage changed (`changes` as the runner reports it): a summary

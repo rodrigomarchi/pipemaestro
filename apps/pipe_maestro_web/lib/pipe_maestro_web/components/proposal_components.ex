@@ -54,52 +54,6 @@ defmodule PipeMaestroWeb.ProposalComponents do
     """
   end
 
-  @doc "The stages of a proposed pipeline (form attributes), with their prompts and gates."
-  attr :pipeline, :map, required: true
-
-  @spec stages(map()) :: Phoenix.LiveView.Rendered.t()
-  def stages(assigns) do
-    ~H"""
-    <p class="mb-3 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-      <.icon name="hero-rocket-launch" class="size-4" />
-      {delivery_label(@pipeline["delivery"])}
-    </p>
-    <ol class="space-y-3" data-testid="proposal-stages">
-      <li
-        :for={{stage, index} <- Enum.with_index(@pipeline["stages"] || [])}
-        class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-        data-testid={"proposal-stage-#{index}"}
-      >
-        <div class="flex items-center gap-2.5">
-          <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700 dark:bg-primary-950 dark:text-primary-300">
-            {index + 1}
-          </span>
-          <span class="font-medium text-gray-900 dark:text-white">{stage["name"]}</span>
-          <span class="ml-auto flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <span :if={stage["group"]} class="flex items-center gap-1">
-              <.icon name="hero-squares-2x2" class="size-4" /> {stage["group"]}
-            </span>
-            <span :if={stage["model"]} class="flex items-center gap-1">
-              <.icon name="hero-sparkles" class="size-4" /> {stage["model"]}
-            </span>
-          </span>
-        </div>
-        <p class="mt-1.5 line-clamp-2 text-sm text-gray-600 dark:text-gray-300">
-          {stage["prompt"]}
-        </p>
-        <ul :if={lines(stage["gates_text"]) != []} class="mt-2 space-y-1">
-          <li
-            :for={gate <- lines(stage["gates_text"])}
-            class="flex items-center gap-1.5 font-mono text-xs text-gray-600 dark:text-gray-300"
-          >
-            <.icon name="hero-shield-check" class="size-4 text-success-500" /> {gate}
-          </li>
-        </ul>
-      </li>
-    </ol>
-    """
-  end
-
   @doc "The commands the agent ran to check what it proposes."
   attr :checks, :list, required: true
 
@@ -155,11 +109,4 @@ defmodule PipeMaestroWeb.ProposalComponents do
   def action_icon("retry"), do: "hero-arrow-path"
   def action_icon("advance"), do: "hero-forward"
   def action_icon("cancel"), do: "hero-x-circle"
-
-  defp lines(nil), do: []
-  defp lines(text), do: String.split(text, "\n", trim: true)
-
-  defp delivery_label("pr"), do: "Pull request"
-  defp delivery_label("commit"), do: "Commits conferidos"
-  defp delivery_label(_none), do: "Sem entrega"
 end

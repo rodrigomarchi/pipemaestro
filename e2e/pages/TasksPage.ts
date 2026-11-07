@@ -34,6 +34,8 @@ export class TasksPage {
     await this.page.getByTestId("task-title").fill(task.title);
     await this.page.getByTestId("task-prompt").fill(task.prompt);
     await this.page.getByTestId("task-pipeline").selectOption({ label: task.pipeline });
+    // The pipeline chosen, small, under the select.
+    await expect(this.page.getByTestId("task-pipeline-preview")).toBeVisible();
     await selectProject(this.page.getByTestId("task-project"), task.project);
     if (task.shot) await shot(this.page, task.shot);
     await this.page.getByTestId("task-submit").click();
