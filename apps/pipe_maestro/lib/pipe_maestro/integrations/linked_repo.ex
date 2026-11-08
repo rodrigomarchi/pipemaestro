@@ -65,7 +65,7 @@ defmodule PipeMaestro.Integrations.LinkedRepo do
   def changeset(repo, attrs) do
     repo
     |> cast(attrs, [:full_name, :project_id, :label_prefix])
-    |> update_change(:full_name, &String.downcase(String.trim(&1)))
+    |> update_change(:full_name, &(&1 && String.downcase(String.trim(&1))))
     |> validate_required([:full_name], message: "escolha o repositório")
     |> validate_required([:project_id],
       message: "escolha o projeto: é nele que as issues viram tarefas"

@@ -105,7 +105,7 @@ defmodule PipeMaestro.Pipelines.Stage do
       :group,
       :context
     ])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &(&1 && String.trim(&1)))
     |> validate_required([:name], message: "dê um nome à etapa")
     |> validate_required([:prompt], message: "escreva o prompt da etapa")
     |> validate_length(:name, max: 80)
@@ -125,7 +125,7 @@ defmodule PipeMaestro.Pipelines.Stage do
     |> parse_gates()
     |> parse_rules()
     |> validate_length(:agent, max: 100)
-    |> update_change(:group, &(&1 |> String.trim() |> String.downcase()))
+    |> update_change(:group, &(&1 && &1 |> String.trim() |> String.downcase()))
     |> validate_format(:group, @key_format, message: "use letras minúsculas, números, - ou _")
     |> default_context()
     |> validate_inclusion(:context, @contexts, message: "escolha como a etapa começa")

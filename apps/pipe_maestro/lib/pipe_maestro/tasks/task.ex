@@ -187,7 +187,7 @@ defmodule PipeMaestro.Tasks.Task do
     task
     |> cast(attrs, [:title, :prompt, :pipeline_id, :project_id, :issue_url])
     |> validate_format(:issue_url, IssueUrl.regex(), message: IssueUrl.message())
-    |> update_change(:title, &String.trim/1)
+    |> update_change(:title, &(&1 && String.trim(&1)))
     |> validate_required([:title], message: "dê um título à tarefa")
     |> validate_required([:prompt], message: "descreva o que deve ser feito")
     |> validate_required([:pipeline_id], message: "escolha um pipeline")
