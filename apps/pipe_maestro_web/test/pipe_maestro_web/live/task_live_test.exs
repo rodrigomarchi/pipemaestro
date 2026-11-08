@@ -168,7 +168,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
              )
 
       # Each attempt shows its tokens and leads to its audit.
-      {:ok, show, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, show, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       assert has_element?(
                show,
@@ -198,6 +198,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       })
 
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      assert has_element?(view, "[data-testid=task-decision-banner]", "Onde corrigir?")
+      view |> element("[data-testid=task-decision-open]") |> render_click()
       assert has_element?(view, "[data-testid=decision-option-1]", "No servidor")
       refute has_element?(view, "[data-testid=task-decisions]")
 
@@ -303,7 +305,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       task = create_task(ctx)
       block_with_questions(ctx, task)
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       assert has_element?(view, "[data-testid=questionnaire]")
       assert has_element?(view, "[data-testid=question-0]", "Em qual navegador reproduz?")
@@ -334,7 +336,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     test "several choices and Other answer a question; confirming runs the stage again", ctx do
       task = create_task(ctx)
       block_with_questions(ctx, task)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       # Other by itself answers the first question.
       answer(view, %{
@@ -387,19 +389,19 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     test "advance anyway goes on without every answer", ctx do
       task = create_task(ctx)
       block_with_questions(ctx, task)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       answer(view, %{"0" => %{"escolhas" => ["Safari 17"], "outro" => ""}})
       view |> element("[data-testid=questionnaire-advance]") |> render_click()
 
-      assert has_element?(view, "[data-testid=stage-run-status-b-1]", "Executando")
+      assert has_element?(view, "[data-testid=task-stage-state-b]", "Executando")
       assert [%{action: :advance}] = Tasks.list_decisions(task)
     end
 
     test "an answer in one session takes the panel away from another", ctx do
       task = create_task(ctx)
       block_with_questions(ctx, task)
-      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a"
 
       {:ok, mine, _html} = live(ctx.conn, path)
       {:ok, other, _html} = live(ctx.conn, path)
@@ -418,7 +420,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
     test "a failure shows the analysis running, then its diagnosis and questions, live", ctx do
       task = create_task(%{ctx | pipeline: failing_pipeline(ctx)})
-      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a"
       {:ok, view, _html} = live(ctx.conn, path)
       {:ok, other, _html} = live(ctx.conn, path)
 
@@ -448,7 +450,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
     test "an analysis that does not get ready says so, beside the manual decision", ctx do
       task = create_task(%{ctx | pipeline: failing_pipeline(ctx)})
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       fail_current(ctx, task)
 
@@ -496,7 +498,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
       assert has_element?(view, "[data-testid=task-status]", "Concluída")
       refute has_element?(view, "#instruct-form")
 
@@ -528,7 +530,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> form("#correct-form", correct: %{prompt: "Resolva o conflito"}) |> render_submit()
 
       assert has_element?(view, "[data-testid=task-status]", "Executando")
-      assert has_element?(view, "[data-testid=stage-correcao-1]", "Correção 1")
+      assert has_element?(view, "[data-testid=task-stage-correcao-1]", "Correção 1")
       assert has_element?(view, "[data-testid=task-decisions]", "Resolva o conflito")
       refute has_element?(view, "[data-testid=task-correct]")
     end
@@ -610,7 +612,12 @@ defmodule PipeMaestroWeb.TaskLiveTest do
         ]
       })
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
+
+      # The panel opens on the latest attempt, which got the gate's feedback.
+      assert has_element?(view, "[data-testid=stage-run-feedback-a-2]", "1 failure")
+      view |> element("[data-testid=task-stage-attempt-a-1]") |> render_click()
+
       gates = view |> element("[data-testid=stage-run-gates-a-1]") |> render()
       assert gates =~ "mix format --check"
       assert gates =~ "1 failure"
@@ -626,13 +633,11 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       # A failed gate opens the details folded under the artifact.
       assert has_element?(view, "[data-testid=stage-run-details-a-1][open]")
       assert has_element?(view, "[data-testid=stage-run-details-toggle-a-1]", "gates 1/2")
-
-      assert has_element?(view, "[data-testid=stage-run-feedback-a-2]", "1 failure")
     end
 
     test "shows what each stage changed and what the task changed so far", ctx do
       task = create_task(ctx)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
       refute has_element?(view, "[data-testid=task-files]")
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"}, %{
@@ -668,7 +673,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
         )
 
       task = create_task(ctx)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
       refute has_element?(view, "[data-testid=stage-run-files-a-1]")
       assert has_element?(view, "[data-testid=task-no-attachments]")
       refute has_element?(view, "[data-testid=task-tab-count-anexos]")
@@ -756,7 +761,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
         }
       })
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
       setup = view |> element("[data-testid=stage-run-setup-a-1]") |> render()
       assert setup =~ "Ambiente preparado em 2 s"
       assert setup =~ "deps, _build"
@@ -767,18 +772,18 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
     test "follows the stages live until the task succeeds", ctx do
       task = create_task(ctx)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       assert has_element?(view, "[data-testid=task-status]", "Executando")
       assert has_element?(view, "[data-testid=task-where]", "mac:app")
       assert has_element?(view, "[data-testid=task-branch]", "cp/corrigir-login-")
       assert has_element?(view, "[data-testid=stage-run-status-a-1]", "Executando")
-      assert has_element?(view, "[data-testid=stage-state-a]", "Executando")
-      assert has_element?(view, "[data-testid=stage-state-b]", "Aguardando")
-      refute has_element?(view, "[data-testid=stage-b] [data-testid^=stage-run-]")
+      assert has_element?(view, "[data-testid=task-stage-state-a]", "Executando")
+      assert has_element?(view, "[data-testid=task-stage-state-b]", "Aguardando")
+      refute has_element?(view, "[data-testid=stage-run-b-1]")
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
-      assert has_element?(view, "[data-testid=stage-state-a]", "Concluída")
+      assert has_element?(view, "[data-testid=task-stage-state-a]", "Concluída")
 
       view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
@@ -829,6 +834,9 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=task-panel-pedido]:not(.hidden)")
       assert has_element?(view, "[data-testid=task-panel-etapas].hidden")
       view |> element("[data-testid=task-tab-etapas]") |> render_click()
+      # A tab leaves the stage's panel; its node opens it again.
+      refute has_element?(view, "[data-testid=task-stage-panel]")
+      view |> element("[data-testid=task-stage-a]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1][phx-hook=Highlight]")
       refute has_element?(view, "[data-testid=stage-run-artifact-raw-a-1]")
@@ -838,13 +846,19 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=stage-run-artifact-toggle-a-1]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
       assert has_element?(view, "[data-testid=task-worktree]", "/w/worktrees/")
+      view |> element("[data-testid=task-stage-b]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-status-b-1]", "Executando")
 
       job_b = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
 
       {:ok, _} = Jobs.mark_started(ctx.runner, job_b.id)
       :ok = Jobs.relay_delta(ctx.runner, job_b.id, "Pensando em b")
-      assert has_element?(view, "[data-testid=stage-b] [data-testid=job-typing]", "Pensando em b")
+
+      assert has_element?(
+               view,
+               "[data-testid=task-stage-panel] [data-testid=job-typing]",
+               "Pensando em b"
+             )
 
       {:ok, _} =
         Jobs.append_event(ctx.runner, job_b.id, %{
@@ -855,7 +869,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(
                view,
-               "[data-testid=stage-b] [data-testid=task-events]",
+               "[data-testid=task-stage-panel] [data-testid=task-events]",
                "evento ao vivo"
              )
 
@@ -870,9 +884,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       task = create_task(ctx)
       job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
       {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
-      live = "[data-testid=stage-a] [data-testid=task-events] [data-testid=job-event-strip-2]"
+      live =
+        "[data-testid=task-stage-panel] [data-testid=task-events] [data-testid=job-event-strip-2]"
 
       {:ok, _} =
         Jobs.append_event(ctx.runner, job.id, %{
@@ -919,7 +934,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       task = create_task(ctx)
       job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
       {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       assert has_element?(view, "[data-testid=stage-run-spent-a-1]", "até agora US$ 0")
 
@@ -942,7 +957,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
     test "a blocked stage takes a decision: retry with instructions, then advance", ctx do
       task = create_task(ctx)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
 
@@ -962,32 +977,23 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       |> form("#decision-form", decision: %{instructions: ""})
       |> render_submit(%{"action" => "advance"})
 
-      assert has_element?(view, "[data-testid=stage-run-status-b-1]", "Executando")
+      assert has_element?(view, "[data-testid=task-stage-state-b]", "Executando")
       assert render_click(view, "decide", %{"action" => "retry"}) =~ "não está aguardando"
     end
 
-    test "the pipeline's diagram follows the task, live, and leads to each stage", ctx do
+    test "the pipeline follows the task, live, and each node leads to its stage", ctx do
       task = create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
 
-      assert has_element?(
-               view,
-               "[data-testid=task-diagram] [data-testid=diagram-stage-0][data-state=running]"
-             )
-
-      assert has_element?(
-               view,
-               "[data-testid=task-diagram] [data-testid=diagram-stage-1][data-state=pending]"
-             )
-
-      assert has_element?(view, ~s([data-testid=diagram-select-1][href="#stage-b"]))
-      assert has_element?(view, "[data-testid=stage-b][id=stage-b]")
+      assert has_element?(view, "[data-testid=task-stage-a][data-state=running]")
+      assert has_element?(view, "[data-testid=task-stage-b][data-state=pending]")
+      assert has_element?(view, ~s([data-testid=task-stage-b][href$="etapa=b"]))
+      refute has_element?(view, "[data-testid=task-decision-banner]")
 
       finish_current(ctx, task, %{"status" => "bloqueado", "resumo" => "Qual navegador?"})
 
-      assert has_element?(view, "[data-testid=diagram-stage-0][data-state=awaiting]")
-      assert has_element?(view, "[data-testid=diagram-edge-0-failure][data-active]")
-      assert has_element?(view, "[data-testid=diagram-rail][data-waiting]")
+      assert has_element?(view, "[data-testid=task-stage-a][data-state=awaiting]")
+      assert has_element?(view, "[data-testid=task-decision-banner]", "Qual navegador?")
     end
 
     test "a running task warns while its runner is offline, live", ctx do
@@ -1084,7 +1090,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       Jobs.reconcile(ctx.runner, [])
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       assert has_element?(view, "[data-testid=stage-run-status-a-1]", "Perdida (runner)")
       refute has_element?(view, "[data-testid=stage-run-status-a-1]", "Falhou")
@@ -1092,7 +1098,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=stage-run-a-1-r1]")
       assert has_element?(view, "[data-testid=stage-run-status-a-1-r1]", "Executando")
       refute has_element?(view, "[data-testid=stage-run-a-2]")
-      refute has_element?(view, "[data-testid=stage-attempts-a]")
+      refute has_element?(view, "[data-testid=task-stage-attempts-a]")
     end
   end
 

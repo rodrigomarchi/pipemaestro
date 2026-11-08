@@ -22,7 +22,8 @@ defmodule PipeMaestroWeb.PipelineComponents do
 
   `side_panel/1` is a panel fixed to the right edge. Unlike Petal's
   `slide_over`, which only opens when mounted, it stays in the page while
-  closed (hidden), so a form's inputs inside it keep being sent.
+  closed (hidden), so a form's inputs inside it keep being sent. It is
+  Petal's large slide-over by default, or `size: :wide` with a `backdrop`.
   """
   use PipeMaestroWeb, :html
 
@@ -937,19 +938,40 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :open, :boolean, required: true
   attr :testid, :string, default: nil
   attr :target, :any, default: nil, doc: "where `close_panel` goes (`phx-target`)"
+
+  attr :size, :atom,
+    default: :lg,
+    values: [:lg, :wide],
+    doc: "`:lg`, Petal's large slide-over; `:wide`, 90% of a wide screen and all of a phone's"
+
+  attr :backdrop, :boolean,
+    default: false,
+    doc: "darkens the page behind the open panel; a click on it closes the panel"
+
   slot :inner_block, required: true
   slot :footer
 
   @doc """
   A panel fixed to the right edge, over the page, that closes with
-  `close_panel` (its button or Escape). Closed, it stays in the page, hidden.
+  `close_panel` (its button or Escape, and its backdrop when it has one).
+  Closed, it stays in the page, hidden.
   """
   def side_panel(assigns) do
     ~H"""
+    <div
+      :if={@backdrop}
+      class={["fixed inset-0 z-30 bg-gray-900/50 dark:bg-black/60", !@open && "hidden"]}
+      phx-click="close_panel"
+      phx-target={@target}
+      aria-hidden="true"
+      data-testid={@testid && "#{@testid}-backdrop"}
+    >
+    </div>
     <aside
       id={@id}
       class={[
-        "pc-slideover__box pc-slideover__box--lg fixed inset-y-0 right-0 z-40 border-l border-gray-200 dark:border-white/10",
+        "fixed inset-y-0 right-0 z-40 border-l border-gray-200 dark:border-white/10",
+        panel_size(@size),
         !@open && "hidden"
       ]}
       role="dialog"
@@ -957,12 +979,19 @@ defmodule PipeMaestroWeb.PipelineComponents do
       phx-window-keydown={@open && "close_panel"}
       phx-target={@target}
       phx-key="escape"
+      data-size={@size}
       data-testid={@testid}
     >
       <div class="pc-slideover__header">
         <div class="pc-slideover__header__container">
           <div class="pc-slideover__header__titles">
-            <div id={"#{@id}-title"} class="pc-slideover__header__text">{@title}</div>
+            <div
+              id={"#{@id}-title"}
+              class="pc-slideover__header__text"
+              data-testid={@testid && "#{@testid}-title"}
+            >
+              {@title}
+            </div>
             <div :if={@description} class="pc-slideover__description">{@description}</div>
           </div>
           <button
@@ -977,9 +1006,16 @@ defmodule PipeMaestroWeb.PipelineComponents do
           </button>
         </div>
       </div>
-      <div class="pc-slideover__content">{render_slot(@inner_block)}</div>
+      <div class={["pc-slideover__content", @size == :wide && "min-h-0 flex-1 overflow-y-auto"]}>
+        {render_slot(@inner_block)}
+      </div>
       <div :if={@footer != []} class="pc-slideover__footer">{render_slot(@footer)}</div>
     </aside>
     """
   end
+
+  defp panel_size(:lg), do: "pc-slideover__box pc-slideover__box--lg"
+
+  defp panel_size(:wide),
+    do: "flex w-full flex-col bg-white shadow-xl lg:w-[90vw] dark:bg-gray-900"
 end
