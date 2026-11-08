@@ -38,18 +38,39 @@ It runs, cheapest first:
 5. `mix test --warnings-as-errors --cover` — each app has a 60% threshold
 6. `mix dialyzer` — no ignore file; fix the type, do not silence it
 
-`make ci.quick` is the same without Dialyzer, for iteration. `make help` lists
-every target.
+`make ci.quick` is the same without Dialyzer. `make help` lists every target.
 
 **Screen changes also need `make e2e`** (Playwright, real browser; see
-[`e2e/README.md`](e2e/README.md)). Use `make e2e.shots` to capture light and dark
-screenshots of each flow and audit them; never drive a browser by hand to check
-a screen.
+[`e2e/README.md`](e2e/README.md)). Use `make e2e.shots FILE=...` to capture light
+and dark screenshots of a flow and audit them; never drive a browser by hand to
+check a screen.
 
 - **A pipe masks the exit code.** `make ci 2>&1 | tail` returns `tail`'s status.
-  Use `make ci > log 2>&1; echo $?`.
+  Use `make ci > tmp/ci.log 2>&1; echo $?`.
+- **Logs go to `tmp/`** (ignored, inside the checkout), never `/tmp/`: other
+  worktrees run at once and would read or overwrite each other's log.
 - **Run `mix format` first.** It is the cheapest failure.
 - **Every error found is yours to fix now**, regardless of who introduced it.
+
+### Verify what the change touches, once
+
+The whole suite is the gate's job, not the loop's
+([ADR 0046](docs/adr/0046-verificacao-por-arvore.md)):
+
+- **While iterating, run the tests the change touches**: the file
+  (`mix test path/to/x_test.exs`), the app (`cd apps/<app> && mix test`) or
+  `mix test --failed` after a fix. Never the umbrella's suite after each edit.
+- **The whole suite at most once, at the end**, and only if code changed since it
+  last passed. `make ci`, `make ci.quick`, `make test.cover` and `make e2e` run
+  once per tree: on a tree that already passed they say so and stop (`FORCE=1`
+  runs them anyway). Re-running them only to see the same answer is wasted time.
+- **e2e while iterating: one spec** (`make e2e FILE=tests/x.spec.ts`, or
+  `cd e2e && npx playwright test --only-changed=origin/main`). The whole e2e
+  suite runs once, when the screens are done. Changes outside screens
+  (`apps/pipe_maestro_web/lib`, `assets/`, `e2e/`) do not need e2e.
+- **Docs-only changes need no suite.**
+- **A failing check you did not cause still is yours** (the rule above), but fix
+  it where it fails and re-run that test, not the whole gate.
 
 ## Code conventions
 

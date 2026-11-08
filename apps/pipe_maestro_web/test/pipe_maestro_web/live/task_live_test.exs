@@ -45,6 +45,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     task
   end
 
+  # A broadcast reaches the page, which hands it to the stage's panel with
+  # `send_update/3`: one more message to itself. A render waits for that one too.
+  defp settle(view), do: _ = render(view)
+
   # Plays the runner for the task's current job.
   defp finish_current(ctx, task, output, extra \\ %{}) do
     task = Tasks.get_task!(ctx.workspace, task.id)
@@ -853,6 +857,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       {:ok, _} = Jobs.mark_started(ctx.runner, job_b.id)
       :ok = Jobs.relay_delta(ctx.runner, job_b.id, "Pensando em b")
+      settle(view)
 
       assert has_element?(
                view,
@@ -866,6 +871,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
           "type" => "assistant_text",
           "data" => %{"text" => "evento ao vivo"}
         })
+
+      settle(view)
 
       assert has_element?(
                view,
@@ -896,6 +903,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
           "data" => %{"text" => "Olhar o form", "duration_ms" => 1_500}
         })
 
+      settle(view)
+
       assert has_element?(view, "#{live} [data-testid=job-event-icon-2][data-type=thinking]")
 
       {:ok, _} =
@@ -904,6 +913,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
           "type" => "tool_use",
           "data" => %{"name" => "Bash", "input" => %{"command" => "mix test"}}
         })
+
+      settle(view)
 
       assert has_element?(view, "#{live} [data-testid=job-event-icon-3][data-type=tool_use]")
       assert has_element?(view, "#{live} [data-testid=job-event-panel-3]", "$ mix test")
@@ -947,8 +958,9 @@ defmodule PipeMaestroWeb.TaskLiveTest do
           }
         ])
 
-      _ = render(view)
+      settle(view)
       send(view.pid, {:refresh_spent, job.id})
+      settle(view)
       assert has_element?(view, "[data-testid=stage-run-spent-a-1]", "US$ 0.2500 · 2.0k tokens")
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})

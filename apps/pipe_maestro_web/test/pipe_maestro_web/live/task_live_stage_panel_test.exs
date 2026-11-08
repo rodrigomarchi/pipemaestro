@@ -83,6 +83,10 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       )
   end
 
+  # A broadcast reaches the page, which hands it to the stage's panel with
+  # `send_update/3`: one more message to itself. A render waits for that one too.
+  defp settle(view), do: _ = render(view)
+
   defp etapa(path), do: URI.decode_query(URI.parse(path).query || "")["etapa"]
 
   describe "the overview" do
@@ -290,9 +294,11 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       assert has_element?(view, events, "antes de abrir")
 
       say(ctx, job, 2, "evento ao vivo")
+      settle(view)
       assert has_element?(view, events, "evento ao vivo")
 
       :ok = Jobs.relay_delta(ctx.runner, job.id, "Pensando em a")
+      settle(view)
 
       assert has_element?(
                view,
@@ -305,6 +311,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       {:ok, _} = Jobs.mark_started(ctx.runner, other.id)
       send(view.pid, {:job_event, say(ctx, other, 1, "de outro job")})
       send(view.pid, {:job_delta, other.id, "digitando em outro"})
+      settle(view)
       refute render(view) =~ "de outro job"
       refute render(view) =~ "digitando em outro"
 
@@ -319,8 +326,9 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
           }
         ])
 
-      _ = render(view)
+      settle(view)
       send(view.pid, {:refresh_spent, job.id})
+      settle(view)
       assert has_element?(view, "[data-testid=stage-run-spent-a-1]", "US$ 0.2500 · 2.0k tokens")
 
       # It ends: the panel turns to the artifact, without a reload.
@@ -348,6 +356,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       assert_patch(view)
 
       say(ctx, job, 5, "depois de fechar")
+      settle(view)
       refute render(view) =~ "depois de fechar"
       refute has_element?(view, "[data-testid=task-events]")
     end
@@ -390,6 +399,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       assert etapa(assert_patch(view)) == "seg"
       say(ctx, seg, 1, "seg ao vivo")
       say(ctx, perf, 1, "perf ao vivo")
+      settle(view)
       assert has_element?(view, events, "seg ao vivo")
       refute has_element?(view, events, "perf ao vivo")
 
@@ -400,6 +410,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       refute has_element?(view, events, "seg ao vivo")
       say(ctx, seg, 2, "seg depois")
       say(ctx, perf, 2, "perf depois")
+      settle(view)
       assert has_element?(view, events, "perf depois")
       refute has_element?(view, events, "seg depois")
     end

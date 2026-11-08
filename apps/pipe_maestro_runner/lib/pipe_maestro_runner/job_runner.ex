@@ -433,10 +433,18 @@ defmodule PipeMaestroRunner.JobRunner do
     gated =
       if gates == [] or not Enum.all?(checked, & &1["passed"]),
         do: [],
-        else: Gates.run(dir, gates, on_os_pid)
+        else:
+          Gates.run(dir, gates,
+            on_os_pid: on_os_pid,
+            exclude: exclude ++ artifacts(checks)
+          )
 
     if checked ++ gated == [], do: nil, else: checked ++ gated
   end
+
+  # The task's artifacts folder, which the `clean` check names: each stage
+  # commits its own artifact, which changes nothing a gate verifies.
+  defp artifacts(checks), do: for(%{"artifacts" => dir} <- checks, do: dir)
 
   # A stage the agent did not block (when it was asked for structured output).
   defp stage_ok?(%{result: %{"structured_output" => %{"status" => status}}}), do: status == "ok"

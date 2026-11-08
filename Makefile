@@ -1,9 +1,9 @@
 .PHONY: help setup deps docker.up docker.down docker.reset db.migrate db.rollback server iex \
-	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick \
+	test test.cover format format.check credo dialyzer deps.check lint ci ci.quick ci.run ci.quick.run \
 	runner.login runner.start runner.doctor runner.service runner.release runner.install image \
 	deploy deploy.skip-ci \
 	runner.status runner.logout runner.binary runner.rel runner.version cp.version \
-	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.headed e2e.ui e2e.shots e2e.typecheck \
+	e2e.install e2e.db e2e.db.reset e2e.assets e2e e2e.run e2e.headed e2e.ui e2e.shots e2e.typecheck \
 	landing.shots
 
 # Burrito's single binary sets __BURRITO, and the runner app boots as the CLI when it
@@ -20,8 +20,13 @@ export DEPLOY_USER SUN_IP SSH_PORT DEPLOY_URL
 # server; its databases are apart too (config/worktree.exs).
 WORKTREE := $(shell sed -n 's|^gitdir: .*/||p' .git 2>/dev/null | tr -dc 'a-z0-9' | cut -c1-8)
 E2E_PORT ?= $(if $(WORKTREE),$(shell echo $$(( 4100 + $$(printf %s '$(WORKTREE)' | cksum | cut -d' ' -f1) % 800 ))),4003)
-E2E_MIX   = MIX_ENV=e2e E2E_PORT=$(E2E_PORT) mix
-E2E_ENV   = E2E_PORT=$(E2E_PORT)
+# The fake git hosts the suite starts (e2e/helpers/fakeForgejo.ts, fakeGitHub.ts)
+# follow the same port, so two suites at once never fight over them either.
+E2E_FORGEJO_PORT ?= $(shell echo $$(( $(E2E_PORT) + 1000 )))
+E2E_GITHUB_PORT  ?= $(shell echo $$(( $(E2E_PORT) + 2000 )))
+E2E_PORTS = E2E_PORT=$(E2E_PORT) E2E_FORGEJO_PORT=$(E2E_FORGEJO_PORT) E2E_GITHUB_PORT=$(E2E_GITHUB_PORT)
+E2E_MIX   = MIX_ENV=e2e $(E2E_PORTS) mix
+E2E_ENV   = $(E2E_PORTS)
 
 .DEFAULT_GOAL := help
 
@@ -65,9 +70,6 @@ iex: ## Start the Phoenix dev server inside IEx
 test: ## Run the whole suite
 	mix test --warnings-as-errors
 
-test.cover: ## Run the whole suite with the per-app coverage threshold
-	mix test --warnings-as-errors --cover
-
 # ── Static analysis ──────────────────────────────────────────────────────────
 
 format: ## Format every source file
@@ -91,14 +93,30 @@ lint: format.check credo deps.check dialyzer ## Run every static check
 
 # `make ci` is the gate for a change: a change is not done while it fails.
 # Order is cheapest first, so a formatting slip fails before the suite runs.
-ci: ci.quick dialyzer ## Run every check and the whole suite with coverage
+#
+# `ci`, `ci.quick`, `test.cover` and `e2e` run once per tree
+# (scripts/verified.sh): run again on a tree that already passed, they say so
+# and stop. A passing `ci.quick` also counts for `test.cover`, and `ci` reuses
+# a `ci.quick` that passed. FORCE=1 runs them regardless.
+VERIFIED = scripts/verified.sh
 
-ci.quick: ## Run every check but Dialyzer (iteration only)
+ci: ## Run every check and the whole suite with coverage (once per tree)
+	@$(VERIFIED) ci -- $(MAKE) --no-print-directory ci.run
+
+ci.run: ci.quick dialyzer
+
+ci.quick: ## Run every check but Dialyzer (once per tree)
+	@$(VERIFIED) ci.quick test.cover -- $(MAKE) --no-print-directory ci.quick.run
+
+ci.quick.run:
 	MIX_ENV=test mix compile --warnings-as-errors --force
 	mix format --check-formatted
 	mix deps.unlock --check-unused
 	mix credo --strict
 	mix test --warnings-as-errors --cover
+
+test.cover: ## Run the whole suite with the per-app coverage threshold (once per tree)
+	@$(VERIFIED) test.cover -- mix test --warnings-as-errors --cover
 
 # ── Runner ──────────────────────────────────────────────────────────────────
 
@@ -206,7 +224,10 @@ e2e.assets: ## Build the CSS and JS the e2e server serves
 
 # The server is restarted on every run: playwright.config.ts reuses whatever is
 # on the port, and a server left from before a fix would validate the old code.
-e2e: e2e.db e2e.assets ## Run the whole suite headless (FILE=tests/x.spec.ts for one spec)
+e2e: ## Run the whole suite headless (FILE=tests/x.spec.ts for one spec; once per tree)
+	@$(VERIFIED) e2e$(if $(FILE),:$(FILE)) -- $(MAKE) --no-print-directory e2e.run
+
+e2e.run: e2e.db e2e.assets
 	@pids=$$(lsof -ti:$(E2E_PORT) 2>/dev/null); [ -z "$$pids" ] || kill -9 $$pids
 	cd e2e && $(E2E_ENV) npx playwright test $(FILE)
 

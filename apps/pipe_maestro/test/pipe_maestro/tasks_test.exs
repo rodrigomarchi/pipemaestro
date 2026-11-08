@@ -408,6 +408,8 @@ defmodule PipeMaestro.TasksTest do
       create_task(ctx)
       assert_receive {:job_assign, job}
       assert job.context["gates"] == [%{"command" => "mix test", "expect" => "pass"}]
+      assert job.prompt =~ "# Gates desta etapa"
+      assert job.prompt =~ "- `mix test` (deve passar)"
     end
 
     test "a job carries no permission settings: the agent runs with every permission", ctx do
@@ -422,6 +424,7 @@ defmodule PipeMaestro.TasksTest do
       create_task(ctx, %{"directory" => "notas"})
       assert_receive {:job_assign, job}
       refute Map.has_key?(job.context, "gates")
+      refute job.prompt =~ "Gates desta etapa"
     end
 
     test "a gate not met fails the attempt; the next one gets feedback", ctx do

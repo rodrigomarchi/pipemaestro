@@ -111,6 +111,7 @@ defmodule PipeMaestro.Pipelines.Prompt do
           required(:previous) => [Stage.t()],
           optional(:instructions) => String.t() | nil,
           optional(:contract) => String.t() | nil,
+          optional(:gates) => [map()] | nil,
           optional(:answers) => map() | nil,
           optional(:files) => boolean()
         }
@@ -176,6 +177,7 @@ defmodule PipeMaestro.Pipelines.Prompt do
       feedback(context[:feedback]),
       answers(context[:answers]),
       context[:contract] || "",
+      gates(context[:gates]),
       instructions(context[:instructions])
     ]
     |> Enum.reject(&(&1 == ""))
@@ -197,6 +199,27 @@ defmodule PipeMaestro.Pipelines.Prompt do
     """
     |> String.trim_trailing()
   end
+
+  # The stage's gates, as the runner will run them: the agent need not run
+  # them only to see what they will say.
+  defp gates([_ | _] = gates) do
+    listed =
+      Enum.map_join(gates, "\n", fn %{"command" => command, "expect" => expect} ->
+        "- `#{command}` (#{if expect == "fail", do: "deve falhar", else: "deve passar"})"
+      end)
+
+    """
+    # Gates desta etapa
+
+    Quando você terminar, a plataforma roda estes comandos no diretório de trabalho, nesta ordem:
+    #{listed}
+
+    Enquanto trabalha, rode o que dá confiança na sua mudança (os testes que ela toca). Não é preciso rodar os gates só para ver o que vão dizer: se um não for atendido, você recebe a saída numa nova tentativa. Um gate que já passou na mesma árvore não roda de novo.
+    """
+    |> String.trim_trailing()
+  end
+
+  defp gates(_none), do: ""
 
   # Only a runner that uploads the job's folder names it in CP_FILES_DIR.
   defp files_rule(true) do
