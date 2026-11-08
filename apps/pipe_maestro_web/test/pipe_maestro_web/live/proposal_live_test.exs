@@ -498,6 +498,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
     test "is asked from the task and from the decisions page", ctx do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{ctx.task.id}")
+      view |> element("[data-testid=task-decision-open]") |> render_click()
 
       {:error, {:live_redirect, %{to: path}}} =
         view |> element("[data-testid=decision-suggest]") |> render_click()
