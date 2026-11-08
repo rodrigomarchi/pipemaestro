@@ -117,15 +117,38 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
 - As abas são o primeiro elemento do conteúdo: nada de card antes delas. O status (e
   um dado-chave, como o custo) vai ao lado do título, no slot `:status` de
   `Layouts.app`, visível de qualquer aba; o resumo do registro (custo, projeto,
-  branch, runner…) é uma aba **Resumo**; filtros ficam na barra superior (`:actions`);
-  um alerta acionável fica no topo da aba onde se age.
+  branch, runner…) é uma aba **Resumo**; filtros ficam numa `<.filter_bar>` acima das
+  abas; um alerta acionável fica no topo da aba onde se age.
 - O conteúdo usa a largura toda: sem coluna lateral de metadados. Cards curtos
   relacionados ficam lado a lado (`xl:grid-cols-2`); diagramas, tabelas e formulários
   ocupam a linha inteira.
 
+## Barra superior e ações da página
+
+A barra superior tem **uma linha só** em qualquer largura: `☰` · seta de voltar · workspace,
+título e status · ações da página · sino. Conta e tema ficam no pé da sidebar.
+
+- **Ações** são entradas `<:action>` de `Layouts.app`/`Layouts.backoffice`, nunca markup
+  solto: `label`, `icon` (obrigatórios), `testid` e um de `navigate`, `patch` ou `on_click`
+  (com `value`), mais `confirm`, `primary`, `danger` e `disabled`. Use `:if` na entrada para
+  esconder uma ação.
+- `PipeMaestroWeb.PageHeader.page_actions/1` decide como mostrar: **uma ação vira um botão**
+  (só o ícone no celular; sólido com `primary`, vermelho com `danger`) e **duas ou mais viram
+  o menu "Ações"** (`page-actions-trigger`), com as `danger` por último após um separador.
+  O `data-testid` da ação é o mesmo nos dois casos; nos specs, `clickPageAction`
+  (`e2e/helpers/pageActions.ts`) abre o menu quando ele existe.
+- **Voltar** é navegação, não ação: o attr `back` do layout
+  (`%{to: ..., label: "Tarefas", testid: "back-to-tasks"}`) põe uma seta antes do título.
+- **Filtros** (escolha segmentada, select) não vão na barra: ficam em `<.filter_bar>` no topo
+  do conteúdo.
+- O **status** (`:status`) some abaixo de `sm`; o título trunca.
+- **Conta e tema:** `Layouts.sidebar_account/1` no pé da sidebar, com avatar, nome e e-mail
+  (só o avatar com a sidebar recolhida), abre para cima o menu da conta; ao lado, o
+  `color_scheme_switch` (`color-scheme-toggle`). No celular ficam dentro da gaveta.
+
 ## Central de notificações no shell
 
-- O sino fica no top bar de `Layouts.app`, antes do seletor de tema, e abre um
+- O sino fica no fim da barra superior de `Layouts.app` e abre um
   `slide_over` do Petal com as abas "Em andamento" e "Notificações"
   ([ADR 0044](../adr/0044-central-de-notificacoes.md)).
 - O hook de `on_mount(:require_workspace)` (`PipeMaestroWeb.NotificationHooks`) mantém
@@ -160,8 +183,9 @@ integração, o uso) se divide em abas, cada uma focada num assunto:
   `<body>`, fora do que o LiveView atualiza). Seguir um link dela navega sem fechá-la, por
   isso `closeSheetsOnNavigation` (`assets/js/sidebar.js`) fecha toda gaveta aberta quando
   a navegação começa.
-- A barra superior põe as ações (`:actions`) numa linha própria, abaixo do título, até
-  `xl`, e elas quebram linha; no celular a barra rola com a página em vez de ficar presa.
+- A barra superior é uma linha só (ver "Barra superior e ações da página"); no celular ela
+  rola com a página em vez de ficar presa, e `mobile-navigation.spec.ts` confere a altura dela
+  em cada tela.
 - Nada pode deixar a página mais larga que a tela: o celular afasta o zoom e a página
   passa a rolar de lado. Uma fileira de botões leva `flex-wrap`; um diagrama, uma tabela
   ou um bloco de código rola dentro do próprio contêiner (`overflow-x-auto`).

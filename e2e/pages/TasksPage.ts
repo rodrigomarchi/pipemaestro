@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { selectProject } from "../helpers/projectSelect";
 import { shot } from "../helpers/screenshots";
+import { clickPageAction } from "../helpers/pageActions";
 
 /** Tasks: the list, the new-task form and one task's stages and decisions. */
 export class TasksPage {
@@ -30,7 +31,7 @@ export class TasksPage {
     /** Captures the filled form under this name (E2E_SHOTS). */
     shot?: string;
   }): Promise<string> {
-    await this.page.getByTestId("new-task").click();
+    await clickPageAction(this.page, "new-task");
     await this.page.getByTestId("task-title").fill(task.title);
     await this.page.getByTestId("task-prompt").fill(task.prompt);
     await this.page.getByTestId("task-pipeline").selectOption({ label: task.pipeline });
@@ -180,7 +181,7 @@ export class TasksPage {
 
   /** Removes the finished task's worktree (the confirmation is accepted by `acceptConfirms`). */
   async removeWorktree() {
-    await this.page.getByTestId("task-remove-worktree").click();
+    await clickPageAction(this.page, "task-remove-worktree");
   }
 
   /** "Corrigir com um prompt": runs `prompt` as a new stage of a task that ended. */
@@ -200,7 +201,7 @@ export class TasksPage {
 
   async backToList() {
     await this.page.getByTestId("back-to-tasks").click();
-    await expect(this.page.getByTestId("new-task")).toBeVisible();
+    await expect(this.page.getByTestId("page-title")).toHaveText("Tarefas");
   }
 
   listStatus(taskId: string): Locator {

@@ -144,28 +144,30 @@ defmodule PipeMaestroWeb.DecisionsLive do
       focus={analysing?(@questionnaires)}
       title="Decisões"
     >
-      <:actions>
-        <.button
-          size="sm"
-          variant={if @mine, do: "outline", else: "solid"}
-          color="gray"
-          phx-click="filter"
-          phx-value-mine="false"
-          data-testid="decisions-all"
-        >
-          Todas
-        </.button>
-        <.button
-          size="sm"
-          variant={if @mine, do: "solid", else: "outline"}
-          color="gray"
-          phx-click="filter"
-          phx-value-mine="true"
-          data-testid="decisions-mine"
-        >
-          Só as minhas
-        </.button>
-      </:actions>
+      <.filter_bar>
+        <.tabs variant="segmented">
+          <.tab
+            link_type="button"
+            variant="segmented"
+            is_active={not @mine}
+            phx-click="filter"
+            phx-value-mine="false"
+            data-testid="decisions-all"
+          >
+            Todas
+          </.tab>
+          <.tab
+            link_type="button"
+            variant="segmented"
+            is_active={@mine}
+            phx-click="filter"
+            phx-value-mine="true"
+            data-testid="decisions-mine"
+          >
+            Só as minhas
+          </.tab>
+        </.tabs>
+      </.filter_bar>
 
       <div class="space-y-4">
         <.empty

@@ -187,18 +187,13 @@ defmodule PipeMaestroWeb.BoardLive do
       active={:board}
       title="Board"
     >
-      <:actions>
-        <.button
-          size="sm"
-          icon="hero-plus"
-          to={~p"/w/#{@current_scope.workspace.slug}/tasks"}
-          link_type="live_redirect"
-          class="hidden sm:inline-flex"
-          data-testid="new-task"
-        >
-          Nova tarefa
-        </.button>
-      </:actions>
+      <:action
+        label="Nova tarefa"
+        icon="hero-plus"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/tasks"}
+        primary
+        testid="new-task"
+      />
 
       <div class="space-y-6">
         <.tabs variant="underline" class="overflow-x-auto" data-testid="board-tabs">

@@ -97,44 +97,39 @@ defmodule PipeMaestroWeb.NotificationLive do
       pending_decisions={@pending_decisions}
       notification_center={@notification_center}
     >
-      <:actions>
-        <.tabs variant="segmented">
-          <.tab
-            link_type="button"
-            variant="segmented"
-            is_active={not @unread_only}
-            phx-click="filter"
-            phx-value-filter="all"
-            data-testid="notifications-filter-all"
-          >
-            Todas
-          </.tab>
-          <.tab
-            link_type="button"
-            variant="segmented"
-            is_active={@unread_only}
-            phx-click="filter"
-            phx-value-filter="unread"
-            data-testid="notifications-filter-unread"
-          >
-            Não lidas
-          </.tab>
-        </.tabs>
-        <.button
-          :if={@notification_center.unread > 0}
-          size="sm"
-          color="white"
-          variant="outline"
-          icon="hero-check"
-          phx-click="mark_all_read"
-          aria-label="Marcar todas como lidas"
-          data-testid="notifications-mark-all-read"
-        >
-          <span class="hidden sm:inline">Marcar todas como lidas</span>
-        </.button>
-      </:actions>
+      <:action
+        :if={@notification_center.unread > 0}
+        label="Marcar todas como lidas"
+        icon="hero-check"
+        on_click="mark_all_read"
+        testid="notifications-mark-all-read"
+      />
 
       <div class="mx-auto max-w-3xl space-y-4" data-testid="notifications-page">
+        <.filter_bar class="mb-0">
+          <.tabs variant="segmented">
+            <.tab
+              link_type="button"
+              variant="segmented"
+              is_active={not @unread_only}
+              phx-click="filter"
+              phx-value-filter="all"
+              data-testid="notifications-filter-all"
+            >
+              Todas
+            </.tab>
+            <.tab
+              link_type="button"
+              variant="segmented"
+              is_active={@unread_only}
+              phx-click="filter"
+              phx-value-filter="unread"
+              data-testid="notifications-filter-unread"
+            >
+              Não lidas
+            </.tab>
+          </.tabs>
+        </.filter_bar>
         <.card :if={@notifications == []}>
           <.card_content>
             <NotificationComponents.empty_inbox unread_only={@unread_only} />

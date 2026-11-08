@@ -1,8 +1,8 @@
 /**
  * @section Phone
  * @flow A [done] On a phone every page of the workspace fits the screen's width and scrolls, the
- *   top bar's actions wrap under the title, and the menu, opened from the top bar, closes when one of
- *   its links is followed, leaving the next page scrollable
+ *   top bar is one row (several actions fold into the "Ações" menu), and the menu, opened from the
+ *   top bar, closes when one of its links is followed, leaving the next page scrollable
  */
 import { expect, test, type Page } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
@@ -43,6 +43,8 @@ async function expectFitsAndScrolls(page: Page) {
   const { width, screen, locked } = await layout(page);
   expect(width, "the page is no wider than the screen").toBeLessThanOrEqual(screen);
   expect(locked, "the page scroll is not locked").toBe(false);
+  const bar = await page.getByTestId("top-bar").boundingBox();
+  expect(bar?.height, "the top bar is a single row").toBeLessThanOrEqual(64);
 }
 
 test.describe("Phone", () => {
@@ -79,11 +81,16 @@ test.describe("Phone", () => {
     }
 
     await pipelines.open(slug);
-    await expect(app.page.getByTestId("page-actions")).toBeVisible();
-    await shot(app.page, "pipelines");
+    await app.page.getByTestId("page-actions-trigger").click();
+    await expect(app.page.getByTestId("new-pipeline")).toBeVisible();
+    await shot(app.page, "pipelines-actions");
+    await app.page.keyboard.press("Escape");
+    await expect(app.page.getByTestId("new-pipeline")).toBeHidden();
 
     await app.page.getByTestId("sidebar-open").click();
     await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-mobile-open", "true");
+    await expect(app.page.getByTestId("account-menu-trigger")).toBeVisible();
+    await expect(app.page.getByTestId("color-scheme-toggle")).toBeVisible();
     await shot(app.page, "menu-open");
     await app.page.getByTestId("sidebar-usage").click();
     await expect(app.title).toHaveText("Uso e limites");

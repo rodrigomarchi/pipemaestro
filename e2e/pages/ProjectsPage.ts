@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
+import { clickPageAction } from "../helpers/pageActions";
 
 /** Projects: a runner, one of its directories, and how to work in it. */
 export class ProjectsPage {
@@ -29,7 +30,7 @@ export class ProjectsPage {
     /** Captures the filled form under this name (E2E_SHOTS). */
     shot?: string;
   }) {
-    await this.page.getByTestId("new-project").click();
+    await clickPageAction(this.page, "new-project");
     await waitForLiveView(this.page);
     await this.page.getByTestId("project-name").fill(project.name);
     await this.pickRunner(project.runner);
@@ -70,7 +71,7 @@ export class ProjectsPage {
    * the agent to study it; waits on the proposal.
    */
   async analyze(runner: string, directory: string) {
-    await this.page.getByTestId("new-project").click();
+    await clickPageAction(this.page, "new-project");
     await waitForLiveView(this.page);
     await this.pickRunner(runner);
     await this.page.getByTestId("project-directory").selectOption(directory);

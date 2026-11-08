@@ -399,46 +399,34 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
       active={:proposals}
       focus={Job.active?(@job)}
       title={@title}
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/proposals",
+          label: "Propostas",
+          testid: "back-to-proposals"
+        }
+      }
     >
       <:status>
         <.kind_badge kind={@kind} data-testid="proposal-kind" />
         <.job_status job={@job} data-testid="proposal-status" />
       </:status>
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/proposals"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-          data-testid="back-to-proposals"
-        >
-          Propostas
-        </.button>
-        <.button
-          :if={Job.active?(@job)}
-          size="sm"
-          variant="outline"
-          color="danger"
-          icon="hero-stop"
-          phx-click="cancel"
-          disabled={!may_cancel_job?(@current_scope, @job)}
-          data-testid="proposal-cancel"
-        >
-          Cancelar
-        </.button>
-        <.button
-          :if={!Job.active?(@job)}
-          size="sm"
-          variant="outline"
-          icon="hero-arrow-path"
-          phx-click="open_feedback"
-          data-testid="proposal-regenerate"
-        >
-          Pedir de novo com ajustes
-        </.button>
-      </:actions>
+      <:action
+        :if={Job.active?(@job)}
+        label="Cancelar"
+        icon="hero-stop"
+        on_click="cancel"
+        disabled={!may_cancel_job?(@current_scope, @job)}
+        danger
+        testid="proposal-cancel"
+      />
+      <:action
+        :if={!Job.active?(@job)}
+        label="Pedir de novo com ajustes"
+        icon="hero-arrow-path"
+        on_click="open_feedback"
+        testid="proposal-regenerate"
+      />
 
       <.page_tabs
         tabs={proposal_tabs()}

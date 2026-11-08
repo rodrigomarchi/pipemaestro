@@ -42,7 +42,7 @@ test.describe("Workspace user sessions", () => {
     await expect(app.page.getByTestId("account-email")).toHaveText(user.email);
     await shot(app.page, "account-menu");
 
-    await app.signOutFromAccountMenu();
+    await app.signOut();
     await app.signIn(user.email, userPassword);
     await app.expectBoard(workspace);
     await app.signOut();

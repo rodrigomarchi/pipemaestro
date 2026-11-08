@@ -147,7 +147,7 @@ defmodule PipeMaestroWeb.UsageLive do
       active={:usage}
       title="Uso e limites"
     >
-      <:actions>
+      <.filter_bar>
         <.form
           for={filter_form(assigns)}
           id="usage-period"
@@ -178,7 +178,7 @@ defmodule PipeMaestroWeb.UsageLive do
             data-testid="usage-period"
           />
         </.form>
-      </:actions>
+      </.filter_bar>
 
       <div class="space-y-6">
         <.page_tabs
