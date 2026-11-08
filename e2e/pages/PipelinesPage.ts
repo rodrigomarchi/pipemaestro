@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { clickPageAction } from "../helpers/pageActions";
 
-/** Pipelines: the workspace's list and the stage editor. */
+/** Pipelines: the workspace's list, a pipeline's page and its editor (the diagram and its drawers). */
 export class PipelinesPage {
   readonly page: Page;
 
@@ -29,17 +29,28 @@ export class PipelinesPage {
     return this.page.getByTestId(`pipeline-version-${name}`);
   }
 
-  /** Opens a pipeline's editor on the Formulário tab (it opens on the diagram). */
+  /** Opens a pipeline's editor: its diagram, every drawer closed. */
   async edit(name: string) {
     await this.page.getByTestId(`pipeline-edit-${name}`).click();
     await expect(this.page.getByTestId("pipeline-name")).toHaveValue(name);
     await waitForLiveView(this.page);
-    await this.openFormTab();
+    await this.expectEditor();
   }
 
-  async openFormTab() {
-    await this.page.getByTestId("pipeline-view-form").click();
-    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
+  /** The editor's diagram, not the page's: the page's diagram shares its test id. */
+  async expectEditor() {
+    await expect(this.diagram).toHaveAttribute("data-mode", "edit");
+  }
+
+  /** Opens the pipeline's own settings (name, delivery, context) from the diagram's entry. */
+  async openEntry() {
+    await this.page.getByTestId("diagram-entry").click();
+    await expect(this.pagePanel).toBeVisible();
+  }
+
+  async closeEntry() {
+    await this.page.getByTestId("pipeline-panel-close").click();
+    await expect(this.pagePanel).toBeHidden();
   }
 
   stagePrompt(index: number): Locator {
@@ -92,13 +103,14 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-context-${index}`);
   }
 
-  stageCard(index: number): Locator {
-    return this.page.getByTestId(`stage-card-${index}`);
-  }
-
-  /** Saves, lands on the pipeline's page, and goes back to the list. */
+  /**
+   * Saves (from the open drawer, which covers the page, or from the page),
+   * lands on the pipeline's page, and goes back to the list.
+   */
   async save() {
-    await this.page.getByTestId("pipeline-save").click();
+    const drawerSave = this.page.locator('aside[role="dialog"]:visible [data-testid$="-save"]');
+    if ((await drawerSave.count()) > 0) await drawerSave.first().click();
+    else await this.page.getByTestId("pipeline-save").click();
     await expect(this.page.getByTestId("pipeline-page-version")).toBeVisible();
     await this.page.getByTestId("pipeline-page-back").click();
     await expect(this.page.getByTestId("page-title")).toHaveText("Pipelines");
@@ -124,9 +136,15 @@ export class PipelinesPage {
     return this.page.getByTestId(`diagram-step-${index}`);
   }
 
-  /** Opens a stage's side panel from its node. */
+  /** Opens a stage's drawer from its node. */
   async selectStage(index: number) {
     await this.page.getByTestId(`diagram-select-${index}`).click();
+  }
+
+  /** Opens a stage's drawer in the editor, where its fields are. */
+  async openStage(index: number) {
+    await this.selectStage(index);
+    await expect(this.stagePanel(index)).toBeVisible();
   }
 
   /** The panel of a stage in the editor (its fields), or of the pipeline's page (its details). */
@@ -142,7 +160,7 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-name-${index}`);
   }
 
-  /** Inserts a stage at a position from the diagram's `+`; its panel opens. */
+  /** Inserts a stage at a position from the diagram's `+` (after the last: "Adicionar etapa"); its drawer opens. */
   async insertStageAt(at: number) {
     await this.page.getByTestId(`diagram-insert-${at}`).click();
     await expect(this.stagePanel(at)).toBeVisible();

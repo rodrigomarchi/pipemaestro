@@ -1,6 +1,6 @@
 # 0040 — O diagrama é a visão padrão do pipeline
 
-- **Status:** aceita
+- **Status:** aceita; as decisões 2 e 4 e o desenho horizontal foram substituídos pela [ADR 0047](0047-um-desenho-de-pipeline.md)
 - **Data:** 07/11/2026
 - **Relacionadas:** [ADR 0001](0001-biblioteca-de-componentes.md), [ADR 0005](0005-pipelines-e-tarefas.md), [ADR 0018](0018-etapas-autonomas.md)
 

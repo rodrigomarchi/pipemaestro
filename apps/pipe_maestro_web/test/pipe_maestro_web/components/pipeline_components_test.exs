@@ -28,7 +28,20 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert count(html, "[data-testid=diagram-end]") == 1
     end
 
-    test "a parallel step forks to and joins from each of its stages" do
+    test "draws top to bottom on the rail: entry, a place per step, the end" do
+      html = render_diagram(diagram([stage("a"), stage("b")]), mode: :edit)
+
+      assert count(html, "[data-testid=pipeline-diagram] > ol > li [data-testid=diagram-entry]") ==
+               1
+
+      assert count(html, "ol > li[data-testid=diagram-step-0] [data-testid=diagram-stage-0]") == 1
+      assert count(html, "ol > li[data-testid=diagram-step-1] [data-testid=diagram-stage-1]") == 1
+      assert count(html, "ol > li [data-testid=diagram-end]") == 1
+      # Nothing scrolls sideways: the diagram fits a phone.
+      assert count(html, ".overflow-x-auto") == 0
+    end
+
+    test "a parallel step puts its stages side by side, each with its number" do
       html =
         render_diagram(
           diagram([
@@ -40,20 +53,24 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
         )
 
       assert count(html, "[data-testid=diagram-step-1][data-parallel]") == 1
-      assert count(html, "[data-testid=diagram-fork-1] path") == 3
-      assert count(html, "[data-testid=diagram-join-1] path") == 3
+      assert text(html, "[data-testid=diagram-group-1]") =~ "Em paralelo · r"
+      assert count(html, "[data-testid=diagram-step-1] [data-testid^=diagram-stage-]") == 3
+      assert count(html, "[data-testid=diagram-step-0][data-parallel]") == 0
     end
 
-    test "the diagram contains what it positions, so nothing widens the page" do
-      html = render_diagram(diagram([stage("a")]), mode: :edit)
-      assert count(html, "[data-testid=pipeline-diagram].relative.overflow-x-auto") == 1
-    end
+    test "each stage says where it stops for a person" do
+      html =
+        render_diagram(
+          diagram([
+            stage("a"),
+            stage("b", rules: [%{"field" => "risco", "op" => "==", "value" => "alto"}])
+          ])
+        )
 
-    test "a stage alone draws its line down to the rail; a group's stages do not" do
-      html = render_diagram(diagram([stage("a"), stage("b", group: "r"), stage("c", group: "r")]))
-
-      assert count(html, "[data-testid=diagram-step-0] [data-testid=diagram-drop-0]") == 1
-      assert count(html, "[data-testid=diagram-step-1] [data-testid^=diagram-drop-]") == 0
+      assert text(html, "[data-testid=diagram-edge-0-failure]") =~ "esgotou ou bloqueou"
+      assert count(html, "[data-testid=diagram-rules-0]") == 0
+      assert text(html, "[data-testid=diagram-rules-1]") =~ "Pede ajuda quando"
+      assert count(html, "[data-testid=diagram-rules-1] [data-testid=diagram-edge-1-rule-0]") == 1
     end
 
     test "a node shows its attempts loop" do
@@ -114,8 +131,9 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
 
       for at <- 0..4, do: assert(count(html, "[data-testid=diagram-insert-#{at}]") == 1)
       assert count(html, "[data-testid=diagram-insert-4][phx-click=insert_stage]") == 1
-      assert count(html, "[data-testid=diagram-left-0][disabled]") == 1
-      assert count(html, "[data-testid=diagram-right-3][disabled]") == 1
+      assert count(html, "[data-testid=diagram-up-0][disabled]") == 1
+      assert count(html, "[data-testid=diagram-down-3][disabled]") == 1
+      assert text(html, "[data-testid=diagram-insert-4]") =~ "Adicionar etapa"
       assert count(html, "[data-testid=diagram-remove-1][phx-click=remove_stage]") == 1
       # The first stage prepares the worktree and never runs in a group, so
       # neither it nor the one after it can join the one before.
@@ -125,12 +143,25 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert count(html, "[data-testid=diagram-leave-group-3][phx-click=leave_group]") == 1
     end
 
-    test "compact mode is a small, inert preview" do
+    test "compact mode is a small, inert preview: a numbered mark per stage" do
       html = render_diagram(diagram([stage("a"), stage("b")]), mode: :compact)
 
-      assert text(html, "[data-testid=diagram-stage-1]") =~ "b"
+      assert text(html, "[data-testid=diagram-stage-1]") =~ "2"
+      assert count(html, "[data-testid=diagram-stage-1][title='2. b']") == 1
       assert count(html, "[phx-click]") == 0
       assert count(html, "[data-testid=diagram-rail]") == 0
+      assert count(html, ".truncate") == 0
+    end
+
+    test "compact mode stacks the stages of a parallel step" do
+      html =
+        render_diagram(
+          diagram([stage("a"), stage("b", group: "r"), stage("c", group: "r")]),
+          mode: :compact
+        )
+
+      assert count(html, "[data-testid=diagram-step-1][data-parallel]") == 1
+      assert count(html, "[data-testid=diagram-step-1] [data-testid^=diagram-stage-]") == 2
     end
   end
 
@@ -222,7 +253,7 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert text(open, "#p") =~ "Etapa"
     end
 
-    test "is the large slide-over by default, with nothing behind it" do
+    test "is the drawer over a backdrop that closes it" do
       html =
         render_component(&PipelineComponents.side_panel/1,
           id: "p",
@@ -232,25 +263,7 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
           inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
         )
 
-      assert count(html, "#p.pc-slideover__box--lg") == 1
-      assert count(html, "#p[data-size=lg]") == 1
-      assert count(html, "[data-testid=p-backdrop]") == 0
-    end
-
-    test "wide, it takes most of the screen over a backdrop that closes it" do
-      html =
-        render_component(&PipelineComponents.side_panel/1,
-          id: "p",
-          title: "Etapa",
-          open: true,
-          size: :wide,
-          backdrop: true,
-          testid: "p",
-          inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
-        )
-
-      assert count(html, "#p[data-size=wide]") == 1
-      assert count(html, "#p.pc-slideover__box--lg") == 0
+      assert count(html, "#p.lg\\:w-\\[90vw\\]") == 1
       assert count(html, "[data-testid=p-backdrop][phx-click=close_panel]") == 1
       assert count(html, "[data-testid=p-close][phx-click=close_panel]") == 1
       assert text(html, "#p") =~ "corpo"
@@ -260,8 +273,6 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
           id: "p",
           title: "Etapa",
           open: false,
-          size: :wide,
-          backdrop: true,
           testid: "p",
           inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
         )
@@ -294,15 +305,6 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert count(html, "[data-testid=diagram-edge-1-failure][data-active]") == 1
       assert count(html, "[data-testid=diagram-edge-0-failure][data-active]") == 0
       assert count(html, "[data-testid=diagram-rail][data-waiting]") == 1
-    end
-
-    test "nodes link somewhere instead of opening a panel, when asked" do
-      html =
-        render_diagram(diagram([stage("a"), stage("b")]), link: &"#stage-#{&1.key}")
-
-      assert count(html, "a[data-testid=diagram-select-1][href='#stage-b']") == 1
-      # Nothing opens a panel: the page has none.
-      assert count(html, "[phx-click=select_node]") == 0
     end
 
     test "metrics show on their node" do
@@ -392,7 +394,7 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
           inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
         )
 
-      assert count(panel, "[phx-click=close_panel][phx-target='#explorer']") == 1
+      assert count(panel, "[phx-click=close_panel][phx-target='#explorer']") == 2
     end
   end
 

@@ -102,8 +102,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(
                view,
-               "[data-testid=task-pipeline-preview] [data-testid=diagram-stage-1]",
-               "Etapa B"
+               "[data-testid=task-pipeline-preview] [data-testid=diagram-stage-1][title='2. Etapa B']"
              )
 
       {:error, {:live_redirect, %{to: path}}} =

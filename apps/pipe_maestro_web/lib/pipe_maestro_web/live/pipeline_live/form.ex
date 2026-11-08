@@ -1,20 +1,19 @@
 defmodule PipeMaestroWeb.PipelineLive.Form do
   @moduledoc """
-  Creates or edits a pipeline: its name, delivery and context, and its stages,
-  which can be added, removed, moved and collapsed. It opens on the Diagrama
-  tab (`PipeMaestroWeb.PipelineComponents.pipeline_diagram/1`, over the form's
-  draft), where a node opens its fields in a side panel and the structure
-  changes in place; `?view=form` is the Formulário tab, a card per stage.
-  Both tabs are one form: every field (`PipeMaestroWeb.PipelineLive.FormFields`)
-  is rendered once, in the frame of the tab, and a closed panel keeps its
-  inputs in the page, hidden. Prompts are written in a
-  Markdown editor (`PipeMaestroWeb.FormComponents.markdown_editor/1`).
+  Creates or edits a pipeline: its name, delivery and context, and its stages.
+  The pipeline is its diagram (`PipeMaestroWeb.PipelineComponents.pipeline_diagram/1`,
+  over the form's draft), drawn like everywhere else; the entry or a stage
+  opens its fields (`PipeMaestroWeb.PipelineLive.FormFields`) in the drawer
+  (`PipeMaestroWeb.PipelineComponents.side_panel/1`), and the structure
+  (insert, move, remove, run in parallel) changes on the diagram. Every field
+  is rendered once: a closed drawer keeps its inputs in the page, hidden.
+  Prompts are written in a Markdown editor
+  (`PipeMaestroWeb.FormComponents.markdown_editor/1`).
   A new pipeline can start from an agent's proposal, and an existing one from
   an improvement the agent proposed for it (`?proposta=<job id>`,
   `PipeMaestro.Proposals`), to be reviewed and saved.
   The form's params are kept as they are typed, so moving a stage keeps
-  whatever was written in it; a collapsed stage keeps its inputs in the page,
-  hidden.
+  whatever was written in it.
   """
   use PipeMaestroWeb, :live_view
 
@@ -51,7 +50,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     {:ok,
      socket
      |> assign(page_title: page_title(socket.assigns.live_action), pipeline: pipeline)
-     |> assign(collapsed: MapSet.new(), from_proposal: from_proposal?(params))
+     |> assign(from_proposal: from_proposal?(params))
      |> assign(selected: if(pipeline.id, do: nil, else: :entry))
      |> put_params(starting_params(pipeline, params, workspace), nil)}
   end
@@ -155,23 +154,14 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     assign(socket, params: params, form: to_form(changeset))
   end
 
-  # Stages are known by their position, which this changes: whatever was
-  # collapsed opens again.
   defp update_stages(socket, fun) do
     params = socket.assigns.params
     stages = params |> StageParams.list() |> fun.() |> StageParams.indexed()
 
-    socket
-    |> assign(collapsed: MapSet.new())
-    |> put_params(Map.put(params, "stages", stages), socket.assigns.form.source.action)
+    put_params(socket, Map.put(params, "stages", stages), socket.assigns.form.source.action)
   end
 
   defp count(socket), do: length(StageParams.list(socket.assigns.params))
-
-  @impl true
-  def handle_params(params, _uri, socket),
-    do:
-      {:noreply, assign(socket, view: if(params["view"] == "form", do: "form", else: "diagram"))}
 
   @impl true
   def handle_event("validate", %{"pipeline" => params}, socket),
@@ -185,21 +175,6 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
 
   def handle_event("close_panel", _params, socket),
     do: {:noreply, assign(socket, selected: nil)}
-
-  def handle_event("toggle_stage", %{"index" => index}, socket) do
-    index = String.to_integer(index)
-    collapsed = socket.assigns.collapsed
-
-    collapsed =
-      if MapSet.member?(collapsed, index),
-        do: MapSet.delete(collapsed, index),
-        else: MapSet.put(collapsed, index)
-
-    {:noreply, assign(socket, collapsed: collapsed)}
-  end
-
-  def handle_event("add_stage", _params, socket),
-    do: {:noreply, update_stages(socket, &(&1 ++ [StageParams.new()]))}
 
   def handle_event("insert_stage", %{"at" => at}, socket) do
     at = String.to_integer(at)
@@ -258,28 +233,43 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
          |> push_navigate(to: ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, params: params, form: to_form(changeset))}
+        {:noreply,
+         assign(socket,
+           params: params,
+           form: to_form(changeset),
+           selected: invalid_node(changeset, socket.assigns.selected)
+         )}
     end
   end
 
-  defp tab_path(workspace, %Pipeline{id: nil}, view),
-    do: tab_query(~p"/w/#{workspace.slug}/pipelines/new", view)
+  # The drawer that shows what kept the pipeline from saving: the open one if
+  # it has an error, else the entry's or the first invalid stage's.
+  defp invalid_node(changeset, selected) do
+    # The stages the form replaced come along; only the ones it sent have a position.
+    invalid_stages =
+      for {stage, index} <-
+            changeset
+            |> Ecto.Changeset.get_change(:stages, [])
+            |> Enum.reject(&(&1.action == :replace))
+            |> Enum.with_index(),
+          not stage.valid?,
+          do: {:stage, index}
 
-  defp tab_path(workspace, pipeline, view),
-    do: tab_query(~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit", view)
+    invalid = if Keyword.delete(changeset.errors, :stages) == [], do: [], else: [:entry]
 
-  defp tab_query(path, "form"), do: path <> "?view=form"
-  defp tab_query(path, _diagram), do: path
-
-  defp tabs,
-    do: [{"diagram", "Diagrama", "hero-share"}, {"form", "Formulário", "hero-queue-list"}]
+    cond do
+      selected in (invalid ++ invalid_stages) -> selected
+      invalid != [] -> :entry
+      invalid_stages != [] -> hd(invalid_stages)
+      true -> selected
+    end
+  end
 
   @impl true
   def render(assigns) do
     assigns =
       assign(assigns,
-        diagram: PipelineDiagram.build(Ecto.Changeset.apply_changes(assigns.form.source)),
-        count: length(StageParams.list(assigns.params))
+        diagram: PipelineDiagram.build(Ecto.Changeset.apply_changes(assigns.form.source))
       )
 
     ~H"""
@@ -303,20 +293,6 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
         }
       }
     >
-      <.tabs variant="underline" class="mb-6 overflow-x-auto" data-testid="pipeline-view-tabs">
-        <.tab
-          :for={{id, label, icon} <- tabs()}
-          link_type="live_patch"
-          to={tab_path(@current_scope.workspace, @pipeline, id)}
-          is_active={@view == id}
-          variant="underline"
-          aria-current={@view == id && "page"}
-          data-testid={"pipeline-view-#{id}"}
-        >
-          <.icon name={icon} class="mr-1.5 size-4" /> {label}
-        </.tab>
-      </.tabs>
-
       <.alert
         :if={@from_proposal}
         color="info"
@@ -328,51 +304,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           do: "(vira a versão #{@pipeline.version + 1})"}.
       </.alert>
 
-      <.form for={@form} id="pipeline-form" phx-change="validate" phx-submit="save" class="space-y-6">
-        <.card :if={@view == "diagram"} variant="outline">
-          <.card_content class="!p-0">
-            <.pipeline_diagram diagram={@diagram} mode={:edit} selected={@selected} />
-          </.card_content>
-        </.card>
-
-        <div :if={@view == "form"} class="grid gap-6 xl:grid-cols-3">
-          <.card variant="outline" class="xl:col-span-2">
-            <.card_content><.identity_fields form={@form} /></.card_content>
-          </.card>
-          <.card variant="outline">
-            <.card_content><.execution_fields form={@form} /></.card_content>
-          </.card>
-          <.card variant="outline" class="xl:col-span-3">
-            <.card_content><.context_fields form={@form} /></.card_content>
-          </.card>
-        </div>
-
-        <.side_panel
-          :if={@view == "diagram"}
-          id="pipeline-panel"
-          title="Entrada e contexto"
-          description="O pipeline em si: nome, entrega, teto de custo e o que vale para todas as etapas."
-          open={@selected == :entry}
-          testid="pipeline-panel"
-        >
-          <div class="space-y-8">
-            <div><.identity_fields form={@form} /></div>
-            <div><.execution_fields form={@form} /></div>
-            <div><.context_fields form={@form} /></div>
-          </div>
-          <:footer>
-            <.button type="submit" icon="hero-check" data-testid="pipeline-panel-save">
-              Salvar
-            </.button>
-          </:footer>
-        </.side_panel>
-
-        <div :if={@view == "form"} class="flex items-center justify-between gap-2">
-          <h2 class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-            <.icon name="hero-queue-list" class="size-5 text-primary-500 dark:text-primary-400" />
-            Etapas
-          </h2>
-        </div>
+      <.form for={@form} id="pipeline-form" phx-change="validate" phx-submit="save" class="space-y-4">
         <p
           :if={@form.source.action && @form[:stages].errors != []}
           class="text-sm text-danger-600 dark:text-danger-400"
@@ -381,51 +313,52 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           {@form[:stages].errors |> Enum.map_join(" ", &elem(&1, 0))}
         </p>
 
-        <div class={@view == "form" && "space-y-4"}>
-          <.inputs_for :let={stage} field={@form[:stages]}>
-            <.card :if={@view == "form"} variant="outline" data-testid={"stage-card-#{stage.index}"}>
-              <.card_content>
-                <.stage_header
-                  stage={stage}
-                  count={@count}
-                  collapsed={MapSet.member?(@collapsed, stage.index)}
-                />
-                <div class="mt-5">
-                  <.stage_fields stage={stage} hidden={MapSet.member?(@collapsed, stage.index)} />
-                </div>
-              </.card_content>
-            </.card>
-            <.side_panel
-              :if={@view == "diagram"}
-              id={"stage-panel-#{stage.index}"}
-              title={"#{stage.index + 1}. #{stage_title(stage)}"}
-              open={@selected == {:stage, stage.index}}
-              testid={"stage-panel-#{stage.index}"}
-            >
-              <.stage_fields stage={stage} />
-              <:footer>
-                <.button
-                  type="submit"
-                  icon="hero-check"
-                  data-testid={"stage-panel-#{stage.index}-save"}
-                >
-                  Salvar
-                </.button>
-              </:footer>
-            </.side_panel>
-          </.inputs_for>
-        </div>
+        <.card variant="outline">
+          <.card_content class="!p-0">
+            <.pipeline_diagram diagram={@diagram} mode={:edit} selected={@selected} />
+          </.card_content>
+        </.card>
 
-        <div class="sticky bottom-0 z-10 -mx-1 flex flex-wrap justify-between gap-2 rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
-          <.button
-            type="button"
-            variant="outline"
-            icon="hero-plus"
-            phx-click="add_stage"
-            data-testid="stage-add"
+        <.side_panel
+          id="pipeline-panel"
+          title="Entrada e contexto"
+          description="O pipeline em si: nome, entrega, teto de custo e o que vale para todas as etapas."
+          open={@selected == :entry}
+          testid="pipeline-panel"
+        >
+          <div class="grid gap-8 xl:grid-cols-2">
+            <div><.identity_fields form={@form} /></div>
+            <div><.execution_fields form={@form} /></div>
+            <div class="xl:col-span-2"><.context_fields form={@form} /></div>
+          </div>
+          <:footer>
+            <.button type="submit" icon="hero-check" data-testid="pipeline-panel-save">
+              Salvar
+            </.button>
+          </:footer>
+        </.side_panel>
+
+        <.inputs_for :let={stage} field={@form[:stages]}>
+          <.side_panel
+            id={"stage-panel-#{stage.index}"}
+            title={"#{stage.index + 1}. #{stage_title(stage)}"}
+            open={@selected == {:stage, stage.index}}
+            testid={"stage-panel-#{stage.index}"}
           >
-            Adicionar etapa
-          </.button>
+            <.stage_fields stage={stage} />
+            <:footer>
+              <.button
+                type="submit"
+                icon="hero-check"
+                data-testid={"stage-panel-#{stage.index}-save"}
+              >
+                Salvar
+              </.button>
+            </:footer>
+          </.side_panel>
+        </.inputs_for>
+
+        <div class="sticky bottom-0 z-10 -mx-1 flex justify-end rounded-xl border border-gray-200 bg-white/90 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
           <.button type="submit" icon="hero-check" data-testid="pipeline-save">Salvar</.button>
         </div>
       </.form>

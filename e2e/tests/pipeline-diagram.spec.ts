@@ -1,8 +1,8 @@
 /**
  * @section Tarefas e pipelines
- * @flow A [done] A member opens a pipeline's page from the list: the diagram shows each stage, the parallel group forking and joining, and the rail where a person decides; a stage opens its details in a side panel
- * @flow B [done] An admin edits on the diagram: a stage's panel holds its fields and the node follows the draft; a stage is inserted between two and runs at once with the one before
- * @flow C [done] The Formulário tab shows the same draft as cards, and saving lands on the pipeline's page with the new structure
+ * @flow A [done] A member opens a pipeline's page from the list: the diagram, top to bottom, shows each stage, the parallel group side by side and where a person decides; a stage opens its details in the drawer
+ * @flow B [done] An admin edits on the same diagram: a stage's drawer holds its fields and the node follows the draft; a stage is inserted between two and runs at once with the one before, and one is added after the last
+ * @flow C [done] Saving from a drawer lands on the pipeline's page with the new structure
  */
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
@@ -11,6 +11,7 @@ import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { PipelinesPage } from "../pages/PipelinesPage";
 import { clickPageAction } from "../helpers/pageActions";
+import { waitForLiveView } from "../helpers/liveView";
 
 test.describe("Pipeline diagram", () => {
   test("shows and edits a pipeline as a diagram", async ({ page, browser }) => {
@@ -63,8 +64,8 @@ test.describe("Pipeline diagram", () => {
     await pipelines.open(workspace.slug);
     await pipelines.openPage("Refatoração");
     await clickPageAction(adminApp.page, "pipeline-page-edit");
-    await expect(pipelines.diagram).toBeVisible();
-    await expect(adminApp.page.getByTestId("stage-card-0")).toHaveCount(0);
+    await pipelines.expectEditor();
+    await waitForLiveView(adminApp.page);
 
     await pipelines.selectStage(1);
     await expect(pipelines.stagePanel(1)).toBeVisible();
@@ -83,15 +84,27 @@ test.describe("Pipeline diagram", () => {
     await expect(pipelines.diagramStep(1)).toContainText("Testes de caracterização");
     await shot(adminApp.page, "pipeline-editor-diagram");
 
-    // Flow C: the same draft as cards, then saved.
-    await pipelines.openFormTab();
-    await expect(pipelines.stageName(2)).toHaveValue("Testes de caracterização");
+    await pipelines.insertStageAt(4);
+    await pipelines.stageName(4).fill("Revisão final");
+    await pipelines.stagePrompt(4).fill("Revise o diff inteiro.");
+    await pipelines.closePanel(4);
+    await expect(pipelines.diagramStage(4)).toContainText("Revisão final");
+
+    const narrow = adminApp.page.viewportSize();
+    await adminApp.page.setViewportSize({ width: 390, height: 844 });
+    await shot(adminApp.page, "pipeline-editor-narrow");
+    await pipelines.openStage(2);
+    await shot(adminApp.page, "pipeline-editor-panel-narrow");
+    if (narrow) await adminApp.page.setViewportSize(narrow);
+
+    // Flow C: saved from the drawer.
     await expect(adminApp.page.getByTestId("stage-group-2")).toHaveValue("paralelo-1");
-    await adminApp.page.getByTestId("pipeline-save").click();
+    await adminApp.page.getByTestId("stage-panel-2-save").click();
 
     await expect(pipelines.diagram).toBeVisible();
     await expect(adminApp.page.getByTestId("pipeline-page-version")).toHaveText("v2");
     await expect(pipelines.diagramStep(1)).toHaveAttribute("data-parallel");
     await expect(pipelines.diagramStage(3)).toContainText("Verificação");
+    await expect(pipelines.diagramStage(4)).toContainText("Revisão final");
   });
 });
