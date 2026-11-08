@@ -178,6 +178,83 @@ export class TasksPage {
     return key ? `${id}-${key}` : id;
   }
 
+  /** The vertical pipeline of the "Etapas" tab: only the stages and their states. */
+  overview(): Locator {
+    return this.page.getByTestId("task-overview");
+  }
+
+  /** What concerns the whole task, beside the pipeline: runner alerts, messages, correction. */
+  sidebar(): Locator {
+    return this.page.getByTestId("task-sidebar");
+  }
+
+  /** A stage's node in the vertical pipeline, by its key. */
+  stageNode(key: string): Locator {
+    return this.page.getByTestId(`task-stage-${key}`);
+  }
+
+  /** The state badge of a stage's node. */
+  stageNodeState(key: string): Locator {
+    return this.page.getByTestId(`task-stage-state-${key}`);
+  }
+
+  /** The panel with one stage's details. */
+  stagePanel(): Locator {
+    return this.page.getByTestId("task-stage-panel");
+  }
+
+  /** Opens a stage's panel from its node; the stage goes to the URL. */
+  async openStage(key: string) {
+    await this.stageNode(key).click();
+    await expect(this.stagePanel()).toBeVisible();
+    await expect(this.page).toHaveURL(new RegExp(`[?&]etapa=${key}(&|$)`));
+  }
+
+  /** Closes the stage's panel by its button; the stage leaves the URL. */
+  async closeStage() {
+    await this.page.getByTestId("task-stage-panel-close").click();
+    await this.expectStageClosed();
+  }
+
+  /** Closes the stage's panel with Escape. */
+  async closeStageWithEscape() {
+    await this.page.keyboard.press("Escape");
+    await this.expectStageClosed();
+  }
+
+  async expectStageClosed() {
+    await expect(this.stagePanel()).toBeHidden();
+    await expect(this.page).not.toHaveURL(/[?&]etapa=/);
+  }
+
+  /** Picks one of the stage's attempts in its panel. */
+  async selectAttempt(key: string, attempt: number) {
+    await this.page.getByTestId(`task-stage-attempt-${key}-${attempt}`).click();
+    await expect(this.stageRun(key, attempt)).toBeVisible();
+  }
+
+  /** The live timeline of the running stage, in its panel. */
+  liveEvents(): Locator {
+    return this.page.getByTestId("task-events");
+  }
+
+  /** A stage attempt's artifact, rendered. */
+  stageRunArtifact(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-artifact-${key}-${attempt}`);
+  }
+
+  /** The notice over the pipeline while the task waits for a decision. */
+  decisionBanner(): Locator {
+    return this.page.getByTestId("task-decision-banner");
+  }
+
+  /** "Decidir": opens the panel of the stage that waits. */
+  async openDecision() {
+    await this.page.getByTestId("task-decision-open").click();
+    await expect(this.stagePanel()).toBeVisible();
+    await expect(this.page.getByTestId("decision-panel")).toBeVisible();
+  }
+
   /** Removes the finished task's worktree (the confirmation is accepted by `acceptConfirms`). */
   async removeWorktree() {
     await this.page.getByTestId("task-remove-worktree").click();

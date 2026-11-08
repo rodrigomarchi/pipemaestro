@@ -467,4 +467,19 @@ defmodule PipeMaestro.JobsTest do
                Jobs.recent_for_runner(ctx.workspace, runner)
     end
   end
+
+  describe "unsubscribe/1" do
+    test "stops following a job: what it relays next does not arrive", ctx do
+      job = job_fixture(ctx.runner, ctx.user)
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+
+      :ok = Jobs.subscribe({:job, job.id})
+      :ok = Jobs.relay_delta(ctx.runner, job.id, "antes")
+      assert_receive {:job_delta, _id, "antes"}
+
+      :ok = Jobs.unsubscribe({:job, job.id})
+      :ok = Jobs.relay_delta(ctx.runner, job.id, "depois")
+      refute_receive {:job_delta, _id, "depois"}
+    end
+  end
 end
