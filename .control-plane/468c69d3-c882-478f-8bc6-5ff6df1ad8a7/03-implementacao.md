@@ -42,7 +42,28 @@ banco quando ela muda, quando a etapa muda ou quando muda o job seguido.
 
 ### `apps/pipe_maestro_protocol` e `apps/pipe_maestro_runner`: não mudam
 
-O protocolo não foi tocado; os runners antigos não são afetados.
+O protocolo não foi tocado; os runners antigos não são afetados. O único ajuste
+nesses dois apps é o `mix.exs` (ferramenta de cobertura, abaixo).
+
+### Umbrella: cobertura que cabe em 256 descritores de arquivo
+
+A primeira tentativa desta etapa caiu no gate `mix test --warnings-as-errors --cover`
+com `{:file, ..., :emfile}`. A causa não é desta branch: a `origin/main` falha
+igual com `ulimit -n 256`, o limite padrão de um processo no macOS. O
+`Mix.Tasks.Test.Coverage` do Elixir 1.20 grava a página HTML de **todos** os
+módulos ao mesmo tempo (`:cover.async_analyse_to_file/3` para cada um, dois
+arquivos abertos por módulo), e o app `pipe_maestro` passou do ponto.
+
+- **`test_coverage.exs`** (raiz, novo): `PipeMaestro.TestCoverage`, a ferramenta
+  de cobertura dos apps. Ela compila com a do Mix (`Mix.Tasks.Test.Coverage.start/2`)
+  e gera o mesmo relatório: a tabela por módulo, o total e o exit 3 abaixo do
+  `threshold`. Só as páginas HTML mudam: são gravadas 16 módulos por vez. Com
+  `export`, devolve o que a do Mix devolve.
+- **`apps/*/mix.exs`**: `test_coverage: [tool: PipeMaestro.TestCoverage, ...]` e a
+  carga do arquivo **se ele existir**. A imagem de release copia só os `mix.exs`,
+  e o `Mix.env()` não serve de guarda: rodando de dentro do app, o `mix.exs` é
+  avaliado antes de o ambiente virar `test`.
+- **`.formatter.exs`**: `test_coverage.exs` entre os `inputs`.
 
 ## Testes ajustados (sem enfraquecer)
 
@@ -82,6 +103,9 @@ O protocolo não foi tocado; os runners antigos não são afetados.
 | `mix test …/components/pipeline_components_test.exs` | 27 passed |
 | `make ci.quick > /tmp/ciq.log 2>&1; echo $?` | **0**: Credo sem issues; protocol 113, domínio 592, web 521, runner 273 testes; cobertura acima de 60% |
 | `mix dialyzer` | 0 erros |
+| `(ulimit -n 256; mix test --warnings-as-errors --cover)` na raiz | **0**; antes da correção, `emfile` (também na `origin/main`) |
+| `(ulimit -n 256; make ci.quick)` | **0** |
+| threshold do `protocol` subido para 99 de propósito (revertido) | exit 3 com "Coverage test failed, threshold not met" |
 | `make e2e.typecheck` | 0 |
 | `make e2e FILE=tests/task-stage-panel.spec.ts` | 2 passed |
 | `make e2e` dos specs afetados (task-pipeline, task-files, decision-questionnaire, runner-restart, agent-proposals, notifications, job-execution, pipeline-diagram, pipeline-stage-context) | 11 passed |
