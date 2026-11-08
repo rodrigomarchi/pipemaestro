@@ -130,5 +130,5 @@ defmodule PipeMaestro.TestCoverage do
     do: Mix.shell().info("| #{number(percentage)}% | #{String.pad_trailing(name, width)} |")
 
   defp number(value),
-    do: (value / 1) |> :erlang.float_to_binary(decimals: 2) |> String.pad_leading(9)
+    do: (value * 1.0) |> :erlang.float_to_binary(decimals: 2) |> String.pad_leading(9)
 end
