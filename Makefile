@@ -20,8 +20,13 @@ export DEPLOY_USER SUN_IP SSH_PORT DEPLOY_URL
 # server; its databases are apart too (config/worktree.exs).
 WORKTREE := $(shell sed -n 's|^gitdir: .*/||p' .git 2>/dev/null | tr -dc 'a-z0-9' | cut -c1-8)
 E2E_PORT ?= $(if $(WORKTREE),$(shell echo $$(( 4100 + $$(printf %s '$(WORKTREE)' | cksum | cut -d' ' -f1) % 800 ))),4003)
-E2E_MIX   = MIX_ENV=e2e E2E_PORT=$(E2E_PORT) mix
-E2E_ENV   = E2E_PORT=$(E2E_PORT)
+# The fake git hosts the suite starts (e2e/helpers/fakeForgejo.ts, fakeGitHub.ts)
+# follow the same port, so two suites at once never fight over them either.
+E2E_FORGEJO_PORT ?= $(shell echo $$(( $(E2E_PORT) + 1000 )))
+E2E_GITHUB_PORT  ?= $(shell echo $$(( $(E2E_PORT) + 2000 )))
+E2E_PORTS = E2E_PORT=$(E2E_PORT) E2E_FORGEJO_PORT=$(E2E_FORGEJO_PORT) E2E_GITHUB_PORT=$(E2E_GITHUB_PORT)
+E2E_MIX   = MIX_ENV=e2e $(E2E_PORTS) mix
+E2E_ENV   = $(E2E_PORTS)
 
 .DEFAULT_GOAL := help
 
