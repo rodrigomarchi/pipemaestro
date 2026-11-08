@@ -291,24 +291,18 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
       workspaces={@workspaces}
       active={:pipelines}
       title={@page_title}
-    >
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={
-            if @pipeline.id,
+      back={
+        %{
+          to:
+            if(@pipeline.id,
               do: ~p"/w/#{@current_scope.workspace.slug}/pipelines/#{@pipeline.id}",
               else: ~p"/w/#{@current_scope.workspace.slug}/pipelines"
-          }
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-        >
-          {if @pipeline.id, do: "Voltar", else: "Pipelines"}
-        </.button>
-      </:actions>
-
+            ),
+          label: if(@pipeline.id, do: @pipeline.name, else: "Pipelines"),
+          testid: "back-to-pipeline"
+        }
+      }
+    >
       <.tabs variant="underline" class="mb-6 overflow-x-auto" data-testid="pipeline-view-tabs">
         <.tab
           :for={{id, label, icon} <- tabs()}

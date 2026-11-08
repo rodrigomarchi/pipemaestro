@@ -16,6 +16,7 @@ import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { ProposalPage } from "../pages/ProposalPage";
 import { RunnersPage } from "../pages/RunnersPage";
+import { clickPageAction } from "../helpers/pageActions";
 
 test.describe("Pipeline proposal", () => {
   // Real CLI processes: the first one may compile the runner app.
@@ -59,7 +60,7 @@ test.describe("Pipeline proposal", () => {
     const pipelines = new PipelinesPage(app.page);
     await pipelines.open(workspace.slug);
     const proposal = new ProposalPage(app.page);
-    await app.page.getByTestId("generate-pipeline").click();
+    await clickPageAction(app.page, "generate-pipeline");
     await app.page.getByTestId("proposal-request-text").fill("Entregar issues com testes e um PR.");
     await shot(app.page, "proposal-request");
     await proposal.submitRequest({ project: "App" });

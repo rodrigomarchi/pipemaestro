@@ -28,30 +28,22 @@ defmodule PipeMaestroWeb.PipelineLive.Show do
       workspaces={@workspaces}
       active={:pipelines}
       title={@pipeline.name}
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/pipelines",
+          label: "Pipelines",
+          testid: "pipeline-page-back"
+        }
+      }
     >
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/pipelines"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-          data-testid="pipeline-page-back"
-        >
-          Pipelines
-        </.button>
-        <.button
-          :if={can?(@current_scope, :manage_pipelines)}
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{@pipeline.id}/edit"}
-          size="sm"
-          icon="hero-pencil-square"
-          data-testid="pipeline-page-edit"
-        >
-          Editar
-        </.button>
-      </:actions>
+      <:action
+        :if={can?(@current_scope, :manage_pipelines)}
+        label="Editar"
+        icon="hero-pencil-square"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{@pipeline.id}/edit"}
+        primary
+        testid="pipeline-page-edit"
+      />
 
       <div class="space-y-4">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400">

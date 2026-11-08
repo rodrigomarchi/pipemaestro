@@ -83,17 +83,13 @@ defmodule PipeMaestroWeb.Backoffice.OperatorLive.Index do
       active={:operators}
       title="Operadores"
     >
-      <:actions>
-        <.button
-          size="sm"
-          icon="hero-plus"
-          to={~p"/backoffice/operators/new"}
-          link_type="live_patch"
-          data-testid="new-operator"
-        >
-          Novo operador
-        </.button>
-      </:actions>
+      <:action
+        label="Novo operador"
+        icon="hero-plus"
+        patch={~p"/backoffice/operators/new"}
+        primary
+        testid="new-operator"
+      />
 
       <.alert color="warning" with_icon class="mb-6">
         Operadores têm acesso total ao backoffice: criam workspaces, usuários e outros operadores.

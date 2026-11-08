@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
+import { clickPageAction } from "../helpers/pageActions";
 
 /**
  * The backoffice at /backoffice. Every element is reached by its
@@ -39,12 +40,8 @@ export class BackofficePage {
     await waitForLiveView(this.page);
   }
 
+  /** Signs out through the account menu at the foot of the sidebar. */
   async signOut() {
-    await this.page.getByTestId("sidebar-logout").click();
-    await expect(this.page.getByTestId("operator-login-email")).toBeVisible();
-  }
-
-  async signOutFromAccountMenu() {
     await this.page.getByTestId("account-menu-trigger").click();
     await this.page.getByTestId("account-logout").click();
     await expect(this.page.getByTestId("operator-login-email")).toBeVisible();
@@ -60,7 +57,7 @@ export class BackofficePage {
   /** Creates a workspace and lands on its page. */
   async createWorkspace(name: string, slug = "") {
     await this.gotoWorkspaces();
-    await this.page.getByTestId("new-workspace").click();
+    await clickPageAction(this.page, "new-workspace");
     await this.page.getByTestId("workspace-name").fill(name);
     if (slug) await this.page.getByTestId("workspace-slug").fill(slug);
     await this.page.getByTestId("workspace-save").click();
@@ -81,7 +78,7 @@ export class BackofficePage {
 
   /** On a workspace page: renames it and returns to the list. */
   async editWorkspace(name: string, slug: string) {
-    await this.page.getByTestId("edit-workspace").click();
+    await clickPageAction(this.page, "edit-workspace");
     await this.page.getByTestId("workspace-name").fill(name);
     await this.page.getByTestId("workspace-slug").fill(slug);
     await this.page.getByTestId("workspace-save").click();
@@ -123,7 +120,7 @@ export class BackofficePage {
   /** Creates a user outside any workspace and lands on their page. */
   async createUser(name: string, email: string, password: string) {
     await this.gotoUsers();
-    await this.page.getByTestId("new-user").click();
+    await clickPageAction(this.page, "new-user");
     await this.page.getByTestId("user-form-name").fill(name);
     await this.page.getByTestId("user-form-email").fill(email);
     await this.page.getByTestId("user-form-password").fill(password);
@@ -175,7 +172,7 @@ export class BackofficePage {
 
   async createOperator(name: string, email: string, password: string) {
     await this.gotoOperators();
-    await this.page.getByTestId("new-operator").click();
+    await clickPageAction(this.page, "new-operator");
     await this.page.getByTestId("operator-form-name").fill(name);
     await this.page.getByTestId("operator-form-email").fill(email);
     await this.page.getByTestId("operator-form-password").fill(password);

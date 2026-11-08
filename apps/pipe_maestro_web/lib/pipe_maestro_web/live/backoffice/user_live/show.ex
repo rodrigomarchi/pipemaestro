@@ -121,13 +121,8 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
       current_operator={@current_operator}
       active={:users}
       title={@user.name}
+      back={%{to: ~p"/backoffice/users", label: "Usuários", testid: "back-to-users"}}
     >
-      <:breadcrumb>
-        <.link navigate={~p"/backoffice/users"} class="hover:text-gray-900 dark:hover:text-white">
-          Usuários
-        </.link>
-      </:breadcrumb>
-
       <div class="space-y-6">
         <.card variant="outline">
           <.card_content class="flex flex-wrap items-center gap-4">

@@ -87,17 +87,13 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
       active={:workspaces}
       title="Workspaces"
     >
-      <:actions>
-        <.button
-          size="sm"
-          icon="hero-plus"
-          to={~p"/backoffice/workspaces/new"}
-          link_type="live_patch"
-          data-testid="new-workspace"
-        >
-          Novo workspace
-        </.button>
-      </:actions>
+      <:action
+        label="Novo workspace"
+        icon="hero-plus"
+        patch={~p"/backoffice/workspaces/new"}
+        primary
+        testid="new-workspace"
+      />
 
       <.card variant="outline">
         <.table

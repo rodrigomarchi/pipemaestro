@@ -18,6 +18,7 @@ import { ProjectsPage } from "../pages/ProjectsPage";
 import { ProposalPage } from "../pages/ProposalPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
+import { clickPageAction } from "../helpers/pageActions";
 
 test.describe("Agent proposals", () => {
   // Real CLI processes: the first one may compile the runner app.
@@ -64,7 +65,7 @@ test.describe("Agent proposals", () => {
 
     // Flow A: a task written from an idea.
     await tasks.open(workspace.slug);
-    await app.page.getByTestId("task-generate").click();
+    await clickPageAction(app.page, "task-generate");
     await app.page.getByTestId("proposal-request-text").fill("O login trava quando muita gente entra junto.");
     await expect(app.page.getByTestId("proposal-request-auto-approve")).toBeChecked();
     await shot(app.page, "task-proposal-request");
@@ -83,7 +84,7 @@ test.describe("Agent proposals", () => {
 
     // Flow D: a task written for a chosen pipeline, created and started without review.
     await tasks.open(workspace.slug);
-    await app.page.getByTestId("task-generate").click();
+    await clickPageAction(app.page, "task-generate");
     await app.page.getByTestId("proposal-request-text").fill("O login trava de novo.");
     await proposal.submitRequest({ project: "App", pipeline: "Correção de bug" });
     // The agent names "Prompt único", but the chosen pipeline holds. Watching the proposal, the
@@ -106,7 +107,7 @@ test.describe("Agent proposals", () => {
 
     // Flow E: a task the agent finds not ready stays for review.
     await tasks.open(workspace.slug);
-    await app.page.getByTestId("task-generate").click();
+    await clickPageAction(app.page, "task-generate");
     await app.page.getByTestId("proposal-request-text").fill("Melhorar o login [nao-pronta]");
     await proposal.submitRequest({ project: "App" });
     await proposal.waitForAnswer();

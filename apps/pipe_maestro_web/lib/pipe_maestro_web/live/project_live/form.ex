@@ -148,20 +148,14 @@ defmodule PipeMaestroWeb.ProjectLive.Form do
       workspaces={@workspaces}
       active={:projects}
       title={@page_title}
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/projects",
+          label: "Projetos",
+          testid: "back-to-projects"
+        }
+      }
     >
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/projects"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-        >
-          Projetos
-        </.button>
-      </:actions>
-
       <.form for={@form} id="project-form" phx-change="validate" phx-submit="save" class="space-y-6">
         <.card variant="outline">
           <.card_content>

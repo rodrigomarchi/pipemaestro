@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
+import { clickPageAction } from "../helpers/pageActions";
 
 /** Runner screens on the customer side: activation and the workspace's runners. */
 export class RunnersPage {
@@ -56,7 +57,7 @@ export class RunnersPage {
 
   /** Opens the "Conectar runner" modal and returns its login command. */
   async openConnect(): Promise<Locator> {
-    await this.page.getByTestId("connect-runner").click();
+    await clickPageAction(this.page, "connect-runner");
     const login = this.page.getByTestId("connect-login-command");
     await expect(login).toBeVisible();
     return login;

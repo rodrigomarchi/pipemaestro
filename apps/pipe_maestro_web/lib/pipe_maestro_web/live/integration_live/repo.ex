@@ -182,41 +182,23 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
       workspaces={@workspaces}
       active={:integrations}
       title={@repo.full_name}
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}",
+          label: @connection.name,
+          testid: "repo-back"
+        }
+      }
     >
-      <:actions>
-        <.button
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-arrow-left"
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}"}
-          data-testid="repo-back"
-        >
-          {@connection.name}
-        </.button>
-        <.button
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-arrow-path"
-          phx-click="sync"
-          data-testid="repo-sync"
-        >
-          Sincronizar agora
-        </.button>
-        <.button
-          size="sm"
-          variant="ghost"
-          color="danger"
-          icon="hero-link-slash"
-          phx-click="unlink"
-          data-confirm={"Desvincular #{@repo.full_name}? As tarefas continuam; o webhook criado pela plataforma sai."}
-          data-testid="repo-unlink"
-        >
-          Desvincular
-        </.button>
-      </:actions>
+      <:action label="Sincronizar agora" icon="hero-arrow-path" on_click="sync" testid="repo-sync" />
+      <:action
+        label="Desvincular"
+        icon="hero-link-slash"
+        on_click="unlink"
+        confirm={"Desvincular #{@repo.full_name}? As tarefas continuam; o webhook criado pela plataforma sai."}
+        danger
+        testid="repo-unlink"
+      />
 
       <div class="space-y-6">
         <.card variant="outline">

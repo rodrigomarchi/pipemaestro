@@ -198,20 +198,13 @@ defmodule PipeMaestroWeb.TaskLive.Index do
       active={:tasks}
       title="Tarefas"
     >
-      <:actions>
-        <.button
-          size="sm"
-          variant="outline"
-          icon="hero-cpu-chip"
-          phx-click="open_proposal_request"
-          data-testid="task-generate"
-        >
-          Escrever com IA
-        </.button>
-        <.button size="sm" icon="hero-plus" phx-click="open_new" data-testid="new-task">
-          Nova tarefa
-        </.button>
-      </:actions>
+      <:action label="Nova tarefa" icon="hero-plus" on_click="open_new" primary testid="new-task" />
+      <:action
+        label="Escrever com IA"
+        icon="hero-cpu-chip"
+        on_click="open_proposal_request"
+        testid="task-generate"
+      />
 
       <.card variant="outline">
         <.card_header

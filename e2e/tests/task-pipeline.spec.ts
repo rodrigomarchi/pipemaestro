@@ -31,6 +31,7 @@ import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
+import { clickPageAction } from "../helpers/pageActions";
 
 /** A git command in `dir`, its output trimmed. */
 function git(dir: string, ...args: string[]): string {
@@ -265,7 +266,7 @@ test.describe("Task pipeline", () => {
     await expect(tasks.status).toHaveText("Aguardando decisão");
     await expect(tasks.decisionReason).toContainText("foi interrompida");
     await shot(app.page, "task-interrupted");
-    await app.page.getByTestId("task-cancel").click();
+    await clickPageAction(app.page, "task-cancel");
     await expect(tasks.status).toHaveText("Cancelada");
     await expect(app.page.getByTestId("task-correct")).toBeVisible();
 

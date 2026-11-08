@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
+import { clickPageAction } from "../helpers/pageActions";
 
 /** Pipelines: the workspace's list and the stage editor. */
 export class PipelinesPage {
@@ -16,7 +17,7 @@ export class PipelinesPage {
   }
 
   async createDefaults() {
-    await this.page.getByTestId("create-default-pipelines").click();
+    await clickPageAction(this.page, "create-default-pipelines");
     await expect(this.pipeline("Correção de bug")).toBeVisible();
   }
 
@@ -100,7 +101,7 @@ export class PipelinesPage {
     await this.page.getByTestId("pipeline-save").click();
     await expect(this.page.getByTestId("pipeline-page-version")).toBeVisible();
     await this.page.getByTestId("pipeline-page-back").click();
-    await expect(this.page.getByTestId("create-default-pipelines")).toBeVisible();
+    await expect(this.page.getByTestId("page-title")).toHaveText("Pipelines");
   }
 
   /** A pipeline's page, from the list: the diagram. */

@@ -157,6 +157,13 @@ defmodule PipeMaestroWeb.JobLive do
       active={:jobs}
       focus={Job.active?(@job)}
       title="Execução"
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/jobs",
+          label: "Execuções",
+          testid: "back-to-jobs"
+        }
+      }
     >
       <:status>
         <.job_status job={@job} data-testid="job-status" />
@@ -168,31 +175,15 @@ defmodule PipeMaestroWeb.JobLive do
           data-testid="job-cost-badge"
         />
       </:status>
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/jobs"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-          data-testid="back-to-jobs"
-        >
-          Execuções
-        </.button>
-        <.button
-          :if={Job.active?(@job) and is_nil(@job.cancel_requested_at)}
-          size="sm"
-          variant="outline"
-          color="danger"
-          icon="hero-stop"
-          phx-click="cancel"
-          data-confirm="Cancelar esta execução?"
-          data-testid="job-cancel"
-        >
-          Cancelar
-        </.button>
-      </:actions>
+      <:action
+        :if={Job.active?(@job) and is_nil(@job.cancel_requested_at)}
+        label="Cancelar"
+        icon="hero-stop"
+        on_click="cancel"
+        confirm="Cancelar esta execução?"
+        danger
+        testid="job-cancel"
+      />
 
       <div class="space-y-6">
         <.page_tabs

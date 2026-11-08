@@ -70,18 +70,14 @@ defmodule PipeMaestroWeb.ProjectLive.Index do
       active={:projects}
       title="Projetos"
     >
-      <:actions>
-        <.button
-          :if={can?(@current_scope, :manage_projects)}
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/projects/new"}
-          size="sm"
-          icon="hero-plus"
-          data-testid="new-project"
-        >
-          Novo projeto
-        </.button>
-      </:actions>
+      <:action
+        :if={can?(@current_scope, :manage_projects)}
+        label="Novo projeto"
+        icon="hero-plus"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/projects/new"}
+        primary
+        testid="new-project"
+      />
 
       <.card :if={@projects == []} variant="outline">
         <.card_content>
