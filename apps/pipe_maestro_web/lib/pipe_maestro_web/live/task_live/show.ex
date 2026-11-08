@@ -578,6 +578,13 @@ defmodule PipeMaestroWeb.TaskLive.Show do
       active={:tasks}
       focus={Task.active?(@task)}
       title={@task.title}
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/tasks",
+          label: "Tarefas",
+          testid: "back-to-tasks"
+        }
+      }
     >
       <:status>
         <.task_status task={@task} data-testid="task-status" />
@@ -595,76 +602,43 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           data-testid="task-cost-badge"
         />
       </:status>
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/tasks"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-          data-testid="back-to-tasks"
-        >
-          Tarefas
-        </.button>
-        <.button
-          :if={!Task.active?(@task)}
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-arrow-path"
-          phx-click="rerun"
-          data-testid="task-rerun"
-        >
-          Reexecutar
-        </.button>
-        <.button
-          :if={@task.merge_state == "blocked" and @task.status == :succeeded}
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-arrows-pointing-in"
-          phx-click="retry_merge"
-          data-testid="task-merge-retry"
-        >
-          Tentar o merge de novo
-        </.button>
-        <.button
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-document-duplicate"
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/tasks?duplicate=#{@task.id}"}
-          data-testid="task-duplicate"
-        >
-          Duplicar
-        </.button>
-        <.button
-          :if={removable_worktree?(@task)}
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-trash"
-          phx-click="remove_worktree"
-          data-confirm="Remover o worktree desta tarefa? O branch continua no repositório; o que não foi commitado se perde."
-          data-testid="task-remove-worktree"
-        >
-          Remover worktree
-        </.button>
-        <.button
-          :if={Task.active?(@task) and can?(@current_scope, :cancel_task, @task)}
-          size="sm"
-          variant="outline"
-          color="danger"
-          icon="hero-stop"
-          phx-click="cancel"
-          data-confirm="Cancelar esta tarefa?"
-          data-testid="task-cancel"
-        >
-          Cancelar
-        </.button>
-      </:actions>
+      <:action
+        :if={!Task.active?(@task)}
+        label="Reexecutar"
+        icon="hero-arrow-path"
+        on_click="rerun"
+        testid="task-rerun"
+      />
+      <:action
+        :if={@task.merge_state == "blocked" and @task.status == :succeeded}
+        label="Tentar o merge de novo"
+        icon="hero-arrows-pointing-in"
+        on_click="retry_merge"
+        testid="task-merge-retry"
+      />
+      <:action
+        label="Duplicar"
+        icon="hero-document-duplicate"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/tasks?duplicate=#{@task.id}"}
+        testid="task-duplicate"
+      />
+      <:action
+        :if={removable_worktree?(@task)}
+        label="Remover worktree"
+        icon="hero-trash"
+        on_click="remove_worktree"
+        confirm="Remover o worktree desta tarefa? O branch continua no repositório; o que não foi commitado se perde."
+        testid="task-remove-worktree"
+      />
+      <:action
+        :if={Task.active?(@task) and can?(@current_scope, :cancel_task, @task)}
+        label="Cancelar"
+        icon="hero-stop"
+        on_click="cancel"
+        confirm="Cancelar esta tarefa?"
+        danger
+        testid="task-cancel"
+      />
 
       <div class="space-y-6">
         <.page_tabs

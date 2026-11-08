@@ -6,6 +6,7 @@ defmodule PipeMaestroWeb.Layouts do
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.BrandComponents, only: [logo_mark: 1]
+  import PipeMaestroWeb.PageHeader
 
   alias PipeMaestro.Version
 
@@ -99,8 +100,10 @@ defmodule PipeMaestroWeb.Layouts do
   @doc """
   The signed-in app shell of a workspace: a sidebar that closes to a rail of
   icons (the choice kept in the browser, `assets/js/sidebar.js`, and closed on
-  its own on a page with `focus`), top bar with the workspace switcher, the
-  title and its status, and the user menu, and page content.
+  its own on a page with `focus`) and holds the account menu and the color
+  scheme at its foot; a one-row top bar with the arrow back, the workspace
+  switcher, the title and its status, the page's actions and the bell; and
+  page content.
 
   ## Examples
 
@@ -128,10 +131,15 @@ defmodule PipeMaestroWeb.Layouts do
     default: false,
     doc: "the page follows work in progress: the sidebar closes to its icons to give it room"
 
-  slot :status,
-    doc: "badges beside the title (a record's status, a key number), seen from every tab"
+  attr :back, :map,
+    default: nil,
+    doc: "the parent page for the arrow before the title: `to`, `label` and `testid`"
 
-  slot :actions, doc: "buttons rendered on the right of the top bar"
+  slot :status,
+    doc:
+      "badges beside the title (a record's status, a key number), seen from every tab; hidden on a phone"
+
+  action_slot()
   slot :inner_block, required: true
 
   @spec app(map()) :: Phoenix.LiveView.Rendered.t()
@@ -271,13 +279,26 @@ defmodule PipeMaestroWeb.Layouts do
 
           <:footer>
             <.sidebar_toggle for="app-sidebar" data-testid="sidebar-toggle" />
-            <.logout_button to={~p"/logout"} variant="sidebar" data-testid="sidebar-logout" />
+            <.sidebar_account
+              name={@current_scope.user.name}
+              email={@current_scope.user.email}
+              scheme_id="app-scheme"
+            >
+              <.dropdown_menu_item
+                link_type="a"
+                to={~p"/workspaces"}
+                data-testid="account-switch-workspace"
+              >
+                <.icon name="hero-squares-2x2" class="size-5" /> Trocar de workspace
+              </.dropdown_menu_item>
+              <.logout_button to={~p"/logout"} data-testid="account-logout" />
+            </.sidebar_account>
             <.app_version class="pc-sidebar__brand block px-3 pt-2" />
           </:footer>
         </.sidebar_nav>
       </:sidebar>
 
-      <header class={header_class()}>
+      <header class={header_class()} data-testid="top-bar">
         <.sidebar_trigger
           for="app-sidebar"
           target="mobile"
@@ -290,6 +311,7 @@ defmodule PipeMaestroWeb.Layouts do
           class="hidden md:inline-flex"
           data-testid="sidebar-collapse"
         />
+        <.back_link :if={@back} back={@back} />
         <div class="min-w-0 flex-1">
           <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
           <div class="flex min-w-0 items-center gap-2">
@@ -299,31 +321,18 @@ defmodule PipeMaestroWeb.Layouts do
             >
               {@title}
             </h1>
-            <div :if={@status != []} class="flex shrink-0 items-center gap-1.5">
+            <div :if={@status != []} class="hidden shrink-0 items-center gap-1.5 sm:flex">
               {render_slot(@status)}
             </div>
           </div>
         </div>
-        <.header_actions actions={@actions} />
-        <div class="flex shrink-0 items-center gap-2">
-          <.live_component
-            module={PipeMaestroWeb.NotificationCenter}
-            id="notification-center"
-            center={@notification_center}
-            current_scope={@current_scope}
-          />
-          <.color_scheme_switch id="app-scheme" variant="dropdown" />
-          <.account_menu name={@current_scope.user.name} email={@current_scope.user.email}>
-            <.dropdown_menu_item
-              link_type="a"
-              to={~p"/workspaces"}
-              data-testid="account-switch-workspace"
-            >
-              <.icon name="hero-squares-2x2" class="size-5" /> Trocar de workspace
-            </.dropdown_menu_item>
-            <.logout_button to={~p"/logout"} variant="menu" data-testid="account-logout" />
-          </.account_menu>
-        </div>
+        <.page_actions action={@action} />
+        <.live_component
+          module={PipeMaestroWeb.NotificationCenter}
+          id="notification-center"
+          center={@notification_center}
+          current_scope={@current_scope}
+        />
       </header>
 
       <main class="px-4 py-6 sm:px-6 lg:px-8">
@@ -398,8 +407,11 @@ defmodule PipeMaestroWeb.Layouts do
 
   attr :title, :string, required: true, doc: "the page title shown in the top bar"
 
-  slot :breadcrumb, doc: "a link back to the parent page, shown above the title"
-  slot :actions, doc: "buttons rendered on the right of the top bar"
+  attr :back, :map,
+    default: nil,
+    doc: "the parent page for the arrow before the title: `to`, `label` and `testid`"
+
+  action_slot()
   slot :inner_block, required: true
 
   @spec backoffice(map()) :: Phoenix.LiveView.Rendered.t()
@@ -443,28 +455,31 @@ defmodule PipeMaestroWeb.Layouts do
           </.sidebar_group>
 
           <:footer>
-            <.logout_button
-              to={~p"/backoffice/logout"}
-              variant="sidebar"
-              data-testid="sidebar-logout"
-            />
+            <.sidebar_account
+              name={@current_operator.name}
+              email={@current_operator.email}
+              scheme_id="backoffice-scheme"
+            >
+              <.logout_button
+                to={~p"/backoffice/logout"}
+                data-testid="account-logout"
+              />
+            </.sidebar_account>
             <.app_version class="pc-sidebar__brand block px-3 pt-2" />
           </:footer>
         </.sidebar_nav>
       </:sidebar>
 
-      <header class={header_class()}>
+      <header class={header_class()} data-testid="top-bar">
         <.sidebar_trigger for="backoffice-sidebar" target="mobile" class="md:hidden" />
         <.sidebar_trigger
           for="backoffice-sidebar"
           target="collapse"
           class="hidden md:inline-flex"
         />
+        <.back_link :if={@back} back={@back} />
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <.badge size="xs" color="warning" variant="soft" label="Backoffice" />
-            {render_slot(@breadcrumb)}
-          </div>
+          <.badge size="xs" color="warning" variant="soft" label="Backoffice" />
           <h1
             class="truncate text-base font-semibold text-gray-900 dark:text-white"
             data-testid="page-title"
@@ -472,13 +487,7 @@ defmodule PipeMaestroWeb.Layouts do
             {@title}
           </h1>
         </div>
-        <.header_actions actions={@actions} />
-        <div class="flex shrink-0 items-center gap-2">
-          <.color_scheme_switch id="backoffice-scheme" variant="dropdown" />
-          <.account_menu name={@current_operator.name} email={@current_operator.email}>
-            <.logout_button to={~p"/backoffice/logout"} variant="menu" data-testid="account-logout" />
-          </.account_menu>
-        </div>
+        <.page_actions action={@action} />
       </header>
 
       <main class="px-4 py-6 sm:px-6 lg:px-8">
@@ -491,62 +500,83 @@ defmodule PipeMaestroWeb.Layouts do
     """
   end
 
-  # The top bar. Narrower than xl the page's actions take a row of their own
-  # under the title, wrapping as needed, so they never push the page wider than
-  # the screen; on a phone it scrolls away with the page instead of pinning
-  # rows of buttons over the content. The blur sits on a layer of its own: a
-  # backdrop filter on the header would hold the notification panel (fixed)
-  # inside it.
+  # The top bar: one row at every width. The title truncates, the status
+  # hides on a phone and the page's actions fold into one menu
+  # (`PageHeader.page_actions/1`), so nothing ever wraps onto a second row.
+  # On a phone it scrolls away with the page. The blur sits on a layer of its
+  # own: a backdrop filter on the header would hold the notification panel
+  # (fixed) inside it.
   defp header_class do
-    "relative z-20 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-200 bg-white/80 px-4 py-3 " <>
+    "relative z-20 flex h-14 flex-nowrap items-center gap-2 border-b border-gray-200 bg-white/80 px-4 " <>
       "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:backdrop-blur before:content-[''] " <>
-      "sm:px-6 md:sticky md:top-0 xl:h-16 xl:flex-nowrap xl:py-0 " <>
+      "sm:gap-3 sm:px-6 md:sticky md:top-0 md:h-16 " <>
       "dark:border-gray-800 dark:bg-gray-950/80"
   end
 
-  attr :actions, :list, required: true
-
-  defp header_actions(assigns) do
-    ~H"""
-    <div
-      :if={@actions != []}
-      class="order-last flex w-full flex-wrap items-center gap-2 xl:order-none xl:w-auto xl:justify-end"
-      data-testid="page-actions"
-    >
-      {render_slot(@actions)}
-    </div>
-    """
-  end
-
   @doc """
-  The avatar menu in the top bar. The panel opens with who is signed in, so the
-  account in use is always one click away; the inner block holds the actions.
+  The foot of the sidebar: the signed-in account, a row with the avatar, name
+  and e-mail that opens upward a menu headed by who is signed in (the inner
+  block holds its actions), and the color scheme toggle beside it. On the
+  icon rail only the avatar is left, the toggle under it.
   """
   attr :name, :string, required: true
   attr :email, :string, required: true
+  attr :scheme_id, :string, required: true, doc: "the id of the color scheme toggle"
   slot :inner_block, required: true
 
-  @spec account_menu(map()) :: Phoenix.LiveView.Rendered.t()
-  def account_menu(assigns) do
+  @spec sidebar_account(map()) :: Phoenix.LiveView.Rendered.t()
+  def sidebar_account(assigns) do
     ~H"""
-    <.dropdown id="account-menu" placement="left">
-      <:trigger_element>
-        <.avatar name={@name} size="sm" random_color data-testid="account-menu-trigger" />
-      </:trigger_element>
-      <div class="px-3 py-2">
-        <p
-          class="truncate text-sm font-medium text-gray-900 dark:text-white"
-          data-testid="account-name"
-        >
-          {@name}
-        </p>
-        <p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="account-email">
-          {@email}
-        </p>
-      </div>
-      <.dropdown_menu_separator />
-      {render_slot(@inner_block)}
-    </.dropdown>
+    <div class="flex items-center gap-1 md:in-data-[collapsed=true]:flex-col">
+      <.dropdown
+        id="account-menu"
+        side="top"
+        align="start"
+        class="pc-user-menu--sidebar min-w-0 flex-1"
+        trigger_class="pc-user-menu__row"
+        menu_items_wrapper_class="w-60"
+      >
+        <:trigger_element>
+          <.avatar
+            name={@name}
+            size="sm"
+            random_color
+            aria-hidden="true"
+            data-testid="account-menu-trigger"
+          />
+          <span class="pc-user-menu__identity">
+            <span class="pc-user-menu__name">{@name}</span>
+            <span class="pc-user-menu__email">{@email}</span>
+          </span>
+          <%!-- The icon's own utility outranks Petal's rule that hides it on the rail. --%>
+          <.icon
+            name="hero-chevron-up-down"
+            class="pc-dropdown__chevron md:in-data-[collapsed=true]:hidden"
+          />
+        </:trigger_element>
+        <div class="px-3 py-2">
+          <p
+            class="truncate text-sm font-medium text-gray-900 dark:text-white"
+            data-testid="account-name"
+          >
+            {@name}
+          </p>
+          <p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="account-email">
+            {@email}
+          </p>
+        </div>
+        <.dropdown_menu_separator />
+        {render_slot(@inner_block)}
+      </.dropdown>
+      <.color_scheme_switch
+        id={@scheme_id}
+        variant="toggle"
+        light_label="Claro"
+        dark_label="Escuro"
+        class="shrink-0"
+        data-testid="color-scheme-toggle"
+      />
+    </div>
     """
   end
 
@@ -581,11 +611,9 @@ defmodule PipeMaestroWeb.Layouts do
 
   @doc """
   "Sair" as a real form posting `DELETE` to `to`, so signing out never depends
-  on JavaScript turning a link into a non-GET request. Styled as a sidebar item
-  or as a menu item.
+  on JavaScript turning a link into a non-GET request. Styled as a menu item.
   """
   attr :to, :string, required: true
-  attr :variant, :string, required: true, values: ["sidebar", "menu"]
   attr :rest, :global
 
   @spec logout_button(map()) :: Phoenix.LiveView.Rendered.t()
@@ -593,17 +621,6 @@ defmodule PipeMaestroWeb.Layouts do
     ~H"""
     <.form for={%{}} action={@to} method="delete" class="contents">
       <button
-        :if={@variant == "sidebar"}
-        type="submit"
-        class="pc-sidebar-item w-full"
-        title="Sair"
-        {@rest}
-      >
-        <.icon name="hero-arrow-left-start-on-rectangle" class="pc-sidebar-item__icon" />
-        <span class="pc-sidebar-item__label">Sair</span>
-      </button>
-      <button
-        :if={@variant == "menu"}
         type="submit"
         class="pc-dropdown__menu-item w-full"
         role="menuitem"

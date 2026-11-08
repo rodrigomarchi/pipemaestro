@@ -83,6 +83,8 @@ defmodule PipeMaestroWeb do
       use PetalComponents
       # The form pattern: icon labels, Markdown editors, section headings
       import PipeMaestroWeb.FormComponents
+      # The bar that holds a page's filters, at the top of its content
+      import PipeMaestroWeb.PageHeader, only: [filter_bar: 1]
 
       # Common modules used in templates
       import PipeMaestro.Authorization, only: [can?: 2, can?: 3]

@@ -55,17 +55,13 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Index do
       active={:users}
       title="Usuários"
     >
-      <:actions>
-        <.button
-          size="sm"
-          icon="hero-plus"
-          to={~p"/backoffice/users/new"}
-          link_type="live_patch"
-          data-testid="new-user"
-        >
-          Novo usuário
-        </.button>
-      </:actions>
+      <:action
+        label="Novo usuário"
+        icon="hero-plus"
+        patch={~p"/backoffice/users/new"}
+        primary
+        testid="new-user"
+      />
 
       <.card variant="outline">
         <.table

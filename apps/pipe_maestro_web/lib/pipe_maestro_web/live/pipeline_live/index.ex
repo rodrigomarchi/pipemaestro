@@ -161,59 +161,41 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
       active={:pipelines}
       title="Pipelines"
     >
-      <:actions>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/proposals"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-cpu-chip"
-          data-testid="pipelines-proposals"
-        >
-          Propostas
-        </.button>
-        <.button
-          :if={can?(@current_scope, :manage_pipelines)}
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-arrow-up-tray"
-          phx-click="open_import"
-          data-testid="import-pipeline"
-        >
-          Importar
-        </.button>
-        <.button
-          :if={can?(@current_scope, :manage_pipelines)}
-          size="sm"
-          icon="hero-cpu-chip"
-          phx-click="open_generate"
-          data-testid="generate-pipeline"
-        >
-          Gerar com IA
-        </.button>
-        <.button
-          :if={can?(@current_scope, :manage_pipelines)}
-          size="sm"
-          variant="outline"
-          icon="hero-sparkles"
-          phx-click="create_defaults"
-          data-testid="create-default-pipelines"
-        >
-          Criar pipelines padrão
-        </.button>
-        <.button
-          :if={can?(@current_scope, :manage_pipelines)}
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/pipelines/new"}
-          size="sm"
-          icon="hero-plus"
-          data-testid="new-pipeline"
-        >
-          Novo pipeline
-        </.button>
-      </:actions>
+      <:action
+        :if={can?(@current_scope, :manage_pipelines)}
+        label="Novo pipeline"
+        icon="hero-plus"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/pipelines/new"}
+        primary
+        testid="new-pipeline"
+      />
+      <:action
+        :if={can?(@current_scope, :manage_pipelines)}
+        label="Gerar com IA"
+        icon="hero-cpu-chip"
+        on_click="open_generate"
+        testid="generate-pipeline"
+      />
+      <:action
+        :if={can?(@current_scope, :manage_pipelines)}
+        label="Importar"
+        icon="hero-arrow-up-tray"
+        on_click="open_import"
+        testid="import-pipeline"
+      />
+      <:action
+        :if={can?(@current_scope, :manage_pipelines)}
+        label="Criar pipelines padrão"
+        icon="hero-sparkles"
+        on_click="create_defaults"
+        testid="create-default-pipelines"
+      />
+      <:action
+        label="Propostas"
+        icon="hero-cpu-chip"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/proposals"}
+        testid="pipelines-proposals"
+      />
 
       <.card :if={@pipelines == []} variant="outline">
         <.card_content>

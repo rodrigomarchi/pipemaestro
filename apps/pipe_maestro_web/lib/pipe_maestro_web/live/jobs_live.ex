@@ -106,11 +106,7 @@ defmodule PipeMaestroWeb.JobsLive do
       active={:jobs}
       title="Execuções"
     >
-      <:actions>
-        <.button size="sm" icon="hero-plus" phx-click="open_new" data-testid="new-job">
-          Nova execução
-        </.button>
-      </:actions>
+      <:action label="Nova execução" icon="hero-plus" on_click="open_new" primary testid="new-job" />
 
       <.card variant="outline">
         <.card_header

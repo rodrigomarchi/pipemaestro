@@ -301,40 +301,21 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
       <:status>
         <.integration_status connection={@connection} data-testid="integration-status" />
       </:status>
-      <:actions>
-        <.button
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-signal"
-          phx-click="check"
-          data-testid="integration-check"
-        >
-          Testar
-        </.button>
-        <.button
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-pencil-square"
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}/edit"}
-          data-testid="integration-edit"
-        >
-          Editar
-        </.button>
-        <.button
-          size="sm"
-          variant="ghost"
-          color="danger"
-          icon="hero-trash"
-          phx-click="delete"
-          data-confirm={"Remover a conexão #{@connection.name}? Os webhooks criados pela plataforma também saem."}
-          data-testid="integration-delete"
-        >
-          Remover
-        </.button>
-      </:actions>
+      <:action label="Testar" icon="hero-signal" on_click="check" testid="integration-check" />
+      <:action
+        label="Editar"
+        icon="hero-pencil-square"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}/edit"}
+        testid="integration-edit"
+      />
+      <:action
+        label="Remover"
+        icon="hero-trash"
+        on_click="delete"
+        confirm={"Remover a conexão #{@connection.name}? Os webhooks criados pela plataforma também saem."}
+        danger
+        testid="integration-delete"
+      />
 
       <div class="space-y-6">
         <.page_tabs

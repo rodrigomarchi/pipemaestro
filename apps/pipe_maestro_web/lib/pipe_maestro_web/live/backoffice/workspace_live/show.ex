@@ -132,25 +132,14 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
       current_operator={@current_operator}
       active={:workspaces}
       title={@workspace.name}
+      back={%{to: ~p"/backoffice/workspaces", label: "Workspaces", testid: "back-to-workspaces"}}
     >
-      <:breadcrumb>
-        <.link navigate={~p"/backoffice/workspaces"} class="hover:text-gray-900 dark:hover:text-white">
-          Workspaces
-        </.link>
-      </:breadcrumb>
-      <:actions>
-        <.button
-          size="sm"
-          variant="outline"
-          color="gray"
-          icon="hero-pencil-square"
-          to={~p"/backoffice/workspaces/#{@workspace}/edit"}
-          link_type="live_redirect"
-          data-testid="edit-workspace"
-        >
-          Editar
-        </.button>
-      </:actions>
+      <:action
+        label="Editar"
+        icon="hero-pencil-square"
+        navigate={~p"/backoffice/workspaces/#{@workspace}/edit"}
+        testid="edit-workspace"
+      />
 
       <div class="space-y-6">
         <.card variant="outline">

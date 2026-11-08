@@ -125,17 +125,14 @@ defmodule PipeMaestroWeb.RunnersLive do
       active={:runners}
       title="Executores"
     >
-      <:actions>
-        <.button
-          :if={can?(@current_scope, :manage_runners)}
-          size="sm"
-          icon="hero-plus"
-          phx-click="open_connect"
-          data-testid="connect-runner"
-        >
-          Conectar runner
-        </.button>
-      </:actions>
+      <:action
+        :if={can?(@current_scope, :manage_runners)}
+        label="Conectar runner"
+        icon="hero-plus"
+        on_click="open_connect"
+        primary
+        testid="connect-runner"
+      />
 
       <.card variant="outline">
         <.card_header

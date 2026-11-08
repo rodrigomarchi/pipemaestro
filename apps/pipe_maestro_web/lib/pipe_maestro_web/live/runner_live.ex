@@ -212,31 +212,23 @@ defmodule PipeMaestroWeb.RunnerLive do
       workspaces={@workspaces}
       active={:runners}
       title={@runner.name}
+      back={
+        %{
+          to: ~p"/w/#{@current_scope.workspace.slug}/runners",
+          label: "Executores",
+          testid: "back-to-runners"
+        }
+      }
     >
-      <:actions>
-        <.button
-          :if={can?(@current_scope, :manage_runners)}
-          size="sm"
-          variant="ghost"
-          color="danger"
-          icon="hero-no-symbol"
-          phx-click="revoke"
-          data-confirm={"Revogar #{@runner.name}? O token deixa de valer e a conexão cai."}
-          data-testid="runner-detail-revoke"
-        >
-          Revogar
-        </.button>
-        <.button
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/runners"}
-          size="sm"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-left"
-        >
-          Executores
-        </.button>
-      </:actions>
+      <:action
+        :if={can?(@current_scope, :manage_runners)}
+        label="Revogar"
+        icon="hero-no-symbol"
+        on_click="revoke"
+        confirm={"Revogar #{@runner.name}? O token deixa de valer e a conexão cai."}
+        danger
+        testid="runner-detail-revoke"
+      />
 
       <div class="space-y-6">
         <.tabs variant="underline" class="overflow-x-auto" data-testid="runner-tabs">

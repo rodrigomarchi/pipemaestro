@@ -41,17 +41,13 @@ defmodule PipeMaestroWeb.IntegrationLive.Index do
       active={:integrations}
       title="Integrações"
     >
-      <:actions>
-        <.button
-          size="sm"
-          icon="hero-plus"
-          link_type="live_redirect"
-          to={~p"/w/#{@current_scope.workspace.slug}/integrations/new"}
-          data-testid="integration-new"
-        >
-          Nova conexão
-        </.button>
-      </:actions>
+      <:action
+        label="Nova conexão"
+        icon="hero-plus"
+        navigate={~p"/w/#{@current_scope.workspace.slug}/integrations/new"}
+        primary
+        testid="integration-new"
+      />
 
       <.card variant="outline">
         <.card_header
