@@ -47,6 +47,14 @@ antigo.
   a confirmação do servidor (toast ou página nova) em vez de usar sleeps.
 - **Cada spec documenta seus fluxos** no cabeçalho `@section` / `@flow`.
 
+## Painéis de detalhe
+
+Na página da tarefa, o que uma etapa produziu (`stage-run-*`, `decision-*`, `task-events`)
+só existe no painel da etapa, aberto por `?etapa=<key>`. A spec abre antes de ler:
+`TasksPage.openStage(key)` (ou `openDecision()`), e fecha com `closeStage()` antes de clicar
+na página atrás dele, porque o fundo do painel cobre tudo. Nós do pipeline levam a chave da
+etapa (`task-stage-<key>`).
+
 ## Evidência visual (`E2E_SHOTS`)
 
 ```ts

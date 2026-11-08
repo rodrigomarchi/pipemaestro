@@ -17,7 +17,7 @@ import { RunnerProcess } from "../helpers/runnerProcess";
 import { waitForLiveView } from "../helpers/liveView";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
-import { Timeline } from "../pages/JobsPage";
+import { JobsPage, Timeline } from "../pages/JobsPage";
 import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
@@ -100,9 +100,9 @@ test.describe("Landing director", () => {
     const exportId = await start(tasks.export);
     await expect(taskPage.status).toHaveText("Aguardando decisão", { timeout: 60_000 });
     const stockId = await start(tasks.stock);
-    await expect(taskPage.stageRunStatus("reproducao", 1)).toHaveText("Executando", { timeout: 120_000 });
+    await expect(taskPage.stageNodeState("reproducao")).toHaveText("Executando", { timeout: 120_000 });
     const paginationId = await start(tasks.pagination);
-    await expect(taskPage.stageRunStatus("implementacao", 1)).toHaveText("Executando", { timeout: 120_000 });
+    await expect(taskPage.stageNodeState("implementacao")).toHaveText("Executando", { timeout: 120_000 });
 
     // board: every column has a card, the runner online.
     await app.openBoard(workspace.slug, "tarefas");
@@ -114,19 +114,22 @@ test.describe("Landing director", () => {
     // task: the held task from its third stage: the test it wrote, the steps of
     // that stage with the test run open, and the stage running live.
     await taskPage.show(workspace.slug, paginationId);
+    await taskPage.openStage("reproducao");
     const steps = new Timeline(await taskPage.openSteps("reproducao", 1));
     await steps.icons().last().click();
-    await capture(page, "task", { top: "stage-reproducao" });
+    await capture(page, "task", { top: "task-stage-panel" });
 
     // decision: the questions the agent asked, with its recommended option.
     await taskPage.show(workspace.slug, exportId);
-    await expect(page.getByTestId("decision-panel")).toBeVisible();
+    await taskPage.openDecision();
     await expect(taskPage.questionnaire()).toBeVisible();
     await capture(page, "decision", { top: "decision-panel" });
 
     // audit: the job of a finished stage.
     await taskPage.show(workspace.slug, couponId);
+    await taskPage.openStage("implementacao");
     await page.getByTestId("stage-run-audit-implementacao-1").click();
+    await new JobsPage(page).openTab("auditoria");
     await expect(page.getByTestId("job-audit")).toBeVisible();
     await waitForLiveView(page);
     await capture(page, "audit", { top: "job-audit" });
