@@ -10,7 +10,10 @@ O drawer de um nó ([ADR 0047](0047-um-desenho-de-pipeline.md)) mostrava todos o
 de uma vez. Numa etapa, o prompt dividia a tela com tentativas, teto, tempo, gates,
 regras e um bloco recolhido de avançados; na entrada, nome, entrega, merge,
 instruções, servidores MCP e agentes. O que se edita quase sempre, o prompt e o
-modelo, se perdia no meio do resto.
+modelo, se perdia no meio do resto. Na tarefa, uma etapa que já rodou mostrava o
+artefato e, logo abaixo, um acordeão "Detalhes da etapa" com ambiente, mudanças,
+feedback, respostas, resumo, resposta do agente, commit, gates e passos; enquanto ela
+rodava, esses detalhes vinham antes da linha do tempo ao vivo.
 
 ## Decisões
 
@@ -25,7 +28,18 @@ modelo, se perdia no meio do resto.
    - **Leitura** (a página do pipeline, a proposta, o Uso e a etapa que ainda não
      rodou na tarefa): os mesmos nomes. Uma aba só aparece quando tem conteúdo, e
      sem uma segunda aba a barra não é desenhada.
-2. **Abrir um nó volta à primeira aba.** O editor (`PipelineLive.Form`), o
+   - **Tentativa de uma etapa, na tarefa** (`TaskLive.AttemptComponents`):
+     - A decisão pendente, a escolha da tentativa e os números (tempo, custo,
+       tokens) ficam acima das abas.
+     - **Resultado**: o resumo, o artefato, os arquivos e a resposta completa,
+       recolhida. Enquanto a tentativa roda, a aba se chama **Ao vivo** e mostra a
+       linha do tempo e o que o agente está digitando.
+     - **Verificação**: os gates, o commit e as mudanças. É a aba em que a
+       tentativa abre quando um gate ou a entrega a recusou.
+     - **Passos**: o passo a passo do agente, lido só quando a aba abre.
+     - **Contexto**: o que o agente recebeu (feedback, respostas, instruções, o
+       prompt da etapa e o ambiente).
+2. **Abrir um nó, ou outra etapa na tarefa, volta à primeira aba.** O editor (`PipelineLive.Form`), o
    `PipelineExplorer` e o painel da etapa na tarefa guardam a aba como estado da
    tela, não da URL.
 3. **Um erro não fica escondido.**
@@ -37,4 +51,6 @@ modelo, se perdia no meio do resto.
 ## Consequências
 
 - O drawer de uma etapa é o prompt, com o modelo ao lado; o resto fica a um clique.
+- Na tarefa, o que a etapa produziu vem primeiro, e o motivo de uma recusa abre
+  sozinho.
 - Ver todos os campos de um nó de uma vez pede passar pelas abas.

@@ -94,22 +94,18 @@ export class TasksPage {
   }
 
   /**
-   * Opens the details folded under an ended attempt's artifact (summary,
-   * gates, commit, files, steps); an attempt without them shows all already.
+   * Opens a tab of an attempt: "resultado" (where it opens, unless a check
+   * refused it), "verificacao" (gates, commit, changes), "passos" (the agent's
+   * steps) or "contexto" (what the agent was given).
    */
-  async openDetails(key: string, attempt: number) {
-    const details = this.page.getByTestId(`stage-run-details-${key}-${attempt}`);
-    if ((await details.count()) === 0) return;
-    if ((await details.getAttribute("open")) === null) {
-      await this.page.getByTestId(`stage-run-details-toggle-${key}-${attempt}`).click();
-    }
-    await expect(details).toHaveAttribute("open", "");
+  async openAttemptTab(key: string, attempt: number, tab: string) {
+    await this.page.getByTestId(`stage-run-${key}-${attempt}-tab-${tab}`).click();
+    await expect(this.page.getByTestId(`stage-run-${key}-${attempt}-panel-${tab}`)).toBeVisible();
   }
 
-  /** A finished attempt's steps, opened with their toggle. */
+  /** A finished attempt's steps, read when its "Passos" tab opens. */
   async openSteps(key: string, attempt: number): Promise<Locator> {
-    await this.openDetails(key, attempt);
-    await this.page.getByTestId(`stage-run-steps-toggle-${key}-${attempt}`).click();
+    await this.openAttemptTab(key, attempt, "passos");
     const steps = this.page.getByTestId(`stage-run-steps-${key}-${attempt}`);
     await expect(steps).toBeVisible();
     return steps;

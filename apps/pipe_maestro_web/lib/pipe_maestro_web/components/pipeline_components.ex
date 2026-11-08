@@ -790,6 +790,10 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :errors, :list, default: [], doc: "the ids of the tabs whose fields have an error"
   attr :target, :any, default: nil, doc: "where `select_tab` goes (`phx-target`)"
 
+  attr :class, :any,
+    default: "sticky -top-6 z-10 -mx-6 -mt-6 mb-6 bg-white px-6 dark:bg-gray-900",
+    doc: "where the row sits: by default stuck to the top of the drawer as it scrolls"
+
   @doc """
   The row of tabs at the top of a node's drawer, the same in every drawer: the
   first tab is what matters most about the node (a stage's prompt and model),
@@ -802,7 +806,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
     <.tabs
       :if={length(@tabs) > 1}
       variant="underline"
-      class="sticky -top-6 z-10 -mx-6 -mt-6 mb-6 overflow-x-auto bg-white px-6 dark:bg-gray-900"
+      class={["overflow-x-auto", @class]}
       data-testid={"#{@testid}-tabs"}
     >
       <.tab
