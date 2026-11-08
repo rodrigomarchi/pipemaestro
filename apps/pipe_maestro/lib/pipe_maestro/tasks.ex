@@ -577,6 +577,7 @@ defmodule PipeMaestro.Tasks do
         feedback: stage_run.feedback,
         answers: stage_run.answers,
         contract: if(place = contract_place(task, index), do: Contract.prompt(place)),
+        gates: gates(stage, task),
         files: uploads_files?(task)
       })
 

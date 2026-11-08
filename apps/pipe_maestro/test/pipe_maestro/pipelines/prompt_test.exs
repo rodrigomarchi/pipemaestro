@@ -112,6 +112,31 @@ defmodule PipeMaestro.Pipelines.PromptTest do
       assert answers_at > feedback_at
     end
 
+    test "the stage's gates are listed, as the runner will run them, after the contract" do
+      gates = [
+        %{"command" => "mix format --check-formatted", "expect" => "pass"},
+        %{"command" => "mix test", "expect" => "fail"}
+      ]
+
+      prompt =
+        Prompt.build(@stage, context(%{gates: gates, contract: "# Contrato com a plataforma"}))
+
+      assert prompt =~ "# Gates desta etapa"
+      assert prompt =~ "- `mix format --check-formatted` (deve passar)"
+      assert prompt =~ "- `mix test` (deve falhar)"
+      assert prompt =~ "Não é preciso rodar os gates só para ver o que vão dizer"
+
+      {contract_at, _} = :binary.match(prompt, "# Contrato com a plataforma")
+      {gates_at, _} = :binary.match(prompt, "# Gates desta etapa")
+      assert gates_at > contract_at
+    end
+
+    test "a stage without gates has no gates section" do
+      refute Prompt.build(@stage, context()) =~ "Gates desta etapa"
+      refute Prompt.build(@stage, context(%{gates: nil})) =~ "Gates desta etapa"
+      refute Prompt.build(@stage, context(%{gates: []})) =~ "Gates desta etapa"
+    end
+
     test "without answers there is no answers section" do
       refute Prompt.build(@stage, context()) =~ "Respostas da pessoa"
       refute Prompt.build(@stage, context(%{answers: nil})) =~ "Respostas da pessoa"
