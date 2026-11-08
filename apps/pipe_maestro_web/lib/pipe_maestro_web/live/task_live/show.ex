@@ -1,90 +1,74 @@
 defmodule PipeMaestroWeb.TaskLive.Show do
   @moduledoc """
-  One task, read as one pipeline from top to bottom: each stage's title and,
-  right under it, what its attempts produced (summary, the agent's final
-  answer, the artifact). The stage running now shows the agent's steps live,
-  a stream of timeline segments whose last strip grows in place; a finished
-  attempt's steps open on demand, filtered here, and what it spent so far
-  (`PipeMaestro.Insights.live/1`) follows the CLI's telemetry, at most every
-  `@live_every` ms. When the task waits for a decision, the decision panel sits
-  under the stage that waits: the questionnaire of the pause, if any
-  (`PipeMaestroWeb.QuestionnaireLive`), or the analysis of a failure while it
-  runs, and the manual decision, folded away while there is something to
-  answer.
+  One task, in phases. The "Etapas" tab shows the pipeline the task runs,
+  vertical and light (`PipeMaestroWeb.TaskLive.PipelineView`): each stage's
+  state, attempts, time and cost, and beside it what concerns the whole task
+  (the runner's alerts, a message, a pause, an interruption, a correction).
+  The task is read light (`PipeMaestro.Tasks.get_task_overview!/2`): nothing a
+  stage produced is in it.
+
+  A stage opens in a panel (`PipeMaestroWeb.TaskLive.StagePanel`), kept in the
+  URL as `?etapa=<key>` beside the tab's `?aba=`; the browser's back closes
+  it. The panel reads the stage's attempts in full. While its stage runs, the
+  page follows that stage's job only (`Jobs.subscribe({:job, id})`, and
+  `Jobs.unsubscribe/1` when the panel closes or moves) and hands its events,
+  what the agent is typing and what it spent so far (read at most every
+  `@live_every` ms) to the panel. A task waiting for a decision shows a
+  banner that opens the waiting stage, whose panel takes the decision
+  (`PipeMaestroWeb.TaskLive.DecisionPanel`).
+
+  The other tabs are modules of their own (`SummaryTab`, `RequestTab`,
+  `FilesTab`, `AttachmentsTab`, `DecisionsTab`). This LiveView holds what is
+  the task's: its actions and decisions, all taken by `PipeMaestro.Tasks`.
   """
   use PipeMaestroWeb, :live_view
 
-  alias PipeMaestroWeb.IntegrationComponents
-
-  import PipeMaestroWeb.JobComponents,
-    only: [
-      steps: 1,
-      timeline_items: 2,
-      timeline_push: 2,
-      timeline_segment: 1,
-      timeline_tail: 1,
-      typing: 1,
-      count_label: 3,
-      format_cost: 1,
-      format_duration: 1,
-      format_percent: 1,
-      short_number: 1
-    ]
-
-  import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
-  import PipeMaestroWeb.TaskComponents
-  import PipeMaestroWeb.JobFileComponents, only: [files: 1, files_failed: 1]
+  import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
+  import PipeMaestroWeb.QuestionnaireComponents, only: [decode_answers: 1]
   import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
-
-  import PipeMaestroWeb.QuestionnaireComponents,
-    only: [analysis_state: 1, answer_list: 1, decode_answers: 1]
+  import PipeMaestroWeb.TaskComponents, only: [task_status: 1, merge_state: 1]
 
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.{Insights, Jobs, Tasks}
-  alias PipeMaestro.Jobs.{Files, Job}
-  alias PipeMaestro.Tasks.{StageRun, Task}
+  alias PipeMaestro.Jobs.Files
+  alias PipeMaestro.Tasks.Task
+  alias PipeMaestroWeb.{ProposalRequest, RunnerStatus, TabComponents}
 
-  alias PipeMaestroWeb.{
-    Markdown,
-    PipelineDiagram,
-    ProposalRequest,
-    QuestionnaireLive,
-    RunnerStatus,
-    TabComponents
+  alias PipeMaestroWeb.TaskLive.{
+    AttachmentsTab,
+    DecisionsTab,
+    FilesTab,
+    PipelineView,
+    RequestTab,
+    StagePanel,
+    SummaryTab
   }
 
-  import PipeMaestroWeb.PipelineComponents,
-    only: [pipeline_diagram: 1, stage_state_badge: 1, stage_state_marker: 1]
-
   @live_every 2_000
+  @panel "stage-panel"
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     workspace = socket.assigns.current_scope.workspace
-    task = Tasks.get_task!(workspace, id)
+    task = Tasks.get_task_overview!(workspace, id)
 
     # Subscribe before reading again, so nothing in between is missed.
     task =
       if connected?(socket) do
         Tasks.subscribe({:task, task.id})
         RunnerStatus.subscribe(workspace.id)
-        Tasks.get_task!(workspace, id)
+        Tasks.get_task_overview!(workspace, id)
       else
         task
       end
 
     {:ok,
      socket
-     |> assign(page_title: task.title, task: task, live_job_id: nil, timelines: %{})
-     |> assign(live_spent: nil, live_pending: false)
-     |> assign(raw_artifacts: MapSet.new(), typing: nil, step_filters: %{})
-     |> load_online()
-     |> load_decisions()
+     |> assign(page_title: task.title, task: task, tab: "etapas", stage: nil)
+     |> assign(followed_job_id: nil, live_pending: false, redo: nil)
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
-     |> assign(redo: nil, tab: "etapas")
-     |> load_files()
-     |> load_rerun()
-     |> follow_running_job()}
+     |> load_online()
+     |> load_task_data()}
   end
 
   # The tabs, by their `aba` parameter, first on the page: the stages (with
@@ -102,13 +86,22 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   ]
 
   @impl true
-  def handle_params(params, _uri, socket),
-    do: {:noreply, assign(socket, tab: TabComponents.chosen(@tabs, params["aba"], "etapas"))}
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(tab: TabComponents.chosen(@tabs, params["aba"], "etapas"))
+     |> assign(stage: stage_index(socket.assigns.task, params["etapa"]))
+     |> follow_job()}
+  end
 
-  defp task_tabs(task, decisions, files) do
+  # The index of the stage `key` in the task's snapshot; an unknown key opens nothing.
+  defp stage_index(_task, nil), do: nil
+  defp stage_index(%Task{stages: stages}, key), do: Enum.find_index(stages, &(&1.key == key))
+
+  defp task_tabs(changed_files, decisions, files) do
     Enum.map(@tabs, fn
       {"arquivos", label, icon} ->
-        {"arquivos", label, icon, length(task_files(task))}
+        {"arquivos", label, icon, length(changed_files)}
 
       {"anexos", label, icon} ->
         {"anexos", label, icon, files |> Map.values() |> Enum.concat() |> length()}
@@ -131,57 +124,59 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         do: put_flash(socket, :info, "Outra pessoa respondeu esta decisão."),
         else: socket
 
-    {:noreply,
-     socket
-     |> assign(task: task)
-     |> load_decisions()
-     |> load_files()
-     |> load_rerun()
-     |> follow_running_job()}
+    {:noreply, refresh(socket)}
   end
 
-  # The running job's telemetry comes in bursts: what it spent so far is read
+  # The followed job's events and typing go to the stage's panel; any other
+  # job's are dropped.
+  def handle_info(
+        {:job_event, %{job_id: id} = event},
+        %{assigns: %{followed_job_id: id}} = socket
+      )
+      when not is_nil(id) do
+    send_update(StagePanel, id: @panel, job_event: event)
+    {:noreply, socket}
+  end
+
+  def handle_info({:job_event, _other_job}, socket), do: {:noreply, socket}
+
+  def handle_info({:job_delta, id, text}, %{assigns: %{followed_job_id: id}} = socket)
+      when not is_nil(id) do
+    send_update(StagePanel, id: @panel, job_delta: {id, text})
+    {:noreply, socket}
+  end
+
+  def handle_info({:job_delta, _other_job, _text}, socket), do: {:noreply, socket}
+
+  # The followed job's telemetry comes in bursts: what it spent so far is read
   # again once per `@live_every`. The rest of it shows on the job's own page.
-  def handle_info({:job_telemetry, job_id}, %{assigns: %{live_job_id: job_id}} = socket)
-      when not is_nil(job_id) do
+  def handle_info({:job_telemetry, id}, %{assigns: %{followed_job_id: id}} = socket)
+      when not is_nil(id) do
     if not socket.assigns.live_pending,
-      do: Process.send_after(self(), {:refresh_spent, job_id}, @live_every)
+      do: Process.send_after(self(), {:refresh_spent, id}, @live_every)
 
     {:noreply, assign(socket, live_pending: true)}
   end
 
-  def handle_info({:job_telemetry, _job_id}, socket), do: {:noreply, socket}
+  def handle_info({:job_telemetry, _other_job}, socket), do: {:noreply, socket}
 
-  def handle_info({:refresh_spent, job_id}, %{assigns: %{live_job_id: job_id}} = socket) do
-    job = Jobs.get_job!(socket.assigns.current_scope.workspace, job_id)
-    {:noreply, assign(socket, live_spent: Insights.live(job), live_pending: false)}
+  def handle_info({:refresh_spent, id}, %{assigns: %{followed_job_id: id}} = socket)
+      when not is_nil(id) do
+    job = Jobs.get_job!(socket.assigns.current_scope.workspace, id)
+    send_update(StagePanel, id: @panel, spent: {id, Insights.live(job)})
+    {:noreply, assign(socket, live_pending: false)}
   end
 
-  def handle_info({:refresh_spent, _job_id}, socket),
+  def handle_info({:refresh_spent, _other_job}, socket),
     do: {:noreply, assign(socket, live_pending: false)}
 
-  def handle_info({:job_event, event}, socket) do
-    with true <- event.job_id == socket.assigns.live_job_id,
-         {segment, tail} when segment != :seen <-
-           timeline_push(socket.assigns.timeline_tail, event) do
-      {:noreply,
-       socket
-       |> stream_insert(:timeline, segment)
-       |> assign(timeline_tail: tail, typing: nil)}
-    else
-      _other_job_or_seen -> {:noreply, socket}
-    end
-  end
-
-  def handle_info({:job_delta, job_id, text}, socket) do
-    if job_id == socket.assigns.live_job_id,
-      do: {:noreply, assign(socket, typing: text)},
-      else: {:noreply, socket}
-  end
-
+  # The job's end comes as the task's update.
   def handle_info({:job_updated, _job}, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("close_panel", _params, socket),
+    do: {:noreply, push_patch(socket, to: stage_path(socket, nil))}
+
   # The form has one submit button per decision; the pressed one comes as
   # "action", with the instructions typed.
   # An option button sends the choice without an action: it retries the stage.
@@ -261,8 +256,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   def handle_event("instruct", %{"instruct" => %{"text" => text}}, socket) do
     case Tasks.instruct(socket.assigns.task, text) do
-      {:ok, task} ->
-        {:noreply, socket |> assign(task: task) |> put_flash(:info, "Mensagem guardada.")}
+      {:ok, _task} ->
+        {:noreply, socket |> refresh() |> put_flash(:info, "Mensagem guardada.")}
 
       {:error, :blank} ->
         {:noreply, socket}
@@ -274,8 +269,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   def handle_event("request_pause", _params, socket) do
     case Tasks.request_pause(socket.assigns.task) do
-      {:ok, task} ->
-        {:noreply, assign(socket, task: task)}
+      {:ok, _task} ->
+        {:noreply, refresh(socket)}
 
       {:error, :not_running} ->
         {:noreply, put_flash(socket, :error, "A tarefa não está rodando.")}
@@ -301,10 +296,10 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   def handle_event("interrupt", _params, socket) do
     case Tasks.interrupt(socket.assigns.task, stop_opts(socket)) do
-      {:ok, task} ->
+      {:ok, _task} ->
         {:noreply,
          socket
-         |> assign(task: task)
+         |> refresh()
          |> put_flash(:info, "Interrupção pedida: a tarefa vai aguardar uma decisão.")}
 
       {:error, :not_running} ->
@@ -314,10 +309,10 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
   def handle_event("retry_merge", _params, socket) do
     case Tasks.retry_merge(socket.assigns.task, socket.assigns.current_scope.user) do
-      {:ok, task} ->
+      {:ok, _task} ->
         {:noreply,
          socket
-         |> assign(task: task)
+         |> refresh()
          |> put_flash(:info, "A plataforma vai esperar os checks e tentar o merge de novo.")}
 
       {:error, :not_blocked} ->
@@ -335,47 +330,12 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     end
   end
 
-  # An artifact shows rendered; this flips one between that and its text.
-  def handle_event("toggle_artifact", %{"run" => run_id}, socket) do
-    raw = socket.assigns.raw_artifacts
-
-    raw =
-      if MapSet.member?(raw, run_id),
-        do: MapSet.delete(raw, run_id),
-        else: MapSet.put(raw, run_id)
-
-    {:noreply, assign(socket, raw_artifacts: raw)}
-  end
-
-  # A finished attempt's steps are read only when someone opens them.
-  def handle_event("toggle_steps", %{"job" => job_id}, socket) do
-    timelines =
-      if Map.has_key?(socket.assigns.timelines, job_id) do
-        Map.delete(socket.assigns.timelines, job_id)
-      else
-        job =
-          Enum.find_value(socket.assigns.task.stage_runs, fn run ->
-            run.job && run.job.id == job_id && run.job
-          end)
-
-        if job,
-          do: Map.put(socket.assigns.timelines, job_id, Jobs.list_events(job)),
-          else: socket.assigns.timelines
-      end
-
-    {:noreply, assign(socket, timelines: timelines)}
-  end
-
-  def handle_event("filter_steps", %{"job" => job_id, "filter" => filter}, socket)
-      when filter in ~w(all agent tools thinking errors),
-      do: {:noreply, update(socket, :step_filters, &Map.put(&1, job_id, filter))}
-
   defp instructions(params), do: get_in(params, ["decision", "instructions"])
 
   defp cancel(socket) do
     case Tasks.cancel_task(socket.assigns.task, stop_opts(socket)) do
-      {:ok, task} ->
-        {:noreply, socket |> assign(task: task) |> put_flash(:info, "Cancelamento pedido.")}
+      {:ok, _task} ->
+        {:noreply, socket |> refresh() |> put_flash(:info, "Cancelamento pedido.")}
 
       {:error, :finished} ->
         {:noreply, put_flash(socket, :error, "A tarefa já terminou.")}
@@ -393,15 +353,8 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   defp rerun_opts(socket, params),
     do: [by: socket.assigns.current_scope.user, runner_id: params["runner_id"]]
 
-  defp rerun_result({:ok, task}, socket, message) do
-    {:noreply,
-     socket
-     |> assign(task: task, redo: nil)
-     |> load_decisions()
-     |> load_rerun()
-     |> put_flash(:info, message)
-     |> follow_running_job()}
-  end
+  defp rerun_result({:ok, _task}, socket, message),
+    do: {:noreply, socket |> assign(redo: nil) |> refresh() |> put_flash(:info, message)}
 
   defp rerun_result({:error, reason}, socket, _message),
     do: {:noreply, put_flash(socket, :error, rerun_error(reason))}
@@ -415,45 +368,17 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   defp rerun_error(:runner),
     do: "Esse runner não pode continuar a tarefa: a branch dela não está no origin."
 
-  # Where a stage can run again by hand, and the runners offered for it.
-  defp load_rerun(socket) do
-    task = socket.assigns.task
-
-    choices = if task.status == :running, do: [], else: Tasks.runner_choices(task)
-    prompt = if no_pr?(task), do: "Abra o PR desta branch.", else: ""
-
-    assign(socket,
-      runner_choices: choices,
-      correct_form: to_form(%{"prompt" => prompt, "runner_id" => task.runner_id}, as: "correct"),
-      redo_form: to_form(%{"instructions" => "", "runner_id" => task.runner_id}, as: "redo")
-    )
-  end
-
-  # A task that delivers pull requests ended without one.
-  defp no_pr?(%Task{} = task) do
-    task.status == :succeeded and task.git and is_nil(task.pr_url) and
-      match?(%{"delivery" => "pr"}, task.pipeline_context)
-  end
-
-  defp runner_options(runners, online) do
-    for runner <- runners do
-      {if(MapSet.member?(online, runner.id), do: runner.name, else: "#{runner.name} (offline)"),
-       runner.id}
-    end
-  end
-
   defp decision_opts(socket, params),
     do: [by: socket.assigns.current_scope.user, choice: params["choice"]]
 
   defp decide(socket, fun, message) do
     case fun.(socket.assigns.task) do
-      {:ok, task} ->
+      {:ok, _task} ->
         {:noreply,
          socket
-         |> assign(task: task, decision: to_form(%{"instructions" => ""}, as: "decision"))
-         |> load_decisions()
-         |> put_flash(:info, message)
-         |> follow_running_job()}
+         |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
+         |> refresh()
+         |> put_flash(:info, message)}
 
       {:error, :not_awaiting} ->
         {:noreply, put_flash(socket, :error, "A tarefa não está aguardando uma decisão.")}
@@ -463,63 +388,72 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     end
   end
 
-  defp load_decisions(socket) do
+  # The task read again, light, with what the page shows of it, and the job to follow.
+  defp refresh(socket) do
+    task =
+      Tasks.get_task_overview!(socket.assigns.current_scope.workspace, socket.assigns.task.id)
+
+    socket
+    |> assign(task: task)
+    |> load_task_data()
+    |> follow_job()
+  end
+
+  defp load_task_data(socket) do
     task = socket.assigns.task
+    choices = if task.status == :running, do: [], else: Tasks.runner_choices(task)
+    prompt = if PipelineView.no_pr?(task), do: "Abra o PR desta branch.", else: ""
 
     assign(socket,
       decisions: Tasks.list_decisions(task),
       options: Tasks.options(task),
       questionnaire: Tasks.questionnaire(task),
-      cost: Tasks.cost(task)
+      cost: Tasks.cost(task),
+      changed_files: Tasks.changed_files(task),
+      files: Files.list_for_task(task),
+      runner_choices: choices,
+      correct_form: to_form(%{"prompt" => prompt, "runner_id" => task.runner_id}, as: "correct"),
+      redo_form: to_form(%{"instructions" => "", "runner_id" => task.runner_id}, as: "redo")
     )
   end
 
-  # The running attempt's steps stream in live, as segments of its timeline.
-  defp follow_running_job(socket) do
-    job =
-      Enum.find_value(socket.assigns.task.stage_runs, fn run ->
-        run.status == :running && run.job
-      end)
+  # The job of the open stage's attempt running now is the one followed; the
+  # previous one is let go.
+  defp follow_job(socket) do
+    job_id = running_job_id(socket.assigns.task, socket.assigns.stage)
+    previous = socket.assigns.followed_job_id
 
-    cond do
-      is_nil(job) ->
-        socket |> assign(live_job_id: nil, typing: nil, live_spent: nil) |> live_timeline([])
+    if job_id != previous and connected?(socket) do
+      if previous, do: Jobs.unsubscribe({:job, previous})
+      if job_id, do: Jobs.subscribe({:job, job_id})
+    end
 
-      job.id == socket.assigns.live_job_id ->
-        socket
+    assign(socket, followed_job_id: job_id)
+  end
 
-      true ->
-        if connected?(socket), do: Jobs.subscribe({:job, job.id})
+  defp running_job_id(_task, nil), do: nil
 
-        socket
-        |> assign(live_job_id: job.id, typing: nil, live_spent: Insights.live(job))
-        |> live_timeline(Jobs.list_events(job))
+  defp running_job_id(%Task{stage_runs: runs}, index) do
+    case runs |> Enum.filter(&(&1.index == index)) |> List.last() do
+      %{status: :running, job: %{id: id}} -> id
+      _ended_or_none -> nil
     end
   end
 
-  defp live_timeline(socket, events) do
-    segments = timeline_items(events, "all")
-
-    socket
-    |> assign(timeline_tail: timeline_tail(segments))
-    |> stream(:timeline, segments, reset: true)
+  # What tells the panel its stage changed: its attempts, their status and their jobs'.
+  defp fingerprint(%Task{stage_runs: runs}, index) do
+    for run <- runs, run.index == index do
+      {run.id, run.status, run.updated_at, run.job && {run.job.status, run.job.updated_at}}
+    end
   end
 
-  # The pipeline as rows: every stage of the snapshot with its attempts and
-  # where it stands.
-  # The files changed since the task started, as of its latest stage report.
-  defp task_files(%Task{stage_runs: runs}) do
-    runs
-    |> Enum.reverse()
-    |> Enum.find_value([], fn run ->
-      run.job && run.job.changes && run.job.changes["task_files"]
-    end)
-  end
-
-  defp decision_label(:retry), do: "Refazer"
-  defp decision_label(:advance), do: "Seguir"
-  defp decision_label(:cancel), do: "Cancelar"
-  defp decision_label(:correct), do: "Corrigir"
+  defp stage_path(socket, key),
+    do:
+      PipelineView.stage_path(
+        socket.assigns.current_scope.workspace.slug,
+        socket.assigns.task,
+        key
+      )
 
   defp stage_name(%Task{stages: stages}, index) do
     case Enum.at(stages, index) do
@@ -538,33 +472,6 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   # The workspace's runners online now: a running task on any other is stuck.
   defp load_online(socket),
     do: assign(socket, online: RunnerStatus.online_ids(socket.assigns.current_scope.workspace.id))
-
-  defp worktree_state(%Task{worktree_removed_at: %DateTime{}}), do: "Removido do runner."
-
-  defp worktree_state(%Task{worktree_removal_requested_at: %DateTime{}}),
-    do: "Removendo: aguardando o runner."
-
-  defp worktree_state(%Task{worktree_error: error}) when is_binary(error),
-    do: "Não foi possível remover: #{error}"
-
-  defp worktree_state(_task), do: nil
-
-  defp stage_rows(%Task{} = task) do
-    runs_by_stage = Enum.group_by(task.stage_runs, & &1.index)
-    states = PipelineDiagram.task_states(task)
-
-    task.stages
-    |> Enum.with_index()
-    |> Enum.map(fn {stage, index} ->
-      %{index: index, stage: stage, runs: Map.get(runs_by_stage, index, []), state: states[index]}
-    end)
-  end
-
-  defp task_diagram(%Task{} = task),
-    do:
-      PipelineDiagram.build(PipelineDiagram.for_task(task),
-        states: PipelineDiagram.task_states(task)
-      )
 
   @impl true
   def render(assigns) do
@@ -642,588 +549,71 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
       <div class="space-y-6">
         <.page_tabs
-          tabs={task_tabs(@task, @decisions, @files)}
+          tabs={task_tabs(@changed_files, @decisions, @files)}
           active={@tab}
           path={&~p"/w/#{@current_scope.workspace.slug}/tasks/#{@task.id}?aba=#{&1}"}
           testid="task"
         />
 
-        <.tab_panel id="etapas" active={@tab} testid="task" class="space-y-6">
-          <.alert
-            :if={Tasks.waiting_for_runner?(@task, @online)}
-            color="info"
-            with_icon
-            data-testid="task-waiting-runner"
-          >
-            Aguardando o runner {if @task.runner, do: @task.runner.name, else: "—"} ficar online: a etapa começa assim que ele conectar.
-          </.alert>
-          <.alert
-            :if={
-              Tasks.runner_offline?(@task, @online) and
-                not Tasks.waiting_for_runner?(@task, @online)
-            }
-            color="danger"
-            with_icon
-            data-testid="task-runner-offline"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <span>
-                A tarefa está parada: o runner {if @task.runner, do: @task.runner.name, else: "—"} está offline.
-                Interrompa a etapa para decidir: refazer em outro runner, seguir ou cancelar.
-              </span>
-              <.button
-                size="xs"
-                color="danger"
-                variant="outline"
-                icon="hero-hand-raised"
-                phx-click="interrupt"
-                data-testid="task-runner-offline-interrupt"
-              >
-                Interromper a etapa
-              </.button>
+        <.tab_panel id="etapas" active={@tab} testid="task">
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
+            <div class="min-w-0 space-y-4">
+              <PipelineView.decision_banner task={@task} slug={@current_scope.workspace.slug} />
+              <.card variant="outline">
+                <.card_content>
+                  <PipelineView.overview task={@task} slug={@current_scope.workspace.slug} />
+                </.card_content>
+              </.card>
             </div>
-          </.alert>
-          <.card variant="outline">
-            <.card_content class="!p-0">
-              <.pipeline_diagram
-                diagram={task_diagram(@task)}
-                link={&"#stage-#{&1.key}"}
-                testid="task-diagram"
-              />
-            </.card_content>
-          </.card>
-
-          <ol class="relative space-y-0" data-testid="task-pipeline">
-            <li
-              :for={row <- stage_rows(@task)}
-              id={"stage-#{row.stage.key}"}
-              class="relative flex scroll-mt-20 gap-4 pb-8 last:pb-0"
-              data-testid={"stage-#{row.stage.key}"}
-            >
-              <div
-                :if={row.index < length(@task.stages) - 1}
-                class="absolute left-4 top-9 -bottom-0 w-px bg-gray-200 dark:bg-gray-800"
-                aria-hidden="true"
-              />
-              <.stage_state_marker state={row.state} number={row.index + 1} />
-
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
-                  <h2 class={[
-                    "text-base font-semibold",
-                    row.state == :pending && "text-gray-400 dark:text-gray-500",
-                    row.state != :pending && "text-gray-900 dark:text-white"
-                  ]}>
-                    {row.stage.name}
-                  </h2>
-                  <.stage_state_badge state={row.state} data-testid={"stage-state-#{row.stage.key}"} />
-                  <.badge
-                    :if={row.stage.group not in [nil, ""]}
-                    size="xs"
-                    variant="outline"
-                    color="gray"
-                    label={"em paralelo · #{row.stage.group}"}
-                    data-testid={"stage-group-#{row.stage.key}"}
-                  />
-                  <span
-                    :if={attempts(row.runs) > 1}
-                    class="text-xs text-gray-500 dark:text-gray-400"
-                    data-testid={"stage-attempts-#{row.stage.key}"}
-                  >
-                    {attempts(row.runs)} tentativas
-                  </span>
-                  <.button
-                    :if={redoable?(@task) and row.runs != []}
-                    size="xs"
-                    variant="ghost"
-                    color="gray"
-                    icon="hero-arrow-uturn-left"
-                    phx-click="open_redo"
-                    phx-value-index={row.index}
-                    class="ml-auto"
-                    data-testid={"stage-redo-#{row.stage.key}"}
-                  >
-                    Refazer a partir daqui
-                  </.button>
-                </div>
-
-                <div :if={row.runs != []} class="mt-3 space-y-4">
-                  <.attempt
-                    :for={run <- row.runs}
-                    run={run}
-                    many={length(row.runs) > 1}
-                    live={run.job && run.job.id == @live_job_id}
-                    spent={run.job && run.job.id == @live_job_id && @live_spent}
-                    typing={@typing}
-                    streams={@streams}
-                    steps={run.job && Map.get(@timelines, run.job.id)}
-                    steps_filter={(run.job && Map.get(@step_filters, run.job.id)) || "all"}
-                    raw_artifact={MapSet.member?(@raw_artifacts, run.id)}
-                    files={Map.get(@files, run.id, [])}
-                    workspace_slug={@current_scope.workspace.slug}
-                  />
-                </div>
-
-                <.card
-                  :if={row.state == :awaiting}
-                  variant="outline"
-                  class="mt-4 border-warning-300 dark:border-warning-800"
-                  data-testid="decision-panel"
-                >
-                  <.card_content>
-                    <.alert color="warning" with_icon data-testid="decision-reason">
-                      {Markdown.inline_html(@task.decision_reason)}
-                    </.alert>
-                    <.analysis_state analysis={@questionnaire.analysis} />
-                    <.live_component
-                      :if={@questionnaire.questionnaire}
-                      module={QuestionnaireLive}
-                      id={"questionnaire-#{@task.id}"}
-                      task_id={@task.id}
-                      questionnaire={@questionnaire.questionnaire}
-                      can_cancel={can?(@current_scope, :cancel_task, @task)}
-                    />
-                    <details
-                      class="group mt-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-                      open={
-                        is_nil(@questionnaire.questionnaire) and @questionnaire.analysis != :running
-                      }
-                      id="decision-manual"
-                      phx-mounted={JS.ignore_attributes(["open"])}
-                      data-testid="decision-manual"
-                    >
-                      <summary
-                        class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200"
-                        data-testid="decision-manual-toggle"
-                      >
-                        Decidir sem responder
-                      </summary>
-                      <div class="mt-3 flex justify-end">
-                        <.button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          icon="hero-cpu-chip"
-                          phx-click="suggest_decision"
-                          data-testid="decision-suggest"
-                        >
-                          Sugerir com IA
-                        </.button>
-                      </div>
-                      <.form for={@decision} id="decision-form" phx-submit="decide" class="mt-4">
-                        <.markdown_editor
-                          id="decision-instructions"
-                          field={@decision[:instructions]}
-                          label="Instruções para continuar (opcional)"
-                          icon="hero-chat-bubble-left-right"
-                          rows={3}
-                          placeholder="Ex.: o problema acontece no Safari; ignore o módulo legado."
-                          testid="decision-instructions"
-                        />
-                        <div :if={@options != []} class="mb-3">
-                          <p class="mb-2 text-sm text-gray-600 dark:text-gray-300">
-                            O agente propôs (refaz a etapa com a escolha e as instruções):
-                          </p>
-                          <div class="flex flex-wrap gap-2">
-                            <.button
-                              :for={{option, index} <- Enum.with_index(@options)}
-                              type="submit"
-                              name="choice"
-                              value={option}
-                              size="sm"
-                              variant="outline"
-                              color="primary"
-                              data-testid={"decision-option-#{index}"}
-                            >
-                              {option}
-                            </.button>
-                          </div>
-                        </div>
-                        <div class="flex flex-wrap justify-end gap-2">
-                          <.button
-                            type="submit"
-                            name="action"
-                            value="retry"
-                            variant="outline"
-                            icon="hero-arrow-path"
-                            data-testid="decision-retry"
-                          >
-                            Refazer etapa
-                          </.button>
-                          <.button
-                            type="submit"
-                            name="action"
-                            value="advance"
-                            icon="hero-forward"
-                            data-testid="decision-advance"
-                          >
-                            Seguir para a próxima
-                          </.button>
-                        </div>
-                      </.form>
-                    </details>
-                  </.card_content>
-                </.card>
-              </div>
-            </li>
-          </ol>
-
-          <.card
-            :if={@task.status == :running or (Task.active?(@task) and @task.pending_instructions)}
-            variant="outline"
-          >
-            <.card_content>
-              <div
-                :if={@task.pending_instructions}
-                class="mb-3 rounded-lg bg-info-50 px-3 py-2 text-sm text-info-900 dark:bg-info-950/40 dark:text-info-100"
-                data-testid="task-pending-instructions"
-              >
-                <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
-                <div class="prose prose-sm max-w-none dark:prose-invert">
-                  {Markdown.to_html(@task.pending_instructions)}
-                </div>
-              </div>
-              <.form
-                :if={@task.status == :running}
-                for={to_form(%{"text" => ""}, as: "instruct")}
-                id="instruct-form"
-                phx-submit="instruct"
-              >
-                <.markdown_editor
-                  id="task-instruct-text"
-                  field={to_form(%{"text" => ""}, as: "instruct")[:text]}
-                  label="Mensagem para a tarefa"
-                  icon="hero-chat-bubble-bottom-center-text"
-                  rows={2}
-                  placeholder="Ex.: não mexa no módulo de pagamentos."
-                  help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
-                  testid="task-instruct-text"
-                />
-                <div class="flex flex-wrap items-center justify-end gap-2">
-                  <span
-                    :if={@task.pause_requested}
-                    class="text-sm text-warning-700 dark:text-warning-400"
-                    data-testid="task-pause-requested"
-                  >
-                    Pausa pedida: a tarefa para quando esta etapa terminar.
-                  </span>
-                  <.button
-                    :if={@task.status == :running and not @task.pause_requested}
-                    type="button"
-                    variant="outline"
-                    color="gray"
-                    icon="hero-pause"
-                    phx-click="request_pause"
-                    data-testid="task-request-pause"
-                  >
-                    Pausar depois desta etapa
-                  </.button>
-                  <.button
-                    :if={@task.status == :running}
-                    type="button"
-                    variant="outline"
-                    color="warning"
-                    icon="hero-hand-raised"
-                    phx-click="interrupt"
-                    data-confirm="Interromper a etapa em execução? A tarefa vai aguardar uma decisão: refazer com instruções, seguir ou cancelar."
-                    data-testid="task-interrupt"
-                  >
-                    Interromper agora
-                  </.button>
-                  <.button icon="hero-paper-airplane" data-testid="task-instruct">Enviar</.button>
-                </div>
-              </.form>
-            </.card_content>
-          </.card>
-
-          <.card :if={!Task.active?(@task)} variant="outline" data-testid="task-correct">
-            <.card_content>
-              <.section_heading
-                icon="hero-wrench-screwdriver"
-                title="Corrigir com um prompt"
-                description="Roda no worktree e na branch desta tarefa como uma nova etapa, com as verificações, os gates e a entrega de sempre."
-              />
-              <.alert
-                :if={no_pr?(@task)}
-                color="warning"
-                with_icon
-                class="mb-3"
-                data-testid="task-no-pr-warning"
-              >
-                A tarefa terminou sem PR: a entrega não chegou a abri-lo. Peça a correção abaixo.
-              </.alert>
-              <.form for={@correct_form} id="correct-form" phx-submit="correct">
-                <.markdown_editor
-                  id="task-correct-text"
-                  field={@correct_form[:prompt]}
-                  label="O que fazer"
-                  icon="hero-chat-bubble-bottom-center-text"
-                  rows={3}
-                  placeholder="Ex.: resolva o conflito com a main; o PR acusou erro no CI; ajuste o que a revisão pediu."
-                  testid="task-correct-text"
-                />
-                <.rerun_runner
-                  form={@correct_form}
-                  runners={@runner_choices}
-                  online={@online}
-                  testid="task-correct-runner"
-                />
-                <div class="flex justify-end">
-                  <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
-                </div>
-              </.form>
-            </.card_content>
-          </.card>
+            <PipelineView.task_sidebar
+              task={@task}
+              online={@online}
+              correct_form={@correct_form}
+              runner_choices={@runner_choices}
+            />
+          </div>
         </.tab_panel>
 
         <.tab_panel id="resumo" active={@tab} testid="task">
-          <.card variant="outline">
-            <.card_content>
-              <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="task-pipeline-name">
-                {@task.pipeline_name} · v{@task.pipeline_version} · {stage_progress(@task)}
-              </p>
-              <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <dt class="text-gray-500 dark:text-gray-400">Custo</dt>
-                  <dd class="text-gray-900 dark:text-white" data-testid="task-cost">
-                    {format_cost(@cost)}
-                    <span
-                      :if={@task.pipeline_context && @task.pipeline_context["max_cost_usd"]}
-                      class="text-gray-500 dark:text-gray-400"
-                    >
-                      de US$ {@task.pipeline_context["max_cost_usd"]}
-                    </span>
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-gray-500 dark:text-gray-400">Projeto</dt>
-                  <dd class="text-gray-900 dark:text-white" data-testid="task-project">
-                    <.link
-                      :if={@task.project_id}
-                      navigate={
-                        ~p"/w/#{@current_scope.workspace.slug}/projects/#{@task.project_id}/edit"
-                      }
-                      class="text-primary-600 hover:underline dark:text-primary-400"
-                    >
-                      {(@task.project || %{})["name"] || @task.directory}
-                    </.link>
-                    <span :if={!@task.project_id}>
-                      {(@task.project || %{})["name"] || "sem projeto"}
-                    </span>
-                  </dd>
-                  <dd
-                    class="font-mono text-xs text-gray-500 dark:text-gray-400"
-                    data-testid="task-where"
-                  >
-                    {if @task.runner, do: @task.runner.name, else: "—"}:{@task.directory}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-gray-500 dark:text-gray-400">Branch</dt>
-                  <dd
-                    class="font-mono text-xs text-gray-900 dark:text-white"
-                    data-testid="task-branch"
-                  >
-                    {@task.branch || "— (diretório sem git)"}
-                  </dd>
-                  <dd :if={@task.pr_url} class="mt-1 text-xs">
-                    <a
-                      href={@task.pr_url}
-                      target="_blank"
-                      rel="noopener"
-                      class="text-primary-600 hover:underline dark:text-primary-400"
-                      data-testid="task-pr"
-                    >
-                      Pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                    </a>
-                  </dd>
-                  <dd
-                    :if={@task.merge_state == "blocked" and @task.merge_reason}
-                    class="mt-1 text-xs text-gray-600 dark:text-gray-300"
-                    data-testid="task-merge-reason"
-                  >
-                    O merge parou: {@task.merge_reason}
-                  </dd>
-                  <dd :if={@task.issue_url} class="mt-1 text-xs">
-                    <a
-                      href={@task.issue_url}
-                      target="_blank"
-                      rel="noopener"
-                      class="text-primary-600 hover:underline dark:text-primary-400"
-                      data-testid="task-issue"
-                    >
-                      {IntegrationComponents.issue_label(@task.issue_url)}
-                      <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                    </a>
-                  </dd>
-                  <dd
-                    :if={@task.issue_feedback["error"]}
-                    class="mt-1 text-xs text-warning-600 dark:text-warning-400"
-                    data-testid="task-issue-sync-error"
-                  >
-                    A issue ainda não mostra o andamento: {@task.issue_feedback["error"]}. A plataforma tenta de novo.
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-gray-500 dark:text-gray-400">Diretório de trabalho</dt>
-                  <dd
-                    class="break-all font-mono text-xs text-gray-900 dark:text-white"
-                    data-testid="task-worktree"
-                  >
-                    {@task.worktree || "definido quando a primeira etapa termina"}
-                  </dd>
-                  <dd
-                    :if={worktree_state(@task)}
-                    class="mt-1 text-xs text-gray-500 dark:text-gray-400"
-                    data-testid="task-worktree-state"
-                  >
-                    {worktree_state(@task)}
-                  </dd>
-                </div>
-              </dl>
-            </.card_content>
-          </.card>
+          <SummaryTab.summary task={@task} cost={@cost} slug={@current_scope.workspace.slug} />
         </.tab_panel>
 
         <.tab_panel id="pedido" active={@tab} testid="task">
-          <.card variant="outline">
-            <.card_content>
-              <div
-                id="task-prompt-text"
-                phx-hook="Highlight"
-                class="prose prose-sm max-w-none dark:prose-invert prose-h1:text-lg prose-h2:text-base prose-h3:text-sm"
-                data-testid="task-prompt-text"
-              >
-                {Markdown.to_html(@task.prompt)}
-              </div>
-              <details
-                :if={@task.project}
-                id="task-project-snapshot"
-                class="mt-4 border-t border-gray-100 pt-4 text-sm dark:border-gray-800"
-                data-testid="task-project-snapshot"
-                phx-mounted={JS.ignore_attributes(["open"])}
-              >
-                <summary class="cursor-pointer text-gray-500 dark:text-gray-400">
-                  Retrato do projeto quando a tarefa começou
-                </summary>
-                <dl class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                  <div :for={
-                    {label, value} <- [
-                      {"Setup", @task.project["setup_command"]},
-                      {"Testes", @task.project["test_command"]},
-                      {"Lint", @task.project["lint_command"]},
-                      {"Copiar para o worktree", Enum.join(@task.project["copy_paths"] || [], ", ")}
-                    ]
-                  }>
-                    <dt class="text-gray-500 dark:text-gray-400">{label}</dt>
-                    <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
-                      {if value in [nil, ""], do: "—", else: value}
-                    </dd>
-                  </div>
-                </dl>
-              </details>
-            </.card_content>
-          </.card>
+          <RequestTab.request task={@task} />
         </.tab_panel>
 
         <.tab_panel id="arquivos" active={@tab} testid="task">
-          <.card variant="outline">
-            <.card_content>
-              <p
-                :if={task_files(@task) == []}
-                class="text-sm text-gray-500 dark:text-gray-400"
-                data-testid="task-no-files"
-              >
-                Nenhum arquivo alterado ainda.
-              </p>
-              <.file_list
-                :if={task_files(@task) != []}
-                files={task_files(@task)}
-                data-testid="task-files"
-              />
-            </.card_content>
-          </.card>
+          <FilesTab.files files={@changed_files} />
         </.tab_panel>
 
         <.tab_panel id="anexos" active={@tab} testid="task">
-          <.card variant="outline">
-            <.card_content class="space-y-5">
-              <p
-                :if={@files == %{}}
-                class="text-sm text-gray-500 dark:text-gray-400"
-                data-testid="task-no-attachments"
-              >
-                Nenhuma etapa enviou arquivos ainda. O que o agente copia para
-                <code>$CP_FILES_DIR</code>
-                aparece aqui.
-              </p>
-              <section
-                :for={run <- attachment_runs(@task, @files)}
-                class="space-y-2"
-                data-testid={"task-attachments-#{run.key}-#{run.attempt}"}
-              >
-                <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {run.name} · tentativa {run.attempt}
-                </h3>
-                <.files
-                  files={Map.fetch!(@files, run.id)}
-                  workspace_slug={@current_scope.workspace.slug}
-                  testid="task-attachment"
-                  key={"#{run.key}-#{run.attempt}"}
-                />
-              </section>
-            </.card_content>
-          </.card>
+          <AttachmentsTab.attachments
+            task={@task}
+            files={@files}
+            slug={@current_scope.workspace.slug}
+          />
         </.tab_panel>
 
         <.tab_panel id="decisoes" active={@tab} testid="task">
-          <.card variant="outline">
-            <.card_header title="Decisões tomadas" />
-            <.card_content>
-              <p
-                :if={@decisions == []}
-                class="text-sm text-gray-500 dark:text-gray-400"
-                data-testid="task-no-decisions"
-              >
-                Nenhuma decisão tomada nesta tarefa.
-              </p>
-              <ol :if={@decisions != []} class="space-y-3 text-sm" data-testid="task-decisions">
-                <li :for={{decision, n} <- Enum.with_index(@decisions)} class="flex gap-3">
-                  <.icon name="hero-hand-raised" class="mt-0.5 size-4 shrink-0 text-warning-500" />
-                  <div class="min-w-0">
-                    <p class="text-gray-900 dark:text-white">
-                      <span class="font-medium">{decision_label(decision.action)}</span>
-                      em "{stage_name(@task, decision.stage_index)}"
-                      <span :if={decision.choice}>· escolha: {decision.choice}</span>
-                    </p>
-                    <.answer_list
-                      :if={decision.answers}
-                      answers={Map.merge(decision.questions || %{}, decision.answers)}
-                      class="my-1 space-y-1 text-sm"
-                      data-testid={"task-decision-answers-#{n}"}
-                    />
-                    <div
-                      :if={decision.instructions}
-                      class="prose prose-sm max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
-                    >
-                      {Markdown.to_html(decision.instructions)}
-                    </div>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {if decision.decided_by_user, do: decision.decided_by_user.name, else: "—"}
-                      <span :if={decision.decided_via} data-testid={"task-decision-via-#{n}"}>
-                        (via {decision.decided_via})
-                      </span>
-                      · {Calendar.strftime(
-                        decision.inserted_at,
-                        "%d/%m %H:%M"
-                      )}
-                    </p>
-                  </div>
-                </li>
-              </ol>
-            </.card_content>
-          </.card>
+          <DecisionsTab.decisions task={@task} decisions={@decisions} />
         </.tab_panel>
+
+        <.live_component
+          :if={@stage}
+          module={StagePanel}
+          id="stage-panel"
+          task={@task}
+          index={@stage}
+          fingerprint={fingerprint(@task, @stage)}
+          live_job_id={@followed_job_id}
+          files={@files}
+          slug={@current_scope.workspace.slug}
+          redoable={redoable?(@task)}
+          questionnaire={@questionnaire}
+          options={@options}
+          decision={@decision}
+          can_cancel={can?(@current_scope, :cancel_task, @task)}
+        />
 
         <.modal
           :if={@redo}
@@ -1245,7 +635,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
               placeholder="Ex.: desta vez, escreva os testes antes."
               testid="stage-redo-text"
             />
-            <.rerun_runner
+            <PipelineView.rerun_runner
               form={@redo_form}
               runners={@runner_choices}
               online={@online}
@@ -1265,536 +655,4 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     </Layouts.app>
     """
   end
-
-  attr :form, Phoenix.HTML.Form, required: true
-  attr :runners, :list, required: true
-  attr :online, :any, required: true
-  attr :testid, :string, required: true
-
-  # Which runner runs it: offered only when there is more than one choice.
-  defp rerun_runner(assigns) do
-    ~H"""
-    <.icon_field
-      :if={length(@runners) > 1}
-      field={@form[:runner_id]}
-      icon="hero-server-stack"
-      type="select"
-      label="Runner"
-      options={runner_options(@runners, @online)}
-      help_text="Outro runner monta o worktree a partir da branch da tarefa no origin."
-      data-testid={@testid}
-    />
-    """
-  end
-
-  attr :run, StageRun, required: true
-  attr :many, :boolean, required: true
-  attr :live, :boolean, required: true
-  attr :spent, :any, default: nil, doc: "what the running attempt spent so far"
-  attr :streams, :any, required: true
-  attr :steps, :list, default: nil
-  attr :steps_filter, :string, default: "all"
-  attr :raw_artifact, :boolean, default: false
-  attr :files, :list, default: [], doc: "the files the attempt's job sent"
-  attr :typing, :string, default: nil
-  attr :workspace_slug, :string, required: true
-
-  defp attempt(assigns) do
-    ~H"""
-    <div
-      class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-      data-testid={"stage-run-#{run_ref(@run)}"}
-    >
-      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-        <span>
-          <span :if={@many}>
-            Tentativa {@run.attempt}{if @run.requeue > 0, do: " · de novo (#{@run.requeue})"} ·
-          </span>
-          <.stage_run_status run={@run} data-testid={"stage-run-status-#{run_ref(@run)}"} />
-          <.stage_run_session run={@run} />
-        </span>
-        <span :if={@run.job} class="flex items-center gap-3">
-          <span
-            :if={@spent}
-            class="text-primary-700 dark:text-primary-300"
-            data-testid={"stage-run-spent-#{run_ref(@run)}"}
-          >
-            até agora {format_cost(@spent.cost_usd)} · {short_number(@spent.tokens)} tokens
-          </span>
-          <span>{format_duration(@run.job.duration_ms)}</span>
-          <span>{format_cost(@run.job.cost_usd)}</span>
-          <span
-            :if={Job.tokens(@run.job) > 0}
-            data-testid={"stage-run-tokens-#{run_ref(@run)}"}
-          >
-            {short_number(Job.tokens(@run.job))} tokens · {format_percent(Job.cache_hit(@run.job))} do cache
-          </span>
-          <.link
-            navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}"}
-            class="text-primary-600 hover:underline dark:text-primary-400"
-            data-testid={"stage-run-audit-#{run_ref(@run)}"}
-          >
-            Execução e auditoria
-          </.link>
-        </span>
-      </div>
-
-      <div class="space-y-3 px-4 py-3">
-        <p
-          :if={@run.error && @run.status == :lost}
-          class="text-sm text-warning-700 dark:text-warning-400"
-          data-testid={"stage-run-lost-#{run_ref(@run)}"}
-        >
-          {@run.error}
-        </p>
-        <p
-          :if={@run.error && @run.status != :lost}
-          class="text-sm text-danger-700 dark:text-danger-400"
-        >
-          {@run.error}
-        </p>
-
-        <%!-- An ended attempt with an artifact leads with it; how it got
-             there (summary, gates, commit, files, steps) is folded below. --%>
-        <%= if artifact_first?(@run, @live) do %>
-          <.artifact run={@run} raw_artifact={@raw_artifact} />
-          <.run_files run={@run} files={@files} workspace_slug={@workspace_slug} />
-
-          <details
-            id={"stage-run-details-#{@run.id}"}
-            open={details_open?(@run)}
-            phx-mounted={JS.ignore_attributes(["open"])}
-            class="group rounded-lg border border-gray-200 dark:border-gray-800"
-            data-testid={"stage-run-details-#{run_ref(@run)}"}
-          >
-            <summary
-              class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
-              data-testid={"stage-run-details-toggle-#{run_ref(@run)}"}
-            >
-              <.icon
-                name="hero-chevron-right"
-                class="size-4 transition-transform group-open:rotate-90"
-              />
-              <span class="font-medium">Detalhes da etapa</span>
-              <span
-                :for={part <- details_summary(@run)}
-                class="text-xs text-gray-500 dark:text-gray-400"
-              >
-                · {part}
-              </span>
-            </summary>
-            <div class="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
-              <.run_details run={@run} />
-              <.run_steps
-                :if={@run.job}
-                run={@run}
-                steps={@steps}
-                steps_filter={@steps_filter}
-              />
-            </div>
-          </details>
-        <% else %>
-          <.run_details run={@run} />
-          <.artifact :if={@run.artifact} run={@run} raw_artifact={@raw_artifact} />
-          <.run_files run={@run} files={@files} workspace_slug={@workspace_slug} />
-
-          <div :if={@live}>
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-info-600 dark:text-info-400">
-              Ao vivo
-            </p>
-            <ol id="task-events" phx-update="stream" class="space-y-3" data-testid="task-events">
-              <.timeline_segment
-                :for={{id, segment} <- @streams.timeline}
-                id={id}
-                timeline="task-events"
-                segment={segment}
-              />
-            </ol>
-            <.typing :if={@typing} text={@typing} />
-          </div>
-
-          <.run_steps
-            :if={@run.job && !@live}
-            run={@run}
-            steps={@steps}
-            steps_filter={@steps_filter}
-          />
-        <% end %>
-      </div>
-    </div>
-    """
-  end
-
-  # A run again after its runner lost it is the same attempt.
-  defp attempts(runs), do: runs |> Enum.uniq_by(& &1.attempt) |> length()
-
-  # What tells an attempt apart in the test ids and DOM ids: its stage and
-  # attempt, and how many times it ran again after its runner lost it.
-  defp run_ref(%StageRun{requeue: requeue} = run) when requeue > 0,
-    do: "#{run.key}-#{run.attempt}-r#{requeue}"
-
-  defp run_ref(%StageRun{} = run), do: "#{run.key}-#{run.attempt}"
-
-  attr :run, StageRun, required: true
-
-  # How an attempt went: its environment, files, feedback, answers, summary,
-  # result, commit and gates.
-  defp run_details(assigns) do
-    ~H"""
-    <.setup_report
-      :if={@run.job && @run.job.setup}
-      setup={@run.job.setup}
-      data-testid={"stage-run-setup-#{run_ref(@run)}"}
-    />
-
-    <.changes_report
-      :if={@run.job && @run.job.changes}
-      changes={@run.job.changes}
-      id={run_ref(@run)}
-    />
-
-    <details
-      :if={@run.feedback}
-      class="rounded-lg bg-warning-50 px-3 py-2 text-sm dark:bg-warning-950/30"
-      data-testid={"stage-run-feedback-#{run_ref(@run)}"}
-    >
-      <summary class="cursor-pointer text-warning-800 dark:text-warning-300">
-        Feedback da tentativa anterior
-      </summary>
-      <div
-        id={"feedback-#{@run.id}"}
-        phx-hook="Highlight"
-        class="prose prose-sm mt-2 max-h-80 max-w-none overflow-auto dark:prose-invert"
-      >
-        {Markdown.to_html(@run.feedback)}
-      </div>
-    </details>
-
-    <div
-      :if={@run.answers}
-      class="text-sm"
-      data-testid={"stage-run-answers-#{run_ref(@run)}"}
-    >
-      <span class="font-medium text-gray-900 dark:text-white">Respostas da pessoa:</span>
-      <.answer_list answers={@run.answers} class="mt-1 space-y-1 text-sm" />
-    </div>
-
-    <div
-      :if={@run.instructions}
-      class={[
-        "text-sm text-gray-600 dark:text-gray-300",
-        "prose prose-sm max-w-none dark:prose-invert"
-      ]}
-    >
-      <span class="font-medium">Instruções:</span> {Markdown.inline_html(@run.instructions)}
-    </div>
-
-    <div
-      :if={@run.summary}
-      class={["text-sm text-gray-900 dark:text-white", "prose prose-sm max-w-none dark:prose-invert"]}
-      data-testid={"stage-run-summary-#{run_ref(@run)}"}
-    >
-      {Markdown.inline_html(@run.summary)}
-    </div>
-
-    <details
-      :if={@run.structured_output not in [nil, %{}]}
-      id={"stage-run-output-#{@run.id}"}
-      phx-mounted={JS.ignore_attributes(["open"])}
-      class="text-sm"
-      data-testid={"stage-run-output-#{run_ref(@run)}"}
-    >
-      <summary class="cursor-pointer text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
-        Resposta completa do agente
-      </summary>
-      <.agent_output
-        id={"stage-run-output-body-#{@run.id}"}
-        text={Jason.encode!(@run.structured_output)}
-        class="mt-2 rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-950"
-      />
-    </details>
-
-    <.agent_output
-      :if={plain_result?(@run)}
-      id={"result-#{@run.id}"}
-      text={@run.job.result}
-      class="max-h-[32rem] overflow-auto rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-950"
-      data-testid={"stage-run-result-#{run_ref(@run)}"}
-    />
-
-    <p
-      :if={@run.job && @run.job.delivery && @run.job.delivery["commit"]}
-      class="text-xs text-gray-500 dark:text-gray-400"
-      data-testid={"stage-run-commit-#{run_ref(@run)}"}
-    >
-      <.icon name="hero-check-badge" class="size-4 text-success-600" /> Commit
-      <span class="font-mono">{String.slice(@run.job.delivery["commit"], 0, 7)}</span>
-      <span :if={@run.job.delivery["pushed"]}>· enviado</span>
-    </p>
-    <p
-      :if={@run.job && @run.job.delivery && @run.job.delivery["error"]}
-      class="text-xs text-danger-700 dark:text-danger-400"
-    >
-      A entrega falhou: {@run.job.delivery["error"]}
-    </p>
-
-    <.gate_results
-      :if={@run.job && @run.job.gates not in [nil, []]}
-      gates={@run.job.gates}
-      id={run_ref(@run)}
-    />
-    """
-  end
-
-  attr :run, StageRun, required: true
-  attr :files, :list, required: true
-  attr :workspace_slug, :string, required: true
-
-  # The files the attempt's job sent, beside its artifact, and how many did not
-  # arrive.
-  defp run_files(assigns) do
-    assigns = assign(assigns, failed: (assigns.run.job && assigns.run.job.files_failed) || 0)
-
-    ~H"""
-    <div
-      :if={@files != [] or @failed > 0}
-      class="space-y-2"
-      data-testid={"stage-run-files-#{@run.key}-#{@run.attempt}"}
-    >
-      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        Arquivos
-      </p>
-      <.files_failed
-        :if={@failed > 0}
-        count={@failed}
-        data-testid={"stage-run-files-failed-#{@run.key}-#{@run.attempt}"}
-      />
-      <.files
-        :if={@files != []}
-        files={@files}
-        workspace_slug={@workspace_slug}
-        testid="stage-run-file"
-        key={"#{@run.key}-#{@run.attempt}"}
-      />
-    </div>
-    """
-  end
-
-  attr :run, StageRun, required: true
-  attr :raw_artifact, :boolean, required: true
-
-  # What the stage produced, rendered or as the text the agent wrote.
-  defp artifact(assigns) do
-    ~H"""
-    <div>
-      <div class="mb-1 flex items-center justify-between">
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          Artefato
-        </p>
-        <button
-          type="button"
-          phx-click="toggle_artifact"
-          phx-value-run={@run.id}
-          class="text-xs font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-          data-testid={"stage-run-artifact-toggle-#{run_ref(@run)}"}
-        >
-          {if @raw_artifact, do: "Ver renderizado", else: "Ver texto"}
-        </button>
-      </div>
-      <div
-        :if={!@raw_artifact}
-        id={"artifact-#{@run.id}"}
-        phx-hook="Highlight"
-        class="prose prose-sm max-h-[40rem] max-w-none overflow-auto prose-h1:text-xl prose-h2:text-lg prose-h3:text-base rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950"
-        data-testid={"stage-run-artifact-#{run_ref(@run)}"}
-      >
-        {Markdown.to_html(@run.artifact)}
-      </div>
-      <pre
-        :if={@raw_artifact}
-        class="max-h-[40rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-4 py-3 font-mono text-sm text-gray-800 dark:bg-gray-950 dark:text-gray-100"
-        data-testid={"stage-run-artifact-raw-#{run_ref(@run)}"}
-      >{@run.artifact}</pre>
-    </div>
-    """
-  end
-
-  attr :run, StageRun, required: true
-  attr :steps, :list, default: nil
-  attr :steps_filter, :string, default: "all"
-
-  # The agent's steps, read when asked for and filtered by kind.
-  defp run_steps(assigns) do
-    ~H"""
-    <div>
-      <button
-        type="button"
-        phx-click="toggle_steps"
-        phx-value-job={@run.job.id}
-        class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
-        data-testid={"stage-run-steps-toggle-#{run_ref(@run)}"}
-      >
-        <.icon
-          name={if @steps, do: "hero-chevron-down", else: "hero-chevron-right"}
-          class="size-4"
-        /> Passo a passo do agente
-      </button>
-      <div :if={@steps} class="mt-2 flex flex-wrap gap-1">
-        <.button
-          :for={
-            {filter, label} <- [
-              {"all", "Tudo"},
-              {"agent", "Agente"},
-              {"tools", "Ferramentas"},
-              {"thinking", "Raciocínio"},
-              {"errors", "Erros"}
-            ]
-          }
-          size="xs"
-          variant={if @steps_filter == filter, do: "solid", else: "ghost"}
-          color="gray"
-          phx-click="filter_steps"
-          phx-value-job={@run.job.id}
-          phx-value-filter={filter}
-          data-testid={"stage-run-steps-filter-#{run_ref(@run)}-#{filter}"}
-        >
-          {label}
-        </.button>
-      </div>
-      <.steps
-        :if={@steps}
-        items={timeline_items(@steps, @steps_filter)}
-        id={run_ref(@run)}
-      />
-    </div>
-    """
-  end
-
-  defp load_files(socket), do: assign(socket, files: Files.list_for_task(socket.assigns.task))
-
-  # The attempts that sent files, the latest first.
-  defp attachment_runs(%Task{stage_runs: runs}, files) do
-    runs
-    |> Enum.filter(&Map.has_key?(files, &1.id))
-    |> Enum.sort_by(&{&1.index, &1.attempt}, :desc)
-  end
-
-  defp artifact_first?(%StageRun{artifact: artifact, status: status}, live),
-    do: is_binary(artifact) and status != :running and not live
-
-  # Opened already when something went wrong in it: a gate that failed, a
-  # delivery that did not happen.
-  defp details_open?(%StageRun{job: %Job{} = job}) do
-    Enum.any?(job.gates || [], &(&1["passed"] == false)) or
-      match?(%{"error" => error} when is_binary(error), job.delivery)
-  end
-
-  defp details_open?(_run), do: false
-
-  # What the folded details hold, in a line: gates met, files, commit.
-  defp details_summary(%StageRun{job: %Job{} = job}) do
-    gates = job.gates || []
-    files = (job.changes || %{})["files"] || []
-    commit = (job.delivery || %{})["commit"]
-
-    [
-      gates != [] &&
-        "gates #{Enum.count(gates, & &1["passed"])}/#{length(gates)}",
-      files != [] && count_label(length(files), "arquivo", "arquivos"),
-      is_binary(commit) && "commit #{String.slice(commit, 0, 7)}"
-    ]
-    |> Enum.filter(&is_binary/1)
-  end
-
-  defp details_summary(_run), do: []
-
-  attr :gates, :list, required: true
-  attr :id, :string, required: true
-
-  # The stage's gate commands, each met or not, its output folded.
-  defp gate_results(assigns) do
-    ~H"""
-    <div data-testid={"stage-run-gates-#{@id}"}>
-      <p class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        Gates
-      </p>
-      <ul class="space-y-1">
-        <li
-          :for={{gate, index} <- Enum.with_index(@gates)}
-          data-testid={"stage-run-gate-#{@id}-#{index}"}
-          data-passed={to_string(gate["passed"])}
-        >
-          <details class="text-sm">
-            <summary class="flex cursor-pointer items-center gap-2">
-              <.icon
-                name={if gate["passed"], do: "hero-check-circle", else: "hero-x-circle"}
-                class={[
-                  "size-4 shrink-0",
-                  if(gate["passed"],
-                    do: "text-success-600 dark:text-success-400",
-                    else: "text-danger-600 dark:text-danger-400"
-                  )
-                ]}
-              />
-              <code
-                :if={!gate["platform"]}
-                class="break-all text-xs text-gray-800 dark:text-gray-200"
-              >
-                {gate["command"]}
-              </code>
-              <span :if={gate["platform"]} class="text-xs text-gray-800 dark:text-gray-200">
-                <.badge color="info" size="sm" data-testid={"stage-run-gate-platform-#{@id}-#{index}"}>
-                  plataforma
-                </.badge>
-                {String.replace_prefix(gate["command"] || "", "plataforma: ", "")}
-              </span>
-              <span :if={!gate["platform"]} class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                {if gate["expect"] == "fail", do: "deve falhar", else: "deve passar"} · código {gate[
-                  "exit_code"
-                ]}
-              </span>
-            </summary>
-            <pre
-              :if={gate["output"] not in [nil, ""]}
-              class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-100"
-            >{gate["output"]}</pre>
-          </details>
-        </li>
-      </ul>
-    </div>
-    """
-  end
-
-  attr :setup, :map, required: true
-  attr :rest, :global
-
-  # How the runner prepared the task's worktree, on the attempt that created it.
-  defp setup_report(assigns) do
-    ~H"""
-    <details class="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-950" {@rest}>
-      <summary class="cursor-pointer text-gray-700 dark:text-gray-300">
-        <.icon name="hero-wrench-screwdriver" class="size-4" />
-        Ambiente preparado em {format_duration(@setup["duration_ms"])}
-        <span :if={@setup["copied"] != []} class="text-gray-500 dark:text-gray-400">
-          · copiado: {Enum.join(@setup["copied"] || [], ", ")}
-        </span>
-        <span :if={@setup["command"]} class="text-gray-500 dark:text-gray-400">
-          · <code>{@setup["command"]}</code> (código {@setup["exit_code"]})
-        </span>
-      </summary>
-      <pre
-        :if={@setup["output"] not in [nil, ""]}
-        class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-700 dark:text-gray-300"
-      >{@setup["output"]}</pre>
-    </details>
-    """
-  end
-
-  # The agent's final answer, for a stage without structured output; with
-  # one, the summary above already says it and the raw JSON would repeat it.
-  defp plain_result?(%StageRun{status: status, structured_output: nil, job: %{result: result}})
-       when status != :running and is_binary(result),
-       do: true
-
-  defp plain_result?(_run), do: false
 end

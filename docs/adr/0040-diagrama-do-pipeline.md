@@ -62,7 +62,9 @@ Um membro não tinha como ver um pipeline em detalhe.
    - `for_task/1` desenha o pipeline que a tarefa de fato roda, a partir do retrato
      que ela guardou, e não o pipeline de hoje.
    - Quem usa cada camada:
-     - **tarefa:** o diagrama ao vivo no topo; cada nó é um link para a sua etapa;
+     - **tarefa:** um pipeline vertical e leve, em que cada nó abre o painel da sua
+       etapa ([ADR 0046](0046-pagina-da-tarefa-em-fases.md)); o diagrama horizontal não
+       é mais usado ali;
      - **Board, Tarefas e Decisões:** o modo `:micro`, um ponto por etapa
        (`TaskComponents.task_progress/1`). Ele substitui as três cópias do texto
        "2/5 · etapa";

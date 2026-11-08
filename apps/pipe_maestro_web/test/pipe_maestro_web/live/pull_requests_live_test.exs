@@ -49,6 +49,7 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
              "[data-testid=task-issue][href='https://github.com/acme/app/issues/42']"
            )
 
+    view |> element("[data-testid=task-stage-a]") |> render_click()
     assert has_element?(view, "[data-testid=stage-run-commit-a-1]", "0123456")
 
     {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/pull-requests")

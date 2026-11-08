@@ -1,3 +1,8 @@
+# `mix test --cover` reports with the umbrella's tool, absent from the
+# release image, which copies only the `mix.exs` files.
+coverage_tool = Path.expand("../../test_coverage.exs", __DIR__)
+if File.exists?(coverage_tool), do: Code.require_file(coverage_tool)
+
 defmodule PipeMaestroRunner.MixProject do
   use Mix.Project
 
@@ -18,6 +23,7 @@ defmodule PipeMaestroRunner.MixProject do
       # Helpers test_helper.exs loads, not tests.
       test_ignore_filters: [&String.starts_with?(&1, "test/support/")],
       test_coverage: [
+        tool: PipeMaestro.TestCoverage,
         summary: [threshold: 60],
         ignore_modules: [PipeMaestroRunner.Application]
       ]

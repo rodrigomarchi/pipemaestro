@@ -8,12 +8,13 @@ import { clickPageAction } from "../helpers/pageActions";
 export class TasksPage {
   readonly page: Page;
   readonly status: Locator;
+  /** Why the task waits: the banner over the pipeline, with the reason. */
   readonly decisionReason: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.status = page.getByTestId("task-status");
-    this.decisionReason = page.getByTestId("decision-reason");
+    this.decisionReason = page.getByTestId("task-decision-banner");
     acceptConfirms(page);
   }
 
@@ -125,8 +126,12 @@ export class TasksPage {
     await this.page.getByTestId("decision-retry").click();
   }
 
-  /** Unfolds "Decidir sem responder" when the questionnaire keeps it folded. */
+  /**
+   * Unfolds "Decidir sem responder" when the questionnaire keeps it folded,
+   * opening the waiting stage's panel first.
+   */
   async openManualDecision() {
+    if (!(await this.page.getByTestId("decision-panel").isVisible())) await this.openDecision();
     const instructions = this.page.getByTestId("decision-instructions");
     if (await instructions.isVisible()) return;
     await this.page.getByTestId("decision-manual-toggle").click();
@@ -179,19 +184,104 @@ export class TasksPage {
     return key ? `${id}-${key}` : id;
   }
 
+  /** The vertical pipeline of the "Etapas" tab: only the stages and their states. */
+  overview(): Locator {
+    return this.page.getByTestId("task-overview");
+  }
+
+  /** What concerns the whole task, beside the pipeline: runner alerts, messages, correction. */
+  sidebar(): Locator {
+    return this.page.getByTestId("task-sidebar");
+  }
+
+  /** A stage's node in the vertical pipeline, by its key. */
+  stageNode(key: string): Locator {
+    return this.page.getByTestId(`task-stage-${key}`);
+  }
+
+  /** The state badge of a stage's node. */
+  stageNodeState(key: string): Locator {
+    return this.page.getByTestId(`task-stage-state-${key}`);
+  }
+
+  /** The panel with one stage's details. */
+  stagePanel(): Locator {
+    return this.page.getByTestId("task-stage-panel");
+  }
+
+  /** Opens a stage's panel from its node; the stage goes to the URL. */
+  async openStage(key: string) {
+    await this.stageNode(key).click();
+    await expect(this.stagePanel()).toBeVisible();
+    await expect(this.page).toHaveURL(new RegExp(`[?&]etapa=${key}(&|$)`));
+  }
+
+  /** Closes the stage's panel by its button; the stage leaves the URL. */
+  async closeStage() {
+    await this.page.getByTestId("task-stage-panel-close").click();
+    await this.expectStageClosed();
+  }
+
+  /** Closes the stage's panel, when one is open, so the page behind it takes clicks. */
+  async closeStageIfOpen() {
+    if (await this.stagePanel().isVisible()) await this.closeStage();
+  }
+
+  /** Closes the stage's panel with Escape. */
+  async closeStageWithEscape() {
+    await this.page.keyboard.press("Escape");
+    await this.expectStageClosed();
+  }
+
+  async expectStageClosed() {
+    await expect(this.stagePanel()).toBeHidden();
+    await expect(this.page).not.toHaveURL(/[?&]etapa=/);
+  }
+
+  /** Picks one of the stage's attempts in its panel. */
+  async selectAttempt(key: string, attempt: number) {
+    await this.page.getByTestId(`task-stage-attempt-${key}-${attempt}`).click();
+    await expect(this.stageRun(key, attempt)).toBeVisible();
+  }
+
+  /** The live timeline of the running stage, in its panel. */
+  liveEvents(): Locator {
+    return this.page.getByTestId("task-events");
+  }
+
+  /** A stage attempt's artifact, rendered. */
+  stageRunArtifact(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-artifact-${key}-${attempt}`);
+  }
+
+  /** The notice over the pipeline while the task waits for a decision. */
+  decisionBanner(): Locator {
+    return this.page.getByTestId("task-decision-banner");
+  }
+
+  /** "Decidir": opens the panel of the stage that waits. */
+  async openDecision() {
+    await this.page.getByTestId("task-decision-open").click();
+    await expect(this.stagePanel()).toBeVisible();
+    await expect(this.page.getByTestId("decision-panel")).toBeVisible();
+  }
+
   /** Removes the finished task's worktree (the confirmation is accepted by `acceptConfirms`). */
   async removeWorktree() {
+    await this.closeStageIfOpen();
     await clickPageAction(this.page, "task-remove-worktree");
   }
 
   /** "Corrigir com um prompt": runs `prompt` as a new stage of a task that ended. */
   async correct(prompt: string) {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("task-correct-text").fill(prompt);
     await this.page.getByTestId("task-correct-submit").click();
   }
 
   /** Stops the running stage (the confirmation is accepted by `acceptConfirms`). */
   async interrupt() {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("task-interrupt").click();
   }
 
@@ -200,6 +290,7 @@ export class TasksPage {
   }
 
   async backToList() {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("back-to-tasks").click();
     await expect(this.page.getByTestId("page-title")).toHaveText("Tarefas");
   }
@@ -210,6 +301,7 @@ export class TasksPage {
 
   /** Opens one of the task's tabs by its `aba`: "etapas", "resumo", "pedido", "arquivos", "anexos" or "decisoes". */
   async openTab(tab: "etapas" | "resumo" | "pedido" | "arquivos" | "anexos" | "decisoes") {
+    await this.closeStageIfOpen();
     await this.page.getByTestId(`task-tab-${tab}`).click();
     await expect(this.page.getByTestId(`task-panel-${tab}`)).toBeVisible();
   }

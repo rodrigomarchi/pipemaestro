@@ -221,6 +221,53 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert count(open, "#p [phx-click=close_panel]") == 1
       assert text(open, "#p") =~ "Etapa"
     end
+
+    test "is the large slide-over by default, with nothing behind it" do
+      html =
+        render_component(&PipelineComponents.side_panel/1,
+          id: "p",
+          title: "Etapa",
+          open: true,
+          testid: "p",
+          inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
+        )
+
+      assert count(html, "#p.pc-slideover__box--lg") == 1
+      assert count(html, "#p[data-size=lg]") == 1
+      assert count(html, "[data-testid=p-backdrop]") == 0
+    end
+
+    test "wide, it takes most of the screen over a backdrop that closes it" do
+      html =
+        render_component(&PipelineComponents.side_panel/1,
+          id: "p",
+          title: "Etapa",
+          open: true,
+          size: :wide,
+          backdrop: true,
+          testid: "p",
+          inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
+        )
+
+      assert count(html, "#p[data-size=wide]") == 1
+      assert count(html, "#p.pc-slideover__box--lg") == 0
+      assert count(html, "[data-testid=p-backdrop][phx-click=close_panel]") == 1
+      assert count(html, "[data-testid=p-close][phx-click=close_panel]") == 1
+      assert text(html, "#p") =~ "corpo"
+
+      closed =
+        render_component(&PipelineComponents.side_panel/1,
+          id: "p",
+          title: "Etapa",
+          open: false,
+          size: :wide,
+          backdrop: true,
+          testid: "p",
+          inner_block: [%{inner_block: fn _, _ -> "corpo" end}]
+        )
+
+      assert count(closed, "[data-testid=p-backdrop]:not(.hidden)") == 0
+    end
   end
 
   describe "delivery_label/1" do

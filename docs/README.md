@@ -69,6 +69,8 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0042 | [Arquivos gerados pela etapa sobem como anexos](adr/0042-arquivos-gerados-pela-etapa.md) | Aceita |
 | 0043 | [Runner resiliente a reinícios e à atualização](adr/0043-runner-resiliente-a-reinicios.md) | Aceita |
 | 0044 | [Central de notificações](adr/0044-central-de-notificacoes.md) | Aceita |
+| 0045 | [Merge automático do PR](adr/0045-merge-automatico-do-pr.md) | Aceita |
+| 0046 | [A página da tarefa em fases](adr/0046-pagina-da-tarefa-em-fases.md) | Aceita |
 
 ## Specs
 

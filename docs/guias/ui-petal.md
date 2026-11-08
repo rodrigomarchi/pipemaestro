@@ -146,6 +146,23 @@ título e status · ações da página · sino. Conta e tema ficam no pé da sid
   (só o avatar com a sidebar recolhida), abre para cima o menu da conta; ao lado, o
   `color_scheme_switch` (`color-scheme-toggle`). No celular ficam dentro da gaveta.
 
+## Painel lateral de detalhes
+
+Detalhe de um item de uma lista ou de um diagrama abre num painel à direita, não numa
+página nova nem inline: a página carrega só o resumo, e o painel lê o resto quando abre
+([ADR 0046](../adr/0046-pagina-da-tarefa-em-fases.md)).
+
+- Use `PipelineComponents.side_panel/1`, não o `slide_over` do Petal: ele fica na página
+  mesmo fechado (escondido), então os inputs de dentro continuam sendo enviados.
+- `size: :lg` (padrão) é o slide-over grande do Petal; `size: :wide` ocupa 90% de uma tela
+  larga e toda a do celular, e `backdrop` escurece a página atrás, com clique para fechar.
+  O conteúdo rola por dentro.
+- Fecha com o X, Esc e o fundo, todos por `close_panel`. Quando o item aberto vai na URL
+  (`?etapa=<key>` na página da tarefa), abra e feche com `patch`, para o voltar do navegador
+  fechar o painel.
+- O estado do painel (tentativa escolhida, filtros, timeline ao vivo) fica num LiveComponent;
+  mensagens de PubSub chegam ao LiveView, que as repassa por `send_update/3`.
+
 ## Central de notificações no shell
 
 - O sino fica no fim da barra superior de `Layouts.app` e abre um

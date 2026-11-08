@@ -1,3 +1,8 @@
+# `mix test --cover` reports with the umbrella's tool, absent from the
+# release image, which copies only the `mix.exs` files.
+coverage_tool = Path.expand("../../test_coverage.exs", __DIR__)
+if File.exists?(coverage_tool), do: Code.require_file(coverage_tool)
+
 defmodule PipeMaestroWeb.MixProject do
   use Mix.Project
 
@@ -17,6 +22,7 @@ defmodule PipeMaestroWeb.MixProject do
       deps: deps(),
       consolidate_protocols: Mix.env() != :test,
       test_coverage: [
+        tool: PipeMaestro.TestCoverage,
         summary: [threshold: 60],
         ignore_modules: [
           PipeMaestroWeb,

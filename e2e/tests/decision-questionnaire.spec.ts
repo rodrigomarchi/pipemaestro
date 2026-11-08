@@ -83,6 +83,7 @@ test.describe("Decision questionnaire", () => {
     });
 
     await expect(tasks.status).toHaveText("Aguardando decisão");
+    await tasks.openDecision();
     await expect(tasks.questionnaire()).toBeVisible();
     await expect(tasks.question(0)).toBeVisible();
     await expect(tasks.question(1)).toBeVisible();
@@ -139,6 +140,7 @@ test.describe("Decision questionnaire", () => {
     });
 
     await expect(tasks.status).toHaveText("Aguardando decisão", { timeout: 60_000 });
+    await tasks.openDecision();
     // The manual decision is there while the agent analyses.
     await expect(app.page.getByTestId("decision-manual")).toBeVisible();
     await expect(tasks.questionnairePart("diagnosis")).toBeVisible({ timeout: 60_000 });

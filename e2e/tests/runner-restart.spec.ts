@@ -64,6 +64,7 @@ test.describe("Runner restart", () => {
       pipeline: "Prompt único",
       project: "Notas",
     });
+    await tasks.openStage("executar");
     await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Executando");
 
     // The runner goes down in the middle of the stage and comes back.
@@ -73,6 +74,7 @@ test.describe("Runner restart", () => {
     await runner.waitFor(/Online como/);
 
     await tasks.show(workspace.slug, taskId);
+    await tasks.openStage("executar");
     await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Perdida (runner)");
     await expect(tasks.stageRunLost("executar", 1)).toContainText("o runner reiniciou");
     await expect(tasks.requeuedRunStatus("executar", 1, 1)).toHaveText("Executando");
