@@ -94,13 +94,13 @@ cookie com que o DeployEx o iniciou:
 ```bash
 dir=$(ls -d /var/lib/deployex/service/pipe_maestro/*/current | head -1)
 node=$(basename "$(dirname "$dir")")      # pipe_maestro-<instância>
-cookie=$(ps -eo args | grep -- "-sname $node" | grep -o -- '-setcookie [^ ]*' | head -1 | cut -d' ' -f2)
+cookie=$(sudo ps -eo args | grep -- "-sname $node" | grep -o -- '-setcookie [^ ]*' | head -1 | cut -d' ' -f2)
 sudo -u deployex env RELEASE_COOKIE="$cookie" RELEASE_NODE="$node" RELEASE_DISTRIBUTION=sname \
   HOME=/var/lib/deployex "$dir/bin/pipe_maestro" rpc \
   'PipeMaestro.Release.create_operator("voce@exemplo.com", "Nome", "uma senha longa") |> IO.inspect()'
 ```
 
-Não imprima o cookie: ele é o mesmo de todos os apps do DeployEx.
+Não imprima o cookie: ele é o mesmo de todos os apps do DeployEx. O `ps` precisa de `sudo`: o processo é do usuário `deployex` e o `/proc` do Sun esconde os processos de outros usuários. Sem o `sudo`, o cookie sai vazio e o `rpc` falha com `:noconnection`.
 
 Os workspaces e os usuários saem do backoffice. Cada runner se conecta com:
 
