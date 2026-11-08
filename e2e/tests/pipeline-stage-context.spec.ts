@@ -28,18 +28,22 @@ test.describe("A stage's context", () => {
     await pipelines.createDefaults();
 
     await pipelines.edit("Refatoração");
+    await pipelines.openStage(0);
     await pipelines.openAdvanced(0);
     await expect(pipelines.stageContext(0)).toHaveValue("fresh");
     await pipelines.stageContext(0).selectOption("continue");
-    await app.page.getByTestId("pipeline-save").click();
+    await app.page.getByTestId("stage-panel-0-save").click();
 
-    await expect(pipelines.stageCard(0)).toContainText(
+    // The drawer stays open, with the reason next to the context.
+    await expect(pipelines.stagePanel(0)).toContainText(
       "a primeira etapa não tem uma etapa anterior para continuar",
     );
     await expect(pipelines.stageContext(0)).toBeVisible();
     await shot(app.page, "stage-context-error");
 
     await pipelines.stageContext(0).selectOption("fresh");
+    await pipelines.closePanel(0);
+    await pipelines.openStage(1);
     await pipelines.openAdvanced(1);
     await pipelines.stageContext(1).selectOption("continue");
     await shot(app.page, "stage-context-continue");

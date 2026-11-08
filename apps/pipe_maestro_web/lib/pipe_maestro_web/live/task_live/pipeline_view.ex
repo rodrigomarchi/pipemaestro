@@ -4,8 +4,9 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   bottom (entry, each step, the delivery of a pull request, the end), drawn
   from the same model as every other diagram
   (`PipeMaestroWeb.PipelineDiagram.build/2` with `task_states/1`) and the same
-  vocabulary of states (`PipeMaestroWeb.PipelineComponents`). A step in
-  parallel puts its stages side by side between a fork and a join.
+  vocabulary of states, on the same rail as every pipeline
+  (`PipeMaestroWeb.PipelineComponents.rail_item/1`). A step in
+  parallel puts its stages side by side.
 
   Each stage is a node with only light facts: its marker, name and state, how
   many attempts, its group and, once its last attempt ended, how long it took
@@ -22,7 +23,13 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1, format_duration: 1]
 
   import PipeMaestroWeb.PipelineComponents,
-    only: [delivery_icon: 1, delivery_label: 1, stage_state_badge: 1, stage_state_marker: 1]
+    only: [
+      delivery_icon: 1,
+      delivery_label: 1,
+      rail_item: 1,
+      stage_state_badge: 1,
+      stage_state_marker: 1
+    ]
 
   alias PipeMaestro.Tasks
   alias PipeMaestro.Tasks.{StageRun, Task}
@@ -66,7 +73,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
 
     ~H"""
     <ol class="relative" data-testid="task-overview">
-      <.rail_item icon="hero-play" tone={:neutral}>
+      <.rail_item icon="hero-bolt" tone={:primary}>
         <p class="text-sm font-medium text-gray-900 dark:text-white">Entrada</p>
         <p class="text-xs text-gray-500 dark:text-gray-400">
           {@task.pipeline_name} · v{@task.pipeline_version}
@@ -74,11 +81,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
       </.rail_item>
 
       <%= for step <- @diagram.steps do %>
-        <.rail_item
-          :if={!step.parallel?}
-          marker={hd(step.nodes)}
-          tone={:stage}
-        >
+        <.rail_item :if={!step.parallel?} marker={hd(step.nodes)}>
           <.stage_node
             node={hd(step.nodes)}
             runs={Map.get(@runs, hd(step.nodes).index, [])}
@@ -86,7 +89,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
             slug={@slug}
           />
         </.rail_item>
-        <.rail_item :if={step.parallel?} icon="hero-arrows-pointing-out" tone={:neutral}>
+        <.rail_item :if={step.parallel?} icon="hero-arrows-pointing-out">
           <p
             class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
             data-testid={"task-step-group-#{step.group}"}
@@ -106,7 +109,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
         </.rail_item>
       <% end %>
 
-      <.rail_item :if={@diagram.delivery == :pr} icon={delivery_icon("pr")} tone={:neutral}>
+      <.rail_item :if={@diagram.delivery == :pr} icon={delivery_icon("pr")} tone={:delivery}>
         <p class="text-sm font-medium text-gray-900 dark:text-white">{delivery_label("pr")}</p>
         <p :if={@task.pr_url} class="text-xs">
           <a
@@ -131,42 +134,6 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
         </p>
       </.rail_item>
     </ol>
-    """
-  end
-
-  attr :icon, :string, default: nil
-  attr :marker, :map, default: nil, doc: "a stage node, whose state marks the rail"
-  attr :tone, :atom, required: true
-  attr :last, :boolean, default: false
-  slot :inner_block, required: true
-
-  # One place on the rail: its marker on the line, its content beside it.
-  defp rail_item(assigns) do
-    ~H"""
-    <li class="relative flex gap-4 pb-5 last:pb-0">
-      <div
-        :if={!@last}
-        class="absolute left-4 top-9 -bottom-0 w-px bg-gray-200 dark:bg-gray-800"
-        aria-hidden="true"
-      />
-      <.stage_state_marker
-        :if={@marker}
-        state={@marker.state || :pending}
-        number={@marker.index + 1}
-      />
-      <span
-        :if={!@marker}
-        class={[
-          "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full ring-4 ring-gray-50 dark:ring-gray-950",
-          @tone == :done &&
-            "bg-success-100 text-success-700 dark:bg-success-900/60 dark:text-success-300",
-          @tone != :done && "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-        ]}
-      >
-        <.icon name={@icon} class="size-4" />
-      </span>
-      <div class="min-w-0 flex-1 pt-1">{render_slot(@inner_block)}</div>
-    </li>
     """
   end
 

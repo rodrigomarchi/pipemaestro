@@ -106,7 +106,7 @@ defmodule PipeMaestro.Pipelines.Pipeline do
     )
     |> validate_auto_merge()
     |> validate_number(:max_task_cost_usd, greater_than: 0, message: "use um valor positivo")
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &(&1 && String.trim(&1)))
     |> validate_required([:name], message: "dê um nome ao pipeline")
     |> validate_length(:name, max: 80)
     |> validate_length(:description, max: 500)

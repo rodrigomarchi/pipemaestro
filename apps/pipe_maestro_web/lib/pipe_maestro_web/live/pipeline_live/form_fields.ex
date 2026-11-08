@@ -1,17 +1,13 @@
 defmodule PipeMaestroWeb.PipelineLive.FormFields do
   @moduledoc """
   The fields of `PipeMaestroWeb.PipelineLive.Form`: the pipeline's
-  identification, execution and context, and a stage's header and body. Each
-  is rendered once in the form; the form only decides the frame around it (a
-  card in the Formulário tab, a side panel in the Diagrama tab).
+  identification, execution and context, and a stage's fields. Each is
+  rendered once in the form, in the drawer the diagram's node opens.
   """
   use PipeMaestroWeb, :html
 
-  import PipeMaestroWeb.PipelineComponents, only: [stage_chips: 1]
-
   alias PipeMaestro.Pipelines.{Prompt, Stage}
   alias PipeMaestro.Tasks.Contract
-  alias PipeMaestroWeb.PipelineDiagram
 
   @deliveries [
     {"none", "Nenhuma: os prompts decidem", "hero-no-symbol",
@@ -214,12 +210,11 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
   end
 
   attr :stage, Phoenix.HTML.Form, required: true
-  attr :hidden, :boolean, default: false
 
   @doc "A stage's fields: name, key, prompt, execution, verification and the advanced ones."
   def stage_fields(assigns) do
     ~H"""
-    <div class={["space-y-2", @hidden && "hidden"]} data-testid={"stage-body-#{@stage.index}"}>
+    <div class="space-y-2" data-testid={"stage-body-#{@stage.index}"}>
       <div class="grid gap-4 sm:grid-cols-2">
         <.icon_field
           field={@stage[:name]}
@@ -375,87 +370,4 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
 
   # A multi-line placeholder: in the template, the formatter would make it literal.
   defp gates_placeholder, do: "{{projeto.teste}}\n! mix test test/repro_test.exs"
-
-  attr :stage, Phoenix.HTML.Form, required: true
-  attr :count, :integer, required: true
-  attr :collapsed, :boolean, required: true
-
-  @doc "A stage's card header: number, name and chips (it collapses the card), and its moves."
-  def stage_header(assigns) do
-    ~H"""
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <button
-        type="button"
-        phx-click="toggle_stage"
-        phx-value-index={@stage.index}
-        aria-expanded={to_string(not @collapsed)}
-        class="flex min-w-0 flex-1 items-start gap-3 text-left"
-        data-testid={"stage-toggle-#{@stage.index}"}
-      >
-        <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-sm font-semibold text-white dark:bg-primary-500">
-          {@stage.index + 1}
-        </span>
-        <span class="min-w-0">
-          <span class="flex items-center gap-1.5 font-semibold text-gray-900 dark:text-white">
-            <span class="truncate">{stage_title(@stage)}</span>
-            <.icon
-              name="hero-chevron-down"
-              class={["size-4 shrink-0 text-gray-400 transition", @collapsed && "-rotate-90"]}
-            />
-          </span>
-          <.stage_chips
-            chips={PipelineDiagram.chips(Ecto.Changeset.apply_changes(@stage.source))}
-            class="mt-1.5"
-            testid={"stage-chips-#{@stage.index}"}
-          />
-        </span>
-      </button>
-      <div class="flex gap-1">
-        <.button
-          type="button"
-          size="xs"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-up"
-          title="Subir"
-          disabled={@stage.index == 0}
-          phx-click="move_stage"
-          phx-value-index={@stage.index}
-          phx-value-to={@stage.index - 1}
-          data-testid={"stage-up-#{@stage.index}"}
-        >
-          <span class="sr-only">Subir</span>
-        </.button>
-        <.button
-          type="button"
-          size="xs"
-          variant="ghost"
-          color="gray"
-          icon="hero-arrow-down"
-          title="Descer"
-          disabled={@stage.index == @count - 1}
-          phx-click="move_stage"
-          phx-value-index={@stage.index}
-          phx-value-to={@stage.index + 1}
-          data-testid={"stage-down-#{@stage.index}"}
-        >
-          <span class="sr-only">Descer</span>
-        </.button>
-        <.button
-          type="button"
-          size="xs"
-          variant="ghost"
-          color="danger"
-          icon="hero-trash"
-          title="Remover etapa"
-          phx-click="remove_stage"
-          phx-value-index={@stage.index}
-          data-testid={"stage-remove-#{@stage.index}"}
-        >
-          <span class="sr-only">Remover</span>
-        </.button>
-      </div>
-    </div>
-    """
-  end
 end

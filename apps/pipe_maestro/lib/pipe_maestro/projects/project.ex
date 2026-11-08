@@ -81,7 +81,7 @@ defmodule PipeMaestro.Projects.Project do
       :copy_paths_text,
       :notes
     ])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &(&1 && String.trim(&1)))
     |> validate_required([:name], message: "dê um nome ao projeto")
     |> validate_required([:runner_id], message: "escolha o runner do projeto")
     |> validate_required([:directory], message: "informe o diretório")

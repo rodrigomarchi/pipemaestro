@@ -114,13 +114,13 @@ defmodule PipeMaestro.Integrations.Trigger do
     case get_field(changeset, :kind) do
       "label" ->
         changeset
-        |> update_change(:label, &String.trim/1)
+        |> update_change(:label, &(&1 && String.trim(&1)))
         |> validate_required([:label], message: "informe a label")
         |> validate_length(:label, max: 50)
 
       "comment" ->
         changeset
-        |> update_change(:command, &String.trim/1)
+        |> update_change(:command, &(&1 && String.trim(&1)))
         |> validate_required([:command], message: "informe o comando")
         |> validate_format(:command, ~r/^\/[\w.-]{1,30}$/, message: "use /comando, sem espaços")
 

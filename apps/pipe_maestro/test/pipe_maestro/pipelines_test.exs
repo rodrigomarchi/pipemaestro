@@ -25,6 +25,18 @@ defmodule PipeMaestro.PipelinesTest do
       assert Pipelines.list_pipelines(workspace) == []
     end
 
+    test "a name or a stage's name cleared is an error, not a crash", %{workspace: workspace} do
+      pipeline = pipeline_fixture(workspace)
+
+      assert {:error, changeset} =
+               Pipelines.update_pipeline(pipeline, %{
+                 "name" => "",
+                 "stages" => %{"0" => %{"name" => "", "group" => ""}}
+               })
+
+      assert %{name: ["dê um nome ao pipeline"]} = errors_on(changeset)
+    end
+
     test "stages are reordered and dropped through the form params", %{workspace: workspace} do
       pipeline = pipeline_fixture(workspace)
 

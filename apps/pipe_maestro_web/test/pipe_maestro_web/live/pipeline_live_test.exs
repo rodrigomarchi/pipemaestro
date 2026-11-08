@@ -13,7 +13,11 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
     view |> element("[data-testid=create-default-pipelines]") |> render_click()
 
-    assert has_element?(view, "[data-testid='pipeline-Correção de bug']", "Investigação")
+    assert has_element?(
+             view,
+             "[data-testid='pipeline-Correção de bug'] [data-testid^=diagram-stage-][title$='Investigação']"
+           )
+
     assert has_element?(view, "[data-testid='pipeline-version-Prompt único']", "v1")
   end
 
@@ -21,7 +25,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     conn: conn,
     workspace: workspace
   } do
-    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new?view=form")
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
 
     view
     |> form("#pipeline-form",
@@ -36,8 +40,8 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
     assert has_element?(view, "[data-testid=stage-timeout-0][value=\"20\"]")
 
-    view |> element("[data-testid=stage-add]") |> render_click()
-    view |> element("[data-testid=stage-add]") |> render_click()
+    view |> element("[data-testid=diagram-insert-1]") |> render_click()
+    view |> element("[data-testid=diagram-insert-2]") |> render_click()
 
     view
     |> form("#pipeline-form",
@@ -50,8 +54,8 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     )
     |> render_change()
 
-    view |> element("[data-testid=stage-remove-2]") |> render_click()
-    view |> element("[data-testid=stage-up-1]") |> render_click()
+    view |> element("[data-testid=diagram-remove-2]") |> render_click()
+    view |> element("[data-testid=diagram-up-1]") |> render_click()
 
     {:error, {:live_redirect, %{to: path}}} =
       view |> form("#pipeline-form") |> render_submit()
@@ -112,7 +116,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
   describe "the stage's context" do
     test "the first stage cannot continue one before it", %{conn: conn, workspace: workspace} do
-      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new?view=form")
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/new")
       assert has_element?(view, "[data-testid=stage-context-0]")
       assert render(view) =~ "Continuar a etapa anterior"
 
@@ -128,6 +132,9 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
       assert html =~ "a primeira etapa não tem uma etapa anterior para continuar"
       assert Pipelines.list_pipelines(workspace) == []
+      # The drawer that opens is the stage's, where the error is.
+      refute has_element?(view, "[data-testid=stage-panel-0].hidden")
+      assert has_element?(view, "[data-testid=pipeline-panel].hidden")
     end
 
     test "a later stage continues the one before, and the form shows it again", %{
@@ -144,7 +151,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
         })
 
       {:ok, view, _html} =
-        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
 
       {:error, {:live_redirect, _}} =
         view
@@ -155,7 +162,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       assert Enum.map(saved.stages, & &1.context) == ["fresh", "continue"]
 
       {:ok, view, _html} =
-        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
 
       assert has_element?(
                view,
@@ -269,11 +276,11 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     pipeline = pipeline_fixture(workspace, %{"name" => "Meu"})
 
     {:ok, view, _html} =
-      live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+      live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
 
     assert has_element?(view, "[data-testid=stage-name-1]")
 
-    view |> element("[data-testid=stage-down-0]") |> render_click()
+    view |> element("[data-testid=diagram-down-0]") |> render_click()
 
     {:error, {:live_redirect, _}} =
       view
@@ -360,25 +367,17 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       refute has_element?(view, "[data-testid=stage-prompt-0-preview]")
     end
 
-    test "a stage collapses to its summary and the delivery explains itself", %{
+    test "each node sums its stage up and the delivery explains itself", %{
       conn: conn,
       workspace: workspace,
       pipeline: pipeline
     } do
       {:ok, view, _html} =
-        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit?view=form")
+        live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
 
-      assert view |> element("[data-testid=stage-chips-0]") |> render() =~ "1 gate"
-      assert view |> element("[data-testid=stage-chips-1]") |> render() =~ "grupo revisoes"
+      assert view |> element("[data-testid=diagram-stage-0]") |> render() =~ "1 gate"
+      assert view |> element("[data-testid=diagram-stage-1]") |> render() =~ "revisoes"
       assert view |> element("[data-testid=pipeline-delivery-help]") |> render() =~ "PR"
-
-      view |> element("[data-testid=stage-toggle-0]") |> render_click()
-      assert has_element?(view, "[data-testid=stage-body-0].hidden")
-      # The collapsed stage's inputs stay in the form.
-      assert has_element?(view, "[data-testid=stage-prompt-0]")
-
-      view |> element("[data-testid=stage-toggle-0]") |> render_click()
-      refute has_element?(view, "[data-testid=stage-body-0].hidden")
     end
 
     test "the list shows each pipeline's delivery, budget and stages", %{
@@ -523,30 +522,23 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       %{pipeline: pipeline_fixture(workspace, %{"name" => "Meu"})}
     end
 
-    defp edit(conn, workspace, pipeline, query \\ ""),
-      do: live(conn, "/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit" <> query)
+    defp edit(conn, workspace, pipeline),
+      do: live(conn, "/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
 
-    test "opens on the diagram, and the form is a tab away", ctx do
+    test "is the diagram alone, with the buttons that change the structure", ctx do
       {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
 
-      assert has_element?(view, "[data-testid=pipeline-view-diagram][aria-current]")
-      assert has_element?(view, "[data-testid=pipeline-diagram]")
+      assert has_element?(view, "[data-testid=pipeline-diagram][data-mode=edit]")
       assert has_element?(view, "[data-testid=diagram-insert-0]")
-      refute has_element?(view, "[data-testid=stage-card-0]")
-
-      view |> element("[data-testid=pipeline-view-form]") |> render_click()
-      assert_patch(view, "/w/#{ctx.workspace.slug}/pipelines/#{ctx.pipeline.id}/edit?view=form")
-      assert has_element?(view, "[data-testid=stage-card-0]")
-      refute has_element?(view, "[data-testid=pipeline-diagram]")
+      assert has_element?(view, "[data-testid=diagram-insert-2]", "Adicionar etapa")
+      assert has_element?(view, "[data-testid=pipeline-save]")
     end
 
-    test "every input is in the form once, whichever the tab", ctx do
-      for query <- ["", "?view=form"] do
-        {:ok, _view, html} = edit(ctx.conn, ctx.workspace, ctx.pipeline, query)
+    test "every input is in the form once", ctx do
+      {:ok, _view, html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
 
-        assert html |> String.split(~s(name="pipeline[stages][1][name]")) |> length() == 2
-        assert html |> String.split(~s(name="pipeline[name]")) |> length() == 2
-      end
+      assert html |> String.split(~s(name="pipeline[stages][1][name]")) |> length() == 2
+      assert html |> String.split(~s(name="pipeline[name]")) |> length() == 2
     end
 
     test "a stage opens in the side panel, editable, and the node follows the draft", ctx do
@@ -587,6 +579,27 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
       assert [%{name: "Primeira"}, %{name: "Etapa B"}] =
                Pipelines.get_pipeline!(ctx.workspace, ctx.pipeline.id).stages
+    end
+
+    test "an error the open drawer does not show opens the drawer that does", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-select-1]") |> render_click()
+
+      view |> form("#pipeline-form", pipeline: %{name: ""}) |> render_submit()
+
+      refute has_element?(view, "[data-testid=pipeline-panel].hidden")
+      assert has_element?(view, "[data-testid=stage-panel-1].hidden")
+    end
+
+    test "an error in the open drawer keeps it open", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-select-0]") |> render_click()
+
+      view
+      |> form("#pipeline-form", pipeline: %{stages: %{"0" => %{context: "continue"}}})
+      |> render_submit()
+
+      refute has_element?(view, "[data-testid=stage-panel-0].hidden")
     end
 
     test "a new pipeline opens on the diagram with its settings open", ctx do
@@ -630,9 +643,16 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       refute has_element?(view, "[data-testid=stage-panel-2].hidden")
     end
 
+    test "adds a stage after the last and opens it", %{view: view} do
+      click(view, "diagram-insert-3")
+
+      assert node_names(view) == ["A", "B", "C", "Nova etapa"]
+      refute has_element?(view, "[data-testid=stage-panel-3].hidden")
+    end
+
     test "moves a stage, and its panel follows it", %{view: view} do
       click(view, "diagram-select-0")
-      click(view, "diagram-right-0")
+      click(view, "diagram-down-0")
 
       assert node_names(view) == ["B", "A", "C"]
       refute has_element?(view, "[data-testid=stage-panel-1].hidden")
@@ -646,7 +666,7 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
     test "runs a stage at once with the one before, and back", %{view: view} do
       click(view, "diagram-join-group-2")
       assert has_element?(view, "[data-testid=diagram-step-1][data-parallel]")
-      assert has_element?(view, "[data-testid=diagram-fork-1]")
+      assert has_element?(view, "[data-testid=diagram-group-1]", "paralelo-1")
 
       click(view, "diagram-leave-group-2")
       refute has_element?(view, "[data-parallel]")

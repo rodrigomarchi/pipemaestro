@@ -187,8 +187,6 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
         id={"#{@id}-aside"}
         title={@stage.name}
         open
-        size={:wide}
-        backdrop
         testid="task-stage-panel"
       >
         <div class="space-y-4">

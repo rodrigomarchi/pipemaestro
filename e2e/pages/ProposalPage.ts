@@ -94,14 +94,13 @@ export class ProposalPage {
     return this.page.getByTestId(`proposal-project-${name}`);
   }
 
-  /** Pipeline: lands on the pipeline form filled with the proposal. */
+  /** Pipeline: lands on the pipeline's editor (its diagram) filled with the proposal. */
   async openPipeline() {
     await this.page.getByTestId("proposal-open-pipeline").click();
     await this.page.waitForURL(/\/pipelines\/new\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
-    await this.page.getByTestId("pipeline-view-form").click();
-    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
+    await expect(this.page.getByTestId("pipeline-diagram")).toHaveAttribute("data-mode", "edit");
   }
 
   /** Project: saves the project as reviewed and lands on the list of projects. */
@@ -142,13 +141,12 @@ export class ProposalPage {
     await expect(this.page.getByTestId("toasts")).toContainText("Notas de");
   }
 
-  /** Improve: opens the pipeline's form filled with the revision. */
+  /** Improve: opens the pipeline's editor (its diagram) filled with the revision. */
   async reviewPipeline() {
     await this.page.getByTestId("proposal-review-pipeline").click();
     await this.page.waitForURL(/\/edit\?proposta=/);
     await waitForLiveView(this.page);
     await expect(this.page.getByTestId("pipeline-from-proposal")).toBeVisible();
-    await this.page.getByTestId("pipeline-view-form").click();
-    await expect(this.page.getByTestId("stage-card-0")).toBeVisible();
+    await expect(this.page.getByTestId("pipeline-diagram")).toHaveAttribute("data-mode", "edit");
   }
 }

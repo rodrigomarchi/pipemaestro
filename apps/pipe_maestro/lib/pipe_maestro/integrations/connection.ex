@@ -109,8 +109,8 @@ defmodule PipeMaestro.Integrations.Connection do
       :oauth_client_secret
     ])
     |> put_github_url()
-    |> update_change(:name, &String.trim/1)
-    |> update_change(:base_url, &(&1 |> String.trim() |> String.trim_trailing("/")))
+    |> update_change(:name, &(&1 && String.trim(&1)))
+    |> update_change(:base_url, &(&1 && &1 |> String.trim() |> String.trim_trailing("/")))
     |> validate_required([:name], message: "dê um nome à conexão")
     |> validate_length(:name, max: 80)
     |> validate_required([:provider, :auth_kind])
