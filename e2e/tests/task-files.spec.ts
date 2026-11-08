@@ -71,6 +71,7 @@ test.describe("Task files", () => {
 
     // The attempt's files, beside its artifact: the image as a thumbnail that
     // loaded, the CSV as a link; the symlink the agent left is not there.
+    await tasks.openStage("executar");
     await expect(tasks.stageRunFiles("executar", 1)).toBeVisible();
     await expect(tasks.stageRunFile("executar", 1, "a.png")).toBeVisible();
     await expect(tasks.stageRunFile("executar", 1, "dados/r.csv")).toBeVisible();

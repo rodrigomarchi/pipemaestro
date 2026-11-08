@@ -7,12 +7,13 @@ import { shot } from "../helpers/screenshots";
 export class TasksPage {
   readonly page: Page;
   readonly status: Locator;
+  /** Why the task waits: the banner over the pipeline, with the reason. */
   readonly decisionReason: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.status = page.getByTestId("task-status");
-    this.decisionReason = page.getByTestId("decision-reason");
+    this.decisionReason = page.getByTestId("task-decision-banner");
     acceptConfirms(page);
   }
 
@@ -124,8 +125,12 @@ export class TasksPage {
     await this.page.getByTestId("decision-retry").click();
   }
 
-  /** Unfolds "Decidir sem responder" when the questionnaire keeps it folded. */
+  /**
+   * Unfolds "Decidir sem responder" when the questionnaire keeps it folded,
+   * opening the waiting stage's panel first.
+   */
   async openManualDecision() {
+    if (!(await this.page.getByTestId("decision-panel").isVisible())) await this.openDecision();
     const instructions = this.page.getByTestId("decision-instructions");
     if (await instructions.isVisible()) return;
     await this.page.getByTestId("decision-manual-toggle").click();
@@ -216,6 +221,11 @@ export class TasksPage {
     await this.expectStageClosed();
   }
 
+  /** Closes the stage's panel, when one is open, so the page behind it takes clicks. */
+  async closeStageIfOpen() {
+    if (await this.stagePanel().isVisible()) await this.closeStage();
+  }
+
   /** Closes the stage's panel with Escape. */
   async closeStageWithEscape() {
     await this.page.keyboard.press("Escape");
@@ -257,17 +267,20 @@ export class TasksPage {
 
   /** Removes the finished task's worktree (the confirmation is accepted by `acceptConfirms`). */
   async removeWorktree() {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("task-remove-worktree").click();
   }
 
   /** "Corrigir com um prompt": runs `prompt` as a new stage of a task that ended. */
   async correct(prompt: string) {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("task-correct-text").fill(prompt);
     await this.page.getByTestId("task-correct-submit").click();
   }
 
   /** Stops the running stage (the confirmation is accepted by `acceptConfirms`). */
   async interrupt() {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("task-interrupt").click();
   }
 
@@ -276,6 +289,7 @@ export class TasksPage {
   }
 
   async backToList() {
+    await this.closeStageIfOpen();
     await this.page.getByTestId("back-to-tasks").click();
     await expect(this.page.getByTestId("new-task")).toBeVisible();
   }
@@ -286,6 +300,7 @@ export class TasksPage {
 
   /** Opens one of the task's tabs by its `aba`: "etapas", "resumo", "pedido", "arquivos", "anexos" or "decisoes". */
   async openTab(tab: "etapas" | "resumo" | "pedido" | "arquivos" | "anexos" | "decisoes") {
+    await this.closeStageIfOpen();
     await this.page.getByTestId(`task-tab-${tab}`).click();
     await expect(this.page.getByTestId(`task-panel-${tab}`)).toBeVisible();
   }

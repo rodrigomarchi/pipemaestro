@@ -122,7 +122,9 @@ test.describe("Task pipeline", () => {
     });
 
     await expect(tasks.status).toHaveText("Concluída", { timeout: 60_000 });
+    await tasks.openStage("pr");
     await expect(tasks.stageRunStatus("pr", 1)).toHaveText("Aprovada no gate");
+    await tasks.closeStage();
     await expect(app.page.getByTestId("task-branch")).toContainText("cp/botao-de-login-nao-responde-");
 
     const worktree = join(runner.workdir, "worktrees", bugId);
@@ -133,6 +135,7 @@ test.describe("Task pipeline", () => {
     expect(existsSync(join(root, "app", "fake-claude.txt"))).toBe(false);
 
     // Flow E: what each stage changed (its artifact and the file the fake agent writes).
+    await tasks.openStage("triagem");
     await expect(app.page.getByTestId("stage-run-changes-triagem-1")).toContainText("2 arquivos alterados");
     await expect(app.page.getByTestId("task-files")).toContainText("06-pr.md");
     await expect(app.page.getByTestId("task-files")).toContainText("fake-claude.txt");
@@ -144,17 +147,18 @@ test.describe("Task pipeline", () => {
     await shot(app.page, "task-succeeded");
     await expectFitsPhone(app.page, "task-succeeded");
     // The request, the files and the decisions each have a tab of their own.
+    await tasks.closeStage();
     await app.page.getByTestId("task-tab-pedido").click();
     await expect(app.page.getByTestId("task-prompt-text")).toBeVisible();
     await shot(app.page, "task-request");
     await app.page.getByTestId("task-tab-arquivos").click();
     await expect(app.page.getByTestId("task-files")).toBeVisible();
     await app.page.getByTestId("task-tab-etapas").click();
-    // The pipeline's diagram over the stages: every one passed, each a link to its stage.
-    const taskDiagram = app.page.getByTestId("task-diagram");
-    await expect(taskDiagram.getByTestId("diagram-stage-0")).toHaveAttribute("data-state", "passed");
-    await expect(taskDiagram.getByTestId("diagram-stage-5")).toHaveAttribute("data-state", "passed");
-    await expect(taskDiagram.getByTestId("diagram-select-1")).toHaveAttribute("href", "#stage-investigacao");
+    // The pipeline, vertical: every stage passed, each a link to its panel.
+    await expect(tasks.stageNode("triagem")).toHaveAttribute("data-state", "passed");
+    await expect(tasks.stageNode("pr")).toHaveAttribute("data-state", "passed");
+    await expect(tasks.stageNode("investigacao")).toHaveAttribute("href", /etapa=investigacao/);
+    await tasks.openStage("triagem");
 
     // Flow H: a finished stage's steps; an icon opens its panel, another
     // switches, the same closes; the reasoning filter keeps only thinking.
@@ -191,6 +195,7 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("task-correct")).toBeVisible();
     await tasks.correct("Registre também a correção pedida.");
     await expect(tasks.status).toHaveText("Concluída");
+    await tasks.openStage("correcao-1");
     await expect(tasks.stageRunStatus("correcao-1", 1)).toHaveText("Aprovada no gate");
     await expect(tasks.stageRun("correcao-1", 1)).toContainText("Registre também a correção pedida.");
     await expect(app.page.getByTestId("task-decisions")).toContainText("Corrigir");
@@ -208,11 +213,7 @@ test.describe("Task pipeline", () => {
 
     await expect(tasks.status).toHaveText("Aguardando decisão");
     await expect(tasks.decisionReason).toContainText("Preciso saber qual navegador");
-    await expect(app.page.getByTestId("task-diagram").getByTestId("diagram-stage-0")).toHaveAttribute(
-      "data-state",
-      "awaiting",
-    );
-    await expect(app.page.getByTestId("task-diagram").getByTestId("diagram-rail")).toHaveAttribute("data-waiting");
+    await expect(tasks.stageNode("executar")).toHaveAttribute("data-state", "awaiting");
     await shot(app.page, "task-awaiting-decision");
 
     // The board's tasks tab shows where each task is, a dot per stage.
@@ -258,6 +259,7 @@ test.describe("Task pipeline", () => {
       pipeline: "Prompt único",
       project: "Notas",
     });
+    await tasks.openStage("executar");
     await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Executando");
     await tasks.interrupt();
     await expect(tasks.status).toHaveText("Aguardando decisão");
@@ -284,6 +286,7 @@ test.describe("Task pipeline", () => {
       project: "App",
     });
     await expect(tasks.status).toHaveText("Concluída");
+    await tasks.openStage("executar");
     await expect(app.page.getByTestId("stage-run-gate-executar-1-0")).toHaveAttribute("data-passed", "true");
     await expect(app.page.getByTestId("stage-run-gates-executar-1")).toContainText("test -f fake-claude.txt");
     await expect(app.page.getByTestId("stage-run-setup-executar-1")).toContainText("echo pronto > setup.txt");
@@ -307,6 +310,7 @@ test.describe("Task pipeline", () => {
     });
     // One attempt in this pipeline: the failed check waits for a decision.
     await expect(tasks.status).toHaveText("Aguardando decisão");
+    await tasks.openDecision();
     await expect(tasks.stageRunStatus("executar", 1)).toHaveText("Falhou");
     await expect(tasks.decisionReason).toContainText("sujo.txt");
     await expect(app.page.getByTestId("stage-run-gates-executar-1")).toContainText("sujo.txt");

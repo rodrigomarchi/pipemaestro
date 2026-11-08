@@ -89,7 +89,7 @@ test.describe("Task stage panel", () => {
     await expect(tasks.stageNodeState("executar")).toHaveText("Executando");
     await expect(tasks.stagePanel()).toBeHidden();
     await expect(tasks.liveEvents()).toHaveCount(0);
-    await expect(tasks.sidebar().getByTestId("instruct-form")).toBeVisible();
+    await expect(tasks.sidebar().getByTestId("task-interrupt")).toBeVisible();
     await shot(app.page, "task-overview");
 
     // Flow B: the running stage's panel, 90% of the screen, live.
