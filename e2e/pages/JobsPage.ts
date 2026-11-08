@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { selectProject } from "../helpers/projectSelect";
+import { clickPageAction } from "../helpers/pageActions";
 
 /**
  * A run's timeline, inside `scope` (the job's `job-events`, a task's
@@ -74,7 +75,7 @@ export class JobsPage {
    * the job's id.
    */
   async create(project: string, prompt: string): Promise<string> {
-    await this.page.getByTestId("new-job").click();
+    await clickPageAction(this.page, "new-job");
     await selectProject(this.page.getByTestId("job-project"), project);
     await this.page.getByTestId("job-prompt").fill(prompt);
     await this.page.getByTestId("job-submit").click();
@@ -90,7 +91,7 @@ export class JobsPage {
   }
 
   async cancel() {
-    await this.page.getByTestId("job-cancel").click();
+    await clickPageAction(this.page, "job-cancel");
   }
 
   async backToList() {

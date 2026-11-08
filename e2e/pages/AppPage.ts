@@ -100,17 +100,20 @@ export class AppPage {
     return this.page.getByTestId(`board-alert-degraded-${runnerName}`);
   }
 
+  /**
+   * Opens the account menu at the foot of the sidebar (on a phone the sidebar
+   * is a drawer, opened first). Already open, it stays open.
+   */
   async openAccountMenu() {
-    await this.page.getByTestId("account-menu-trigger").click();
+    const drawer = this.page.getByTestId("sidebar-open");
+    if (await drawer.isVisible()) await drawer.click();
+    if (!(await this.page.getByTestId("account-email").isVisible())) {
+      await this.page.getByTestId("account-menu-trigger").click();
+    }
     await expect(this.page.getByTestId("account-email")).toBeVisible();
   }
 
   async signOut() {
-    await this.page.getByTestId("sidebar-logout").click();
-    await this.expectSignInPage();
-  }
-
-  async signOutFromAccountMenu() {
     await this.openAccountMenu();
     await this.page.getByTestId("account-logout").click();
     await this.expectSignInPage();

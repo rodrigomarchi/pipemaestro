@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { fakeForgejo } from "../helpers/fakeForgejo";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { shot } from "../helpers/screenshots";
+import { clickPageAction } from "../helpers/pageActions";
 
 /** A test id's natural key from a name, as `PipeMaestroWeb.IntegrationComponents.key/1`. */
 export function key(name: string): string {
@@ -43,7 +44,7 @@ export class IntegrationsPage {
 
   /** Connects the fake Forgejo with the bot's token and waits for its page. */
   async createTokenConnection(name: string, options: { shot?: string; apiMode?: "control_plane" | "runner" } = {}) {
-    await this.page.getByTestId("integration-new").click();
+    await clickPageAction(this.page, "integration-new");
     await waitForLiveView(this.page);
     await this.page.getByTestId("integration-name").fill(name);
     await this.page.getByTestId("integration-base-url").fill(fakeForgejo.url);
@@ -57,7 +58,7 @@ export class IntegrationsPage {
 
   /** Connects the fake Forgejo by OAuth; the fake authorizes at once. */
   async createOAuthConnection(name: string) {
-    await this.page.getByTestId("integration-new").click();
+    await clickPageAction(this.page, "integration-new");
     await waitForLiveView(this.page);
     await this.page.getByTestId("integration-auth-kind").selectOption("oauth");
     await expect(this.page.getByTestId("integration-oauth-redirect")).toContainText("/integrations/oauth/callback");

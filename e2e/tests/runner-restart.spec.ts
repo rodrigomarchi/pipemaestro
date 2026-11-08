@@ -12,6 +12,7 @@ import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
+import { clickPageAction } from "../helpers/pageActions";
 
 test.describe("Runner restart", () => {
   // Real CLI processes: the first one may compile the runner app.
@@ -86,7 +87,7 @@ test.describe("Runner restart", () => {
     await shot(app.page, "runner-events-job-lost");
 
     await app.page.goto(`/w/${workspace.slug}/tasks/${taskId}`);
-    await app.page.getByTestId("task-cancel").click();
+    await clickPageAction(app.page, "task-cancel");
     // The runner stops the running agent first: SIGTERM, then SIGKILL after 5 s.
     await expect(tasks.status).toHaveText("Cancelada", { timeout: 15_000 });
   });

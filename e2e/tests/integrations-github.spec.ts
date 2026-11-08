@@ -13,6 +13,7 @@ import { BackofficePage } from "../pages/BackofficePage";
 import { IntegrationsPage, key } from "../pages/IntegrationsPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
+import { clickPageAction } from "../helpers/pageActions";
 
 test.describe("GitHub App", () => {
   test.setTimeout(240_000);
@@ -53,7 +54,7 @@ test.describe("GitHub App", () => {
 
     const integrations = new IntegrationsPage(app.page);
     await integrations.open(workspace.slug);
-    await app.page.getByTestId("integration-new").click();
+    await clickPageAction(app.page, "integration-new");
     await waitForLiveView(app.page);
     await app.page.getByTestId("integration-provider").selectOption("github");
     await expect(app.page.getByTestId("integration-github-help")).toBeVisible();

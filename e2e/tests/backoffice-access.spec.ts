@@ -32,7 +32,7 @@ test.describe("Backoffice access", () => {
     const other = await browser.newContext();
     const otherBackoffice = new BackofficePage(await other.newPage());
     await otherBackoffice.signInExpectingSuccess(operator.email, userPassword);
-    await otherBackoffice.signOutFromAccountMenu();
+    await otherBackoffice.signOut();
     await otherBackoffice.signInExpectingSuccess(operator.email, userPassword);
     await otherBackoffice.signOut();
 

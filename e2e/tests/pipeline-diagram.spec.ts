@@ -10,6 +10,7 @@ import { shot } from "../helpers/screenshots";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { PipelinesPage } from "../pages/PipelinesPage";
+import { clickPageAction } from "../helpers/pageActions";
 
 test.describe("Pipeline diagram", () => {
   test("shows and edits a pipeline as a diagram", async ({ page, browser }) => {
@@ -61,7 +62,7 @@ test.describe("Pipeline diagram", () => {
     // Flow B: the admin edits on the diagram.
     await pipelines.open(workspace.slug);
     await pipelines.openPage("Refatoração");
-    await adminApp.page.getByTestId("pipeline-page-edit").click();
+    await clickPageAction(adminApp.page, "pipeline-page-edit");
     await expect(pipelines.diagram).toBeVisible();
     await expect(adminApp.page.getByTestId("stage-card-0")).toHaveCount(0);
 
