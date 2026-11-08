@@ -412,7 +412,6 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
       assert html =~ "Teto de custo por tarefa (US$, opcional)"
       assert html =~ "Vazio é sem limite. Com um valor, a tarefa para e pede uma decisão"
-      assert html =~ "Um teto de custo, se quiser, e o que vira do código."
       assert html =~ "Teto de custo (US$, opcional)"
       refute html =~ "Orçamento"
     end
@@ -463,6 +462,11 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
 
       view |> element("[data-testid=diagram-select-1]") |> render_click()
       assert has_element?(view, "[data-testid=pipeline-panel]", "Etapa B")
+      # The prompt first; the gates a tab away.
+      assert has_element?(view, "[data-testid=stage-details-tab-prompt][aria-selected=true]")
+      assert has_element?(view, "[data-testid=stage-details-panel-verificacao].hidden")
+      view |> element("[data-testid=stage-details-tab-verificacao]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-details-panel-verificacao].hidden")
       assert has_element?(view, "[data-testid=stage-details-gates]", "mix test")
       assert has_element?(view, "[data-testid=diagram-select-1][aria-pressed=true]")
 
@@ -600,6 +604,57 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
       |> render_submit()
 
       refute has_element?(view, "[data-testid=stage-panel-0].hidden")
+    end
+
+    test "a drawer opens on its first tab, and the others stay in the form, hidden", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-select-0]") |> render_click()
+
+      refute has_element?(view, "[data-testid=stage-panel-0-panel-prompt].hidden")
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-panel-0-panel-prompt] [data-testid=stage-model-0]"
+             )
+
+      assert has_element?(view, "[data-testid=stage-panel-0-panel-avancado].hidden")
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-panel-0-panel-avancado] [data-testid=stage-key-0]"
+             )
+
+      view |> element("[data-testid=stage-panel-0-tab-avancado]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-panel-0-panel-avancado].hidden")
+      assert has_element?(view, "[data-testid=stage-panel-0-panel-prompt].hidden")
+
+      # Another node opens on its own first tab.
+      view |> element("[data-testid=diagram-select-1]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-panel-1-panel-prompt].hidden")
+    end
+
+    test "an error in a hidden tab opens it and marks it", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-select-0]") |> render_click()
+
+      view
+      |> form("#pipeline-form", pipeline: %{stages: %{"0" => %{context: "continue"}}})
+      |> render_submit()
+
+      refute has_element?(view, "[data-testid=stage-panel-0-panel-avancado].hidden")
+      assert has_element?(view, "[data-testid=stage-panel-0-tab-error-avancado]")
+      refute has_element?(view, "[data-testid=stage-panel-0-tab-error-prompt]")
+    end
+
+    test "an error in the entry opens its tab", ctx do
+      {:ok, view, _html} = edit(ctx.conn, ctx.workspace, ctx.pipeline)
+      view |> element("[data-testid=diagram-entry]") |> render_click()
+      view |> element("[data-testid=pipeline-panel-tab-entrega]") |> render_click()
+
+      view |> form("#pipeline-form", pipeline: %{name: ""}) |> render_submit()
+
+      refute has_element?(view, "[data-testid=pipeline-panel-panel-geral].hidden")
+      assert has_element?(view, "[data-testid=pipeline-panel-tab-error-geral]")
     end
 
     test "a new pipeline opens on the diagram with its settings open", ctx do

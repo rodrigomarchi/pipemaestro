@@ -1,14 +1,16 @@
 defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   @moduledoc """
   One attempt at a task's stage, as the stage's panel
-  (`PipeMaestroWeb.TaskLive.StagePanel`) shows it: its status and numbers, and
-  what it produced. An attempt that ended with an artifact leads with it,
-  then the files it sent, and folds how it got there (environment, changes,
-  feedback, answers, instructions, summary, result, commit, gates and the
-  agent's steps, read only when opened). A running attempt shows the
-  timeline streamed live, what the agent is typing and what it spent so far.
+  (`PipeMaestroWeb.TaskLive.StagePanel`) shows it: its status and numbers over
+  tabs (`tabs/3`), the first what matters most. **Resultado** is what it
+  produced: its summary, artifact, files and the agent's whole answer;
+  while it runs, **Ao vivo**, the timeline streamed live and what the agent is
+  typing. **Verificação** is how it was checked (gates, commit, changes), and
+  opens first when that refused it; **Passos** the agent's steps, read only
+  when the tab opens; **Contexto** what the agent was given (feedback,
+  answers, instructions, the stage's prompt and the environment).
 
-  The events of an attempt (`toggle_artifact`, `toggle_steps`,
+  The events of an attempt (`select_tab`, `toggle_artifact`, `load_steps`,
   `filter_steps`) go to `target`, the panel that holds their state.
   """
   use PipeMaestroWeb, :html
@@ -19,7 +21,6 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
       timeline_items: 2,
       timeline_segment: 1,
       typing: 1,
-      count_label: 3,
       format_cost: 1,
       format_duration: 1,
       format_percent: 1,
@@ -33,9 +34,42 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   import PipeMaestroWeb.TaskComponents,
     only: [stage_run_status: 1, stage_run_session: 1, changes_report: 1]
 
+  import PipeMaestroWeb.PipelineComponents, only: [chosen_tab: 2, drawer_tabs: 1]
+  import PipeMaestroWeb.TabComponents, only: [tab_panel: 1]
+
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.Markdown
+
+  @typedoc "A tab of an attempt: its id, label and icon."
+  @type tab :: {String.t(), String.t(), String.t()}
+
+  @doc """
+  The tabs of an attempt: what it produced (or what it does now, while it
+  runs) and, when it has them, how it was checked, the agent's steps and what
+  it was given.
+  """
+  @spec tabs(StageRun.t(), boolean(), String.t() | nil) :: [tab()]
+  def tabs(%StageRun{} = run, live, prompt) do
+    [
+      if(live,
+        do: {"resultado", "Ao vivo", "hero-signal"},
+        else: {"resultado", "Resultado", "hero-document-text"}
+      ),
+      checked?(run) && {"verificacao", "Verificação", "hero-shield-check"},
+      run.job && !live && {"passos", "Passos", "hero-list-bullet"},
+      context?(run, prompt) && {"contexto", "Contexto", "hero-inbox-arrow-down"}
+    ]
+    |> Enum.filter(& &1)
+  end
+
+  @doc """
+  The tab an attempt opens on: why it was refused, when a gate failed or the
+  delivery did not happen; else what it produced.
+  """
+  @spec default_tab(StageRun.t()) :: String.t()
+  def default_tab(%StageRun{} = run),
+    do: if(check_failed?(run), do: "verificacao", else: "resultado")
 
   attr :run, StageRun, required: true
   attr :many, :boolean, required: true
@@ -47,29 +81,40 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   attr :raw_artifact, :boolean, default: false
   attr :files, :list, default: [], doc: "the files the attempt's job sent"
   attr :typing, :string, default: nil
+  attr :prompt, :string, default: nil, doc: "the stage's prompt, what the agent was given"
+  attr :tab, :string, default: nil, doc: "the tab chosen (`tabs/3`); `default_tab/1` when nil"
   attr :workspace_slug, :string, required: true
   attr :target, :any, default: nil, doc: "where the attempt's own events go (`phx-target`)"
 
   @spec attempt(map()) :: Phoenix.LiveView.Rendered.t()
   def attempt(assigns) do
+    tabs = tabs(assigns.run, assigns.live, assigns.prompt)
+
+    assigns =
+      assign(assigns,
+        tabs: tabs,
+        tab: chosen_tab(tabs, assigns.tab || default_tab(assigns.run)),
+        ref: run_ref(assigns.run)
+      )
+
     ~H"""
     <div
       class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-      data-testid={"stage-run-#{run_ref(@run)}"}
+      data-testid={"stage-run-#{@ref}"}
     >
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
         <span>
           <span :if={@many}>
             Tentativa {@run.attempt}{if @run.requeue > 0, do: " · de novo (#{@run.requeue})"} ·
           </span>
-          <.stage_run_status run={@run} data-testid={"stage-run-status-#{run_ref(@run)}"} />
+          <.stage_run_status run={@run} data-testid={"stage-run-status-#{@ref}"} />
           <.stage_run_session run={@run} />
         </span>
         <span :if={@run.job} class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span
             :if={@spent}
             class="whitespace-nowrap text-primary-700 dark:text-primary-300"
-            data-testid={"stage-run-spent-#{run_ref(@run)}"}
+            data-testid={"stage-run-spent-#{@ref}"}
           >
             até agora {format_cost(@spent.cost_usd)} · {short_number(@spent.tokens)} tokens
           </span>
@@ -82,25 +127,34 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
           <span
             :if={Job.tokens(@run.job) > 0}
             class="whitespace-nowrap"
-            data-testid={"stage-run-tokens-#{run_ref(@run)}"}
+            data-testid={"stage-run-tokens-#{@ref}"}
           >
             {short_number(Job.tokens(@run.job))} tokens · {format_percent(Job.cache_hit(@run.job))} do cache
           </span>
           <.link
             navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}"}
             class="whitespace-nowrap text-primary-600 hover:underline dark:text-primary-400"
-            data-testid={"stage-run-audit-#{run_ref(@run)}"}
+            data-testid={"stage-run-audit-#{@ref}"}
           >
             Execução e auditoria
           </.link>
         </span>
       </div>
 
+      <.drawer_tabs
+        tabs={@tabs}
+        active={@tab}
+        errors={if check_failed?(@run), do: ["verificacao"], else: []}
+        target={@target}
+        testid={"stage-run-#{@ref}"}
+        class="border-b border-gray-100 px-4 dark:border-gray-800"
+      />
+
       <div class="space-y-3 px-4 py-3">
         <p
           :if={@run.error && @run.status == :lost}
           class="text-sm text-warning-700 dark:text-warning-400"
-          data-testid={"stage-run-lost-#{run_ref(@run)}"}
+          data-testid={"stage-run-lost-#{@ref}"}
         >
           {@run.error}
         </p>
@@ -111,55 +165,8 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
           {@run.error}
         </p>
 
-        <%!-- An ended attempt with an artifact leads with it; how it got
-             there (summary, gates, commit, files, steps) is folded below. --%>
-        <%= if artifact_first?(@run, @live) do %>
-          <.artifact run={@run} raw_artifact={@raw_artifact} target={@target} />
-          <.run_files run={@run} files={@files} workspace_slug={@workspace_slug} />
-
-          <details
-            id={"stage-run-details-#{@run.id}"}
-            open={details_open?(@run)}
-            phx-mounted={JS.ignore_attributes(["open"])}
-            class="group rounded-lg border border-gray-200 dark:border-gray-800"
-            data-testid={"stage-run-details-#{run_ref(@run)}"}
-          >
-            <summary
-              class="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
-              data-testid={"stage-run-details-toggle-#{run_ref(@run)}"}
-            >
-              <.icon
-                name="hero-chevron-right"
-                class="size-4 transition-transform group-open:rotate-90"
-              />
-              <span class="font-medium">Detalhes da etapa</span>
-              <span
-                :for={part <- details_summary(@run)}
-                class="text-xs text-gray-500 dark:text-gray-400"
-              >
-                · {part}
-              </span>
-            </summary>
-            <div class="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
-              <.run_details run={@run} />
-              <.run_steps
-                :if={@run.job}
-                run={@run}
-                steps={@steps}
-                steps_filter={@steps_filter}
-                target={@target}
-              />
-            </div>
-          </details>
-        <% else %>
-          <.run_details run={@run} />
-          <.artifact :if={@run.artifact} run={@run} raw_artifact={@raw_artifact} target={@target} />
-          <.run_files run={@run} files={@files} workspace_slug={@workspace_slug} />
-
+        <.tab_panel id="resultado" active={@tab} testid={"stage-run-#{@ref}"} class="space-y-3">
           <div :if={@live}>
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-info-600 dark:text-info-400">
-              Ao vivo
-            </p>
             <ol id="task-events" phx-update="stream" class="space-y-3" data-testid="task-events">
               <.timeline_segment
                 :for={{id, segment} <- @streams.timeline}
@@ -170,7 +177,26 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
             </ol>
             <.typing :if={@typing} text={@typing} />
           </div>
+          <.run_summary run={@run} />
+          <.artifact :if={@run.artifact} run={@run} raw_artifact={@raw_artifact} target={@target} />
+          <.run_files run={@run} files={@files} workspace_slug={@workspace_slug} />
+          <.run_answer run={@run} />
+          <p
+            :if={!@live and !@run.artifact and !@run.summary and !plain_result?(@run)}
+            class="text-sm text-gray-500 dark:text-gray-400"
+            data-testid={"stage-run-no-result-#{@ref}"}
+          >
+            {if @run.status == :running,
+              do: "A tentativa está rodando.",
+              else: "Esta tentativa não deixou um resultado."}
+          </p>
+        </.tab_panel>
 
+        <.tab_panel id="verificacao" active={@tab} testid={"stage-run-#{@ref}"} class="space-y-3">
+          <.run_checks run={@run} />
+        </.tab_panel>
+
+        <.tab_panel id="passos" active={@tab} testid={"stage-run-#{@ref}"}>
           <.run_steps
             :if={@run.job && !@live}
             run={@run}
@@ -178,7 +204,11 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
             steps_filter={@steps_filter}
             target={@target}
           />
-        <% end %>
+        </.tab_panel>
+
+        <.tab_panel id="contexto" active={@tab} testid={"stage-run-#{@ref}"} class="space-y-3">
+          <.run_context run={@run} prompt={@prompt} />
+        </.tab_panel>
       </div>
     </div>
     """
@@ -198,59 +228,9 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
 
   attr :run, StageRun, required: true
 
-  # How an attempt went: its environment, files, feedback, answers, summary,
-  # result, commit and gates.
-  @spec run_details(map()) :: Phoenix.LiveView.Rendered.t()
-  def run_details(assigns) do
+  # An attempt's summary, in a line.
+  defp run_summary(assigns) do
     ~H"""
-    <.setup_report
-      :if={@run.job && @run.job.setup}
-      setup={@run.job.setup}
-      data-testid={"stage-run-setup-#{run_ref(@run)}"}
-    />
-
-    <.changes_report
-      :if={@run.job && @run.job.changes}
-      changes={@run.job.changes}
-      id={run_ref(@run)}
-    />
-
-    <details
-      :if={@run.feedback}
-      class="rounded-lg bg-warning-50 px-3 py-2 text-sm dark:bg-warning-950/30"
-      data-testid={"stage-run-feedback-#{run_ref(@run)}"}
-    >
-      <summary class="cursor-pointer text-warning-800 dark:text-warning-300">
-        Feedback da tentativa anterior
-      </summary>
-      <div
-        id={"feedback-#{@run.id}"}
-        phx-hook="Highlight"
-        class="prose prose-sm mt-2 max-h-80 max-w-none overflow-auto dark:prose-invert"
-      >
-        {Markdown.to_html(@run.feedback)}
-      </div>
-    </details>
-
-    <div
-      :if={@run.answers}
-      class="text-sm"
-      data-testid={"stage-run-answers-#{run_ref(@run)}"}
-    >
-      <span class="font-medium text-gray-900 dark:text-white">Respostas da pessoa:</span>
-      <.answer_list answers={@run.answers} class="mt-1 space-y-1 text-sm" />
-    </div>
-
-    <div
-      :if={@run.instructions}
-      class={[
-        "text-sm text-gray-600 dark:text-gray-300",
-        "prose prose-sm max-w-none dark:prose-invert"
-      ]}
-    >
-      <span class="font-medium">Instruções:</span> {Markdown.inline_html(@run.instructions)}
-    </div>
-
     <div
       :if={@run.summary}
       class={["text-sm text-gray-900 dark:text-white", "prose prose-sm max-w-none dark:prose-invert"]}
@@ -258,7 +238,14 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
     >
       {Markdown.inline_html(@run.summary)}
     </div>
+    """
+  end
 
+  attr :run, StageRun, required: true
+
+  # The agent's whole answer: its structured output, folded, or its plain text.
+  defp run_answer(assigns) do
+    ~H"""
     <details
       :if={@run.structured_output not in [nil, %{}]}
       id={"stage-run-output-#{@run.id}"}
@@ -283,6 +270,26 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
       class="max-h-[32rem] overflow-auto rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-950"
       data-testid={"stage-run-result-#{run_ref(@run)}"}
     />
+    """
+  end
+
+  attr :run, StageRun, required: true
+
+  # How an attempt was checked: its gates, its commit and what it changed.
+  defp run_checks(assigns) do
+    ~H"""
+    <p
+      :if={@run.job && @run.job.delivery && @run.job.delivery["error"]}
+      class="text-sm text-danger-700 dark:text-danger-400"
+    >
+      A entrega falhou: {@run.job.delivery["error"]}
+    </p>
+
+    <.gate_results
+      :if={@run.job && @run.job.gates not in [nil, []]}
+      gates={@run.job.gates}
+      id={run_ref(@run)}
+    />
 
     <p
       :if={@run.job && @run.job.delivery && @run.job.delivery["commit"]}
@@ -293,17 +300,76 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
       <span class="font-mono">{String.slice(@run.job.delivery["commit"], 0, 7)}</span>
       <span :if={@run.job.delivery["pushed"]}>· enviado</span>
     </p>
-    <p
-      :if={@run.job && @run.job.delivery && @run.job.delivery["error"]}
-      class="text-xs text-danger-700 dark:text-danger-400"
-    >
-      A entrega falhou: {@run.job.delivery["error"]}
-    </p>
 
-    <.gate_results
-      :if={@run.job && @run.job.gates not in [nil, []]}
-      gates={@run.job.gates}
+    <.changes_report
+      :if={@run.job && @run.job.changes}
+      changes={@run.job.changes}
       id={run_ref(@run)}
+    />
+    """
+  end
+
+  attr :run, StageRun, required: true
+  attr :prompt, :string, default: nil
+
+  # What the agent was given: the feedback of the attempt before, a person's
+  # answers and instructions, the stage's prompt and the environment.
+  defp run_context(assigns) do
+    ~H"""
+    <div
+      :if={@run.feedback}
+      class="rounded-lg bg-warning-50 px-3 py-2 text-sm dark:bg-warning-950/30"
+      data-testid={"stage-run-feedback-#{run_ref(@run)}"}
+    >
+      <p class="text-warning-800 dark:text-warning-300">Feedback da tentativa anterior</p>
+      <div
+        id={"feedback-#{@run.id}"}
+        phx-hook="Highlight"
+        class="prose prose-sm mt-2 max-h-80 max-w-none overflow-auto dark:prose-invert"
+      >
+        {Markdown.to_html(@run.feedback)}
+      </div>
+    </div>
+
+    <div
+      :if={@run.answers}
+      class="text-sm"
+      data-testid={"stage-run-answers-#{run_ref(@run)}"}
+    >
+      <span class="font-medium text-gray-900 dark:text-white">Respostas da pessoa:</span>
+      <.answer_list answers={@run.answers} class="mt-1 space-y-1 text-sm" />
+    </div>
+
+    <div
+      :if={@run.instructions}
+      class={[
+        "text-sm text-gray-600 dark:text-gray-300",
+        "prose prose-sm max-w-none dark:prose-invert"
+      ]}
+    >
+      <span class="font-medium">Instruções:</span> {Markdown.inline_html(@run.instructions)}
+    </div>
+
+    <details
+      :if={@prompt not in [nil, ""]}
+      id={"stage-run-prompt-#{@run.id}"}
+      phx-mounted={JS.ignore_attributes(["open"])}
+      open={!(@run.feedback || @run.answers || @run.instructions)}
+      class="text-sm"
+      data-testid={"stage-run-prompt-#{run_ref(@run)}"}
+    >
+      <summary class="cursor-pointer font-medium text-gray-700 dark:text-gray-200">
+        Prompt da etapa
+      </summary>
+      <div class="prose prose-sm mt-2 max-w-none rounded-lg bg-gray-50 px-4 py-3 dark:prose-invert dark:bg-gray-950">
+        {Markdown.to_html(@prompt)}
+      </div>
+    </details>
+
+    <.setup_report
+      :if={@run.job && @run.job.setup}
+      setup={@run.job.setup}
+      data-testid={"stage-run-setup-#{run_ref(@run)}"}
     />
     """
   end
@@ -390,25 +456,26 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   attr :steps_filter, :string, default: "all"
   attr :target, :any, default: nil
 
-  # The agent's steps, read when asked for and filtered by kind.
+  # The agent's steps, read when the tab opens (or the button asks for them)
+  # and filtered by kind.
   @spec run_steps(map()) :: Phoenix.LiveView.Rendered.t()
   def run_steps(assigns) do
     ~H"""
     <div>
-      <button
-        type="button"
-        phx-click="toggle_steps"
+      <.button
+        :if={!@steps}
+        size="xs"
+        variant="outline"
+        color="gray"
+        icon="hero-list-bullet"
+        phx-click="load_steps"
         phx-value-job={@run.job.id}
         phx-target={@target}
-        class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
-        data-testid={"stage-run-steps-toggle-#{run_ref(@run)}"}
+        data-testid={"stage-run-steps-load-#{run_ref(@run)}"}
       >
-        <.icon
-          name={if @steps, do: "hero-chevron-down", else: "hero-chevron-right"}
-          class="size-4"
-        /> Passo a passo do agente
-      </button>
-      <div :if={@steps} class="mt-2 flex flex-wrap gap-1">
+        Ver o passo a passo do agente
+      </.button>
+      <div :if={@steps} class="flex flex-wrap gap-1">
         <.button
           :for={
             {filter, label} <- [
@@ -440,34 +507,25 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
     """
   end
 
-  defp artifact_first?(%StageRun{artifact: artifact, status: status}, live),
-    do: is_binary(artifact) and status != :running and not live
+  # Whether an attempt has anything checked to show: gates, a commit, changes
+  # or a delivery that failed.
+  defp checked?(%StageRun{job: %Job{} = job}),
+    do: job.gates not in [nil, []] or is_map(job.delivery) or is_map(job.changes)
 
-  # Opened already when something went wrong in it: a gate that failed, a
-  # delivery that did not happen.
-  defp details_open?(%StageRun{job: %Job{} = job}) do
+  defp checked?(_run), do: false
+
+  # A gate that failed or a delivery that did not happen.
+  defp check_failed?(%StageRun{job: %Job{} = job}) do
     Enum.any?(job.gates || [], &(&1["passed"] == false)) or
       match?(%{"error" => error} when is_binary(error), job.delivery)
   end
 
-  defp details_open?(_run), do: false
+  defp check_failed?(_run), do: false
 
-  # What the folded details hold, in a line: gates met, files, commit.
-  defp details_summary(%StageRun{job: %Job{} = job}) do
-    gates = job.gates || []
-    files = (job.changes || %{})["files"] || []
-    commit = (job.delivery || %{})["commit"]
-
-    [
-      gates != [] &&
-        "gates #{Enum.count(gates, & &1["passed"])}/#{length(gates)}",
-      files != [] && count_label(length(files), "arquivo", "arquivos"),
-      is_binary(commit) && "commit #{String.slice(commit, 0, 7)}"
-    ]
-    |> Enum.filter(&is_binary/1)
+  defp context?(%StageRun{} = run, prompt) do
+    prompt not in [nil, ""] or
+      Enum.any?([run.feedback, run.answers, run.instructions, run.job && run.job.setup])
   end
-
-  defp details_summary(_run), do: []
 
   attr :gates, :list, required: true
   attr :id, :string, required: true

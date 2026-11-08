@@ -15,9 +15,13 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
   and `spent`). When it ends, the page's fingerprint changes and the panel
   turns to what the attempt produced.
 
-  The component keeps the panel's state: the attempt picked, the artifacts
-  shown as text, the finished steps opened and their filters, the live
-  timeline, what is being typed and what was spent so far.
+  An attempt opens in tabs (`PipeMaestroWeb.TaskLive.AttemptComponents`),
+  what it produced first; a stage that never ran, its details in tabs too.
+
+  The component keeps the panel's state: the attempt picked and the tab
+  open, the artifacts shown as text, the finished steps read (when the
+  "Passos" tab opens) and their filters, the live timeline, what is being
+  typed and what was spent so far.
   """
   use PipeMaestroWeb, :live_component
 
@@ -28,6 +32,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
     only: [side_panel: 1, stage_details: 1, stage_state_badge: 1]
 
   alias PipeMaestro.{Insights, Jobs, Tasks}
+  alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.PipelineDiagram
   alias PipeMaestroWeb.TaskLive.{AttemptComponents, DecisionPanel}
@@ -37,6 +42,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
     {:ok,
      socket
      |> assign(index: nil, fingerprint: nil, live_job_id: nil, runs: [], attempt: nil)
+     |> assign(tab: nil)
      |> assign(raw_artifacts: MapSet.new(), timelines: %{}, step_filters: %{})
      |> assign(typing: nil, spent: nil, timeline_tail: nil)
      |> stream(:timeline, [])}
@@ -99,7 +105,13 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
     socket = assign(socket, runs: runs, attempt: attempt)
 
     if moved?,
-      do: assign(socket, raw_artifacts: MapSet.new(), timelines: %{}, step_filters: %{}),
+      do:
+        assign(socket,
+          raw_artifacts: MapSet.new(),
+          timelines: %{},
+          step_filters: %{},
+          tab: nil
+        ),
       else: socket
   end
 
@@ -130,8 +142,11 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
   end
 
   @impl true
+  def handle_event("select_tab", %{"tab" => tab}, socket),
+    do: {:noreply, socket |> assign(tab: tab) |> load_shown_steps()}
+
   def handle_event("select_attempt", %{"attempt" => attempt}, socket),
-    do: {:noreply, assign(socket, attempt: String.to_integer(attempt))}
+    do: {:noreply, socket |> assign(attempt: String.to_integer(attempt)) |> load_shown_steps()}
 
   # An artifact shows rendered; this flips one between that and its text.
   def handle_event("toggle_artifact", %{"run" => run_id}, socket) do
@@ -145,28 +160,36 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
     {:noreply, assign(socket, raw_artifacts: raw)}
   end
 
-  # A finished attempt's steps are read only when someone opens them.
-  def handle_event("toggle_steps", %{"job" => job_id}, socket) do
-    timelines = socket.assigns.timelines
-
-    timelines =
-      cond do
-        Map.has_key?(timelines, job_id) ->
-          Map.delete(timelines, job_id)
-
-        job = Enum.find_value(socket.assigns.runs, &(&1.job && &1.job.id == job_id && &1.job)) ->
-          Map.put(timelines, job_id, Jobs.list_events(job))
-
-        true ->
-          timelines
-      end
-
-    {:noreply, assign(socket, timelines: timelines)}
+  # A finished attempt's steps are read only when someone asks for them.
+  def handle_event("load_steps", %{"job" => job_id}, socket) do
+    jobs = for %{job: %{id: ^job_id} = job} <- socket.assigns.runs, do: job
+    {:noreply, load_steps(socket, jobs)}
   end
 
   def handle_event("filter_steps", %{"job" => job_id, "filter" => filter}, socket)
       when filter in ~w(all agent tools thinking errors),
       do: {:noreply, update(socket, :step_filters, &Map.put(&1, job_id, filter))}
+
+  # The steps of the attempt shown, read when its "Passos" tab opens.
+  defp load_shown_steps(%{assigns: %{tab: "passos"}} = socket) do
+    jobs =
+      for %{attempt: attempt, job: %Job{} = job} <- socket.assigns.runs,
+          attempt == socket.assigns.attempt,
+          do: job
+
+    load_steps(socket, jobs)
+  end
+
+  defp load_shown_steps(socket), do: socket
+
+  defp load_steps(socket, jobs) do
+    timelines =
+      Enum.reduce(jobs, socket.assigns.timelines, fn job, timelines ->
+        Map.put_new_lazy(timelines, job.id, fn -> Jobs.list_events(job) end)
+      end)
+
+    assign(socket, timelines: timelines)
+  end
 
   @impl true
   def render(assigns) do
@@ -227,7 +250,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
             <p class="text-sm text-gray-500 dark:text-gray-400">
               Esta etapa ainda não rodou. Quando chegar a vez dela, o agente recebe:
             </p>
-            <.stage_details stage={@stage} />
+            <.stage_details stage={@stage} tab={@tab} target={@myself} />
           </div>
 
           <div
@@ -264,6 +287,8 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
             steps_filter={(run.job && Map.get(@step_filters, run.job.id)) || "all"}
             raw_artifact={MapSet.member?(@raw_artifacts, run.id)}
             files={Map.get(@files, run.id, [])}
+            prompt={@stage.prompt}
+            tab={@tab}
             workspace_slug={@slug}
             target={@myself}
           />

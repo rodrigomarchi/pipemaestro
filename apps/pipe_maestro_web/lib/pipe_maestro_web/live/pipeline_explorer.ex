@@ -3,8 +3,9 @@ defmodule PipeMaestroWeb.PipelineExplorer do
   A pipeline to explore, wherever a page shows one: its diagram
   (`PipeMaestroWeb.PipelineComponents.pipeline_diagram/1`, with the layers in
   `opts`, `PipeMaestroWeb.PipelineDiagram.build/2`), where a stage opens its
-  details in a side panel and the entry the pipeline's own settings. The
-  component keeps which node is open, so the page holds no state for it.
+  details in a side panel and the entry the pipeline's own settings, each in
+  tabs that open on what matters most. The component keeps which node and tab
+  are open, so the page holds no state for them.
   """
   use PipeMaestroWeb, :live_component
 
@@ -13,7 +14,8 @@ defmodule PipeMaestroWeb.PipelineExplorer do
   alias PipeMaestroWeb.PipelineDiagram
 
   @impl true
-  def mount(socket), do: {:ok, assign(socket, selected: nil, opts: [], testid: "pipeline")}
+  def mount(socket),
+    do: {:ok, assign(socket, selected: nil, tab: nil, opts: [], testid: "pipeline")}
 
   @impl true
   def update(assigns, socket) do
@@ -25,10 +27,13 @@ defmodule PipeMaestroWeb.PipelineExplorer do
 
   @impl true
   def handle_event("select_node", %{"node" => "entry"}, socket),
-    do: {:noreply, assign(socket, selected: :entry)}
+    do: {:noreply, assign(socket, selected: :entry, tab: nil)}
 
   def handle_event("select_node", %{"node" => index}, socket),
-    do: {:noreply, assign(socket, selected: {:stage, String.to_integer(index)})}
+    do: {:noreply, assign(socket, selected: {:stage, String.to_integer(index)}, tab: nil)}
+
+  def handle_event("select_tab", %{"tab" => tab}, socket),
+    do: {:noreply, assign(socket, tab: tab)}
 
   def handle_event("close_panel", _params, socket),
     do: {:noreply, assign(socket, selected: nil)}
@@ -54,10 +59,17 @@ defmodule PipeMaestroWeb.PipelineExplorer do
         target={@myself}
         testid={"#{@testid}-panel"}
       >
-        <.pipeline_summary :if={@selected == :entry} pipeline={@pipeline} />
+        <.pipeline_summary
+          :if={@selected == :entry}
+          pipeline={@pipeline}
+          tab={@tab}
+          target={@myself}
+        />
         <.stage_details
           :if={match?({:stage, _}, @selected)}
           stage={Enum.at(@pipeline.stages, elem(@selected, 1))}
+          tab={@tab}
+          target={@myself}
         />
       </.side_panel>
     </div>

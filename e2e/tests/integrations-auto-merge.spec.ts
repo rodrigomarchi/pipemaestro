@@ -74,6 +74,7 @@ test.describe("Merging the pull request", () => {
     await pipelines.createDefaults();
     await pipelines.edit("Correção de bug");
     await pipelines.openEntry();
+    await pipelines.openEntryTab("entrega");
     await app.page.getByTestId("pipeline-delivery").selectOption("pr");
     const autoMerge = app.page.getByTestId("pipeline-auto-merge");
     await expect(autoMerge).not.toBeChecked();

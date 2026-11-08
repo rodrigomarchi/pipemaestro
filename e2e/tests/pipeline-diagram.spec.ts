@@ -54,6 +54,8 @@ test.describe("Pipeline diagram", () => {
     await expect(reader.pagePanel).toContainText("Implementação");
     await expect(memberApp.page.getByTestId("stage-details-prompt")).toContainText("Implemente o plano");
     await shot(memberApp.page, "pipeline-page-stage");
+    // A stage with only a prompt has nothing a tab away.
+    await expect(memberApp.page.getByTestId("stage-details-tabs")).toHaveCount(0);
 
     const viewport = memberApp.page.viewportSize();
     await memberApp.page.setViewportSize({ width: 390, height: 844 });
@@ -71,6 +73,9 @@ test.describe("Pipeline diagram", () => {
     await expect(pipelines.stagePanel(1)).toBeVisible();
     await pipelines.stageName(1).fill("Refatoração em passos");
     await expect(pipelines.diagramStage(1)).toContainText("Refatoração em passos");
+    // The rest of the stage is a tab away from its prompt and model.
+    await pipelines.openStageTab(1, "verificacao");
+    await shot(adminApp.page, "pipeline-editor-panel-verification");
     await pipelines.closePanel(1);
 
     await pipelines.insertStageAt(2);

@@ -21,11 +21,14 @@ defmodule PipeMaestroWeb.PipelineComponents do
   `stage_state_badge/1` and `stage_state_marker/1`.
 
   `side_panel/1` is the drawer a node opens, the same wherever a pipeline is
-  shown. Unlike Petal's `slide_over`, which only opens when mounted, it stays
+  shown, and `drawer_tabs/1` the tabs inside it: what matters most about the
+  node first, the rest a tab away. Unlike Petal's `slide_over`, which only opens when mounted, it stays
   in the page while closed (hidden), so a form's inputs inside it keep being
   sent.
   """
   use PipeMaestroWeb, :html
+
+  import PipeMaestroWeb.TabComponents, only: [tab_panel: 1]
 
   alias PipeMaestro.Pipelines.{Json, Pipeline, Stage}
   alias PipeMaestroWeb.{Markdown, PipelineDiagram}
@@ -776,40 +779,127 @@ defmodule PipeMaestroWeb.PipelineComponents do
     """
   end
 
+  # ── A node's tabs ─────────────────────────────────────────────────────────
+
+  @typedoc "A tab of a node's drawer: its id, label and icon."
+  @type drawer_tab :: {String.t(), String.t(), String.t()}
+
+  attr :tabs, :list, required: true, doc: "a list of `t:drawer_tab/0`"
+  attr :active, :string, required: true
+  attr :testid, :string, required: true, doc: "prefix of the test ids (`<testid>-tab-<id>`)"
+  attr :errors, :list, default: [], doc: "the ids of the tabs whose fields have an error"
+  attr :target, :any, default: nil, doc: "where `select_tab` goes (`phx-target`)"
+
+  attr :class, :any,
+    default: "sticky -top-6 z-10 -mx-6 -mt-6 mb-6 bg-white px-6 dark:bg-gray-900",
+    doc: "where the row sits: by default stuck to the top of the drawer as it scrolls"
+
+  @doc """
+  The row of tabs at the top of a node's drawer, the same in every drawer: the
+  first tab is what matters most about the node (a stage's prompt and model),
+  the others what is looked at less. A click sends `select_tab` with the tab's
+  id. A tab whose fields have an error is marked, so an error in a tab not
+  chosen still shows. One tab alone is not drawn.
+  """
+  def drawer_tabs(assigns) do
+    ~H"""
+    <.tabs
+      :if={length(@tabs) > 1}
+      variant="underline"
+      class={["overflow-x-auto", @class]}
+      data-testid={"#{@testid}-tabs"}
+    >
+      <.tab
+        :for={{id, label, icon} <- @tabs}
+        link_type="button"
+        variant="underline"
+        is_active={@active == id}
+        phx-click="select_tab"
+        phx-value-tab={id}
+        phx-target={@target}
+        class="whitespace-nowrap"
+        data-testid={"#{@testid}-tab-#{id}"}
+      >
+        <.icon name={icon} class="mr-1.5 size-4" /> {label}
+        <span
+          :if={id in @errors}
+          class="ml-1.5 size-2 rounded-full bg-danger-500"
+          title="Tem um erro"
+          data-testid={"#{@testid}-tab-error-#{id}"}
+        ></span>
+      </.tab>
+    </.tabs>
+    """
+  end
+
+  @doc "The tab of `tabs` named `tab`, else the first: what a drawer shows."
+  @spec chosen_tab([drawer_tab()], String.t() | nil) :: String.t()
+  def chosen_tab([{first, _, _} | _] = tabs, tab),
+    do: if(Enum.any?(tabs, &(elem(&1, 0) == tab)), do: tab, else: first)
+
+  @doc "The tabs of a stage's details: its prompt, and how it is checked and its output when it has them."
+  @spec stage_detail_tabs(Stage.t()) :: [drawer_tab()]
+  def stage_detail_tabs(%Stage{} = stage) do
+    [
+      {"prompt", "Prompt", "hero-pencil-square"},
+      (stage.gates != [] or stage.rules != []) &&
+        {"verificacao", "Verificação", "hero-shield-check"},
+      stage.output_schema && {"avancado", "Avançado", "hero-adjustments-horizontal"}
+    ]
+    |> Enum.filter(& &1)
+  end
+
   attr :stage, Stage, required: true
 
-  @doc "Everything about a stage, read-only: prompt, gates, rules, output fields."
+  attr :tab, :string,
+    default: nil,
+    doc: "the tab shown (`stage_detail_tabs/1`); the first when nil"
+
+  attr :target, :any, default: nil, doc: "where `select_tab` goes (`phx-target`)"
+  attr :testid, :string, default: "stage-details"
+
+  @doc """
+  Everything about a stage, read-only, in tabs: its model and the like over its
+  prompt first; its gates and rules; its output fields.
+  """
   def stage_details(assigns) do
+    tabs = stage_detail_tabs(assigns.stage)
+    assigns = assign(assigns, tabs: tabs, tab: chosen_tab(tabs, assigns.tab))
+
     ~H"""
-    <div class="space-y-5" data-testid="stage-details">
-      <.stage_chips chips={PipelineDiagram.chips(@stage)} />
-      <div>
-        <.block_heading icon="hero-document-text" title="Prompt" />
+    <div data-testid="stage-details">
+      <.drawer_tabs tabs={@tabs} active={@tab} target={@target} testid={@testid} />
+      <.tab_panel id="prompt" active={@tab} testid={@testid} class="space-y-4">
+        <.stage_chips chips={PipelineDiagram.chips(@stage)} />
         <div
           class="prose prose-sm max-w-none dark:prose-invert"
           data-testid="stage-details-prompt"
         >
           {Markdown.to_html(@stage.prompt)}
         </div>
-      </div>
-      <div :if={@stage.gates != []} data-testid="stage-details-gates">
-        <.block_heading icon="hero-shield-check" title="Gates (comandos depois da etapa)" />
-        <ul class="space-y-1 font-mono text-sm text-gray-700 dark:text-gray-200">
-          <li :for={gate <- @stage.gates}>
-            {if gate["expect"] == "fail", do: "! "}{gate["command"]}
-          </li>
-        </ul>
-      </div>
-      <div :if={@stage.rules != []} data-testid="stage-details-rules">
-        <.block_heading icon="hero-hand-raised" title="Pede ajuda quando" />
-        <ul class="space-y-1 font-mono text-sm text-gray-700 dark:text-gray-200">
-          <li :for={rule <- @stage.rules}>{PipelineDiagram.rule_label(rule)}</li>
-        </ul>
-      </div>
-      <div :if={@stage.output_schema} data-testid="stage-details-schema">
-        <.block_heading icon="hero-code-bracket-square" title="Campos extras da saída" />
-        <pre class="overflow-x-auto rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-100">{Json.pretty(@stage.output_schema)}</pre>
-      </div>
+      </.tab_panel>
+      <.tab_panel id="verificacao" active={@tab} testid={@testid} class="space-y-5">
+        <div :if={@stage.gates != []} data-testid="stage-details-gates">
+          <.block_heading icon="hero-shield-check" title="Gates (comandos depois da etapa)" />
+          <ul class="space-y-1 font-mono text-sm text-gray-700 dark:text-gray-200">
+            <li :for={gate <- @stage.gates}>
+              {if gate["expect"] == "fail", do: "! "}{gate["command"]}
+            </li>
+          </ul>
+        </div>
+        <div :if={@stage.rules != []} data-testid="stage-details-rules">
+          <.block_heading icon="hero-hand-raised" title="Pede ajuda quando" />
+          <ul class="space-y-1 font-mono text-sm text-gray-700 dark:text-gray-200">
+            <li :for={rule <- @stage.rules}>{PipelineDiagram.rule_label(rule)}</li>
+          </ul>
+        </div>
+      </.tab_panel>
+      <.tab_panel id="avancado" active={@tab} testid={@testid}>
+        <div :if={@stage.output_schema} data-testid="stage-details-schema">
+          <.block_heading icon="hero-code-bracket-square" title="Campos extras da saída" />
+          <pre class="overflow-x-auto rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-100">{Json.pretty(@stage.output_schema)}</pre>
+        </div>
+      </.tab_panel>
     </div>
     """
   end
@@ -817,63 +907,94 @@ defmodule PipeMaestroWeb.PipelineComponents do
   defp merge_method_label("merge"), do: "merge commit"
   defp merge_method_label(method), do: method
 
+  @doc "The tabs of a pipeline's summary: the general one, and its MCP servers and agents when it has them."
+  @spec pipeline_summary_tabs(Pipeline.t()) :: [drawer_tab()]
+  def pipeline_summary_tabs(%Pipeline{} = pipeline) do
+    advanced? = mcp_names(pipeline) != [] or names(pipeline.agents) != []
+
+    [
+      {"geral", "Geral", "hero-identification"},
+      advanced? && {"avancado", "Avançado", "hero-puzzle-piece"}
+    ]
+    |> Enum.filter(& &1)
+  end
+
   attr :pipeline, Pipeline, required: true
 
+  attr :tab, :string,
+    default: nil,
+    doc: "the tab shown (`pipeline_summary_tabs/1`); the first when nil"
+
+  attr :target, :any, default: nil, doc: "where `select_tab` goes (`phx-target`)"
+  attr :testid, :string, default: "pipeline-summary"
+
   @doc """
-  A pipeline's own settings, read-only: delivery, cost cap, the merge of the
-  pull request and context.
+  A pipeline's own settings, read-only, in tabs: its description, delivery,
+  cost cap, the merge of the pull request and system instructions first; its
+  MCP servers and agents.
   """
   def pipeline_summary(assigns) do
+    tabs = pipeline_summary_tabs(assigns.pipeline)
+
     assigns =
       assign(assigns,
-        mcp: names(assigns.pipeline.mcp_config && assigns.pipeline.mcp_config["mcpServers"]),
+        tabs: tabs,
+        tab: chosen_tab(tabs, assigns.tab),
+        mcp: mcp_names(assigns.pipeline),
         agents: names(assigns.pipeline.agents)
       )
 
     ~H"""
-    <div class="space-y-5" data-testid="pipeline-summary">
-      <div :if={@pipeline.description} class="text-sm text-gray-600 dark:text-gray-300">
-        {Markdown.inline_html(@pipeline.description)}
-      </div>
-      <dl class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-300">
-        <div class="flex items-center gap-1" data-testid="pipeline-summary-delivery">
-          <dt><.icon name={delivery_icon(@pipeline.delivery)} class="size-4" /></dt>
-          <dd>{delivery_label(@pipeline.delivery)}</dd>
+    <div data-testid="pipeline-summary">
+      <.drawer_tabs tabs={@tabs} active={@tab} target={@target} testid={@testid} />
+      <.tab_panel id="geral" active={@tab} testid={@testid} class="space-y-5">
+        <div :if={@pipeline.description} class="text-sm text-gray-600 dark:text-gray-300">
+          {Markdown.inline_html(@pipeline.description)}
         </div>
-        <div class="flex items-center gap-1" data-testid="pipeline-summary-cost">
-          <dt><.icon name="hero-banknotes" class="size-4" /></dt>
-          <dd>{budget_label(@pipeline.max_task_cost_usd)}</dd>
+        <dl class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-300">
+          <div class="flex items-center gap-1" data-testid="pipeline-summary-delivery">
+            <dt><.icon name={delivery_icon(@pipeline.delivery)} class="size-4" /></dt>
+            <dd>{delivery_label(@pipeline.delivery)}</dd>
+          </div>
+          <div class="flex items-center gap-1" data-testid="pipeline-summary-cost">
+            <dt><.icon name="hero-banknotes" class="size-4" /></dt>
+            <dd>{budget_label(@pipeline.max_task_cost_usd)}</dd>
+          </div>
+          <div
+            :if={@pipeline.auto_merge}
+            class="flex items-center gap-1"
+            data-testid="pipeline-summary-auto-merge"
+          >
+            <dt><.icon name="hero-arrows-pointing-in" class="size-4" /></dt>
+            <dd>
+              Merge sozinha ({merge_method_label(@pipeline.merge_method)}, até {@pipeline.max_merge_fixes} correções)
+            </dd>
+          </div>
+        </dl>
+        <div :if={@pipeline.system_prompt not in [nil, ""]}>
+          <.block_heading icon="hero-command-line" title="Instruções de sistema" />
+          <div class="prose prose-sm max-w-none dark:prose-invert">
+            {Markdown.to_html(@pipeline.system_prompt)}
+          </div>
         </div>
-        <div
-          :if={@pipeline.auto_merge}
-          class="flex items-center gap-1"
-          data-testid="pipeline-summary-auto-merge"
-        >
-          <dt><.icon name="hero-arrows-pointing-in" class="size-4" /></dt>
-          <dd>
-            Merge sozinha ({merge_method_label(@pipeline.merge_method)}, até {@pipeline.max_merge_fixes} correções)
-          </dd>
+      </.tab_panel>
+      <.tab_panel id="avancado" active={@tab} testid={@testid} class="space-y-5">
+        <div :if={@mcp != []} data-testid="pipeline-summary-mcp">
+          <.block_heading icon="hero-server-stack" title="Servidores MCP" />
+          <p class="font-mono text-sm text-gray-700 dark:text-gray-200">{Enum.join(@mcp, ", ")}</p>
         </div>
-      </dl>
-      <div :if={@pipeline.system_prompt not in [nil, ""]}>
-        <.block_heading icon="hero-command-line" title="Instruções de sistema" />
-        <div class="prose prose-sm max-w-none dark:prose-invert">
-          {Markdown.to_html(@pipeline.system_prompt)}
+        <div :if={@agents != []} data-testid="pipeline-summary-agents">
+          <.block_heading icon="hero-user-group" title="Agentes" />
+          <p class="font-mono text-sm text-gray-700 dark:text-gray-200">
+            {Enum.join(@agents, ", ")}
+          </p>
         </div>
-      </div>
-      <div :if={@mcp != []} data-testid="pipeline-summary-mcp">
-        <.block_heading icon="hero-server-stack" title="Servidores MCP" />
-        <p class="font-mono text-sm text-gray-700 dark:text-gray-200">{Enum.join(@mcp, ", ")}</p>
-      </div>
-      <div :if={@agents != []} data-testid="pipeline-summary-agents">
-        <.block_heading icon="hero-user-group" title="Agentes" />
-        <p class="font-mono text-sm text-gray-700 dark:text-gray-200">
-          {Enum.join(@agents, ", ")}
-        </p>
-      </div>
+      </.tab_panel>
     </div>
     """
   end
+
+  defp mcp_names(pipeline), do: names(pipeline.mcp_config && pipeline.mcp_config["mcpServers"])
 
   defp names(map) when is_map(map), do: map |> Map.keys() |> Enum.sort()
   defp names(_none), do: []

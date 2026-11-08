@@ -182,8 +182,16 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
                "Artefato de a"
              )
 
-      assert has_element?(view, "#{panel} [data-testid=stage-run-details-a-1]")
-      refute has_element?(view, "#{panel} [data-testid=stage-run-details-a-1][open]")
+      # The result first; how it was checked, its steps and context a tab away.
+      refute has_element?(view, "#{panel} [data-testid=stage-run-a-1-panel-resultado].hidden")
+      assert has_element?(view, "#{panel} [data-testid=stage-run-a-1-panel-contexto].hidden")
+      assert has_element?(view, "#{panel} [data-testid=stage-run-a-1-tab-passos]")
+
+      assert has_element?(
+               view,
+               "#{panel} [data-testid=stage-run-a-1-panel-resultado] [data-testid=stage-run-summary-a-1]"
+             )
+
       assert has_element?(view, "#{panel} [data-testid=stage-run-audit-a-1]")
 
       # The artifact flips between rendered and text, in the panel.

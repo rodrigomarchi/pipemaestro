@@ -619,6 +619,12 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       # The panel opens on the latest attempt, which got the gate's feedback.
       assert has_element?(view, "[data-testid=stage-run-feedback-a-2]", "1 failure")
+      # It is in what the attempt was given.
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-a-2-panel-contexto] [data-testid=stage-run-feedback-a-2]"
+             )
+
       view |> element("[data-testid=task-stage-attempt-a-1]") |> render_click()
 
       gates = view |> element("[data-testid=stage-run-gates-a-1]") |> render()
@@ -633,9 +639,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-gate-a-1-0][data-passed=true]")
 
-      # A failed gate opens the details folded under the artifact.
-      assert has_element?(view, "[data-testid=stage-run-details-a-1][open]")
-      assert has_element?(view, "[data-testid=stage-run-details-toggle-a-1]", "gates 1/2")
+      # A failed gate opens the attempt on its checks, the tab marked.
+      refute has_element?(view, "[data-testid=stage-run-a-1-panel-verificacao].hidden")
+      assert has_element?(view, "[data-testid=stage-run-a-1-panel-resultado].hidden")
+      assert has_element?(view, "[data-testid=stage-run-a-1-tab-error-verificacao]")
     end
 
     test "shows what each stage changed and what the task changed so far", ctx do
@@ -788,36 +795,28 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
       assert has_element?(view, "[data-testid=task-stage-state-a]", "Concluída")
 
-      view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
+      refute has_element?(view, "[data-testid=stage-run-steps-a-1]")
+      view |> element("[data-testid=stage-run-a-1-tab-passos]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
 
       view |> element("[data-testid=stage-run-steps-filter-a-1-errors]") |> render_click()
       refute has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
       view |> element("[data-testid=stage-run-steps-filter-a-1-agent]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
-      view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
-      refute has_element?(view, "[data-testid=stage-run-steps-a-1]")
 
       assert has_element?(view, "[data-testid=stage-run-summary-a-1]", "a feita")
       assert has_element?(view, "[data-testid=task-cost]", "US$")
 
-      # The artifact leads; how the stage got there is folded under it.
+      # Without an artifact, the result is the summary and the agent's answer.
       assert has_element?(
                view,
-               "[data-testid=stage-run-details-a-1] [data-testid=stage-run-summary-a-1]"
+               "[data-testid=stage-run-a-1-panel-resultado] [data-testid=stage-run-summary-a-1]"
              )
-
-      refute has_element?(view, "[data-testid=stage-run-details-a-1][open]")
 
       assert has_element?(
                view,
                "[data-testid=stage-run-output-a-1] [data-testid=agent-output-field-resumo]",
                "a feita"
-             )
-
-      refute has_element?(
-               view,
-               "[data-testid=stage-run-details-a-1] [data-testid^=stage-run-artifact]"
              )
 
       assert has_element?(view, "[data-testid=task-prompt-text][phx-hook=Highlight]")
@@ -919,7 +918,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "#{live} [data-testid=job-event-panel-3]", "$ mix test")
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
-      view |> element("[data-testid=stage-run-steps-toggle-a-1]") |> render_click()
+      view |> element("[data-testid=stage-run-a-1-tab-passos]") |> render_click()
 
       steps = "[data-testid=stage-run-steps-a-1]"
       assert has_element?(view, "#{steps} [data-testid=job-event-1]", "trabalhando")

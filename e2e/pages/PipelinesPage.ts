@@ -92,9 +92,24 @@ export class PipelinesPage {
     return this.page.getByTestId(`stage-gates-${index}`);
   }
 
-  /** Opens a stage's "Avançado" block in the form, where its agent, group and context are. */
+  /**
+   * Opens a tab of a stage's drawer: "prompt" (where it opens: name, model and
+   * prompt), "execucao", "verificacao" (gates and rules) or "avancado".
+   */
+  async openStageTab(index: number, tab: string) {
+    await this.page.getByTestId(`stage-panel-${index}-tab-${tab}`).click();
+    await expect(this.page.getByTestId(`stage-panel-${index}-panel-${tab}`)).toBeVisible();
+  }
+
+  /** Opens a tab of the entry's drawer: "geral" (where it opens), "entrega" or "avancado". */
+  async openEntryTab(tab: string) {
+    await this.page.getByTestId(`pipeline-panel-tab-${tab}`).click();
+    await expect(this.page.getByTestId(`pipeline-panel-panel-${tab}`)).toBeVisible();
+  }
+
+  /** Opens a stage's "Avançado" tab, where its key, context, agent and group are. */
   async openAdvanced(index: number) {
-    await this.page.getByTestId(`stage-advanced-${index}`).click();
+    await this.openStageTab(index, "avancado");
     await expect(this.stageContext(index)).toBeVisible();
   }
 

@@ -104,9 +104,11 @@ test.describe("Task pipeline", () => {
     await pipelines.writePrompt(0);
 
     await pipelines.stagePrompt(0).fill("{{tarefa.descricao}}\n\nRegistre no artefato o que foi feito.");
+    await pipelines.openStageTab(0, "verificacao");
     await pipelines.stageGates(0).fill("{{projeto.teste}}");
     await pipelines.closePanel(0);
     await pipelines.openEntry();
+    await pipelines.openEntryTab("entrega");
     // Flow M: commits by the agent, checked by the platform, as the form says.
     await app.page.getByTestId("pipeline-delivery").selectOption("commit");
     await expect(app.page.getByTestId("pipeline-platform-checks")).toContainText("Nada ficou sem commit");
@@ -145,11 +147,13 @@ test.describe("Task pipeline", () => {
     await expect(app.page.getByTestId("task-files")).toContainText("fake-claude.txt");
     // The artifact's code block is highlighted in the browser.
     await expect(app.page.getByTestId("stage-run-artifact-triagem-1")).toHaveAttribute("data-highlighted", "true");
-    await tasks.openDetails("triagem", 1);
-    await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
-    await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded");
     await expectFitsPhone(app.page, "task-succeeded");
+    // How it was checked is a tab away from what it produced.
+    await tasks.openAttemptTab("triagem", 1, "verificacao");
+    await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
+    await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
+    await shot(app.page, "task-succeeded-checks");
     // The request, the files and the decisions each have a tab of their own.
     await tasks.closeStage();
     await app.page.getByTestId("task-tab-pedido").click();
@@ -188,7 +192,9 @@ test.describe("Task pipeline", () => {
     await tasks.filterSteps("triagem", 1, "all");
 
     // Flow D: the worktree was prepared, and goes when asked.
+    await tasks.openAttemptTab("triagem", 1, "contexto");
     await expect(app.page.getByTestId("stage-run-setup-triagem-1")).toContainText("copiado: deps");
+    await shot(app.page, "task-stage-context");
     expect(readFileSync(join(worktree, "deps", "jason", "mix.exs"), "utf8")).toBe("jason\n");
     await tasks.removeWorktree();
     await expect(tasks.worktreeState).toHaveText("Removido do runner.");
