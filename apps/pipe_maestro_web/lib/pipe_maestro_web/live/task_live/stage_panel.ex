@@ -17,7 +17,8 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
 
   The component keeps the panel's state: the attempt picked, the artifacts
   shown as text, the finished steps opened and their filters, the live
-  timeline, what is being typed and what was spent so far.
+  timeline, what is being typed and what was spent so far, and the tab of
+  the details of a stage that never ran.
   """
   use PipeMaestroWeb, :live_component
 
@@ -37,6 +38,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
     {:ok,
      socket
      |> assign(index: nil, fingerprint: nil, live_job_id: nil, runs: [], attempt: nil)
+     |> assign(details_tab: nil)
      |> assign(raw_artifacts: MapSet.new(), timelines: %{}, step_filters: %{})
      |> assign(typing: nil, spent: nil, timeline_tail: nil)
      |> stream(:timeline, [])}
@@ -99,7 +101,13 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
     socket = assign(socket, runs: runs, attempt: attempt)
 
     if moved?,
-      do: assign(socket, raw_artifacts: MapSet.new(), timelines: %{}, step_filters: %{}),
+      do:
+        assign(socket,
+          raw_artifacts: MapSet.new(),
+          timelines: %{},
+          step_filters: %{},
+          details_tab: nil
+        ),
       else: socket
   end
 
@@ -130,6 +138,9 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
   end
 
   @impl true
+  def handle_event("select_tab", %{"tab" => tab}, socket),
+    do: {:noreply, assign(socket, details_tab: tab)}
+
   def handle_event("select_attempt", %{"attempt" => attempt}, socket),
     do: {:noreply, assign(socket, attempt: String.to_integer(attempt))}
 
@@ -227,7 +238,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
             <p class="text-sm text-gray-500 dark:text-gray-400">
               Esta etapa ainda não rodou. Quando chegar a vez dela, o agente recebe:
             </p>
-            <.stage_details stage={@stage} />
+            <.stage_details stage={@stage} tab={@details_tab} target={@myself} />
           </div>
 
           <div

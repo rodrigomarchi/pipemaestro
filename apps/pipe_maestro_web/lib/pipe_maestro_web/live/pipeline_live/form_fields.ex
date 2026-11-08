@@ -1,10 +1,16 @@
 defmodule PipeMaestroWeb.PipelineLive.FormFields do
   @moduledoc """
-  The fields of `PipeMaestroWeb.PipelineLive.Form`: the pipeline's
-  identification, execution and context, and a stage's fields. Each is
-  rendered once in the form, in the drawer the diagram's node opens.
+  The fields of `PipeMaestroWeb.PipelineLive.Form`: the pipeline's and a
+  stage's, each rendered once in the form, in the drawer the diagram's node
+  opens. A drawer splits its fields in tabs
+  (`PipeMaestroWeb.PipelineComponents.drawer_tabs/1`), the first one
+  what matters most (a stage's prompt and model); a tab not chosen stays in the
+  page, hidden, so its inputs still post.
   """
   use PipeMaestroWeb, :html
+
+  import PipeMaestroWeb.PipelineComponents, only: [drawer_tabs: 1]
+  import PipeMaestroWeb.TabComponents, only: [tab_panel: 1]
 
   alias PipeMaestro.Pipelines.{Prompt, Stage}
   alias PipeMaestro.Tasks.Contract
@@ -25,44 +31,136 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
     if is_binary(name) and String.trim(name) != "", do: name, else: "Nova etapa"
   end
 
-  attr :form, Phoenix.HTML.Form, required: true
+  @typedoc """
+  A tab of a drawer: its id, label and icon, and the fields in it, whose
+  errors mark it.
+  """
+  @type tab :: {String.t(), String.t(), String.t(), [atom()]}
 
-  @doc "The pipeline's name and description."
-  def identity_fields(assigns) do
+  @entry_tabs [
+    {"geral", "Geral", "hero-identification", [:name, :description, :system_prompt]},
+    {"entrega", "Entrega", "hero-rocket-launch",
+     [:max_task_cost_usd, :delivery, :auto_merge, :merge_method, :max_merge_fixes]},
+    {"avancado", "Avançado", "hero-puzzle-piece", [:mcp_config_json, :agents_json]}
+  ]
+
+  @stage_tabs [
+    {"prompt", "Prompt", "hero-pencil-square", [:name, :model, :prompt]},
+    {"execucao", "Execução", "hero-cog-6-tooth",
+     [:max_attempts, :max_budget_usd, :timeout_minutes]},
+    {"verificacao", "Verificação", "hero-shield-check", [:gates_text, :rules_text]},
+    {"avancado", "Avançado", "hero-adjustments-horizontal",
+     [:key, :context, :agent, :group, :output_schema_json]}
+  ]
+
+  @doc "The tabs of the entry's drawer, the first one what it opens on."
+  @spec entry_tabs() :: [tab()]
+  def entry_tabs, do: @entry_tabs
+
+  @doc "The tabs of a stage's drawer, the first one what it opens on."
+  @spec stage_tabs() :: [tab()]
+  def stage_tabs, do: @stage_tabs
+
+  @doc "The first of `tabs` holding one of `fields`, else the first tab."
+  @spec tab_of([tab()], [atom()]) :: String.t()
+  def tab_of([{first, _, _, _} | _] = tabs, fields) do
+    Enum.find_value(tabs, first, fn {id, _, _, tab_fields} ->
+      if Enum.any?(fields, &(&1 in tab_fields)), do: id
+    end)
+  end
+
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :tabs, :list, required: true, doc: "a list of `t:tab/0`"
+  attr :active, :string, required: true
+  attr :testid, :string, required: true
+
+  # The drawer's tabs, a tab marked when one of its fields has an error.
+  defp form_tabs(assigns) do
+    assigns =
+      assign(assigns,
+        errors:
+          for(
+            {id, _, _, fields} <- assigns.tabs,
+            Enum.any?(fields, &(assigns.form[&1].errors != [])),
+            do: id
+          ),
+        tabs: Enum.map(assigns.tabs, fn {id, label, icon, _fields} -> {id, label, icon} end)
+      )
+
     ~H"""
-    <.section_heading
-      icon="hero-identification"
-      title="Identificação"
-      description="Como o pipeline aparece na lista e ao criar uma tarefa."
-    />
-    <.icon_field field={@form[:name]} icon="hero-tag" label="Nome" data-testid="pipeline-name" />
-    <.icon_field
-      field={@form[:description]}
-      icon="hero-bars-3-bottom-left"
-      type="textarea"
-      rows="2"
-      label="Descrição"
-      no_margin
-      data-testid="pipeline-description"
-    />
+    <.drawer_tabs tabs={@tabs} active={@active} errors={@errors} testid={@testid} />
+    """
+  end
+
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :tab, :string, required: true
+
+  @doc """
+  The pipeline's fields, one tab at a time: its name, description and system
+  instructions; its cost cap and delivery; its MCP servers and agents.
+  """
+  def entry_fields(assigns) do
+    ~H"""
+    <.form_tabs form={@form} tabs={entry_tabs()} active={@tab} testid="pipeline-panel" />
+    <.tab_panel id="geral" active={@tab} testid="pipeline-panel" class="max-w-3xl">
+      <.icon_field field={@form[:name]} icon="hero-tag" label="Nome" data-testid="pipeline-name" />
+      <.icon_field
+        field={@form[:description]}
+        icon="hero-bars-3-bottom-left"
+        type="textarea"
+        rows="2"
+        label="Descrição"
+        data-testid="pipeline-description"
+      />
+      <.markdown_editor
+        id="pipeline-system-prompt"
+        field={@form[:system_prompt]}
+        label="Instruções de sistema"
+        icon="hero-command-line"
+        testid="pipeline-system-prompt"
+        rows={6}
+        help_text="Somadas às do agente em todas as etapas. Cada etapa roda com contexto novo e lê os artefatos das anteriores."
+      />
+    </.tab_panel>
+    <.tab_panel id="entrega" active={@tab} testid="pipeline-panel" class="max-w-3xl">
+      <.execution_fields form={@form} />
+    </.tab_panel>
+    <.tab_panel id="avancado" active={@tab} testid="pipeline-panel" class="max-w-3xl">
+      <.icon_field
+        field={@form[:mcp_config_json]}
+        icon="hero-server-stack"
+        type="textarea"
+        rows="6"
+        label="Servidores MCP (JSON com mcpServers)"
+        placeholder={~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}})}
+        help_text="Valem para todas as etapas. Não guarde segredos aqui: use variáveis de ambiente do runner."
+        class="font-mono text-sm"
+        data-testid="pipeline-mcp-config"
+      />
+      <.icon_field
+        field={@form[:agents_json]}
+        icon="hero-user-group"
+        type="textarea"
+        rows="6"
+        label="Agentes (JSON por nome)"
+        placeholder={~s({"revisor": {"description": "Revisa o diff", "prompt": "Revise..."}})}
+        help_text="Uma etapa roda como um deles pelo nome (Avançado, na etapa)."
+        class="font-mono text-sm"
+        no_margin
+        data-testid="pipeline-agents"
+      />
+    </.tab_panel>
     """
   end
 
   attr :form, Phoenix.HTML.Form, required: true
 
-  @doc """
-  The pipeline's cost cap and delivery, with the platform's checks and, for a
-  delivery in PR, whether the platform merges it.
-  """
-  def execution_fields(assigns) do
+  # The pipeline's cost cap and delivery, with the platform's checks and, for
+  # a delivery in PR, whether the platform merges it.
+  defp execution_fields(assigns) do
     assigns = assign(assigns, delivery: delivery(assigns.form[:delivery].value))
 
     ~H"""
-    <.section_heading
-      icon="hero-rocket-launch"
-      title="Execução"
-      description="Um teto de custo, se quiser, e o que vira do código."
-    />
     <.icon_field
       field={@form[:max_task_cost_usd]}
       icon="hero-banknotes"
@@ -158,98 +256,27 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
   defp delivery(value),
     do: Enum.find(@deliveries, hd(@deliveries), fn {key, _, _, _} -> key == value end)
 
-  attr :form, Phoenix.HTML.Form, required: true
-
-  @doc "What every stage runs with: system instructions, MCP servers and agents."
-  def context_fields(assigns) do
-    ~H"""
-    <.section_heading
-      icon="hero-cpu-chip"
-      title="Contexto do pipeline"
-      description="Vale para todas as etapas. Cada etapa roda com contexto novo, lê os artefatos das anteriores e responde com status (ok ou bloqueado) e resumo; ela segue sozinha para a próxima e só para quando precisa de ajuda."
-    />
-    <.markdown_editor
-      id="pipeline-system-prompt"
-      field={@form[:system_prompt]}
-      label="Instruções de sistema"
-      icon="hero-command-line"
-      testid="pipeline-system-prompt"
-      rows={4}
-      help_text="Somadas às do agente em todas as etapas."
-    />
-    <details class="group mt-2">
-      <summary class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300">
-        <.icon name="hero-chevron-right" class="size-4 transition group-open:rotate-90" />
-        <.icon name="hero-puzzle-piece" class="size-4" /> Servidores MCP e agentes
-      </summary>
-      <div class="mt-3 grid gap-4 lg:grid-cols-2">
-        <.icon_field
-          field={@form[:mcp_config_json]}
-          icon="hero-server-stack"
-          type="textarea"
-          rows="5"
-          label="Servidores MCP (JSON com mcpServers)"
-          placeholder={~s({"mcpServers": {"grafana": {"command": "mcp-grafana"}}})}
-          help_text="Não guarde segredos aqui: use variáveis de ambiente do runner."
-          class="font-mono text-sm"
-          data-testid="pipeline-mcp-config"
-        />
-        <.icon_field
-          field={@form[:agents_json]}
-          icon="hero-user-group"
-          type="textarea"
-          rows="5"
-          label="Agentes (JSON por nome)"
-          placeholder={~s({"revisor": {"description": "Revisa o diff", "prompt": "Revise..."}})}
-          class="font-mono text-sm"
-          data-testid="pipeline-agents"
-        />
-      </div>
-    </details>
-    """
-  end
-
   attr :stage, Phoenix.HTML.Form, required: true
+  attr :tab, :string, required: true
 
-  @doc "A stage's fields: name, key, prompt, execution, verification and the advanced ones."
+  @doc """
+  A stage's fields, one tab at a time: its name, model and prompt; how it runs;
+  how it is checked; and the advanced ones (key, context, agent, group and
+  structured output).
+  """
   def stage_fields(assigns) do
+    assigns = assign(assigns, testid: "stage-panel-#{assigns.stage.index}")
+
     ~H"""
-    <div class="space-y-2" data-testid={"stage-body-#{@stage.index}"}>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <.icon_field
-          field={@stage[:name]}
-          icon="hero-tag"
-          label="Nome"
-          data-testid={"stage-name-#{@stage.index}"}
-        />
-        <.icon_field
-          field={@stage[:key]}
-          icon="hero-key"
-          label="Chave"
-          help_text="Nome do artefato; em branco, vem do nome."
-          data-testid={"stage-key-#{@stage.index}"}
-        />
-      </div>
-
-      <.markdown_editor
-        id={"stage-#{@stage.index}-prompt"}
-        field={@stage[:prompt]}
-        label="Prompt"
-        testid={"stage-prompt-#{@stage.index}"}
-        variables={Prompt.variables()}
-      />
-
-      <div>
-        <.block_heading icon="hero-cog-6-tooth" title="Execução" />
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <.form_tabs form={@stage} tabs={stage_tabs()} active={@tab} testid={@testid} />
+    <div data-testid={"stage-body-#{@stage.index}"}>
+      <.tab_panel id="prompt" active={@tab} testid={@testid}>
+        <div class="grid gap-4 sm:grid-cols-2">
           <.icon_field
-            field={@stage[:max_attempts]}
-            icon="hero-arrow-path"
-            type="number"
-            min="1"
-            max="5"
-            label="Tentativas"
-            data-testid={"stage-attempts-#{@stage.index}"}
+            field={@stage[:name]}
+            icon="hero-tag"
+            label="Nome"
+            data-testid={"stage-name-#{@stage.index}"}
           />
           <.icon_field
             field={@stage[:model]}
@@ -259,111 +286,128 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
             options={[{"Padrão do CLI", ""} | Enum.map(Stage.models(), &{&1, &1})]}
             data-testid={"stage-model-#{@stage.index}"}
           />
-          <.icon_field
-            field={@stage[:max_budget_usd]}
-            icon="hero-banknotes"
-            type="number"
-            step="0.01"
-            min="0"
-            label="Teto de custo (US$, opcional)"
-            help_text="Vazio é sem limite."
-            data-testid={"stage-budget-#{@stage.index}"}
-          />
-          <.icon_field
-            field={@stage[:timeout_minutes]}
-            icon="hero-clock"
-            type="number"
-            min="1"
-            max="1440"
-            label="Tempo máximo (min)"
-            data-testid={"stage-timeout-#{@stage.index}"}
-          />
         </div>
-      </div>
+        <.markdown_editor
+          id={"stage-#{@stage.index}-prompt"}
+          field={@stage[:prompt]}
+          label="Prompt"
+          testid={"stage-prompt-#{@stage.index}"}
+          variables={Prompt.variables()}
+          rows={14}
+        />
+      </.tab_panel>
 
-      <div>
-        <.block_heading icon="hero-shield-check" title="Verificação" />
+      <.tab_panel id="execucao" active={@tab} testid={@testid} class="max-w-3xl">
+        <.icon_field
+          field={@stage[:max_attempts]}
+          icon="hero-arrow-path"
+          type="number"
+          min="1"
+          max="5"
+          label="Tentativas"
+          help_text="Quantas vezes a etapa roda antes de pedir ajuda, quando um gate reprova."
+          data-testid={"stage-attempts-#{@stage.index}"}
+        />
+        <.icon_field
+          field={@stage[:max_budget_usd]}
+          icon="hero-banknotes"
+          type="number"
+          step="0.01"
+          min="0"
+          label="Teto de custo (US$, opcional)"
+          help_text="Vazio é sem limite."
+          data-testid={"stage-budget-#{@stage.index}"}
+        />
+        <.icon_field
+          field={@stage[:timeout_minutes]}
+          icon="hero-clock"
+          type="number"
+          min="1"
+          max="1440"
+          label="Tempo máximo (min)"
+          no_margin
+          data-testid={"stage-timeout-#{@stage.index}"}
+        />
+      </.tab_panel>
+
+      <.tab_panel id="verificacao" active={@tab} testid={@testid} class="max-w-3xl">
+        <.icon_field
+          field={@stage[:gates_text]}
+          icon="hero-shield-check"
+          type="textarea"
+          rows="4"
+          label="Gates (comandos depois da etapa)"
+          placeholder={gates_placeholder()}
+          help_text="Um por linha; ! na frente quando o comando deve falhar. Um gate não atendido reprova a tentativa."
+          class="font-mono text-sm"
+          data-testid={"stage-gates-#{@stage.index}"}
+        />
+        <.icon_field
+          field={@stage[:rules_text]}
+          icon="hero-hand-raised"
+          type="textarea"
+          rows="4"
+          label="Pedir ajuda quando"
+          placeholder="bem_definida == false"
+          help_text="Um por linha: campo == valor ou campo != valor, sobre a saída estruturada. A tarefa para e pede uma decisão."
+          class="font-mono text-sm"
+          no_margin
+          data-testid={"stage-rules-#{@stage.index}"}
+        />
+      </.tab_panel>
+
+      <.tab_panel id="avancado" active={@tab} testid={@testid} class="max-w-3xl">
+        <.icon_field
+          field={@stage[:key]}
+          icon="hero-key"
+          label="Chave"
+          help_text="Nome do artefato; em branco, vem do nome."
+          data-testid={"stage-key-#{@stage.index}"}
+        />
+        <.icon_field
+          field={@stage[:context]}
+          icon="hero-arrow-uturn-right"
+          type="select"
+          label="Contexto"
+          options={[
+            {"Começar do zero", "fresh"},
+            {"Continuar a etapa anterior", "continue"}
+          ]}
+          help_text="Continuar retoma a conversa do agente da etapa anterior, que não pode estar num grupo em paralelo. Do zero, o agente só recebe os artefatos."
+          data-testid={"stage-context-#{@stage.index}"}
+        />
         <div class="grid gap-4 sm:grid-cols-2">
           <.icon_field
-            field={@stage[:gates_text]}
-            icon="hero-shield-check"
-            type="textarea"
-            rows="3"
-            label="Gates (comandos depois da etapa)"
-            placeholder={gates_placeholder()}
-            help_text="Um por linha; ! na frente quando o comando deve falhar. Um gate não atendido reprova a tentativa."
-            class="font-mono text-sm"
-            data-testid={"stage-gates-#{@stage.index}"}
+            field={@stage[:agent]}
+            icon="hero-user-circle"
+            label="Rodar como o agente (opcional)"
+            placeholder="revisor"
+            help_text="Um agente do repositório (.claude/agents) ou do pipeline."
+            data-testid={"stage-agent-#{@stage.index}"}
           />
           <.icon_field
-            field={@stage[:rules_text]}
-            icon="hero-hand-raised"
-            type="textarea"
-            rows="3"
-            label="Pedir ajuda quando"
-            placeholder="bem_definida == false"
-            help_text="Um por linha: campo == valor ou campo != valor, sobre a saída estruturada. A tarefa para e pede uma decisão."
-            class="font-mono text-sm"
-            data-testid={"stage-rules-#{@stage.index}"}
+            field={@stage[:group]}
+            icon="hero-squares-2x2"
+            label="Grupo em paralelo (opcional)"
+            placeholder="auditorias"
+            help_text="Etapas seguidas com o mesmo grupo rodam juntas; a seguinte espera todas."
+            data-testid={"stage-group-#{@stage.index}"}
           />
         </div>
-      </div>
-
-      <details class="group" open={@stage[:context].errors != []}>
-        <summary
-          class="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300"
-          data-testid={"stage-advanced-#{@stage.index}"}
-        >
-          <.icon name="hero-chevron-right" class="size-4 transition group-open:rotate-90" />
-          <.icon name="hero-adjustments-horizontal" class="size-4" />
-          Avançado: contexto, agente, grupo em paralelo e saída estruturada
-        </summary>
-        <div class="mt-4 space-y-4">
-          <.icon_field
-            field={@stage[:context]}
-            icon="hero-arrow-uturn-right"
-            type="select"
-            label="Contexto"
-            options={[
-              {"Começar do zero", "fresh"},
-              {"Continuar a etapa anterior", "continue"}
-            ]}
-            help_text="Continuar retoma a conversa do agente da etapa anterior, que não pode estar num grupo em paralelo. Do zero, o agente só recebe os artefatos."
-            data-testid={"stage-context-#{@stage.index}"}
-          />
-          <div class="grid gap-4 sm:grid-cols-2">
-            <.icon_field
-              field={@stage[:agent]}
-              icon="hero-user-circle"
-              label="Rodar como o agente (opcional)"
-              placeholder="revisor"
-              help_text="Um agente do repositório (.claude/agents) ou do pipeline."
-              data-testid={"stage-agent-#{@stage.index}"}
-            />
-            <.icon_field
-              field={@stage[:group]}
-              icon="hero-squares-2x2"
-              label="Grupo em paralelo (opcional)"
-              placeholder="auditorias"
-              help_text="Etapas seguidas com o mesmo grupo rodam juntas; a seguinte espera todas."
-              data-testid={"stage-group-#{@stage.index}"}
-            />
-          </div>
-          <.icon_field
-            field={@stage[:output_schema_json]}
-            icon="hero-code-bracket-square"
-            type="textarea"
-            rows="5"
-            label="Campos extras da saída estruturada (JSON Schema)"
-            placeholder={
-              ~s({"type": "object", "properties": {"arquivos": {"type": "array", "items": {"type": "string"}}}})
-            }
-            class="font-mono text-sm"
-            no_margin
-            data-testid={"stage-schema-#{@stage.index}"}
-          />
-        </div>
-      </details>
+        <.icon_field
+          field={@stage[:output_schema_json]}
+          icon="hero-code-bracket-square"
+          type="textarea"
+          rows="5"
+          label="Campos extras da saída estruturada (JSON Schema)"
+          placeholder={
+            ~s({"type": "object", "properties": {"arquivos": {"type": "array", "items": {"type": "string"}}}})
+          }
+          class="font-mono text-sm"
+          no_margin
+          data-testid={"stage-schema-#{@stage.index}"}
+        />
+      </.tab_panel>
     </div>
     """
   end

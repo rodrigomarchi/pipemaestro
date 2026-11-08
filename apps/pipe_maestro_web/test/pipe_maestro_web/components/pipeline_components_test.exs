@@ -200,6 +200,17 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert text(html, "[data-testid=stage-details-rules]") =~ "risco == alto"
       assert text(html, "[data-testid=stage-details-schema]") =~ "properties"
       assert count(html, "input, textarea, select") == 0
+      # The prompt shows; how it is checked and its output are a tab away.
+      assert count(html, "[data-testid=stage-details-panel-prompt].hidden") == 0
+      assert count(html, "[data-testid=stage-details-panel-verificacao].hidden") == 1
+      assert count(html, "[data-testid=stage-details-tab-avancado]") == 1
+    end
+
+    test "a stage with only a prompt has no tabs" do
+      html = render_component(&PipelineComponents.stage_details/1, stage: stage("Só prompt"))
+
+      assert count(html, "[data-testid=stage-details-tabs]") == 0
+      assert count(html, "[data-testid=stage-details-panel-verificacao]") == 1
     end
   end
 
@@ -224,6 +235,7 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert html =~ "Seja breve"
       assert text(html, "[data-testid=pipeline-summary-mcp]") =~ "grafana"
       assert text(html, "[data-testid=pipeline-summary-agents]") =~ "revisor"
+      assert count(html, "[data-testid=pipeline-summary-panel-avancado].hidden") == 1
     end
   end
 

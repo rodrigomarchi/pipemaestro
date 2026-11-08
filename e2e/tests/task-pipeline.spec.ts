@@ -104,9 +104,11 @@ test.describe("Task pipeline", () => {
     await pipelines.writePrompt(0);
 
     await pipelines.stagePrompt(0).fill("{{tarefa.descricao}}\n\nRegistre no artefato o que foi feito.");
+    await pipelines.openStageTab(0, "verificacao");
     await pipelines.stageGates(0).fill("{{projeto.teste}}");
     await pipelines.closePanel(0);
     await pipelines.openEntry();
+    await pipelines.openEntryTab("entrega");
     // Flow M: commits by the agent, checked by the platform, as the form says.
     await app.page.getByTestId("pipeline-delivery").selectOption("commit");
     await expect(app.page.getByTestId("pipeline-platform-checks")).toContainText("Nada ficou sem commit");

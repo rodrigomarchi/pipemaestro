@@ -4,7 +4,8 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
   The pipeline is its diagram (`PipeMaestroWeb.PipelineComponents.pipeline_diagram/1`,
   over the form's draft), drawn like everywhere else; the entry or a stage
   opens its fields (`PipeMaestroWeb.PipelineLive.FormFields`) in the drawer
-  (`PipeMaestroWeb.PipelineComponents.side_panel/1`), and the structure
+  (`PipeMaestroWeb.PipelineComponents.side_panel/1`), in tabs that open on
+  what matters most (a stage's prompt and model), and the structure
   (insert, move, remove, run in parallel) changes on the diagram. Every field
   is rendered once: a closed drawer keeps its inputs in the page, hidden.
   Prompts are written in a Markdown editor
@@ -51,7 +52,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
      socket
      |> assign(page_title: page_title(socket.assigns.live_action), pipeline: pipeline)
      |> assign(from_proposal: from_proposal?(params))
-     |> assign(selected: if(pipeline.id, do: nil, else: :entry))
+     |> assign(selected: if(pipeline.id, do: nil, else: :entry), tab: nil)
      |> put_params(starting_params(pipeline, params, workspace), nil)}
   end
 
@@ -168,10 +169,13 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
     do: {:noreply, put_params(socket, params, :validate)}
 
   def handle_event("select_node", %{"node" => "entry"}, socket),
-    do: {:noreply, assign(socket, selected: :entry)}
+    do: {:noreply, assign(socket, selected: :entry, tab: nil)}
 
   def handle_event("select_node", %{"node" => index}, socket),
-    do: {:noreply, assign(socket, selected: {:stage, String.to_integer(index)})}
+    do: {:noreply, assign(socket, selected: {:stage, String.to_integer(index)}, tab: nil)}
+
+  def handle_event("select_tab", %{"tab" => tab}, socket),
+    do: {:noreply, assign(socket, tab: tab)}
 
   def handle_event("close_panel", _params, socket),
     do: {:noreply, assign(socket, selected: nil)}
@@ -181,7 +185,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
 
     {:noreply,
      socket
-     |> assign(selected: {:stage, at})
+     |> assign(selected: {:stage, at}, tab: nil)
      |> update_stages(&StageParams.insert_at(&1, at))}
   end
 
@@ -233,36 +237,76 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
          |> push_navigate(to: ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")}
 
       {:error, changeset} ->
+        {selected, tab} = invalid_node(changeset, socket.assigns.selected, socket.assigns.tab)
+
         {:noreply,
          assign(socket,
            params: params,
            form: to_form(changeset),
-           selected: invalid_node(changeset, socket.assigns.selected)
+           selected: selected,
+           tab: tab
          )}
     end
   end
 
-  # The drawer that shows what kept the pipeline from saving: the open one if
-  # it has an error, else the entry's or the first invalid stage's.
-  defp invalid_node(changeset, selected) do
+  # The drawer and its tab that show what kept the pipeline from saving: the
+  # open drawer if it has an error, else the entry's or the first invalid
+  # stage's; the open tab if it has one, else the first tab that does.
+  defp invalid_node(changeset, selected, tab) do
+    errors = node_errors(changeset)
+    node = error_node(errors, selected)
+
+    case Map.fetch(errors, node) do
+      {:ok, fields} -> {node, error_tab(node, fields, selected, tab)}
+      :error -> {node, tab}
+    end
+  end
+
+  # The fields in error, by node: the entry's, and each stage's by position.
+  defp node_errors(changeset) do
     # The stages the form replaced come along; only the ones it sent have a position.
-    invalid_stages =
-      for {stage, index} <-
-            changeset
-            |> Ecto.Changeset.get_change(:stages, [])
-            |> Enum.reject(&(&1.action == :replace))
-            |> Enum.with_index(),
+    stages =
+      changeset
+      |> Ecto.Changeset.get_change(:stages, [])
+      |> Enum.reject(&(&1.action == :replace))
+
+    errors =
+      for {stage, index} <- Enum.with_index(stages),
           not stage.valid?,
-          do: {:stage, index}
+          into: %{},
+          do: {{:stage, index}, Keyword.keys(stage.errors)}
 
-    invalid = if Keyword.delete(changeset.errors, :stages) == [], do: [], else: [:entry]
+    case Keyword.keys(Keyword.delete(changeset.errors, :stages)) do
+      [] -> errors
+      fields -> Map.put(errors, :entry, fields)
+    end
+  end
 
+  defp error_node(errors, selected) do
     cond do
-      selected in (invalid ++ invalid_stages) -> selected
-      invalid != [] -> :entry
-      invalid_stages != [] -> hd(invalid_stages)
+      Map.has_key?(errors, selected) -> selected
+      Map.has_key?(errors, :entry) -> :entry
+      errors != %{} -> errors |> Map.keys() |> Enum.min()
       true -> selected
     end
+  end
+
+  defp error_tab(node, fields, selected, tab) do
+    tabs = node_tabs(node)
+    open_tab = node == selected && Enum.find(tabs, &(elem(&1, 0) == tab))
+
+    if open_tab && Enum.any?(fields, &(&1 in elem(open_tab, 3))),
+      do: tab,
+      else: tab_of(tabs, fields)
+  end
+
+  defp node_tabs(:entry), do: entry_tabs()
+  defp node_tabs({:stage, _index}), do: stage_tabs()
+
+  # The tab a node's drawer shows: the one chosen while it is open, else its first.
+  defp node_tab(node, selected, tab) do
+    [{first, _, _, _} | _] = tabs = node_tabs(node)
+    if node == selected and Enum.any?(tabs, &(elem(&1, 0) == tab)), do: tab, else: first
   end
 
   @impl true
@@ -326,11 +370,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
           open={@selected == :entry}
           testid="pipeline-panel"
         >
-          <div class="grid gap-8 xl:grid-cols-2">
-            <div><.identity_fields form={@form} /></div>
-            <div><.execution_fields form={@form} /></div>
-            <div class="xl:col-span-2"><.context_fields form={@form} /></div>
-          </div>
+          <.entry_fields form={@form} tab={node_tab(:entry, @selected, @tab)} />
           <:footer>
             <.button type="submit" icon="hero-check" data-testid="pipeline-panel-save">
               Salvar
@@ -345,7 +385,7 @@ defmodule PipeMaestroWeb.PipelineLive.Form do
             open={@selected == {:stage, stage.index}}
             testid={"stage-panel-#{stage.index}"}
           >
-            <.stage_fields stage={stage} />
+            <.stage_fields stage={stage} tab={node_tab({:stage, stage.index}, @selected, @tab)} />
             <:footer>
               <.button
                 type="submit"
