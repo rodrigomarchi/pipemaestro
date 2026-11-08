@@ -65,25 +65,30 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
           <.stage_run_status run={@run} data-testid={"stage-run-status-#{run_ref(@run)}"} />
           <.stage_run_session run={@run} />
         </span>
-        <span :if={@run.job} class="flex items-center gap-3">
+        <span :if={@run.job} class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span
             :if={@spent}
-            class="text-primary-700 dark:text-primary-300"
+            class="whitespace-nowrap text-primary-700 dark:text-primary-300"
             data-testid={"stage-run-spent-#{run_ref(@run)}"}
           >
             até agora {format_cost(@spent.cost_usd)} · {short_number(@spent.tokens)} tokens
           </span>
-          <span>{format_duration(@run.job.duration_ms)}</span>
-          <span>{format_cost(@run.job.cost_usd)}</span>
+          <span :if={@run.job.duration_ms} class="whitespace-nowrap">
+            {format_duration(@run.job.duration_ms)}
+          </span>
+          <span :if={@run.job.cost_usd} class="whitespace-nowrap">
+            {format_cost(@run.job.cost_usd)}
+          </span>
           <span
             :if={Job.tokens(@run.job) > 0}
+            class="whitespace-nowrap"
             data-testid={"stage-run-tokens-#{run_ref(@run)}"}
           >
             {short_number(Job.tokens(@run.job))} tokens · {format_percent(Job.cache_hit(@run.job))} do cache
           </span>
           <.link
             navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}"}
-            class="text-primary-600 hover:underline dark:text-primary-400"
+            class="whitespace-nowrap text-primary-600 hover:underline dark:text-primary-400"
             data-testid={"stage-run-audit-#{run_ref(@run)}"}
           >
             Execução e auditoria
