@@ -8,11 +8,12 @@ dos estados que importam, nos modos claro e escuro.
 
 ```bash
 make e2e.install                      # primeira vez: deps npm + Chromium
-make e2e                              # suíte inteira, headless
+make e2e                              # suíte inteira, headless (uma vez por árvore; FORCE=1 roda de novo)
 make e2e FILE=tests/user-session.spec.ts
+cd e2e && npx playwright test --only-changed=origin/main   # só as specs que a branch mudou
 make e2e.headed FILE=...              # navegador visível, em câmera lenta (SLOW_MO=300)
 make e2e.ui                           # modo UI do Playwright, para depurar
-make e2e.shots                        # suíte + screenshots claro/escuro (DARK=0 só claro)
+make e2e.shots FILE=...               # spec + screenshots claro/escuro (DARK=0 só claro); sem FILE, a suíte inteira
 make e2e.db.reset                     # recria o banco pipe_maestro_e2e
 make e2e.typecheck                    # TypeScript das specs, Page Objects e helpers
 ```
@@ -21,6 +22,15 @@ O servidor sobe sozinho na porta `E2E_PORT` (padrão 4003), com o banco
 `pipe_maestro_e2e` no Postgres de teste. Os alvos do Makefile matam
 qualquer servidor que esteja na porta antes de rodar, para nunca validar código
 antigo.
+
+Num worktree (cada tarefa do control plane roda em um), a `E2E_PORT` vem do nome
+do worktree, e os bancos também são dele (`config/worktree.exs`). O Forgejo e o
+GitHub falsos sobem em `E2E_FORGEJO_PORT` e `E2E_GITHUB_PORT`, que valem
+`E2E_PORT` + 1000 e + 2000. Assim, duas suítes rodam ao mesmo tempo na mesma
+máquina sem disputar porta.
+
+Enquanto mexe numa tela, rode o spec dela. A suíte inteira roda uma vez, quando
+as telas estão prontas ([ADR 0046](../docs/adr/0046-verificacao-por-arvore.md)).
 
 ## Regras
 
