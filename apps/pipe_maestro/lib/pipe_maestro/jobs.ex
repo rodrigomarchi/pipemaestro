@@ -42,6 +42,10 @@ defmodule PipeMaestro.Jobs do
   @spec subscribe(subject()) :: :ok | {:error, term()}
   def subscribe(subject), do: Phoenix.PubSub.subscribe(@pubsub, topic(subject))
 
+  @doc "Stops the calling process from receiving what `subscribe/1` subscribed it to."
+  @spec unsubscribe(subject()) :: :ok
+  def unsubscribe(subject), do: Phoenix.PubSub.unsubscribe(@pubsub, topic(subject))
+
   defp topic({:job, id}), do: "jobs:job:" <> id
   defp topic({:workspace, id}), do: "jobs:workspace:" <> id
   defp topic({:runner, id}), do: "jobs:runner:" <> id

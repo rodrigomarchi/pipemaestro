@@ -249,6 +249,82 @@ defmodule PipeMaestro.Tasks do
     |> preload()
   end
 
+  @doc """
+  One of the workspace's tasks, light: what its pipeline and its actions read.
+  Its attempts come in order with their status and error, and each job with
+  only its status, cost and duration; what an attempt produced (artifact,
+  summary, structured output, the job's prompt, result and insights) is left
+  out, `nil`. A stage's attempts in full come from `stage_attempts/2`.
+  """
+  @spec get_task_overview!(Workspace.t(), Ecto.UUID.t()) :: Task.t()
+  def get_task_overview!(%Workspace{id: workspace_id}, id) do
+    jobs =
+      from j in Job,
+        select:
+          struct(j, [
+            :id,
+            :status,
+            :cost_usd,
+            :duration_ms,
+            :started_at,
+            :finished_at,
+            :stage_run_id,
+            :runner_id,
+            :workspace_id,
+            :inserted_at,
+            :updated_at
+          ])
+
+    runs =
+      from r in attempts_query(),
+        select:
+          struct(r, [
+            :id,
+            :index,
+            :key,
+            :name,
+            :attempt,
+            :requeue,
+            :status,
+            :error,
+            :task_id,
+            :inserted_at,
+            :updated_at
+          ]),
+        preload: [job: ^jobs]
+
+    Task
+    |> Repo.get_by!(id: id, workspace_id: workspace_id)
+    |> Repo.preload([:runner, :created_by_user, :decision_owner, stage_runs: runs])
+  end
+
+  @doc "The attempts of the task's stage at `index`, in order, each with its job in full."
+  @spec stage_attempts(Task.t(), non_neg_integer()) :: [StageRun.t()]
+  def stage_attempts(%Task{id: task_id}, index) when is_integer(index) do
+    Repo.all(
+      from r in attempts_query(),
+        where: r.task_id == ^task_id and r.index == ^index,
+        preload: :job
+    )
+  end
+
+  @doc """
+  The files the task changed so far, as its latest stage report that has
+  them tells (`changes["task_files"]`); none before one.
+  """
+  @spec changed_files(Task.t()) :: [map()]
+  def changed_files(%Task{id: task_id}) do
+    Repo.one(
+      from j in Job,
+        join: r in StageRun,
+        on: r.id == j.stage_run_id,
+        where: r.task_id == ^task_id and not is_nil(fragment("?->'task_files'", j.changes)),
+        order_by: [desc: r.index, desc: r.attempt, desc: r.requeue],
+        limit: 1,
+        select: fragment("?->'task_files'", j.changes)
+    ) || []
+  end
+
   defp preload(task) do
     runs = from r in attempts_query(), preload: :job
 
