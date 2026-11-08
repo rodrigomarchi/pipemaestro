@@ -4,7 +4,8 @@
 #   scripts/verified.sh NAME [ALSO ...] -- COMMAND [ARGS ...]
 #
 # The key is the tree of the working directory as it is now: tracked changes
-# and untracked files included, ignored files (deps, _build, cover) left out.
+# and untracked files included, ignored files (deps, _build, cover) left out,
+# and so is .control-plane/, where each stage of a task commits its artifact.
 # When NAME already passed on this tree, it says so and exits 0 without running
 # COMMAND. When COMMAND passes, NAME and every ALSO (verifications COMMAND
 # covers, such as the suite inside `make ci`) are marked as passed on the tree
@@ -28,7 +29,9 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   index=$(mktemp "${TMPDIR:-/tmp}/pm-verified-index.XXXXXX")
   # A copy of the real index keeps git's stat cache: only changed files are hashed.
   cp "$(git rev-parse --git-path index)" "$index" 2>/dev/null || rm -f "$index"
-  tree=$(GIT_INDEX_FILE=$index git add -A >/dev/null 2>&1 && GIT_INDEX_FILE=$index git write-tree 2>/dev/null) || tree=""
+  tree=$(GIT_INDEX_FILE=$index git add -A >/dev/null 2>&1 &&
+    GIT_INDEX_FILE=$index git rm -r -q --cached --ignore-unmatch -- .control-plane >/dev/null 2>&1 &&
+    GIT_INDEX_FILE=$index git write-tree 2>/dev/null) || tree=""
   rm -f "$index"
 fi
 
