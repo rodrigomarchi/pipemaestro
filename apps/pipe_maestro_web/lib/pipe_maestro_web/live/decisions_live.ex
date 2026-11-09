@@ -169,58 +169,48 @@ defmodule PipeMaestroWeb.DecisionsLive do
         </.tabs>
       </.filter_bar>
 
-      <div class="space-y-4">
-        <.empty
-          :if={@tasks == []}
-          title="Nenhuma decisão pendente"
-          description="Quando uma etapa pedir ajuda, esgotar as tentativas ou estourar o orçamento, a tarefa aparece aqui."
-          data-testid="no-decisions"
-        >
-          <:icon><.icon name="hero-check-circle" /></:icon>
-        </.empty>
-
-        <.card
+      <.record_list id="decisions" testid="decisions" empty={@tasks == []}>
+        <.record_card
           :for={task <- @tasks}
-          variant="outline"
-          class="border-warning-300 dark:border-warning-800"
-          data-testid={"decision-#{task.id}"}
+          id={"decision-#{task.id}"}
+          testid={"decision-#{task.id}"}
+          tone={:awaiting}
         >
-          <.card_content>
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <div class="min-w-0">
-                <.link
-                  navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
-                  class="font-semibold text-gray-900 hover:underline dark:text-white"
-                  data-testid={"decision-link-#{task.id}"}
-                >
-                  {task.title}
-                </.link>
-                <.task_progress
-                  task={task}
-                  class="mt-1 text-sm text-gray-500 dark:text-gray-400"
-                  testid={"decision-progress-#{task.id}"}
-                />
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                  {task.pipeline_name} ·
-                  <span data-testid={"decision-project-#{task.id}"}>
-                    {(task.project || %{})["name"] || task.directory}
-                  </span>
-                  <span class="font-mono text-xs">
-                    ({if task.runner, do: task.runner.name, else: "—"}:{task.directory})
-                  </span>
-                </p>
-              </div>
-              <span class="text-xs text-gray-500 dark:text-gray-400">
-                esperando {time_ago(task.updated_at, @now)} ·
-                <span
-                  class={overdue?(task, @now) && "font-medium text-danger-600 dark:text-danger-400"}
-                  data-testid={"decision-due-#{task.id}"}
-                >
-                  {due_label(task.decision_due_at, @now)}
-                </span>
-              </span>
-            </div>
-
+          <:leading><.record_icon icon="hero-hand-raised" color="warning" /></:leading>
+          <:title>
+            <.link
+              navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
+              class="no-underline hover:underline"
+              data-testid={"decision-link-#{task.id}"}
+            >
+              {task.title}
+            </.link>
+          </:title>
+          <:meta>
+            <span>{task.pipeline_name}</span>
+            <span>·</span>
+            <span data-testid={"decision-project-#{task.id}"}>
+              {(task.project || %{})["name"] || task.directory}
+            </span>
+            <span class="font-mono">
+              {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
+            </span>
+          </:meta>
+          <:aside>
+            <.task_progress
+              task={task}
+              class="font-medium text-gray-700 dark:text-gray-200"
+              testid={"decision-progress-#{task.id}"}
+            />
+            <span>esperando {time_ago(task.updated_at, @now)}</span>
+            <span
+              class={overdue?(task, @now) && "font-medium text-danger-600 dark:text-danger-400"}
+              data-testid={"decision-due-#{task.id}"}
+            >
+              {due_label(task.decision_due_at, @now)}
+            </span>
+          </:aside>
+          <:body interactive>
             <.form
               for={to_form(%{"user_id" => task.decision_owner_id}, as: "owner")}
               id={"decision-owner-form-#{task.id}"}
@@ -329,9 +319,17 @@ defmodule PipeMaestroWeb.DecisionsLive do
                 </.button>
               </div>
             </.form>
-          </.card_content>
-        </.card>
-      </div>
+          </:body>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-decisions"
+            icon="hero-check-circle"
+            title="Nenhuma decisão pendente"
+            description="Quando uma etapa pedir ajuda, esgotar as tentativas ou estourar o orçamento, a tarefa aparece aqui."
+          />
+        </:empty_state>
+      </.record_list>
     </Layouts.app>
     """
   end

@@ -5,11 +5,12 @@ defmodule PipeMaestroWeb.ListComponents do
   record, `record_metric/1` a number of it and `load_more/1` asks for the next
   page.
 
-  A card is laid out in places each screen fills: what leads it (an icon, an
-  avatar, its kind), its title, the badges beside it (its status), a line of
-  facts under it, a body of its own (a summary, a form, a diagram), its
-  metrics, and its actions. Its metrics sit to the right once the card is
-  wide (a container query), under the rest before that. A card with a link is
+  A card is laid out in places each screen fills. Its head holds what leads
+  it (an icon, an avatar, its kind), its title, the badges beside it (its
+  status), a line of facts under it and its metrics, which sit to the right
+  once the card is wide (a container query) and under the title before
+  that. Under the head, as wide as the card, come its body (a summary, a
+  form, a diagram) and its actions. A card with a link is
   clickable as a whole: the title's link stretches over it, and whatever is
   interactive inside sits above that link.
   """
@@ -146,15 +147,6 @@ defmodule PipeMaestroWeb.ListComponents do
             >
               {render_slot(meta)}
             </div>
-            <div
-              :for={body <- @body}
-              class={[
-                "mt-2 text-sm text-gray-700 dark:text-gray-300",
-                body[:interactive] && "relative z-10"
-              ]}
-            >
-              {render_slot(body)}
-            </div>
           </div>
           <div
             :if={@aside != []}
@@ -171,6 +163,15 @@ defmodule PipeMaestroWeb.ListComponents do
           name="hero-chevron-right"
           class="mt-1 size-4 shrink-0 text-gray-400"
         />
+      </div>
+      <div
+        :for={body <- @body}
+        class={[
+          "mt-3 text-sm text-gray-700 dark:text-gray-300",
+          body[:interactive] && "relative z-10"
+        ]}
+      >
+        {render_slot(body)}
       </div>
       <div
         :if={@actions != []}
@@ -199,6 +200,39 @@ defmodule PipeMaestroWeb.ListComponents do
     </span>
     """
   end
+
+  attr :icon, :string, required: true
+  attr :color, :string, default: "gray", values: ~w(gray primary info warning danger success)
+  attr :testid, :string, default: nil
+
+  @doc "What leads a card: its kind as an icon on a tile."
+  @spec record_icon(map()) :: Phoenix.LiveView.Rendered.t()
+  def record_icon(assigns) do
+    ~H"""
+    <span
+      class={["flex size-9 items-center justify-center rounded-lg", icon_color(@color)]}
+      data-testid={@testid}
+    >
+      <.icon name={@icon} class="size-5" />
+    </span>
+    """
+  end
+
+  defp icon_color("gray"), do: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+
+  defp icon_color("primary"),
+    do: "bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300"
+
+  defp icon_color("info"), do: "bg-info-50 text-info-600 dark:bg-info-950 dark:text-info-300"
+
+  defp icon_color("warning"),
+    do: "bg-warning-50 text-warning-600 dark:bg-warning-950 dark:text-warning-300"
+
+  defp icon_color("danger"),
+    do: "bg-danger-50 text-danger-600 dark:bg-danger-950 dark:text-danger-300"
+
+  defp icon_color("success"),
+    do: "bg-success-50 text-success-600 dark:bg-success-950 dark:text-success-300"
 
   attr :more, :boolean, required: true, doc: "there are more records to load"
   attr :event, :string, default: "load_more"

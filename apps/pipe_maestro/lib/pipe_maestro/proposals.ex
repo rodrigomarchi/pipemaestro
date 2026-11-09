@@ -351,7 +351,7 @@ defmodule PipeMaestro.Proposals do
     from(j in Job,
       where: j.workspace_id == ^workspace_id,
       where: fragment("(?->'proposal') IS NOT NULL", j.context),
-      order_by: [desc: j.inserted_at],
+      order_by: [desc: j.inserted_at, desc: j.id],
       limit: ^limit,
       preload: [:runner, :created_by_user, :project]
     )

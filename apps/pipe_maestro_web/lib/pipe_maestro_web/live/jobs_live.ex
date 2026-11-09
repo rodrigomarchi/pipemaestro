@@ -7,6 +7,9 @@ defmodule PipeMaestroWeb.JobsLive do
   """
   use PipeMaestroWeb, :live_view
 
+  # How many jobs a page shows, and how many more each "Carregar mais" adds.
+  @page 30
+
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
 
@@ -26,6 +29,7 @@ defmodule PipeMaestroWeb.JobsLive do
     {:ok,
      socket
      |> assign(page_title: "Execuções", creating: false, form: nil, params: %{})
+     |> assign(limit: @page)
      |> load_jobs()
      |> load_projects()}
   end
@@ -55,6 +59,9 @@ defmodule PipeMaestroWeb.JobsLive do
   @impl true
   def handle_event("open_new", _params, socket), do: {:noreply, open_form(socket, %{})}
 
+  def handle_event("load_more", _params, socket),
+    do: {:noreply, socket |> update(:limit, &(&1 + @page)) |> load_jobs()}
+
   def handle_event("validate", %{"job" => params}, socket),
     do:
       {:noreply,
@@ -78,9 +85,14 @@ defmodule PipeMaestroWeb.JobsLive do
     end
   end
 
+  # The newest `limit` jobs; one more is read to know whether there are more.
   defp load_jobs(socket) do
+    limit = socket.assigns.limit
+    jobs = Jobs.list_jobs(socket.assigns.current_scope.workspace, limit: limit + 1)
+
     assign(socket,
-      jobs: Jobs.list_jobs(socket.assigns.current_scope.workspace),
+      jobs: Enum.take(jobs, limit),
+      more: length(jobs) > limit,
       now: DateTime.utc_now()
     )
   end
@@ -108,52 +120,44 @@ defmodule PipeMaestroWeb.JobsLive do
     >
       <:action label="Nova execução" icon="hero-plus" on_click="open_new" primary testid="new-job" />
 
-      <.card variant="outline">
-        <.card_header
-          title="Execuções do workspace"
-          description="Prompts enviados aos runners e executados pelo agente na máquina deles."
-        />
-
-        <.table :if={@jobs != []} id="jobs" rows={@jobs} row_id={&"job-row-#{&1.id}"}>
-          <:col :let={job} label="Prompt">
-            <.link
-              navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
-              class="font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
-              data-testid={"job-link-#{job.id}"}
-            >
-              {prompt_summary(job.prompt, 70)}
-            </.link>
-          </:col>
-          <:col :let={job} label="Status">
-            <.job_status job={job} data-testid={"job-status-#{job.id}"} />
-          </:col>
-          <:col :let={job} label="Runner">
-            <span class="text-gray-600 dark:text-gray-300">
-              {if job.runner, do: job.runner.name, else: "—"}
-            </span>
-          </:col>
-          <:col :let={job} label="Duração">{format_duration(job.duration_ms)}</:col>
-          <:col :let={job} label="Custo">
-            <span class="font-mono text-xs">{format_cost(job.cost_usd)}</span>
-          </:col>
-          <:col :let={job} label="Criada">
-            <span class="text-gray-500 dark:text-gray-400">{time_ago(job.inserted_at, @now)}</span>
-          </:col>
-        </.table>
-
-        <.card_content :if={@jobs == []}>
-          <.empty
-            data-testid="no-jobs"
+      <.record_list id="jobs" testid="jobs" empty={@jobs == []}>
+        <.record_card
+          :for={job <- @jobs}
+          id={"job-row-#{job.id}"}
+          testid={"job-row-#{job.id}"}
+          navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
+          link_testid={"job-link-#{job.id}"}
+          tone={job_tone(job)}
+        >
+          <:leading><.record_icon icon="hero-command-line" /></:leading>
+          <:title>{prompt_summary(job.prompt, 120)}</:title>
+          <:badge><.job_status job={job} data-testid={"job-status-#{job.id}"} /></:badge>
+          <:meta>
+            <span :if={job.project}>{job.project.name}</span>
+            <span :if={job.project}>·</span>
+            <span>{if job.runner, do: job.runner.name, else: "—"}</span>
+            <span :if={job.created_by_user}>· por {job.created_by_user.name}</span>
+          </:meta>
+          <:aside>
+            <.record_metric label="Duração">{format_duration(job.duration_ms)}</.record_metric>
+            <.record_metric label="Custo">{format_cost(job.cost_usd)}</.record_metric>
+            <span>criada {time_ago(job.inserted_at, @now)}</span>
+          </:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-jobs"
+            icon="hero-command-line"
             title="Nenhuma execução ainda"
-            description="Envie um prompt para um projeto e acompanhe o agente trabalhando."
+            description="Envie um prompt para um projeto e acompanhe o agente trabalhando na máquina do runner."
           >
-            <:icon><.icon name="hero-command-line" /></:icon>
             <:actions>
               <.button icon="hero-plus" phx-click="open_new">Nova execução</.button>
             </:actions>
-          </.empty>
-        </.card_content>
-      </.card>
+          </.record_empty>
+        </:empty_state>
+      </.record_list>
+      <.load_more more={@more} testid="jobs-load-more" />
 
       <.modal
         :if={@creating}

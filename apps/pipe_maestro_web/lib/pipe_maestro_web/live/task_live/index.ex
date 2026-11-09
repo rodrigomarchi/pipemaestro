@@ -10,6 +10,9 @@ defmodule PipeMaestroWeb.TaskLive.Index do
   """
   use PipeMaestroWeb, :live_view
 
+  # How many tasks a page shows, and how many more each "Carregar mais" adds.
+  @page 30
+
   import PipeMaestroWeb.TaskComponents
   import PipeMaestroWeb.PipelineComponents, only: [pipeline_preview: 1]
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
@@ -31,6 +34,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     {:ok,
      socket
      |> assign(page_title: "Tarefas", creating: false, form: nil, params: %{}, query: "")
+     |> assign(limit: @page)
      |> assign(proposal_request: nil, from_proposal: false, proposal_job: nil)
      |> assign(pipelines: Pipelines.list_pipelines(workspace))
      |> load_tasks()
@@ -125,7 +129,10 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     do: {:noreply, ProposalRequest.submit(socket, params)}
 
   def handle_event("search", %{"search" => %{"q" => query}}, socket),
-    do: {:noreply, socket |> assign(query: query) |> load_tasks()}
+    do: {:noreply, socket |> assign(query: query, limit: @page) |> load_tasks()}
+
+  def handle_event("load_more", _params, socket),
+    do: {:noreply, socket |> update(:limit, &(&1 + @page)) |> load_tasks()}
 
   def handle_event("close_new", _params, socket),
     do:
@@ -169,10 +176,20 @@ defmodule PipeMaestroWeb.TaskLive.Index do
     |> push_navigate(to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/tasks/#{task_id}")
   end
 
+  # The newest `limit` tasks; one more is read to know whether there are more.
   defp load_tasks(socket) do
+    limit = socket.assigns.limit
+
+    tasks =
+      Tasks.list_tasks(
+        socket.assigns.current_scope.workspace,
+        %{"q" => socket.assigns.query},
+        limit: limit + 1
+      )
+
     assign(socket,
-      tasks:
-        Tasks.list_tasks(socket.assigns.current_scope.workspace, %{"q" => socket.assigns.query}),
+      tasks: Enum.take(tasks, limit),
+      more: length(tasks) > limit,
       now: DateTime.utc_now()
     )
   end
@@ -206,76 +223,76 @@ defmodule PipeMaestroWeb.TaskLive.Index do
         testid="task-generate"
       />
 
-      <.card variant="outline">
-        <.card_header
-          title="Tarefas do workspace"
-          description="Cada tarefa percorre as etapas de um pipeline num runner, com contexto novo a cada etapa."
+      <.filter_bar>
+        <.form
+          for={to_form(%{"q" => @query}, as: "search")}
+          id="tasks-search"
+          phx-change="search"
+          phx-submit="search"
+          class="w-full sm:max-w-sm"
         >
-          <:action>
-            <.form
-              for={to_form(%{"q" => @query}, as: "search")}
-              id="tasks-search"
-              phx-change="search"
-              phx-submit="search"
-            >
-              <.icon_field
-                field={to_form(%{"q" => @query}, as: "search")[:q]}
-                icon="hero-magnifying-glass"
-                type="search"
-                label="Buscar"
-                placeholder="Título ou pedido"
-                phx-debounce="300"
-                data-testid="tasks-search"
-              />
-            </.form>
-          </:action>
-        </.card_header>
+          <.icon_field
+            field={to_form(%{"q" => @query}, as: "search")[:q]}
+            icon="hero-magnifying-glass"
+            type="search"
+            label="Buscar"
+            hide_label
+            placeholder="Buscar no título ou no pedido"
+            phx-debounce="300"
+            data-testid="tasks-search"
+          />
+        </.form>
+      </.filter_bar>
 
-        <.table :if={@tasks != []} id="tasks" rows={@tasks} row_id={&"task-row-#{&1.id}"}>
-          <:col :let={task} label="Tarefa">
-            <.link
-              navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
-              class="font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
-              data-testid={"task-link-#{task.id}"}
-            >
-              {task.title}
-            </.link>
-            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{task.pipeline_name}</p>
-          </:col>
-          <:col :let={task} label="Status">
-            <.task_status task={task} data-testid={"task-status-#{task.id}"} />
-          </:col>
-          <:col :let={task} label="Etapa">
+      <.record_list id="tasks" testid="tasks" empty={@tasks == []}>
+        <.record_card
+          :for={task <- @tasks}
+          id={"task-row-#{task.id}"}
+          testid={"task-row-#{task.id}"}
+          navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
+          link_testid={"task-link-#{task.id}"}
+          tone={task_tone(task)}
+        >
+          <:title>{task.title}</:title>
+          <:badge><.task_status task={task} data-testid={"task-status-#{task.id}"} /></:badge>
+          <:meta>
+            <span>{task.pipeline_name}</span>
+            <span>·</span>
+            <span>{(task.project || %{})["name"] || task.directory}</span>
+            <span class="font-mono">
+              {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
+            </span>
+          </:meta>
+          <:aside>
             <.task_progress
               task={task}
-              class="text-gray-600 dark:text-gray-300"
+              class="font-medium text-gray-700 dark:text-gray-200"
               testid={"task-progress-#{task.id}"}
             />
-          </:col>
-          <:col :let={task} label="Projeto">
-            <span class="text-gray-900 dark:text-white">{(task.project || %{})["name"]}</span>
-            <p class="font-mono text-xs text-gray-500 dark:text-gray-400">
-              {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
-            </p>
-          </:col>
-          <:col :let={task} label="Criada">
-            <span class="text-gray-500 dark:text-gray-400">{time_ago(task.inserted_at, @now)}</span>
-          </:col>
-        </.table>
-
-        <.card_content :if={@tasks == []}>
-          <.empty
-            data-testid="no-tasks"
-            title="Nenhuma tarefa ainda"
-            description="Escolha um pipeline e um projeto, e descreva o que deve ser feito."
+            <span>criada {time_ago(task.inserted_at, @now)}</span>
+          </:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-tasks"
+            icon="hero-queue-list"
+            title={
+              if @query in [nil, ""], do: "Nenhuma tarefa ainda", else: "Nenhuma tarefa encontrada"
+            }
+            description={
+              if @query in [nil, ""],
+                do:
+                  "Cada tarefa percorre as etapas de um pipeline num runner. Escolha um pipeline e um projeto, e descreva o que deve ser feito.",
+                else: "Nada no título ou no pedido com \"#{@query}\"."
+            }
           >
-            <:icon><.icon name="hero-queue-list" /></:icon>
-            <:actions>
+            <:actions :if={@query in [nil, ""]}>
               <.button icon="hero-plus" phx-click="open_new">Nova tarefa</.button>
             </:actions>
-          </.empty>
-        </.card_content>
-      </.card>
+          </.record_empty>
+        </:empty_state>
+      </.record_list>
+      <.load_more more={@more} testid="tasks-load-more" />
 
       <.modal
         :if={@creating}

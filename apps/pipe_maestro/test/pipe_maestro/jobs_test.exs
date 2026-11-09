@@ -39,6 +39,7 @@ defmodule PipeMaestro.JobsTest do
       assert_receive {:job_assign, %Job{id: id}} when id == job.id
       assert_receive {:job_updated, %Job{id: ^id}}
       assert [%Job{id: ^id}] = Jobs.list_jobs(ctx.workspace)
+      assert [%Job{id: ^id}] = Jobs.list_jobs(ctx.workspace, limit: 1)
       assert Jobs.get_job!(ctx.workspace, id).prompt == "diga oi"
     end
 

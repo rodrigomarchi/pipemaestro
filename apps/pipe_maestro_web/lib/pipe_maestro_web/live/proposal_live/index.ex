@@ -7,11 +7,14 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
   """
   use PipeMaestroWeb, :live_view
 
-  import PipeMaestroWeb.JobComponents, only: [job_status: 1]
+  import PipeMaestroWeb.JobComponents, only: [job_status: 1, job_tone: 1]
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
   import PipeMaestroWeb.ProposalComponents
 
   alias PipeMaestro.{Jobs, Projects, Proposals, Workspaces}
+
+  # How many proposals a page shows, and how many more each "Carregar mais" adds.
+  @page 30
 
   @impl true
   def mount(_params, _session, socket) do
@@ -20,7 +23,7 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
 
     {:ok,
      socket
-     |> assign(page_title: "Propostas", filters: %{})
+     |> assign(page_title: "Propostas", filters: %{}, limit: @page)
      |> assign(members: Workspaces.list_members(workspace))
      |> load()}
   end
@@ -32,13 +35,20 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
 
   @impl true
   def handle_event("filter", %{"filter" => filters}, socket),
-    do: {:noreply, socket |> assign(filters: filters) |> load()}
+    do: {:noreply, socket |> assign(filters: filters, limit: @page) |> load()}
 
+  def handle_event("load_more", _params, socket),
+    do: {:noreply, socket |> update(:limit, &(&1 + @page)) |> load()}
+
+  # The newest `limit` proposals; one more is read to know whether there are more.
   defp load(socket) do
     workspace = socket.assigns.current_scope.workspace
+    limit = socket.assigns.limit
+    proposals = Proposals.list(workspace, socket.assigns.filters, limit + 1)
 
     assign(socket,
-      proposals: Proposals.list(workspace, socket.assigns.filters),
+      proposals: Enum.take(proposals, limit),
+      more: length(proposals) > limit,
       projects: Projects.list_projects(workspace)
     )
   end
@@ -74,98 +84,91 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
       active={:proposals}
       title="Propostas"
     >
-      <.card variant="outline">
-        <.card_content>
-          <.section_heading
-            icon="hero-cpu-chip"
-            title="Propostas do agente"
-            description="O que o agente propôs depois de estudar um projeto: pipelines, tarefas, decisões e melhorias. Cada uma espera a sua revisão."
+      <.filter_bar>
+        <.form
+          for={@filter_form}
+          id="proposals-filter"
+          phx-change="filter"
+          class="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-4"
+        >
+          <.icon_field
+            field={@filter_form[:kind]}
+            icon="hero-funnel"
+            type="select"
+            label="Tipo"
+            hide_label
+            options={kind_options()}
+            data-testid="proposals-kind"
           />
-          <.form
-            for={@filter_form}
-            id="proposals-filter"
-            phx-change="filter"
-            class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <.icon_field
-              field={@filter_form[:kind]}
-              icon="hero-funnel"
-              type="select"
-              label="Tipo"
-              hide_label
-              options={kind_options()}
-              data-testid="proposals-kind"
-            />
-            <.icon_field
-              field={@filter_form[:status]}
-              icon="hero-signal"
-              type="select"
-              label="Status"
-              hide_label
-              options={status_options()}
-              data-testid="proposals-status"
-            />
-            <.icon_field
-              field={@filter_form[:project_id]}
-              icon="hero-folder-open"
-              type="select"
-              label="Projeto"
-              hide_label
-              options={[{"Qualquer projeto", ""} | Enum.map(@projects, &{&1.name, &1.id})]}
-              data-testid="proposals-project"
-            />
-            <.icon_field
-              field={@filter_form[:user_id]}
-              icon="hero-user"
-              type="select"
-              label="Quem pediu"
-              hide_label
-              options={[{"Qualquer pessoa", ""} | Enum.map(@members, &{&1.name, &1.id})]}
-              data-testid="proposals-user"
-            />
-          </.form>
+          <.icon_field
+            field={@filter_form[:status]}
+            icon="hero-signal"
+            type="select"
+            label="Status"
+            hide_label
+            options={status_options()}
+            data-testid="proposals-status"
+          />
+          <.icon_field
+            field={@filter_form[:project_id]}
+            icon="hero-folder-open"
+            type="select"
+            label="Projeto"
+            hide_label
+            options={[{"Qualquer projeto", ""} | Enum.map(@projects, &{&1.name, &1.id})]}
+            data-testid="proposals-project"
+          />
+          <.icon_field
+            field={@filter_form[:user_id]}
+            icon="hero-user"
+            type="select"
+            label="Quem pediu"
+            hide_label
+            options={[{"Qualquer pessoa", ""} | Enum.map(@members, &{&1.name, &1.id})]}
+            data-testid="proposals-user"
+          />
+        </.form>
+      </.filter_bar>
 
-          <.empty
-            :if={@proposals == []}
-            data-testid="no-proposals"
+      <.record_list id="proposals" testid="proposals" empty={@proposals == []}>
+        <.record_card
+          :for={job <- @proposals}
+          id={"proposal-row-#{job.id}"}
+          testid={"proposal-row-#{job.id}"}
+          navigate={~p"/w/#{@current_scope.workspace.slug}/proposals/#{job.id}"}
+          link_testid={"proposal-link-#{job.id}"}
+          tone={job_tone(job)}
+        >
+          <:leading>
+            <.record_icon icon={Proposals.kind_module(Proposals.kind(job)).icon()} color="primary" />
+          </:leading>
+          <:title>{Proposals.title(job)}</:title>
+          <:badge><.job_status job={job} data-testid={"proposal-status-#{job.id}"} /></:badge>
+          <:meta>
+            <.kind_badge kind={Proposals.kind(job)} />
+            <span data-testid={"proposal-project-#{job.id}"}>
+              {if job.project, do: job.project.name, else: Proposals.input(job)["directory"]}
+            </span>
+            <span :if={job.created_by_user}>· {job.created_by_user.name}</span>
+          </:meta>
+          <:aside>
+            <span>{time_ago(job.inserted_at, DateTime.utc_now())}</span>
+          </:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-proposals"
+            icon="hero-cpu-chip"
             title={
               if filtered?(@filters),
                 do: "Nenhuma proposta com esses filtros",
                 else: "Nenhuma proposta ainda"
             }
-            description="Peça uma em Pipelines (Gerar com IA ou Melhorar com IA), em Tarefas (Escrever com IA) ou numa decisão (Sugerir com IA)."
-          >
-            <:icon><.icon name="hero-cpu-chip" /></:icon>
-          </.empty>
-
-          <ul
-            :if={@proposals != []}
-            class="divide-y divide-gray-100 dark:divide-gray-800"
-            data-testid="proposals"
-          >
-            <li :for={job <- @proposals} class="flex flex-wrap items-center gap-3 py-3">
-              <.kind_badge kind={Proposals.kind(job)} />
-              <div class="min-w-0 flex-1">
-                <.link
-                  navigate={~p"/w/#{@current_scope.workspace.slug}/proposals/#{job.id}"}
-                  class="font-medium text-gray-900 hover:underline dark:text-white"
-                  data-testid={"proposal-link-#{job.id}"}
-                >
-                  {Proposals.title(job)}
-                </.link>
-                <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-                  <span data-testid={"proposal-project-#{job.id}"}>
-                    {if job.project, do: job.project.name, else: Proposals.input(job)["directory"]}
-                  </span>
-                  {if job.created_by_user, do: " · #{job.created_by_user.name}"}
-                  {" · #{time_ago(job.inserted_at, DateTime.utc_now())}"}
-                </p>
-              </div>
-              <.job_status job={job} data-testid={"proposal-status-#{job.id}"} />
-            </li>
-          </ul>
-        </.card_content>
-      </.card>
+            description="O agente propõe pipelines, tarefas, decisões e melhorias depois de estudar um projeto. Peça uma em Pipelines (Gerar com IA ou Melhorar com IA), em Tarefas (Escrever com IA) ou numa decisão (Sugerir com IA)."
+          />
+        </:empty_state>
+      </.record_list>
+      <.load_more more={@more} testid="proposals-load-more" />
     </Layouts.app>
     """
   end

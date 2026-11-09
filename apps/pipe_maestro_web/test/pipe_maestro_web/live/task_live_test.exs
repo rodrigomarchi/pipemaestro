@@ -592,6 +592,24 @@ defmodule PipeMaestroWeb.TaskLiveTest do
              )
     end
 
+    test "the list is a column of cards, 30 at a time", ctx do
+      for _n <- 1..31, do: create_task(ctx)
+      [newest | _] = listed = Tasks.list_tasks(ctx.workspace)
+      oldest = List.last(listed)
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")
+
+      card = "[data-testid=tasks] li[data-testid=task-row-#{newest.id}]"
+      assert has_element?(view, "#{card} [data-testid^=task-link-]", "Corrigir login")
+      assert has_element?(view, "#{card} [data-testid^=task-status-]")
+      assert has_element?(view, "#{card} [data-testid^=task-progress-]")
+      refute has_element?(view, "table")
+
+      refute has_element?(view, "[data-testid=task-row-#{oldest.id}]")
+      view |> element("[data-testid=tasks-load-more]") |> render_click()
+      assert has_element?(view, "[data-testid=task-row-#{oldest.id}]")
+      refute has_element?(view, "[data-testid=tasks-load-more]")
+    end
+
     test "the list searches titles and prompts", ctx do
       create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks")

@@ -128,15 +128,16 @@ defmodule PipeMaestro.Tasks do
   The workspace's most recent tasks, newest first, with their attempts
   (without the jobs). `filters` (blank values ignored): `"pipeline"` (its
   name), `"runner_id"`, `"project_id"`, `"user_id"` (who created it), `"q"`
-  (text in the title or the prompt).
+  (text in the title or the prompt). Options: `limit` (default
+  #{@list_limit}), how many.
   """
-  @spec list_tasks(Workspace.t(), map()) :: [Task.t()]
-  def list_tasks(%Workspace{id: workspace_id}, filters \\ %{}) do
+  @spec list_tasks(Workspace.t(), map(), [{:limit, pos_integer()}]) :: [Task.t()]
+  def list_tasks(%Workspace{id: workspace_id}, filters \\ %{}, opts \\ []) do
     query =
       from t in Task,
         where: t.workspace_id == ^workspace_id,
         order_by: [desc: t.inserted_at, desc: t.id],
-        limit: @list_limit,
+        limit: ^Keyword.get(opts, :limit, @list_limit),
         preload: [:runner, :created_by_user, stage_runs: ^attempts_query()]
 
     filters

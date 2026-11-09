@@ -186,14 +186,17 @@ defmodule PipeMaestro.Jobs do
     end)
   end
 
-  @doc "The workspace's most recent jobs, newest first."
-  @spec list_jobs(Workspace.t()) :: [Job.t()]
-  def list_jobs(%Workspace{id: workspace_id}) do
+  @doc """
+  The workspace's most recent jobs, newest first. Options: `limit` (default
+  #{@list_limit}), how many.
+  """
+  @spec list_jobs(Workspace.t(), [{:limit, pos_integer()}]) :: [Job.t()]
+  def list_jobs(%Workspace{id: workspace_id}, opts \\ []) do
     Repo.all(
       from j in Job,
         where: j.workspace_id == ^workspace_id,
         order_by: [desc: j.inserted_at, desc: j.id],
-        limit: @list_limit,
+        limit: ^Keyword.get(opts, :limit, @list_limit),
         preload: [:runner, :created_by_user, :project]
     )
   end

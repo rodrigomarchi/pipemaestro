@@ -33,6 +33,13 @@ defmodule PipeMaestroWeb.TaskComponents do
   defp task_label(:failed), do: {"Falhou", "danger"}
   defp task_label(:canceled), do: {"Cancelada", "gray"}
 
+  @doc "How a task's card calls attention (`PipeMaestroWeb.ListComponents.record_card/1`)."
+  @spec task_tone(Task.t()) :: atom()
+  def task_tone(%Task{status: :running}), do: :running
+  def task_tone(%Task{status: :awaiting_decision}), do: :awaiting
+  def task_tone(%Task{status: :failed}), do: :danger
+  def task_tone(%Task{}), do: nil
+
   @doc """
   Where the platform is with merging the task's pull request
   (`PipeMaestro.Tasks.Task` `merge_state`), as a badge.

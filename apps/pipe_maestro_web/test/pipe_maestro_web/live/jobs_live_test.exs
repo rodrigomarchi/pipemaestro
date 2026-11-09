@@ -119,4 +119,26 @@ defmodule PipeMaestroWeb.JobsLiveTest do
     assert render(view) =~ "1 min 05 s"
     assert render(view) =~ "US$ 0.0123"
   end
+
+  test "the jobs are a column of cards, 30 at a time, the running one called out", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    {runner, _token} = runner_fixture(workspace, user)
+    for n <- 1..31, do: job_fixture(runner, user, %{"prompt" => "tarefa #{n}"})
+    [newest | _] = listed = Jobs.list_jobs(workspace)
+    oldest = List.last(listed)
+    {:ok, _} = Jobs.mark_started(runner, newest.id)
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs")
+    refute has_element?(view, "table")
+    assert has_element?(view, "[data-testid=jobs] li[data-testid=job-row-#{newest.id}]")
+    assert has_element?(view, "[data-testid=job-row-#{newest.id}].border-info-400")
+
+    refute has_element?(view, "[data-testid=job-row-#{oldest.id}]")
+    view |> element("[data-testid=jobs-load-more]") |> render_click()
+    assert has_element?(view, "[data-testid=job-row-#{oldest.id}]")
+    refute has_element?(view, "[data-testid=jobs-load-more]")
+  end
 end

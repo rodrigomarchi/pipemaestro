@@ -243,6 +243,22 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       succeed(ctx, task, %{})
       assert has_element?(view, "[data-testid=proposal-status-#{task.id}]", "Concluído")
     end
+
+    test "the proposals are cards, 30 at a time", ctx do
+      for n <- 1..31, do: ask(ctx, "task", %{"request" => "Tarefa #{n}"})
+      [newest | _] = listed = Proposals.list(ctx.workspace)
+      oldest = List.last(listed)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/proposals")
+      card = "[data-testid=proposals] li[data-testid=proposal-row-#{newest.id}]"
+      assert has_element?(view, "#{card} [data-testid=proposal-link-#{newest.id}]")
+      assert has_element?(view, "#{card} [data-testid=proposal-project-#{newest.id}]", "App")
+
+      refute has_element?(view, "[data-testid=proposal-row-#{oldest.id}]")
+      view |> element("[data-testid=proposals-load-more]") |> render_click()
+      assert has_element?(view, "[data-testid=proposal-row-#{oldest.id}]")
+      refute has_element?(view, "[data-testid=proposals-load-more]")
+    end
   end
 
   describe "pipeline" do

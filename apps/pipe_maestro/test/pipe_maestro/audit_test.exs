@@ -36,6 +36,10 @@ defmodule PipeMaestro.AuditTest do
     assert saved.details == %{"version" => 1}
     assert approved.subject_name == "mac"
 
+    # A page: the newest ones, in the same order.
+    assert ctx.workspace |> Audit.list_events(limit: 2) |> Enum.map(& &1.action) ==
+             ["task.canceled", "task.created"]
+
     assert Audit.list_events(workspace_fixture()) == []
   end
 end
