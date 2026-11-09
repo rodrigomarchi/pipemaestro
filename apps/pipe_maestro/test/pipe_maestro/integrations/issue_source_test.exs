@@ -167,4 +167,25 @@ defmodule PipeMaestro.Integrations.IssueSourceTest do
       assert IssueSource.task_changed(task) == :ok
     end
   end
+
+  describe "trigger and replies" do
+    test "a webhook goes to the connection's processing, checked against its secret", ctx do
+      assert IssueSource.receive_webhook(ctx.repo.connection_id, %{}, "{}", []) ==
+               {:error, :bad_signature}
+
+      assert TaskSources.receive_webhook("git_issue", nil, %{}, "{}") == {:error, :bad_signature}
+    end
+
+    test "the polling is the reconciliation", _ctx do
+      assert %{issues: _, retried: _} = IssueSource.poll(DateTime.utc_now(), [])
+    end
+
+    test "answers a person on the issue", ctx do
+      assert IssueSource.reply(issue_origin(ctx), :comentario, "Não entendi") == :ok
+
+      assert {:ok, origin} = IssueSource.parse_link(@url)
+      assert IssueSource.reply(origin, :comentario, "x") == {:error, :not_linked}
+      assert IssueSource.fetch_item(origin) == {:error, :not_linked}
+    end
+  end
 end
