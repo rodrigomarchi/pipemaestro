@@ -68,6 +68,7 @@ defmodule PipeMaestroRunner.JobRunner do
     Changes,
     Checks,
     Claude,
+    ClaudeSessions,
     Delivery,
     Gates,
     GitCredential,
@@ -101,7 +102,9 @@ defmodule PipeMaestroRunner.JobRunner do
   `:capacity` (jobs at once, default 1), `:telemetry` (receive the CLI's
   OpenTelemetry, default false), `:files` (`%{url, token}`: where each job's
   files go, `PipeMaestroRunner.JobFiles`; without it, jobs get no folder for
-  them) and `:files_req_options` (passed to `Req` on each upload).
+  them), `:files_req_options` (passed to `Req` on each upload) and
+  `:claude_projects` (where the CLI keeps its sessions, default
+  `ClaudeSessions.projects_root/0`).
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -135,8 +138,9 @@ defmodule PipeMaestroRunner.JobRunner do
   def drain(server), do: GenServer.call(server, :drain)
 
   @doc """
-  Removes a task's worktree (`PipeMaestroRunner.Workspace`), unless a
-  job of the task is running or waiting. Reports to the owner as
+  Removes a task's worktree (`PipeMaestroRunner.Workspace`) and the agent
+  CLI's sessions of it (`PipeMaestroRunner.ClaudeSessions`), unless a job of
+  the task is running or waiting. Reports to the owner as
   `{:job_out, "worktree:removed", %{"task_id" => id}}`, with `"error"` when it
   could not.
   """
@@ -168,6 +172,7 @@ defmodule PipeMaestroRunner.JobRunner do
        workdir: workdir,
        root: Keyword.get(opts, :root),
        executable: Keyword.get_lazy(opts, :executable, &Claude.executable/0),
+       claude_projects: Keyword.get_lazy(opts, :claude_projects, &ClaudeSessions.projects_root/0),
        kill_after: Keyword.get(opts, :kill_after, 5_000),
        capacity: Keyword.get(opts, :capacity) || 1,
        telemetry_endpoint: endpoint,
@@ -476,18 +481,62 @@ defmodule PipeMaestroRunner.JobRunner do
   end
 
   # Removing a large worktree takes a while; the reply goes straight out.
+  # The CLI's sessions go only with the worktree (while it stays, a stage may
+  # still resume them), and never turn its removal into an error. The cwd is
+  # resolved first: the worktree's real path cannot be once it is gone.
   defp remove_in_background(state, task_id, directory) do
     %{owner: owner, root: root, workdir: workdir} = state
 
     Task.start(fn ->
+      cwd = ClaudeSessions.task_cwd(workdir, task_id)
+
       reply =
         case Workspace.remove_task_worktree(root, workdir, task_id, directory) do
-          :ok -> %{"task_id" => task_id}
-          {:error, message} -> %{"task_id" => task_id, "error" => message}
+          :ok ->
+            clean_sessions(state, task_id, cwd)
+            %{"task_id" => task_id}
+
+          {:error, message} ->
+            %{"task_id" => task_id, "error" => message}
         end
 
       send(owner, {:job_out, Worktree.removed_event(), reply})
     end)
+  end
+
+  defp clean_sessions(state, task_id, cwd) do
+    %{workdir: workdir, claude_projects: projects} = state
+    kept? = ClaudeSessions.marked?(workdir, task_id)
+
+    result =
+      try do
+        ClaudeSessions.clean(projects, cwd, kept?)
+      rescue
+        error -> {:unexpected, :error, Exception.message(error)}
+      end
+
+    :ok = ClaudeSessions.forget(workdir, task_id)
+
+    case result do
+      {:ok, _bytes} -> :ok
+      {:unexpected, reason, detail} -> sessions_not_found(state, task_id, cwd, reason, detail)
+    end
+  end
+
+  defp sessions_not_found(state, task_id, cwd, reason, detail) do
+    dir = ClaudeSessions.project_dir(state.claude_projects, cwd)
+    error = if is_binary(detail), do: ": " <> detail, else: ""
+
+    Logger.warning(
+      "As sessões do claude da tarefa #{task_id} não estavam como esperado em #{dir} (#{reason}#{error}).",
+      runner_event: "claude_sessions_not_found",
+      event_attrs: %{
+        "task_id" => task_id,
+        "dir" => dir,
+        "reason" => Atom.to_string(reason),
+        "cli_version" => Claude.agent(state.executable)["cli_version"]
+      }
+    )
   end
 
   defp known?(state, id),
@@ -570,6 +619,7 @@ defmodule PipeMaestroRunner.JobRunner do
   defp prepare(job, executable, root, workdir, on_os_pid) do
     with {:ok, path} <- executable(executable),
          {:ok, dir, source} <- Workspace.prepare(job, root, workdir) do
+      if keeps_session?(job), do: ClaudeSessions.mark(workdir, job.worktree["task_id"])
       setup = if source, do: Setup.run(source, dir, job.setup, on_os_pid: on_os_pid)
 
       if setup_failed?(setup) do
@@ -584,6 +634,12 @@ defmodule PipeMaestroRunner.JobRunner do
       {:error, message} -> {:error, message, nil}
     end
   end
+
+  # A task's stage whose CLI keeps a session: it goes with the task's worktree.
+  defp keeps_session?(%Job{worktree: %{"task_id" => _task}} = job),
+    do: job.persist_session == true or is_binary(job.resume_session_id)
+
+  defp keeps_session?(_job), do: false
 
   # A task's stage: the earlier artifacts missing on disk are written back
   # (from the control plane), then the worktree is synced with origin. What
