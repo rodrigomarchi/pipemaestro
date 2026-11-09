@@ -894,6 +894,18 @@ defmodule PipeMaestro.ProposalsTest do
       assert Enum.all?(result.pipeline["stages"], &(not Map.has_key?(&1, "max_budget_usd")))
     end
 
+    test "keeps the pipeline's automatic analysis setting, a person's choice", ctx do
+      {:ok, off} = Pipelines.update_pipeline(ctx.pipeline, %{"auto_analysis" => "false"})
+      {:ok, job} = ask(ctx, "improve", %{"pipeline_id" => off.id})
+
+      revised = Map.put(@pipeline_output["pipeline"], "auto_analysis", true)
+      output = %{"analise" => "x", "mudancas" => [], "pipeline" => revised}
+
+      assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
+      assert result.pipeline["auto_analysis"] == false
+      assert {:ok, %{auto_analysis: false}} = Pipelines.update_pipeline(off, result.pipeline)
+    end
+
     test "refuses another workspace's pipeline", ctx do
       assert {:error, changeset} = ask(ctx, "improve", %{"pipeline_id" => Ecto.UUID.generate()})
       assert "não é um pipeline deste workspace" in errors_on(changeset).pipeline_id

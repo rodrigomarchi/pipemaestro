@@ -79,6 +79,11 @@ export class PipelinesPage {
     return this.page.getByTestId("pipeline-max-cost");
   }
 
+  /** The switch of the entry's "Entrega" tab that has the agent analyse every failure. */
+  get autoAnalysis(): Locator {
+    return this.page.getByTestId("pipeline-auto-analysis");
+  }
+
   stageBudget(index: number): Locator {
     return this.page.getByTestId(`stage-budget-${index}`);
   }

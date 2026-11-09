@@ -358,6 +358,33 @@ defmodule PipeMaestro.PipelinesTest do
                %{"stages" => []}
     end
 
+    test "the automatic analysis is on by default, and YAML writes it only when off", %{
+      workspace: workspace
+    } do
+      on = pipeline_fixture(workspace)
+      assert on.auto_analysis == true
+      refute Pipelines.export_yaml(on) =~ "auto_analysis"
+
+      {:ok, off} = Pipelines.update_pipeline(on, %{"auto_analysis" => "false"})
+      assert off.auto_analysis == false
+      assert Pipeline.context(off)["auto_analysis"] == false
+
+      yaml = Pipelines.export_yaml(off)
+      assert yaml =~ "auto_analysis: false"
+
+      other = workspace_fixture()
+      assert {:ok, %Pipeline{auto_analysis: false}} = Pipelines.import_yaml(other, yaml)
+
+      without = String.replace(Pipelines.export_yaml(on), ~r/^name: .*$/m, "name: Outro")
+      assert {:ok, %Pipeline{auto_analysis: true}} = Pipelines.import_yaml(other, without)
+
+      # Turning the analysis off only lowers cost: a proposed pipeline keeps it.
+      assert Yaml.without_caps(%{"auto_analysis" => false, "stages" => []}) ==
+               %{"auto_analysis" => false, "stages" => []}
+
+      assert Yaml.from_map(%{"auto_analysis" => false})["auto_analysis"] == false
+    end
+
     test "a workspace does not see another's pipelines", %{workspace: workspace} do
       pipeline = pipeline_fixture(workspace)
       other = workspace_fixture()

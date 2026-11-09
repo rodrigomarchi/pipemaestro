@@ -476,6 +476,35 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=stage-run-a-2]", "Tente com mais tempo")
     end
+
+    test "with the pipeline's analysis off, a failure shows the reason and the manual decision only",
+         ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "name" => "Sem análise",
+          "auto_analysis" => "false",
+          "stages" => [
+            %{"key" => "a", "name" => "Etapa A", "prompt" => "Faça A", "max_attempts" => 1},
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+          ]
+        })
+
+      task = create_task(%{ctx | pipeline: pipeline})
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
+
+      fail_current(ctx, task)
+
+      assert has_element?(view, "[data-testid=decision-reason]", "boom")
+      refute has_element?(view, "[data-testid=questionnaire-analyzing]")
+      refute has_element?(view, "[data-testid=questionnaire-analysis-failed]")
+      refute has_element?(view, "[data-testid=questionnaire]")
+      assert has_element?(view, "[data-testid=decision-manual]")
+      assert has_element?(view, "[data-testid=decision-retry]")
+      assert has_element?(view, "[data-testid=decision-advance]")
+      assert has_element?(view, "[data-testid=decision-suggest]")
+      assert has_element?(view, "[data-testid=task-cancel]")
+      assert Tasks.get_task!(ctx.workspace, task.id).decision_analysis_job_id == nil
+    end
   end
 
   describe "talking to the task" do
