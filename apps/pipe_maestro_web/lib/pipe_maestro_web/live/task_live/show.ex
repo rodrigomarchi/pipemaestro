@@ -525,7 +525,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         testid="task-cancel"
       />
 
-      <div class="mx-auto max-w-4xl space-y-4">
+      <div class="space-y-4">
         <PipelineView.decision_banner task={@task} slug={@current_scope.workspace.slug} />
         <PipelineView.runner_alerts task={@task} online={@online} />
         <.card variant="outline">

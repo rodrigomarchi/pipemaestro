@@ -251,10 +251,11 @@ defmodule PipeMaestro.Tasks do
 
   @doc """
   One of the workspace's tasks, light: what its pipeline and its actions read.
-  Its attempts come in order with their status and error, and each job with
-  only its status, cost and duration; what an attempt produced (artifact,
-  summary, structured output, the job's prompt, result and insights) is left
-  out, `nil`. A stage's attempts in full come from `stage_attempts/2`.
+  Its attempts come in order with their status, error and summary, and each
+  job with only its status, cost, duration, turns, tokens, times and runner
+  (its id and name); what an attempt produced (artifact, structured output,
+  the job's prompt, result and insights) is left out, `nil`. A stage's
+  attempts in full come from `stage_attempts/2`.
   """
   @spec get_task_overview!(Workspace.t(), Ecto.UUID.t()) :: Task.t()
   def get_task_overview!(%Workspace{id: workspace_id}, id) do
@@ -266,6 +267,11 @@ defmodule PipeMaestro.Tasks do
             :status,
             :cost_usd,
             :duration_ms,
+            :num_turns,
+            :input_tokens,
+            :output_tokens,
+            :cache_read_tokens,
+            :cache_creation_tokens,
             :started_at,
             :finished_at,
             :stage_run_id,
@@ -273,7 +279,8 @@ defmodule PipeMaestro.Tasks do
             :workspace_id,
             :inserted_at,
             :updated_at
-          ])
+          ]),
+        preload: [runner: ^from(r in Runner, select: struct(r, [:id, :name]))]
 
     runs =
       from r in attempts_query(),
@@ -287,6 +294,7 @@ defmodule PipeMaestro.Tasks do
             :requeue,
             :status,
             :error,
+            :summary,
             :task_id,
             :inserted_at,
             :updated_at

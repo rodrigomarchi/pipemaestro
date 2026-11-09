@@ -82,15 +82,18 @@ defmodule PipeMaestro.Tasks.TaskPageTest do
       assert a.status == :passed
       assert b.status == :running
 
-      # What a node shows: the job's status, cost and duration.
+      # What a node shows: the attempt's summary, the job's status, cost,
+      # duration, times and runner.
+      assert is_binary(a.summary)
       assert %Job{status: :succeeded, duration_ms: 61_000} = a.job
       assert Decimal.equal?(a.job.cost_usd, Decimal.new("0.5"))
+      assert %DateTime{} = a.job.finished_at
+      assert a.job.runner.name == ctx.runner.name
       assert %Job{status: :queued} = b.job
 
       # Nothing the page renders only in a stage's panel.
       assert is_nil(a.artifact)
       assert is_nil(a.structured_output)
-      assert is_nil(a.summary)
       assert is_nil(a.job.result)
       assert is_nil(a.job.prompt)
       assert is_nil(a.job.stderr)

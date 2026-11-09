@@ -220,6 +220,7 @@ test.describe("Task pipeline", () => {
     // The decision, chained on the pipeline before the stage it added.
     await expect(app.page.getByTestId("task-decision-0")).toContainText("corrigir com um prompt");
     await shot(app.page, "task-page-corrected");
+    await expectFitsPhone(app.page, "task-page-corrected");
     await tasks.openStage("correcao-1");
     expect(existsSync(join(worktree, ".control-plane", bugId, "07-correcao-1.md"))).toBe(true);
     await shot(app.page, "task-corrected");
