@@ -197,39 +197,38 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
 
         <.card variant="outline">
           <.card_header title="Workspaces" description="Onde este usuário pode entrar." />
-          <.table
-            :if={@user.workspaces != []}
-            id="user-workspaces"
-            rows={@user.workspaces}
-            row_id={&"user-workspace-#{&1.id}"}
-          >
-            <:col :let={workspace} label="Workspace">
-              <.link
+          <.card_content :if={@user.workspaces != []}>
+            <.record_list id="user-workspaces">
+              <.record_card
+                :for={workspace <- @user.workspaces}
+                id={"user-workspace-#{workspace.id}"}
+                testid={"user-workspace-row-#{workspace.slug}"}
                 navigate={~p"/backoffice/workspaces/#{workspace}"}
-                class="font-medium text-gray-900 hover:text-primary-600 dark:text-white"
-                data-testid={"user-workspace-#{workspace.slug}"}
+                link_testid={"user-workspace-#{workspace.slug}"}
+                dense
               >
-                {workspace.name}
-              </.link>
-            </:col>
-            <:col :let={workspace} label="Endereço">
-              <span class="font-mono text-xs text-gray-500">/w/{workspace.slug}</span>
-            </:col>
-            <:col :let={workspace} label="" class="text-right">
-              <.button
-                size="xs"
-                variant="ghost"
-                color="danger"
-                icon="hero-minus-circle"
-                phx-click="remove_workspace"
-                phx-value-id={workspace.id}
-                data-confirm={"Remover #{@user.name} de #{workspace.name}?"}
-                data-testid={"user-workspace-remove-#{workspace.slug}"}
-              >
-                Remover
-              </.button>
-            </:col>
-          </.table>
+                <:leading>
+                  <.avatar name={workspace.name} size="sm" random_color shape="rounded" />
+                </:leading>
+                <:title>{workspace.name}</:title>
+                <:meta><span class="font-mono">/w/{workspace.slug}</span></:meta>
+                <:actions>
+                  <.button
+                    size="xs"
+                    variant="ghost"
+                    color="danger"
+                    icon="hero-minus-circle"
+                    phx-click="remove_workspace"
+                    phx-value-id={workspace.id}
+                    data-confirm={"Remover #{@user.name} de #{workspace.name}?"}
+                    data-testid={"user-workspace-remove-#{workspace.slug}"}
+                  >
+                    Remover
+                  </.button>
+                </:actions>
+              </.record_card>
+            </.record_list>
+          </.card_content>
           <.card_content>
             <p
               :if={@user.workspaces == []}

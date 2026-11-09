@@ -95,36 +95,35 @@ defmodule PipeMaestroWeb.Backoffice.OperatorLive.Index do
         Operadores têm acesso total ao backoffice: criam workspaces, usuários e outros operadores.
       </.alert>
 
-      <.card variant="outline">
-        <.table id="operators" rows={@operators} row_id={&"operator-#{&1.id}"}>
-          <:col :let={operator} label="Operador">
-            <div class="flex items-center gap-3" data-testid={"operator-#{operator.email}"}>
-              <.avatar name={operator.name} size="sm" random_color />
-              <span class="min-w-0">
-                <span class="block truncate font-medium text-gray-900 dark:text-white">
-                  {operator.name}
-                  <span
-                    :if={operator.id == @current_operator.id}
-                    class="text-xs text-gray-400"
-                    data-testid="operator-is-you"
-                  >
-                    (você)
-                  </span>
-                </span>
-                <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                  {operator.email}
-                </span>
-              </span>
-            </div>
-          </:col>
-          <:col :let={operator} label="Status">
+      <.record_list id="operators" testid="operators">
+        <.record_card
+          :for={operator <- @operators}
+          id={"operator-#{operator.id}"}
+          testid={"operator-#{operator.email}"}
+        >
+          <:leading><.avatar name={operator.name} size="sm" random_color /></:leading>
+          <:title>
+            {operator.name}
+            <span
+              :if={operator.id == @current_operator.id}
+              class="text-xs font-normal text-gray-400"
+              data-testid="operator-is-you"
+            >
+              (você)
+            </span>
+          </:title>
+          <:badge>
             <.status_badge
               disabled_at={operator.disabled_at}
               data-testid={"operator-status-#{operator.email}"}
             />
-          </:col>
-          <:col :let={operator} label="Criado em">{format_date(operator.inserted_at)}</:col>
-          <:col :let={operator} label="" class="text-right">
+          </:badge>
+          <:meta>{operator.email}</:meta>
+          <:aside>criado em {format_date(operator.inserted_at)}</:aside>
+          <:actions :if={
+            (is_nil(operator.disabled_at) and operator.id != @current_operator.id) or
+              operator.disabled_at
+          }>
             <.button
               :if={is_nil(operator.disabled_at) and operator.id != @current_operator.id}
               size="xs"
@@ -150,9 +149,9 @@ defmodule PipeMaestroWeb.Backoffice.OperatorLive.Index do
             >
               Reativar
             </.button>
-          </:col>
-        </.table>
-      </.card>
+          </:actions>
+        </.record_card>
+      </.record_list>
 
       <.modal
         :if={@form}

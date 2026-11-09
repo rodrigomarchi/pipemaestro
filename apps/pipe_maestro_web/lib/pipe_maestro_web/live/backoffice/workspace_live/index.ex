@@ -95,40 +95,29 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
         testid="new-workspace"
       />
 
-      <.card variant="outline">
-        <.table
-          :if={@workspaces != []}
-          id="workspaces"
-          rows={@workspaces}
-          row_id={&"workspace-#{&1.id}"}
-          row_click={&JS.navigate(~p"/backoffice/workspaces/#{&1}")}
+      <.record_list id="workspaces" testid="workspaces" empty={@workspaces == []}>
+        <.record_card
+          :for={workspace <- @workspaces}
+          id={"workspace-#{workspace.id}"}
+          testid={"workspace-row-#{workspace.slug}"}
+          navigate={~p"/backoffice/workspaces/#{workspace}"}
         >
-          <:col :let={workspace} label="Workspace">
-            <div class="flex items-center gap-3">
-              <.avatar name={workspace.name} size="sm" random_color shape="rounded" />
-              <span
-                class="font-medium text-gray-900 dark:text-white"
-                data-testid={"workspace-#{workspace.slug}"}
-              >
-                {workspace.name}
-              </span>
-            </div>
-          </:col>
-          <:col :let={workspace} label="Endereço">
-            <span
-              class="font-mono text-xs text-gray-500 dark:text-gray-400"
-              data-testid={"workspace-address-#{workspace.slug}"}
-            >
+          <:leading>
+            <.avatar name={workspace.name} size="sm" random_color shape="rounded" />
+          </:leading>
+          <:title><span data-testid={"workspace-#{workspace.slug}"}>{workspace.name}</span></:title>
+          <:meta>
+            <span class="font-mono" data-testid={"workspace-address-#{workspace.slug}"}>
               /w/{workspace.slug}
             </span>
-          </:col>
-          <:col :let={workspace} label="Membros">
-            <span data-testid={"workspace-member-count-#{workspace.slug}"}>
+          </:meta>
+          <:aside>
+            <.record_metric label="membros" testid={"workspace-member-count-#{workspace.slug}"}>
               {workspace.member_count}
-            </span>
-          </:col>
-          <:col :let={workspace} label="Criado em">{format_date(workspace.inserted_at)}</:col>
-          <:col :let={workspace} label="" class="text-right">
+            </.record_metric>
+            <span>criado em {format_date(workspace.inserted_at)}</span>
+          </:aside>
+          <:actions>
             <.button
               size="xs"
               variant="ghost"
@@ -140,24 +129,23 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
             >
               Editar
             </.button>
-          </:col>
-        </.table>
-
-        <.card_content :if={@workspaces == []}>
-          <.empty
-            data-testid="no-workspaces"
+          </:actions>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-workspaces"
+            icon="hero-building-office-2"
             title="Nenhum workspace ainda"
             description="Crie o workspace de uma empresa para começar a adicionar usuários."
           >
-            <:icon><.icon name="hero-building-office-2" /></:icon>
             <:actions>
               <.button to={~p"/backoffice/workspaces/new"} link_type="live_patch" icon="hero-plus">
                 Novo workspace
               </.button>
             </:actions>
-          </.empty>
-        </.card_content>
-      </.card>
+          </.record_empty>
+        </:empty_state>
+      </.record_list>
 
       <.modal
         :if={@form}

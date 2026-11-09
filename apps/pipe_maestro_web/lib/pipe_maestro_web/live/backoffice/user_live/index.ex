@@ -63,29 +63,21 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Index do
         testid="new-user"
       />
 
-      <.card variant="outline">
-        <.table
-          :if={@users != []}
-          id="users"
-          rows={@users}
-          row_id={&"user-#{&1.id}"}
-          row_click={&JS.navigate(~p"/backoffice/users/#{&1}")}
+      <.record_list id="users" testid="users" empty={@users == []}>
+        <.record_card
+          :for={user <- @users}
+          id={"user-#{user.id}"}
+          testid={"user-#{user.email}"}
+          navigate={~p"/backoffice/users/#{user}"}
         >
-          <:col :let={user} label="Usuário">
-            <div class="flex items-center gap-3" data-testid={"user-#{user.email}"}>
-              <.avatar name={user.name} size="sm" random_color />
-              <span class="min-w-0">
-                <span class="block truncate font-medium text-gray-900 dark:text-white">
-                  {user.name}
-                </span>
-                <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                  {user.email}
-                </span>
-              </span>
-            </div>
-          </:col>
-          <:col :let={user} label="Workspaces">
-            <div class="flex flex-wrap gap-1" data-testid={"user-workspaces-#{user.email}"}>
+          <:leading><.avatar name={user.name} size="sm" random_color /></:leading>
+          <:title>{user.name}</:title>
+          <:badge>
+            <.status_badge disabled_at={user.disabled_at} data-testid={"user-status-#{user.email}"} />
+          </:badge>
+          <:meta>{user.email}</:meta>
+          <:meta>
+            <span class="flex flex-wrap gap-1" data-testid={"user-workspaces-#{user.email}"}>
               <.badge
                 :for={workspace <- user.workspaces}
                 size="xs"
@@ -93,25 +85,20 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Index do
                 variant="outline"
                 label={workspace.name}
               />
-              <span :if={user.workspaces == []} class="text-xs text-gray-400">nenhum</span>
-            </div>
-          </:col>
-          <:col :let={user} label="Status">
-            <.status_badge disabled_at={user.disabled_at} data-testid={"user-status-#{user.email}"} />
-          </:col>
-          <:col :let={user} label="Criado em">{format_date(user.inserted_at)}</:col>
-        </.table>
-
-        <.card_content :if={@users == []}>
-          <.empty
-            data-testid="no-users"
+              <span :if={user.workspaces == []} class="text-gray-400">nenhum workspace</span>
+            </span>
+          </:meta>
+          <:aside>criado em {format_date(user.inserted_at)}</:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-users"
+            icon="hero-users"
             title="Nenhum usuário ainda"
             description="Crie usuários aqui ou direto na página de um workspace."
-          >
-            <:icon><.icon name="hero-users" /></:icon>
-          </.empty>
-        </.card_content>
-      </.card>
+          />
+        </:empty_state>
+      </.record_list>
 
       <.modal
         :if={@form}
