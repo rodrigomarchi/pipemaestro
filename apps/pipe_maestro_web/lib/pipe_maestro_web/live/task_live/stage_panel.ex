@@ -7,7 +7,9 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
 
   It shows one attempt at a time, the latest unless another is picked; a
   stage that never ran says what it will do; a stage the task waits on leads
-  with the decision (`PipeMaestroWeb.TaskLive.DecisionPanel`).
+  with the decision (`PipeMaestroWeb.TaskLive.DecisionPanel`); the stage the
+  task is on, with its message, pause and interruption
+  (`PipeMaestroWeb.TaskLive.PipelineView.task_controls/1`).
 
   The attempt running now (`live_job_id`, the job the page follows) shows
   its steps live: its timeline is read once when it opens and grows from the
@@ -35,7 +37,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks.StageRun
   alias PipeMaestroWeb.PipelineDiagram
-  alias PipeMaestroWeb.TaskLive.{AttemptComponents, DecisionPanel}
+  alias PipeMaestroWeb.TaskLive.{AttemptComponents, DecisionPanel, PipelineView}
 
   @impl true
   def mount(socket) do
@@ -245,6 +247,8 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
             form={@decision}
             can_cancel={@can_cancel}
           />
+
+          <PipelineView.task_controls :if={@index == @task.current_stage} task={@task} />
 
           <div :if={@runs == []} class="space-y-4" data-testid="task-stage-panel-pending">
             <p class="text-sm text-gray-500 dark:text-gray-400">

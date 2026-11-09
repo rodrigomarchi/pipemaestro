@@ -107,9 +107,11 @@ test.describe("Task files", () => {
     expect(refused.headers()["location"]).toContain("/login");
     await stranger.close();
 
-    // The "Anexos" tab gathers every file of the task, by stage and attempt.
-    await expect(tasks.tabCount("anexos")).toHaveText("2");
-    await tasks.openTab("anexos");
+    // The stage counts what it sent; the end gathers every file of the task,
+    // by stage and attempt.
+    await expect(app.page.getByTestId("task-stage-files-executar")).toContainText("2");
+    await tasks.openNode("fim", "anexos");
+    await expect(tasks.nodeTab("anexos")).toContainText("Anexos (2)");
     await expect(tasks.noAttachments).toHaveCount(0);
     await expect(tasks.attachments("executar", 1)).toContainText("a.png");
     await expect(tasks.attachments("executar", 1)).toContainText("dados/r.csv");

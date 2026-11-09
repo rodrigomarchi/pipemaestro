@@ -320,8 +320,17 @@ defmodule PipeMaestroWeb.PipelineComponents do
     doc:
       "a stage node (`PipeMaestroWeb.PipelineDiagram`): its number, or its state, marks the rail"
 
-  attr :tone, :atom, default: :neutral, values: [:neutral, :primary, :delivery, :done]
+  attr :tone, :atom,
+    default: :neutral,
+    values: [:neutral, :primary, :delivery, :done, :decision, :ghost]
+
   attr :last, :boolean, default: false
+
+  attr :dashed, :boolean,
+    default: false,
+    doc: "the line to the next place, dashed: it may not come"
+
+  attr :small, :boolean, default: false, doc: "a smaller marker, for what happens between places"
   attr :testid, :string, default: nil
   attr :rest, :global
   slot :inner_block, required: true
@@ -337,7 +346,11 @@ defmodule PipeMaestroWeb.PipelineComponents do
     <li class="relative flex gap-4 pb-5 last:pb-0" data-testid={@testid} {@rest}>
       <div
         :if={!@last}
-        class="absolute left-4 top-9 -bottom-0 w-px bg-gray-200 dark:bg-gray-800"
+        class={[
+          "absolute left-4 top-9 -bottom-0",
+          !@dashed && "w-px bg-gray-200 dark:bg-gray-800",
+          @dashed && "border-l border-dashed border-gray-300 dark:border-gray-700"
+        ]}
         aria-hidden="true"
       />
       <.stage_state_marker
@@ -346,14 +359,14 @@ defmodule PipeMaestroWeb.PipelineComponents do
         number={@marker.index + 1}
         class={["size-8 text-sm ring-4 ring-white dark:ring-gray-900", marker_tint(@marker.state)]}
       />
-      <span
-        :if={!@marker}
-        class={[
-          "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full ring-4 ring-white dark:ring-gray-900",
+      <span :if={!@marker} class="flex w-8 shrink-0 justify-center">
+        <span class={[
+          "relative z-10 flex shrink-0 items-center justify-center rounded-full ring-4 ring-white dark:ring-gray-900",
+          if(@small, do: "mt-1 size-6", else: "size-8"),
           tone_class(@tone)
-        ]}
-      >
-        <.icon name={@icon} class="size-4" />
+        ]}>
+          <.icon name={@icon} class={if @small, do: "size-3.5", else: "size-4"} />
+        </span>
       </span>
       <div class="min-w-0 flex-1 pt-1">{render_slot(@inner_block)}</div>
     </li>
@@ -375,6 +388,13 @@ defmodule PipeMaestroWeb.PipelineComponents do
     do: "bg-success-100 text-success-700 dark:bg-success-900/60 dark:text-success-300"
 
   defp tone_class(:neutral), do: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+
+  defp tone_class(:decision),
+    do: "bg-warning-100 text-warning-700 dark:bg-warning-900/60 dark:text-warning-300"
+
+  defp tone_class(:ghost),
+    do:
+      "border border-dashed border-gray-300 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400"
 
   attr :at, :integer, required: true
   attr :label, :string, default: nil

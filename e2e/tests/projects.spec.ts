@@ -8,6 +8,7 @@ import { expect, test } from "@playwright/test";
 import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
 import { RunnerProcess } from "../helpers/runnerProcess";
 import { shot } from "../helpers/screenshots";
+import { waitForLiveView } from "../helpers/liveView";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { PipelinesPage } from "../pages/PipelinesPage";
@@ -101,7 +102,12 @@ test.describe("Projects", () => {
     await shot(app.page, "task-form-project");
     await app.page.getByTestId("task-submit").click();
     await app.page.waitForURL(/\/tasks\/[0-9a-f-]+$/);
+    await waitForLiveView(app.page);
 
+    // The project, at the pipeline's entry.
+    await expect(app.page.getByTestId("task-node-entrada")).toContainText("App do fake");
+    await app.page.getByTestId("task-node-entrada").click();
+    await app.page.getByTestId("task-node-tab-projeto").click();
     await expect(app.page.getByTestId("task-project")).toContainText("App do fake");
     await expect(app.page.getByTestId("task-project-snapshot")).toContainText("make test");
     await shot(app.page, "task-project");

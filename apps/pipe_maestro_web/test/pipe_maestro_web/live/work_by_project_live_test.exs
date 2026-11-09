@@ -119,8 +119,11 @@ defmodule PipeMaestroWeb.WorkByProjectLiveTest do
   describe "a task" do
     test "shows its project, linked, with the snapshot it keeps", ctx do
       task = create_task(ctx, ctx.app)
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
 
+      {:ok, view, _html} =
+        live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?no=entrada")
+
+      assert has_element?(view, "[data-testid=task-node-entrada]", "App")
       assert has_element?(view, "[data-testid=task-project]", "App")
       assert view |> element("[data-testid=task-project] a") |> render() =~ "/projects/"
       assert has_element?(view, "[data-testid=task-project-snapshot]", "mix deps.get")

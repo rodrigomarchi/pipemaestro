@@ -204,15 +204,18 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=task-decision-banner]", "Onde corrigir?")
       view |> element("[data-testid=task-decision-open]") |> render_click()
       assert has_element?(view, "[data-testid=decision-option-1]", "No servidor")
-      refute has_element?(view, "[data-testid=task-decisions]")
+      refute has_element?(view, "[data-testid=task-decision-0]")
 
       view
       |> form("#decision-form", decision: %{instructions: "com teste"})
       |> render_submit(%{"action" => "retry", "choice" => "No servidor"})
 
-      assert has_element?(view, "[data-testid=task-decisions]", "No servidor")
-      assert has_element?(view, "[data-testid=task-decisions]", "com teste")
-      assert has_element?(view, "[data-testid=task-decisions]", ctx.user.name)
+      # Chained on the pipeline, after the stage it sent back.
+      decision = view |> element("[data-testid=task-decision-0]") |> render()
+      assert decision =~ "No servidor"
+      assert decision =~ "com teste"
+      assert decision =~ ctx.user.name
+      assert decision =~ "refazer, com instruções"
 
       assert [%{choice: "No servidor", decided_by_user_id: user_id}] = Tasks.list_decisions(task)
       assert user_id == ctx.user.id
@@ -479,6 +482,9 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     test "sends an instruction and asks for a pause while it runs", ctx do
       task = create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      # In the panel of the stage the task is on, not beside the pipeline.
+      refute has_element?(view, "#instruct-form")
+      view |> element("[data-testid=task-stage-a]") |> render_click()
 
       view
       |> form("#instruct-form", instruct: %{text: "Use o Safari"})
@@ -492,6 +498,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
       assert has_element?(view, "[data-testid=task-status]", "Aguardando decisão")
+      refute has_element?(view, "#instruct-form")
       # Kept for whatever the decision starts next.
       assert has_element?(view, "[data-testid=task-pending-instructions]", "Use o Safari")
     end
@@ -525,7 +532,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "b feita"})
 
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
-      assert has_element?(view, "[data-testid=task-correct]")
+      # A place after the end of the pipeline, which opens the form.
+      refute has_element?(view, "[data-testid=task-correct]")
+      view |> element("[data-testid=task-node-corrigir]") |> render_click()
+      assert has_element?(view, "[data-testid=task-node-panel] [data-testid=task-correct]")
 
       assert view |> form("#correct-form", correct: %{prompt: " "}) |> render_submit() =~
                "Escreva o que a correção deve fazer"
@@ -534,7 +544,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
       assert has_element?(view, "[data-testid=task-status]", "Executando")
       assert has_element?(view, "[data-testid=task-stage-correcao-1]", "Correção 1")
-      assert has_element?(view, "[data-testid=task-decisions]", "Resolva o conflito")
+      # The decision chained before the stage it added.
+      assert has_element?(view, "[data-testid=task-decision-0]", "corrigir com um prompt")
+      assert has_element?(view, "[data-testid=task-decision-0]", "Resolva o conflito")
+      refute has_element?(view, "[data-testid=task-node-corrigir]")
       refute has_element?(view, "[data-testid=task-correct]")
     end
 
@@ -543,7 +556,7 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       job = hd(Jobs.list_jobs(ctx.workspace))
       {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
 
-      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
       view |> element("[data-testid=task-interrupt]") |> render_click()
 
       # The runner is offline here: the stage stops without waiting for it.
@@ -671,8 +684,11 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert changes =~ "o patch foi cortado"
       assert has_element?(view, "[data-testid=stage-run-patch-a-1] .diff-add", "+novo")
       assert has_element?(view, "[data-testid=stage-run-patch-a-1] .diff-del", "-velho")
+      # What the task changed hangs on its end, with no pull request to deliver.
+      view |> element("[data-testid=task-overview-end]") |> render_click()
+      view |> element("[data-testid=task-node-tab-arquivos]") |> render_click()
       assert has_element?(view, "[data-testid=task-files]", "lib/login.ex")
-      assert has_element?(view, "[data-testid=task-tab-count-arquivos]")
+      assert has_element?(view, "[data-testid=task-node-tab-arquivos]", "Arquivos (1)")
     end
 
     test "shows the files each attempt sent: images as thumbnails, the others to download",
@@ -685,8 +701,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       task = create_task(ctx)
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
       refute has_element?(view, "[data-testid=stage-run-files-a-1]")
-      assert has_element?(view, "[data-testid=task-no-attachments]")
-      refute has_element?(view, "[data-testid=task-tab-count-anexos]")
+      refute has_element?(view, "[data-testid=task-stage-files-a]")
+      assert has_element?(view, "[data-testid=task-overview-end]", "0 anexos")
 
       job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
       {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
@@ -714,23 +730,32 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       refute has_element?(view, ~s([data-testid="stage-run-file-thumb-a-1-dados/r.csv"]))
       assert has_element?(view, "[data-testid=stage-run-files-failed-a-1]", "1")
 
-      refute has_element?(view, "[data-testid=task-no-attachments]")
-      assert has_element?(view, "[data-testid=task-tab-count-anexos]", "2")
+      # Counted on the stage that sent them and on the end, which lists them.
+      assert has_element?(view, "[data-testid=task-stage-files-a]", "2")
+      assert has_element?(view, "[data-testid=task-overview-end]", "2 anexos")
+      view |> element("[data-testid=task-overview-end]") |> render_click()
+      view |> element("[data-testid=task-node-tab-anexos]") |> render_click()
 
       assert has_element?(
                view,
-               ~s([data-testid=task-panel-anexos] [data-testid=task-attachments-a-1] [data-testid="task-attachment-a-1-dados/r.csv"])
+               ~s([data-testid=task-node-panel-anexos] [data-testid=task-attachments-a-1] [data-testid="task-attachment-a-1-dados/r.csv"])
              )
     end
 
-    test "the attachments tab opens by its parameter", ctx do
+    test "a place of the pipeline opens by its parameter; one the task lacks opens nothing",
+         ctx do
       task = create_task(ctx)
+      path = ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}"
 
-      {:ok, view, _html} =
-        live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?aba=anexos")
+      {:ok, view, _html} = live(ctx.conn, path <> "?no=fim")
+      assert has_element?(view, "[data-testid=task-node-panel-title]", "Fim")
+      assert has_element?(view, "[data-testid=task-no-attachments]")
 
-      assert has_element?(view, "[data-testid=task-tab-anexos]")
-      assert has_element?(view, "[data-testid=task-panel-anexos]:not(.hidden)")
+      # No pull request is delivered, and a running task takes no correction.
+      for node <- ~w(entrega corrigir nada) do
+        {:ok, view, _html} = live(ctx.conn, path <> "?no=#{node}")
+        refute has_element?(view, "[data-testid=task-node-panel]")
+      end
     end
 
     test "removes the worktree of a task that ended", ctx do
@@ -745,6 +770,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=task-remove-worktree]") |> render_click()
       assert_receive {:worktree_remove, %{"task_id" => task_id}}
       assert task_id == task.id
+      view |> element("[data-testid=task-node-entrada]") |> render_click()
+      view |> element("[data-testid=task-node-tab-projeto]") |> render_click()
       assert has_element?(view, "[data-testid=task-worktree-state]", "Removendo")
       refute has_element?(view, "[data-testid=task-remove-worktree]")
 
@@ -785,8 +812,6 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
 
       assert has_element?(view, "[data-testid=task-status]", "Executando")
-      assert has_element?(view, "[data-testid=task-where]", "mac:app")
-      assert has_element?(view, "[data-testid=task-branch]", "cp/corrigir-login-")
       assert has_element?(view, "[data-testid=stage-run-status-a-1]", "Executando")
       assert has_element?(view, "[data-testid=task-stage-state-a]", "Executando")
       assert has_element?(view, "[data-testid=task-stage-state-b]", "Aguardando")
@@ -805,7 +830,6 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       assert has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
 
       assert has_element?(view, "[data-testid=stage-run-summary-a-1]", "a feita")
-      assert has_element?(view, "[data-testid=task-cost]", "US$")
 
       # Without an artifact, the result is the summary and the agent's answer.
       assert has_element?(
@@ -819,25 +843,39 @@ defmodule PipeMaestroWeb.TaskLiveTest do
                "a feita"
              )
 
-      assert has_element?(view, "[data-testid=task-prompt-text][phx-hook=Highlight]")
-
-      # In tabs: the stages first; the request, files and decisions a click away.
-      assert has_element?(view, "[data-testid=task-panel-etapas]:not(.hidden)")
-      assert has_element?(view, "[data-testid=task-panel-pedido].hidden")
-      # The summary is a tab of its own; the status and cost sit beside the title.
-      assert has_element?(view, "[data-testid=task-panel-resumo].hidden [data-testid=task-cost]")
+      # The page is the pipeline: the status and the cost sit beside the title,
+      # and the rest hangs on the places of the pipeline, each in its drawer.
       assert has_element?(view, "header [data-testid=task-status]")
       assert has_element?(view, "header [data-testid=task-cost-badge]", "US\$")
       # A task in progress has the room: the sidebar is closed to its icons.
       assert has_element?(view, "[data-testid=app-sidebar][data-focus=true]")
-      assert has_element?(view, "[data-testid=task-no-decisions]")
-      view |> element("[data-testid=task-tab-pedido]") |> render_click()
-      assert_patch(view, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?aba=pedido")
-      assert has_element?(view, "[data-testid=task-panel-pedido]:not(.hidden)")
-      assert has_element?(view, "[data-testid=task-panel-etapas].hidden")
-      view |> element("[data-testid=task-tab-etapas]") |> render_click()
-      # A tab leaves the stage's panel; its node opens it again.
+      refute has_element?(view, "[data-testid=task-tabs]")
+
+      slug = ctx.workspace.slug
+      view |> element("[data-testid=task-node-entrada]") |> render_click()
+      assert_patch(view, ~p"/w/#{slug}/tasks/#{task.id}?no=entrada")
       refute has_element?(view, "[data-testid=task-stage-panel]")
+      # The request first; where it runs a tab away.
+      assert has_element?(
+               view,
+               "[data-testid=task-node-panel-pedido]:not(.hidden) [data-testid=task-prompt-text][phx-hook=Highlight]"
+             )
+
+      assert has_element?(view, "[data-testid=task-node-panel-projeto].hidden")
+      view |> element("[data-testid=task-node-tab-projeto]") |> render_click()
+      assert has_element?(view, "[data-testid=task-node-panel-projeto]:not(.hidden)")
+      assert has_element?(view, "[data-testid=task-where]", "mac:app")
+      assert has_element?(view, "[data-testid=task-branch]", "cp/corrigir-login-")
+      assert has_element?(view, "[data-testid=task-worktree]", "/w/worktrees/")
+
+      view |> element("[data-testid=task-overview-end]") |> render_click()
+      assert_patch(view, ~p"/w/#{slug}/tasks/#{task.id}?no=fim")
+      assert has_element?(view, "[data-testid=task-node-panel-resumo]:not(.hidden)")
+      assert has_element?(view, "[data-testid=task-cost]", "US$")
+
+      view |> element("[data-testid=task-node-panel-close]") |> render_click()
+      assert_patch(view, ~p"/w/#{slug}/tasks/#{task.id}")
+      refute has_element?(view, "[data-testid=task-node-panel]")
       view |> element("[data-testid=task-stage-a]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1][phx-hook=Highlight]")
@@ -847,7 +885,6 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       refute has_element?(view, "[data-testid=stage-run-artifact-a-1]")
       view |> element("[data-testid=stage-run-artifact-toggle-a-1]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-artifact-a-1] h1", "Artefato de a")
-      assert has_element?(view, "[data-testid=task-worktree]", "/w/worktrees/")
       view |> element("[data-testid=task-stage-b]") |> render_click()
       assert has_element?(view, "[data-testid=stage-run-status-b-1]", "Executando")
 
@@ -1073,6 +1110,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
 
       assert has_element?(view, "[data-testid=task-merge-state]", "Merge parado")
+      view |> element("[data-testid=task-node-entrega]") |> render_click()
+      view |> element("[data-testid=task-node-tab-merge]") |> render_click()
       assert has_element?(view, "[data-testid=task-merge-reason]", "ci/test")
 
       view |> element("[data-testid=task-merge-retry]") |> render_click()

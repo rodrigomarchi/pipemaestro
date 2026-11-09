@@ -41,8 +41,14 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
         }
       })
 
-    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}")
-    assert has_element?(view, "[data-testid=task-pr][href='https://github.com/acme/app/pull/7']")
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?no=entrega")
+    pr = "[href='https://github.com/acme/app/pull/7']"
+    assert has_element?(view, "[data-testid=task-overview-pr]#{pr}")
+    view |> element("[data-testid=task-node-tab-merge]") |> render_click()
+    assert has_element?(view, "[data-testid=task-pr]#{pr}")
+
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?no=entrada")
+    view |> element("[data-testid=task-node-tab-projeto]") |> render_click()
 
     assert has_element?(
              view,

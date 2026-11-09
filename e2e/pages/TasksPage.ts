@@ -41,7 +41,7 @@ export class TasksPage {
     await selectProject(this.page.getByTestId("task-project"), task.project);
     if (task.shot) await shot(this.page, task.shot);
     await this.page.getByTestId("task-submit").click();
-    await expect(this.page.getByTestId("task-prompt-text")).toHaveText(task.prompt);
+    await expect(this.overview()).toBeVisible();
     await waitForLiveView(this.page);
     return new URL(this.page.url()).pathname.split("/").pop()!;
   }
@@ -63,7 +63,7 @@ export class TasksPage {
     return this.page.getByTestId("task-waiting-runner");
   }
 
-  /** The task's project (a link to it) and its snapshot from when the task started. */
+  /** The task's project (a link to it) and its snapshot, in the entry's "Projeto" tab. */
   get project(): Locator {
     return this.page.getByTestId("task-project");
   }
@@ -180,14 +180,53 @@ export class TasksPage {
     return key ? `${id}-${key}` : id;
   }
 
-  /** The vertical pipeline of the "Etapas" tab: only the stages and their states. */
+  /** The task's page: its pipeline, vertical, each place a link to its drawer. */
   overview(): Locator {
     return this.page.getByTestId("task-overview");
   }
 
-  /** What concerns the whole task, beside the pipeline: runner alerts, messages, correction. */
-  sidebar(): Locator {
-    return this.page.getByTestId("task-sidebar");
+  /**
+   * A place of the pipeline that is not a stage: "entrada" (the request and
+   * where it runs), "entrega" (the files changed and the branch), "fim" (the
+   * cost and the files sent) or "corrigir" (a correction of a task that ended).
+   */
+  node(node: "entrada" | "entrega" | "fim" | "corrigir"): Locator {
+    return this.page.getByTestId(node === "fim" ? "task-overview-end" : `task-node-${node}`);
+  }
+
+  /** The drawer of a place that is not a stage. */
+  nodePanel(): Locator {
+    return this.page.getByTestId("task-node-panel");
+  }
+
+  /** Opens a place's drawer, and one of its tabs when `tab` is given. */
+  async openNode(node: "entrada" | "entrega" | "fim" | "corrigir", tab?: string) {
+    await this.closePanelsIfOpen();
+    await this.node(node).click();
+    await expect(this.nodePanel()).toBeVisible();
+    await expect(this.page).toHaveURL(new RegExp(`[?&]no=${node}(&|$)`));
+    if (tab) {
+      await this.page.getByTestId(`task-node-tab-${tab}`).click();
+      await expect(this.page.getByTestId(`task-node-panel-${tab}`)).toBeVisible();
+    }
+  }
+
+  /** A tab of the open place's drawer, with its counter in its name. */
+  nodeTab(tab: string): Locator {
+    return this.page.getByTestId(`task-node-tab-${tab}`);
+  }
+
+  /** Closes the place's drawer by its button; the place leaves the URL. */
+  async closeNode() {
+    await this.page.getByTestId("task-node-panel-close").click();
+    await expect(this.nodePanel()).toBeHidden();
+    await expect(this.page).not.toHaveURL(/[?&]no=/);
+  }
+
+  /** Closes whichever drawer is open, so the page behind it takes clicks. */
+  async closePanelsIfOpen() {
+    await this.closeStageIfOpen();
+    if (await this.nodePanel().isVisible()) await this.closeNode();
   }
 
   /** A stage's node in the vertical pipeline, by its key. */
@@ -264,47 +303,43 @@ export class TasksPage {
 
   /** Removes the finished task's worktree (the confirmation is accepted by `acceptConfirms`). */
   async removeWorktree() {
-    await this.closeStageIfOpen();
+    await this.closePanelsIfOpen();
     await clickPageAction(this.page, "task-remove-worktree");
   }
 
-  /** "Corrigir com um prompt": runs `prompt` as a new stage of a task that ended. */
+  /**
+   * "Corrigir com um prompt", the place after the end of a task that ended:
+   * runs `prompt` as a new stage.
+   */
   async correct(prompt: string) {
-    await this.closeStageIfOpen();
+    await this.openNode("corrigir");
     await this.page.getByTestId("task-correct-text").fill(prompt);
     await this.page.getByTestId("task-correct-submit").click();
   }
 
-  /** Stops the running stage (the confirmation is accepted by `acceptConfirms`). */
+  /**
+   * Stops the running stage from its panel, open (the confirmation is
+   * accepted by `acceptConfirms`), and closes it.
+   */
   async interrupt() {
-    await this.closeStageIfOpen();
-    await this.page.getByTestId("task-interrupt").click();
+    await this.stagePanel().getByTestId("task-interrupt").click();
+    await expect(this.page.getByTestId("decision-panel")).toBeVisible();
+    await this.closeStage();
   }
 
+  /** The worktree's state, in the entry's "Projeto" tab. */
   get worktreeState(): Locator {
     return this.page.getByTestId("task-worktree-state");
   }
 
   async backToList() {
-    await this.closeStageIfOpen();
+    await this.closePanelsIfOpen();
     await this.page.getByTestId("back-to-tasks").click();
     await expect(this.page.getByTestId("page-title")).toHaveText("Tarefas");
   }
 
   listStatus(taskId: string): Locator {
     return this.page.getByTestId(`task-status-${taskId}`);
-  }
-
-  /** Opens one of the task's tabs by its `aba`: "etapas", "resumo", "pedido", "arquivos", "anexos" or "decisoes". */
-  async openTab(tab: "etapas" | "resumo" | "pedido" | "arquivos" | "anexos" | "decisoes") {
-    await this.closeStageIfOpen();
-    await this.page.getByTestId(`task-tab-${tab}`).click();
-    await expect(this.page.getByTestId(`task-panel-${tab}`)).toBeVisible();
-  }
-
-  /** The counter beside a tab's name. */
-  tabCount(tab: string): Locator {
-    return this.page.getByTestId(`task-tab-count-${tab}`);
   }
 
   /** The files an attempt sent from the runner (`$CP_FILES_DIR`), beside its artifact. */
@@ -332,12 +367,12 @@ export class TasksPage {
     return this.page.getByTestId(`stage-run-files-failed-${key}-${attempt}`);
   }
 
-  /** An attempt's group in the "Anexos" tab. */
+  /** An attempt's group in the end's "Anexos" tab. */
   attachments(key: string, attempt: number): Locator {
     return this.page.getByTestId(`task-attachments-${key}-${attempt}`);
   }
 
-  /** What the "Anexos" tab says while no attempt sent a file. */
+  /** What the end's "Anexos" tab says while no attempt sent a file. */
   get noAttachments(): Locator {
     return this.page.getByTestId("task-no-attachments");
   }

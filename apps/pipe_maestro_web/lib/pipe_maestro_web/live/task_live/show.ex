@@ -1,48 +1,36 @@
 defmodule PipeMaestroWeb.TaskLive.Show do
   @moduledoc """
-  One task, in phases. The "Etapas" tab shows the pipeline the task runs,
-  vertical and light (`PipeMaestroWeb.TaskLive.PipelineView`): each stage's
-  state, attempts, time and cost, and beside it what concerns the whole task
-  (the runner's alerts, a message, a pause, an interruption, a correction).
-  The task is read light (`PipeMaestro.Tasks.get_task_overview!/2`): nothing a
-  stage produced is in it.
+  One task, as its pipeline (`PipeMaestroWeb.TaskLive.PipelineView`): the
+  page is the pipeline, top to bottom, and every place on it opens a drawer
+  with what belongs there. The task is read light
+  (`PipeMaestro.Tasks.get_task_overview!/2`): nothing a stage produced is in it.
 
-  A stage opens in a panel (`PipeMaestroWeb.TaskLive.StagePanel`), kept in the
-  URL as `?etapa=<key>` beside the tab's `?aba=`; the browser's back closes
-  it. The panel reads the stage's attempts in full. While its stage runs, the
-  page follows that stage's job only (`Jobs.subscribe({:job, id})`, and
-  `Jobs.unsubscribe/1` when the panel closes or moves) and hands its events,
-  what the agent is typing and what it spent so far (read at most every
-  `@live_every` ms) to the panel. A task waiting for a decision shows a
-  banner that opens the waiting stage, whose panel takes the decision
-  (`PipeMaestroWeb.TaskLive.DecisionPanel`).
+  A stage opens in a panel (`PipeMaestroWeb.TaskLive.StagePanel`), kept in
+  the URL as `?etapa=<key>`; the entry, the pull request, the end and the
+  correction open in `PipeMaestroWeb.TaskLive.NodePanel`, as `?no=<place>`.
+  The browser's back closes either. The stage panel reads the stage's
+  attempts in full. While its stage runs, the page follows that stage's job
+  only (`Jobs.subscribe({:job, id})`, and `Jobs.unsubscribe/1` when the panel
+  closes or moves) and hands its events, what the agent is typing and what it
+  spent so far (read at most every `@live_every` ms) to the panel. A task
+  waiting for a decision shows a banner that opens the waiting stage, whose
+  panel takes the decision (`PipeMaestroWeb.TaskLive.DecisionPanel`).
 
-  The other tabs are modules of their own (`SummaryTab`, `RequestTab`,
-  `FilesTab`, `AttachmentsTab`, `DecisionsTab`). This LiveView holds what is
-  the task's: its actions and decisions, all taken by `PipeMaestro.Tasks`.
+  This LiveView holds what is the task's: its actions and decisions, all
+  taken by `PipeMaestro.Tasks`.
   """
   use PipeMaestroWeb, :live_view
 
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
   import PipeMaestroWeb.QuestionnaireComponents, only: [decode_answers: 1]
-  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
   import PipeMaestroWeb.TaskComponents, only: [task_status: 1, merge_state: 1]
 
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.{Insights, Jobs, Tasks}
   alias PipeMaestro.Jobs.Files
   alias PipeMaestro.Tasks.Task
-  alias PipeMaestroWeb.{ProposalRequest, RunnerStatus, TabComponents}
-
-  alias PipeMaestroWeb.TaskLive.{
-    AttachmentsTab,
-    DecisionsTab,
-    FilesTab,
-    PipelineView,
-    RequestTab,
-    StagePanel,
-    SummaryTab
-  }
+  alias PipeMaestroWeb.{ProposalRequest, RunnerStatus}
+  alias PipeMaestroWeb.TaskLive.{NodePanel, PipelineView, StagePanel}
 
   @live_every 2_000
   @panel "stage-panel"
@@ -64,33 +52,19 @@ defmodule PipeMaestroWeb.TaskLive.Show do
 
     {:ok,
      socket
-     |> assign(page_title: task.title, task: task, tab: "etapas", stage: nil)
+     |> assign(page_title: task.title, task: task, stage: nil, node: nil, node_tab: nil)
      |> assign(followed_job_id: nil, live_pending: false, redo: nil)
      |> assign(decision: to_form(%{"instructions" => ""}, as: "decision"))
      |> load_online()
      |> load_task_data()}
   end
 
-  # The tabs, by their `aba` parameter, first on the page: the stages (with
-  # the runner's alerts, the decision to take and what to do next), the summary
-  # (cost, project, branch, pull request, worktree), the request, the files
-  # changed, the files the stages sent and the decisions taken. The status and
-  # the cost sit beside the title, seen from every tab.
-  @tabs [
-    {"etapas", "Etapas", "hero-queue-list"},
-    {"resumo", "Resumo", "hero-information-circle"},
-    {"pedido", "Pedido", "hero-document-text"},
-    {"arquivos", "Arquivos", "hero-document-duplicate"},
-    {"anexos", "Anexos", "hero-paper-clip"},
-    {"decisoes", "Decisões", "hero-hand-raised"}
-  ]
-
   @impl true
   def handle_params(params, _uri, socket) do
     {:noreply,
      socket
-     |> assign(tab: TabComponents.chosen(@tabs, params["aba"], "etapas"))
      |> assign(stage: stage_index(socket.assigns.task, params["etapa"]))
+     |> open_node(NodePanel.chosen(socket.assigns.task, params["no"]))
      |> follow_job()}
   end
 
@@ -98,20 +72,11 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   defp stage_index(_task, nil), do: nil
   defp stage_index(%Task{stages: stages}, key), do: Enum.find_index(stages, &(&1.key == key))
 
-  defp task_tabs(changed_files, decisions, files) do
-    Enum.map(@tabs, fn
-      {"arquivos", label, icon} ->
-        {"arquivos", label, icon, length(changed_files)}
-
-      {"anexos", label, icon} ->
-        {"anexos", label, icon, files |> Map.values() |> Enum.concat() |> length()}
-
-      {"decisoes", label, icon} ->
-        {"decisoes", label, icon, length(decisions)}
-
-      tab ->
-        tab
-    end)
+  # A place opened anew shows its first tab.
+  defp open_node(socket, node) do
+    if node == socket.assigns.node,
+      do: socket,
+      else: assign(socket, node: node, node_tab: nil)
   end
 
   @impl true
@@ -176,6 +141,9 @@ defmodule PipeMaestroWeb.TaskLive.Show do
   @impl true
   def handle_event("close_panel", _params, socket),
     do: {:noreply, push_patch(socket, to: stage_path(socket, nil))}
+
+  def handle_event("select_tab", %{"tab" => tab}, socket),
+    do: {:noreply, assign(socket, node_tab: tab)}
 
   # The form has one submit button per decision; the pressed one comes as
   # "action", with the instructions typed.
@@ -397,6 +365,16 @@ defmodule PipeMaestroWeb.TaskLive.Show do
     |> assign(task: task)
     |> load_task_data()
     |> follow_job()
+    |> close_gone_node()
+  end
+
+  # A place the task no longer has (the correction, once it runs) closes.
+  defp close_gone_node(%{assigns: %{node: nil}} = socket), do: socket
+
+  defp close_gone_node(socket) do
+    if NodePanel.chosen(socket.assigns.task, socket.assigns.node),
+      do: socket,
+      else: socket |> assign(node: nil) |> push_patch(to: stage_path(socket, nil))
   end
 
   defp load_task_data(socket) do
@@ -547,56 +525,36 @@ defmodule PipeMaestroWeb.TaskLive.Show do
         testid="task-cancel"
       />
 
-      <div class="space-y-6">
-        <.page_tabs
-          tabs={task_tabs(@changed_files, @decisions, @files)}
-          active={@tab}
-          path={&~p"/w/#{@current_scope.workspace.slug}/tasks/#{@task.id}?aba=#{&1}"}
-          testid="task"
-        />
-
-        <.tab_panel id="etapas" active={@tab} testid="task">
-          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
-            <div class="min-w-0 space-y-4">
-              <PipelineView.decision_banner task={@task} slug={@current_scope.workspace.slug} />
-              <.card variant="outline">
-                <.card_content>
-                  <PipelineView.overview task={@task} slug={@current_scope.workspace.slug} />
-                </.card_content>
-              </.card>
-            </div>
-            <PipelineView.task_sidebar
+      <div class="mx-auto max-w-4xl space-y-4">
+        <PipelineView.decision_banner task={@task} slug={@current_scope.workspace.slug} />
+        <PipelineView.runner_alerts task={@task} online={@online} />
+        <.card variant="outline">
+          <.card_content>
+            <PipelineView.overview
               task={@task}
-              online={@online}
-              correct_form={@correct_form}
-              runner_choices={@runner_choices}
+              slug={@current_scope.workspace.slug}
+              decisions={@decisions}
+              files={@files}
+              changed_files={@changed_files}
+              cost={@cost}
+              open={@node}
             />
-          </div>
-        </.tab_panel>
+          </.card_content>
+        </.card>
 
-        <.tab_panel id="resumo" active={@tab} testid="task">
-          <SummaryTab.summary task={@task} cost={@cost} slug={@current_scope.workspace.slug} />
-        </.tab_panel>
-
-        <.tab_panel id="pedido" active={@tab} testid="task">
-          <RequestTab.request task={@task} />
-        </.tab_panel>
-
-        <.tab_panel id="arquivos" active={@tab} testid="task">
-          <FilesTab.files files={@changed_files} />
-        </.tab_panel>
-
-        <.tab_panel id="anexos" active={@tab} testid="task">
-          <AttachmentsTab.attachments
-            task={@task}
-            files={@files}
-            slug={@current_scope.workspace.slug}
-          />
-        </.tab_panel>
-
-        <.tab_panel id="decisoes" active={@tab} testid="task">
-          <DecisionsTab.decisions task={@task} decisions={@decisions} />
-        </.tab_panel>
+        <NodePanel.node_panel
+          :if={@node}
+          node={@node}
+          tab={@node_tab}
+          task={@task}
+          slug={@current_scope.workspace.slug}
+          cost={@cost}
+          files={@files}
+          changed_files={@changed_files}
+          online={@online}
+          correct_form={@correct_form}
+          runner_choices={@runner_choices}
+        />
 
         <.live_component
           :if={@stage}
