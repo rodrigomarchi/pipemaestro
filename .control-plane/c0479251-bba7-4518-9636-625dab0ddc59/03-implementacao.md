@@ -112,17 +112,45 @@ grep -nE "Integrations\.(LinkedRepo|Trigger|IssueState|IssueUrl)|LinkedRepo|Trig
 `make ci.quick` (`tmp/ciq.log`):
 - compile sem warnings, format, `deps.unlock` e `credo --strict` passaram;
 - testes e cobertura passaram em `protocol` (113), `pipe_maestro` (625; total 93,4%) e `web` (543);
-- o runner teve **1 falha intermitente**, sem relação com esta mudança (próxima seção).
+- na primeira tentativa, o runner teve 1 falha intermitente, corrigida na seção seguinte.
 
 O Dialyzer está registrado no fim deste arquivo.
 
-## Falha intermitente fora do escopo (runner)
+## Testes instáveis corrigidos (segunda tentativa)
 
-`PipeMaestroRunner.GatesTest` "a change to the tree runs it again, committed or not" falhou 1 vez em 5 rodadas isoladas e passou nas outras; na suíte do runner, passou 3 de 3.
+A primeira tentativa não passou no gate `make test.cover`. Duas falhas intermitentes,
+nenhuma causada pela mudança da tarefa, foram corrigidas onde falham:
 
-Causa provável: `PipeMaestroRunner.GateCache.tree/3` copia o índice para `System.tmp_dir!()/pipemaestro-gates-<System.unique_integer>`. Esse inteiro só é único dentro de uma VM, e várias BEAMs de outros worktrees (8 no momento) rodam os mesmos testes no mesmo `TMPDIR`. Os nomes colidem e uma cópia do índice sobrescreve a outra.
+1. **`PipeMaestroRunner.GatesTest` "a change to the tree runs it again, committed or not"**
+   (commit `2b56fd2`).
+   - **A primeira hipótese estava errada.** Colisão do arquivo temporário entre VMs: o teste
+     continuou falhando, cerca de 3 vezes em 16, rodando sozinho.
+   - **Causa real.** `GateCache.tree/3` copiava o índice com `File.cp`, e a cópia ganhava um
+     mtime novo. O git compara mtime em segundos. Ele só hasheia de novo uma entrada "racily
+     clean", com mtime >= o do índice. Com a cópia mais nova, um arquivo regravado no mesmo
+     segundo e com o mesmo tamanho (`"v1"` → `"v2"`) parecia inalterado. A árvore saía com o
+     conteúdo velho, e o gate não era achado no cache depois do commit.
+   - **Correção.** `copy_index/2` mantém o mtime do índice na cópia (`File.touch/2`). O nome
+     também passa a levar `System.pid()`, porque VMs diferentes compartilham o `TMPDIR`.
+   - **Teste novo, determinístico.** "a file rewritten with the same size in the second the
+     index was written is a change" põe o índice e o arquivo no mesmo segundo do passado.
+     Ele falha 3 de 3 sem a correção e passa com ela. O arquivo do teste passou 25 de 25
+     rodadas.
+   - **Efeito colateral.** A mudança em `apps/pipe_maestro_runner` sobe a versão do runner
+     (ADR 0035), e os runners se atualizam uma vez. O bug também existe em produção: ele
+     faria um gate passar por cache sobre código que mudou. Por isso a correção vale a
+     atualização.
+2. **`PipeMaestro.Integrations.CredentialsTest` "two refreshes at once spend the refresh
+   token once"** (`config/test.exs`).
+   - **Causa.** As duas tasks do teste dividem a única conexão do sandbox. A primeira a
+     segura numa transação com `FOR UPDATE` enquanto chama o FakeForgejo. Com a máquina
+     carregada por outras suítes, a segunda esperava mais que a fila padrão do DBConnection
+     (`could not checkout ... dropped from queue after 420ms`).
+   - **Correção.** O Repo de teste ganhou `queue_target: 2_000` e `queue_interval: 5_000`.
 
-Não corrigi porque o runner está fora do escopo desta tarefa, e qualquer mudança em `apps/pipe_maestro_runner` sobe a versão do runner (ADR 0035), o que faz os runners se atualizarem. A correção sugerida, para uma tarefa própria, é pôr `System.pid()` ou bytes aleatórios no nome do arquivo.
+Depois disso, `make ci.quick` saiu **0** (`tmp/ciq.log`): `protocol` 113, `pipe_maestro`
+628, `web` 543 e runner 285 testes passaram, todos acima do limite de cobertura. Isso
+também vale como `test.cover` para esta árvore.
 
 ## Pendências para as próximas etapas
 
