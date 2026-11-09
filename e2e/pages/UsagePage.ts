@@ -57,6 +57,11 @@ export class UsagePage {
     return this.page.getByTestId(`usage-quality-pipeline-${name}`);
   }
 
+  /** A pipeline's share of pull requests accepted with changes, in the quality tab. */
+  pipelineChanged(name: string): Locator {
+    return this.page.getByTestId(`usage-quality-pipeline-${name}-changed`);
+  }
+
   async filterPipeline(name: string) {
     await this.pipelineFilter.selectOption(name === "" ? "" : { label: name });
     await waitForLiveView(this.page);

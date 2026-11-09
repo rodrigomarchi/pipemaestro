@@ -143,7 +143,7 @@ test.describe("The quality of the deliveries", () => {
     await expect(usage.open).toHaveText(/0/);
     await expect(usage.mergeTime).toBeVisible();
     await expect(usage.reviewRounds).toHaveText(/0/);
-    await expect(usage.pipelineRow("Correção de bug")).toContainText("100%");
+    await expect(usage.pipelineChanged("Correção de bug")).toHaveText("100%");
     await expect(usage.stages).toBeVisible();
     await expect(usage.pauses).toBeVisible();
     await shot(app.page, "quality-accepted-with-changes");
@@ -152,7 +152,7 @@ test.describe("The quality of the deliveries", () => {
     await usage.filterProject("App");
     await expect(usage.delivered).toHaveText(/1/);
     await usage.filterPipeline("Correção de bug");
-    await expect(usage.pipelineRow("Correção de bug")).toContainText("100%");
+    await expect(usage.pipelineChanged("Correção de bug")).toHaveText("100%");
     await expect(usage.changed).toHaveText(/100%/);
     await shot(app.page, "quality-filtered");
   });

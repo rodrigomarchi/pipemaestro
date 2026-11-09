@@ -94,10 +94,18 @@ defmodule PipeMaestroWeb.UsageQualityComponents do
           />
           <.table id="usage-quality-pipelines" rows={@quality.by_pipeline} density="compact">
             <:col :let={row} label="Pipeline">
-              <span data-testid={"usage-quality-pipeline-#{row.name}"}>
-                <span class="font-medium">{row.name || "—"}</span>
-                · {percent(row.clean_pct)} sem alteração
-                · {percent(row.changed_pct)} com alteração
+              <span class="font-medium" data-testid={"usage-quality-pipeline-#{row.name}"}>
+                {row.name || "—"}
+              </span>
+            </:col>
+            <:col :let={row} label="Sem alteração">
+              <span data-testid={"usage-quality-pipeline-#{row.name}-clean"}>
+                {percent(row.clean_pct)}
+              </span>
+            </:col>
+            <:col :let={row} label="Com alteração">
+              <span data-testid={"usage-quality-pipeline-#{row.name}-changed"}>
+                {percent(row.changed_pct)}
               </span>
             </:col>
             <:col :let={row} label="PRs">{row.delivered}</:col>

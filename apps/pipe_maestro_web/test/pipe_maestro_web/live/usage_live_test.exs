@@ -254,7 +254,7 @@ defmodule PipeMaestroWeb.UsageLiveTest do
       assert has_element?(view, "[data-testid=usage-quality-closed]", "33%")
       assert has_element?(view, "[data-testid=usage-quality-open]", "0")
       assert has_element?(view, "[data-testid=usage-quality-merge-time]", "120 min")
-      assert has_element?(view, "[data-testid=usage-quality-pipeline-Entrega]", "50%")
+      assert has_element?(view, "[data-testid=usage-quality-pipeline-Entrega-clean]", "50%")
       assert has_element?(view, "[data-testid=usage-quality-pipeline-Outra]")
       assert has_element?(view, "[data-testid=usage-quality-stage-Entrega-a-retries]", "1")
       assert has_element?(view, "[data-testid=usage-quality-stage-Entrega-a-redone]", "1")
