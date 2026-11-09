@@ -16,7 +16,7 @@ da tarefa ficava espalhado em abas, longe do ponto do pipeline a que pertence.
 ## Decisões
 
 1. **A página é o pipeline, sem abas e sem coluna lateral.** Ele ocupa a largura
-   central da página. Acima dele ficam só o banner de decisão pendente e os alertas
+   toda da página. Acima dele ficam só o banner de decisão pendente e os alertas
    do runner, porque são o que segura a tarefa.
 2. **Cada lugar do trilho abre um drawer, e o conteúdo fica onde pertence**
    (`TaskLive.PipelineView`, `TaskLive.NodePanel`). A URL guarda o lugar aberto.
@@ -31,9 +31,17 @@ da tarefa ficava espalhado em abas, longe do ponto do pipeline a que pertence.
    - **Corrigir com um prompt** (`?no=corrigir`): um lugar tracejado depois do Fim,
      só numa tarefa que terminou. Abre o formulário, e a correção roda como uma
      nova etapa.
-   - Cada nó do trilho mostra só fatos leves: a etapa mostra o 📎 com quantos arquivos
-     enviou, a entrada mostra o projeto e o pipeline, o PR mostra quantos arquivos
-     mudaram e o fim mostra o custo e os anexos.
+   - Cada nó do trilho mostra só fatos leves: a entrada mostra o projeto e o
+     pipeline, o PR mostra quantos arquivos mudaram e o fim mostra o custo e os
+     anexos.
+   - O card da etapa traz, da última tentativa, o resumo que o agente deu (ou o
+     erro, em até duas linhas). Também traz tempo e custo, tokens com a taxa de
+     cache e os turnos, quando rodou ("terminou há 12 min") e o runner, quando não
+     é o da tarefa. Fica nome e resumo à esquerda e números à direita, ou um
+     embaixo do outro quando o card é estreito (container query). No celular, a
+     linha de tokens sai. A leitura continua leve: são colunas pequenas da
+     tentativa e do job (`Tasks.get_task_overview!/2`), nunca o artefato nem os
+     passos.
 3. **Uma decisão tomada é um item encadeado no trilho.** Ela aparece logo depois da
    etapa que decidiu. Uma correção aparece antes da etapa que criou. O item diz
    quem decidiu, o quê, quando e por onde; as respostas e as instruções ficam

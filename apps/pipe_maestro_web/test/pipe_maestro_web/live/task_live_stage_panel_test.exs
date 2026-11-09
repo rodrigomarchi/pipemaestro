@@ -93,7 +93,12 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
     test "the pipeline, vertical, with each stage's state and nothing of what it produced",
          ctx do
       task = create_task(ctx)
-      finish(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+
+      finish(ctx, task, "a", %{"status" => "ok", "resumo" => "a feita"}, %{
+        "num_turns" => 3,
+        "usage" => %{"fresh_input" => 1_000, "cache_read" => 9_000, "output" => 500}
+      })
+
       # Stage b runs, and has already said something.
       job_b = running_job(ctx, task, "b")
       {:ok, _} = Jobs.mark_started(ctx.runner, job_b.id)
@@ -120,6 +125,18 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       assert has_element?(view, "[data-testid=task-stage-metrics-a]", "1 min 01 s")
       assert has_element?(view, "[data-testid=task-stage-metrics-a]", "US$ 0.5000")
       refute has_element?(view, "[data-testid=task-stage-metrics-b]")
+      # What it said it did, what it used and when.
+      assert has_element?(view, "[data-testid=task-stage-summary-a]", "a feita")
+
+      assert has_element?(
+               view,
+               "[data-testid=task-stage-usage-a]",
+               "10.5k tokens · 90% do cache · 3 turnos"
+             )
+
+      assert has_element?(view, "[data-testid=task-stage-when-a]", "terminou")
+      assert has_element?(view, "[data-testid=task-stage-when-b]", "começou")
+      refute has_element?(view, "[data-testid=task-stage-summary-b]")
 
       # Nothing a stage produced is rendered, nor its steps read.
       refute html =~ "Artefato de a"

@@ -9,18 +9,25 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   Every place on the rail opens a drawer, and the task's content hangs on the
   place it belongs to: the request and where it runs at the entry
   (`?no=entrada`), each stage's attempts at the stage (`?etapa=<key>`), the
-  files changed and the branch at the pull request (`?no=entrega`), the cost
+  files changed and the merge at the pull request (`?no=entrega`), the cost
   and the files the stages sent at the end (`?no=fim`), and the correction of
   a task that ended in a place after the end (`?no=corrigir`). The decisions
-  people took are chained on the rail where they changed the course. A node
-  carries only light facts: nothing a stage produced is read here.
+  people took are chained on the rail where they changed the course.
+
+  A stage's node, as wide as the page, carries what is light: its state, the
+  summary its last attempt gave (or its error), how long it took and cost,
+  its tokens, cache and turns, when it ran and on which runner when not the
+  task's. Nothing else a stage produced is read here.
 
   Over the pipeline, `decision_banner/1` and `runner_alerts/1` say what holds
   the task up; `task_controls/1` goes in the panel of the stage it is on.
   """
   use PipeMaestroWeb, :html
 
-  import PipeMaestroWeb.JobComponents, only: [format_cost: 1, format_duration: 1]
+  import PipeMaestroWeb.JobComponents,
+    only: [format_cost: 1, format_duration: 1, format_percent: 1, short_number: 1]
+
+  import PipeMaestroWeb.RunnerComponents, only: [time_ago: 1]
   import PipeMaestroWeb.QuestionnaireComponents, only: [answer_list: 1]
 
   import PipeMaestroWeb.PipelineComponents,
@@ -32,6 +39,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
       stage_state_marker: 1
     ]
 
+  alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Tasks
   alias PipeMaestro.Tasks.{StageRun, Task}
   alias PipeMaestroWeb.{Markdown, PipelineDiagram}
@@ -351,65 +359,126 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
         stage: stage,
         state: state,
         attempts: AttemptComponents.attempts(assigns.runs),
-        metrics: metrics(last)
+        metrics: metrics(last),
+        usage: usage(last && last.job),
+        when_ran: when_ran(last),
+        runner: other_runner(last, assigns.task),
+        summary: last && (last.summary || last.error)
       )
 
     ~H"""
     <.link
       patch={stage_path(@slug, @task, @stage.key)}
       class={[
-        "-mt-1 flex items-start gap-3 rounded-xl border bg-white px-4 py-3 transition hover:border-primary-400 hover:shadow-sm dark:bg-gray-900 dark:hover:border-primary-500",
+        "@container -mt-1 block rounded-xl border bg-white px-4 py-3 transition hover:border-primary-400 hover:shadow-sm dark:bg-gray-900 dark:hover:border-primary-500",
         node_border(@state)
       ]}
       data-testid={"task-stage-#{@stage.key}"}
       data-state={@state}
     >
-      <.stage_state_marker
-        :if={@marker}
-        state={@state}
-        number={@node.index + 1}
-        class="size-6 text-xs"
-      />
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span class={[
-            "font-semibold",
-            @state == :pending && "text-gray-500 dark:text-gray-400",
-            @state != :pending && "text-gray-900 dark:text-white"
-          ]}>
-            {@stage.name}
-          </span>
-          <.stage_state_badge state={@state} data-testid={"task-stage-state-#{@stage.key}"} />
-          <.badge
-            :if={@stage.group not in [nil, ""]}
-            size="xs"
-            variant="outline"
-            color="gray"
-            label={"em paralelo · #{@stage.group}"}
-            data-testid={"task-stage-group-#{@stage.key}"}
-          />
+      <div class="flex items-start gap-3">
+        <.stage_state_marker
+          :if={@marker}
+          state={@state}
+          number={@node.index + 1}
+          class="size-6 text-xs"
+        />
+        <div class="flex min-w-0 flex-1 flex-col gap-2 @2xl:flex-row @2xl:gap-6">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span class={[
+                "font-semibold",
+                @state == :pending && "text-gray-500 dark:text-gray-400",
+                @state != :pending && "text-gray-900 dark:text-white"
+              ]}>
+                {@stage.name}
+              </span>
+              <.stage_state_badge state={@state} data-testid={"task-stage-state-#{@stage.key}"} />
+              <.badge
+                :if={@stage.group not in [nil, ""]}
+                size="xs"
+                variant="outline"
+                color="gray"
+                label={"em paralelo · #{@stage.group}"}
+                data-testid={"task-stage-group-#{@stage.key}"}
+              />
+            </div>
+            <p
+              :if={@summary}
+              class="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-300"
+              title={@summary}
+              data-testid={"task-stage-summary-#{@stage.key}"}
+            >
+              {@summary}
+            </p>
+          </div>
+          <div class="flex shrink-0 flex-col gap-0.5 text-xs text-gray-500 @2xl:w-72 @2xl:items-end @2xl:text-right dark:text-gray-400">
+            <p class="flex flex-wrap items-center gap-x-3 @2xl:justify-end">
+              <span :if={@attempts > 1} data-testid={"task-stage-attempts-#{@stage.key}"}>
+                {@attempts} tentativas
+              </span>
+              <span :if={@metrics} data-testid={"task-stage-metrics-#{@stage.key}"}>
+                {@metrics}
+              </span>
+              <span
+                :if={@attached > 0}
+                class="inline-flex items-center gap-0.5"
+                title="Arquivos enviados pelo agente"
+                data-testid={"task-stage-files-#{@stage.key}"}
+              >
+                <.icon name="hero-paper-clip" class="size-3" /> {@attached}
+              </span>
+            </p>
+            <p
+              :if={@usage}
+              class="hidden @md:block"
+              data-testid={"task-stage-usage-#{@stage.key}"}
+            >
+              {@usage}
+            </p>
+            <p :if={@when_ran} data-testid={"task-stage-when-#{@stage.key}"}>
+              {@when_ran}<span :if={@runner}> · em {@runner}</span>
+            </p>
+          </div>
         </div>
-        <div class="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-gray-500 dark:text-gray-400">
-          <span :if={@attempts > 1} data-testid={"task-stage-attempts-#{@stage.key}"}>
-            {@attempts} tentativas
-          </span>
-          <span :if={@metrics} data-testid={"task-stage-metrics-#{@stage.key}"}>
-            {@metrics}
-          </span>
-          <span
-            :if={@attached > 0}
-            class="inline-flex items-center gap-0.5"
-            title="Arquivos enviados pelo agente"
-            data-testid={"task-stage-files-#{@stage.key}"}
-          >
-            <.icon name="hero-paper-clip" class="size-3" /> {@attached}
-          </span>
-        </div>
+        <.icon name="hero-chevron-right" class="mt-1 size-4 shrink-0 text-gray-400" />
       </div>
-      <.icon name="hero-chevron-right" class="mt-1 size-4 shrink-0 text-gray-400" />
     </.link>
     """
   end
+
+  # The tokens of the last attempt, how much came from the cache, and its turns.
+  defp usage(%{} = job) do
+    tokens = Job.tokens(job)
+
+    if tokens > 0 do
+      [
+        "#{short_number(tokens)} tokens",
+        Job.cache_hit(job) && "#{format_percent(Job.cache_hit(job))} do cache",
+        job.num_turns && "#{job.num_turns} #{if job.num_turns == 1, do: "turno", else: "turnos"}"
+      ]
+      |> Enum.filter(& &1)
+      |> Enum.join(" · ")
+    end
+  end
+
+  defp usage(_job), do: nil
+
+  # When the last attempt started, or ended.
+  defp when_ran(%StageRun{status: :running, job: %{started_at: %DateTime{} = at}}),
+    do: "começou #{time_ago(at)}"
+
+  defp when_ran(%StageRun{job: %{finished_at: %DateTime{} = at}}), do: "terminou #{time_ago(at)}"
+  defp when_ran(_run), do: nil
+
+  # The runner of the last attempt, when it is not the task's own.
+  defp other_runner(%StageRun{job: %{runner: %{id: id, name: name}}}, %Task{
+         runner_id: task_runner
+       })
+       when id != task_runner,
+       do: name
+
+  defp other_runner(_run, _task), do: nil
 
   defp node_border(:running), do: "border-info-400 ring-2 ring-info-400/30 dark:border-info-600"
 
