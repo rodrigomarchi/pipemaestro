@@ -104,10 +104,16 @@ defmodule PipeMaestroRunner.GateCache do
 
   # The tree of the working directory as it is: a copy of the real index
   # (whose stat cache spares hashing what did not change), every change
-  # added to it, the excluded paths taken out.
+  # added to it, the excluded paths taken out. The copy keeps the index's
+  # modification time: git hashes again an entry changed in the same second
+  # as the index was written ("racily clean"), and a copy that looked newer
+  # would hide a file rewritten with the same size in that second. Its name
+  # carries the OS process too: other VMs on the machine share the temporary
+  # directory, and `System.unique_integer/1` is unique only within one VM.
   defp tree(dir, index, exclude) do
-    copy = Path.join(System.tmp_dir!(), "pipemaestro-gates-#{System.unique_integer([:positive])}")
-    _copied = File.cp(index, copy)
+    name = "pipemaestro-gates-#{System.pid()}-#{System.unique_integer([:positive])}"
+    copy = Path.join(System.tmp_dir!(), name)
+    _copied = copy_index(index, copy)
     env = [{"GIT_INDEX_FILE", copy}]
 
     try do
@@ -118,6 +124,13 @@ defmodule PipeMaestroRunner.GateCache do
     after
       File.rm(copy)
     end
+  end
+
+  # A repository without commits has no index yet: git starts from an empty one.
+  defp copy_index(index, copy) do
+    with {:ok, %File.Stat{mtime: mtime}} <- File.stat(index, time: :posix),
+         :ok <- File.cp(index, copy),
+         do: File.touch(copy, mtime)
   end
 
   # A directory the repository around it ignores is not in its tree: what

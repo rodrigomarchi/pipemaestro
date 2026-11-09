@@ -67,6 +67,24 @@ defmodule PipeMaestroRunner.GatesTest do
     assert runs(repo) == 3
   end
 
+  test "a file rewritten with the same size in the second the index was written is a change",
+       %{repo: repo} do
+    file = Path.join(repo, "lib.ex")
+    index = Path.join([repo, ".git", "index"])
+    past = System.os_time(:second) - 100
+    File.touch!(file, past)
+    git!(repo, ["add", "lib.ex"])
+    File.touch!(index, past)
+    Gates.run(repo, [counting()])
+
+    File.write!(file, "v2")
+    File.touch!(file, past)
+
+    assert [changed] = Gates.run(repo, [counting()])
+    refute changed["cached"]
+    assert runs(repo) == 2
+  end
+
   test "the excluded paths do not change the tree", %{repo: repo} do
     artifacts = ".control-plane/t"
     Gates.run(repo, [counting()], exclude: [artifacts])
