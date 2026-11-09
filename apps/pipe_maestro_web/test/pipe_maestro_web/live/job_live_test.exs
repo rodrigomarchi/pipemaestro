@@ -349,7 +349,7 @@ defmodule PipeMaestroWeb.JobLiveTest do
     refute has_element?(view, "[data-testid=job-cancel]")
   end
 
-  test "in tabs: a queued job opens on its timeline, an ended one on its result as fields", %{
+  test "as a pipeline: each place opens its drawer; an ended job shows its result as fields", %{
     conn: conn,
     workspace: workspace,
     runner: runner,
@@ -358,12 +358,23 @@ defmodule PipeMaestroWeb.JobLiveTest do
     path = ~p"/w/#{workspace.slug}/jobs/#{job.id}"
     {:ok, view, _html} = live(conn, path)
 
-    assert has_element?(view, "[data-testid=job-panel-linha-do-tempo]:not(.hidden)")
+    # The run as a pipeline, its drawers closed and kept in the page.
+    assert has_element?(view, "[data-testid=job-overview] [data-testid=job-node-entrada]")
+    assert has_element?(view, "[data-testid=job-node-agente]", "Na fila")
+    assert has_element?(view, "[data-testid=job-node-resultado]", "Ainda não terminou")
+    assert has_element?(view, "[data-testid=job-drawer-agente].hidden")
     # A run in progress has the room: the sidebar opens closed to its icons.
     assert has_element?(view, "[data-testid=app-sidebar][data-collapsed=true][data-focus=true]")
-    assert has_element?(view, "[data-testid=job-panel-resultado].hidden")
 
+    view |> element("[data-testid=job-node-agente]") |> render_click()
+    assert_patch(view, path <> "?no=agente")
+    assert has_element?(view, "[data-testid=job-drawer-agente]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-panel-linha-do-tempo]:not(.hidden)")
+    # Until it ends, there is no audit: the timeline is the only tab.
     refute has_element?(view, "[data-testid=job-tab-auditoria]")
+    view |> element("[data-testid=job-drawer-agente-close]") |> render_click()
+    assert_patch(view, path)
+    assert has_element?(view, "[data-testid=job-drawer-agente].hidden")
     assert has_element?(view, "[data-testid=job-no-result]", "ainda não terminou")
 
     {:ok, _} = Jobs.mark_started(runner, job.id)
@@ -377,13 +388,18 @@ defmodule PipeMaestroWeb.JobLiveTest do
 
     {:ok, view, _html} = live(conn, path)
 
-    # The result tab is shown; the others stay in the page, hidden.
-    assert has_element?(view, "[data-testid=job-panel-resultado]:not(.hidden)")
     assert has_element?(view, "[data-testid=app-sidebar][data-collapsed=false][data-focus=false]")
-    assert has_element?(view, "[data-testid=job-panel-resumo].hidden [data-testid=job-duration]")
     assert has_element?(view, "header [data-testid=job-status]", "Concluído")
+    assert has_element?(view, "[data-testid=job-drawer-fim].hidden [data-testid=job-duration]")
+
+    # An old link to a tab opens the place that holds it now.
+    {:ok, view, _html} = live(conn, path <> "?aba=auditoria")
+    assert has_element?(view, "[data-testid=job-drawer-agente]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-panel-auditoria]:not(.hidden)")
     assert has_element?(view, "[data-testid=job-panel-linha-do-tempo].hidden")
-    assert has_element?(view, "[data-testid=job-tab-auditoria]")
+
+    {:ok, view, _html} = live(conn, path <> "?no=resultado")
+    assert has_element?(view, "[data-testid=job-drawer-resultado]:not(.hidden)")
 
     assert has_element?(view, "[data-testid=job-result][data-format=fields]")
     assert has_element?(view, "[data-testid=job-result] [data-testid=agent-output-status]", "ok")
@@ -400,13 +416,13 @@ defmodule PipeMaestroWeb.JobLiveTest do
              "dois"
            )
 
-    view
-    |> element("[data-testid=job-tab-prompt]")
-    |> render_click()
+    # The result's place gives its summary.
+    assert has_element?(view, "[data-testid=job-node-resultado]", "Feito em `lib/a.ex`.")
 
-    assert_patch(view, path <> "?aba=prompt")
-    assert has_element?(view, "[data-testid=job-panel-prompt]:not(.hidden)")
-    assert has_element?(view, "[data-testid=job-panel-resultado].hidden")
+    view |> element("[data-testid=job-node-entrada]") |> render_click()
+    assert_patch(view, path <> "?no=entrada")
+    assert has_element?(view, "[data-testid=job-drawer-entrada]:not(.hidden)")
+    assert has_element?(view, "[data-testid=job-drawer-resultado].hidden")
   end
 
   test "a running job shows it is being canceled; a failure shows its error", %{

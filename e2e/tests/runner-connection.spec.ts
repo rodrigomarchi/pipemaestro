@@ -140,7 +140,7 @@ test.describe("Runner connection", () => {
     await shot(app.page, "runner-recent-jobs");
 
     await runners.recentJob(jobId, "link").click();
-    await app.page.getByTestId("job-tab-auditoria").click();
+    await new JobsPage(app.page).openNode("agente", "auditoria");
     await expect(app.page.getByTestId("job-audit")).toBeVisible();
 
     // Flow C: rename, then revoke.

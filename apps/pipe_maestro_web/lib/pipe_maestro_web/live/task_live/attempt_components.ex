@@ -132,7 +132,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
             {short_number(Job.tokens(@run.job))} tokens · {format_percent(Job.cache_hit(@run.job))} do cache
           </span>
           <.link
-            navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}"}
+            navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}?aba=auditoria"}
             class="whitespace-nowrap text-primary-600 hover:underline dark:text-primary-400"
             data-testid={"stage-run-audit-#{@ref}"}
           >

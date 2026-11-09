@@ -84,17 +84,45 @@ export class JobsPage {
     return new URL(this.page.url()).pathname.split("/").pop()!;
   }
 
-  /** Opens one of the job's tabs: "resultado", "prompt", "linha-do-tempo" or "auditoria". */
-  async openTab(tab: "resultado" | "prompt" | "linha-do-tempo" | "auditoria") {
-    await this.page.getByTestId(`job-tab-${tab}`).click();
-    await expect(this.page.getByTestId(`job-panel-${tab}`)).toBeVisible();
+  /**
+   * Opens a place of the job's pipeline in its drawer: "entrada" (the
+   * prompt), "agente" (the timeline, and the audit as tab "auditoria" once it
+   * ended), "resultado" or "fim" (its numbers). A drawer already open closes first.
+   */
+  async openNode(node: "entrada" | "agente" | "resultado" | "fim", tab?: "linha-do-tempo" | "auditoria") {
+    await this.closeNodeIfOpen();
+    await this.page.getByTestId(`job-node-${node}`).click();
+    await expect(this.page.getByTestId(`job-drawer-${node}`)).toBeVisible();
+    await expect(this.page).toHaveURL(new RegExp(`[?&]no=${node}(&|$)`));
+    if (tab) {
+      await this.page.getByTestId(`job-tab-${tab}`).click();
+      await expect(this.page.getByTestId(`job-panel-${tab}`)).toBeVisible();
+    }
+  }
+
+  /** Closes the open drawer, if any, by its button. */
+  async closeNodeIfOpen() {
+    for (const node of ["entrada", "agente", "resultado", "fim"]) {
+      const drawer = this.page.getByTestId(`job-drawer-${node}`);
+      if (await drawer.isVisible()) {
+        await this.page.getByTestId(`job-drawer-${node}-close`).click();
+        await expect(drawer).toBeHidden();
+      }
+    }
+  }
+
+  /** A place of the job's pipeline, with its light facts. */
+  node(node: "entrada" | "agente" | "resultado" | "fim"): Locator {
+    return this.page.getByTestId(`job-node-${node}`);
   }
 
   async cancel() {
+    await this.closeNodeIfOpen();
     await clickPageAction(this.page, "job-cancel");
   }
 
   async backToList() {
+    await this.closeNodeIfOpen();
     await this.page.getByTestId("back-to-jobs").click();
     await expect(this.page.getByTestId("new-job")).toBeVisible();
   }
