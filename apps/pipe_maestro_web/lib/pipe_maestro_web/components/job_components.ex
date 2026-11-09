@@ -672,6 +672,21 @@ defmodule PipeMaestroWeb.JobComponents do
     end)
   end
 
+  @doc """
+  The notice, once over a run's events, that the workspace's retention took
+  their content: each event keeps only its metadata.
+  """
+  attr :rest, :global
+
+  @spec events_pruned(map()) :: Phoenix.LiveView.Rendered.t()
+  def events_pruned(assigns) do
+    ~H"""
+    <.alert color="info" with_icon {@rest}>
+      Eventos com o conteúdo removido pela retenção do workspace: cada um guarda só o tipo, a ferramenta, a duração, os tokens, o custo e o erro.
+    </.alert>
+    """
+  end
+
   @doc ~s(How the CLI signed in, from its `apiKeySource`: "none" is the login of whoever ran `claude`.)
   @spec auth_label(String.t() | nil) :: String.t()
   def auth_label(nil), do: "—"

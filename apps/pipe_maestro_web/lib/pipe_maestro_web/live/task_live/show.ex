@@ -566,6 +566,7 @@ defmodule PipeMaestroWeb.TaskLive.Show do
           live_job_id={@followed_job_id}
           files={@files}
           slug={@current_scope.workspace.slug}
+          quota_bytes={Files.quota_bytes(@current_scope.workspace)}
           redoable={redoable?(@task)}
           questionnaire={@questionnaire}
           options={@options}

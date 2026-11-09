@@ -2,17 +2,20 @@ defmodule PipeMaestroWeb.JobFileComponents do
   @moduledoc """
   The files a job left in `CP_FILES_DIR` (`PipeMaestro.Jobs.Files`): raster
   images as thumbnails that open full size, every other file as a link that
-  downloads it.
+  downloads it. A file the workspace's retention emptied keeps its name, with
+  why, and no link.
   """
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.RunnerComponents, only: [format_bytes: 1]
+  import PipeMaestroWeb.RetentionComponents, only: [format_mib: 1]
 
   alias PipeMaestro.Jobs.{Files, JobFile}
 
   @doc """
   A job's files. Each test id is `<testid>-<key>-<path>`, `<testid>-thumb-…`
-  for an image's thumbnail and `<testid>-download-…` for its link.
+  for an image's thumbnail and `<testid>-download-…` for its link; a file the
+  retention emptied is `<testid>-pruned-<key>-<path>`, without either.
   """
   attr :files, :list, required: true, doc: "the `t:PipeMaestro.Jobs.JobFile.t/0` to show"
   attr :workspace_slug, :string, required: true
@@ -22,8 +25,9 @@ defmodule PipeMaestroWeb.JobFileComponents do
 
   @spec files(map()) :: Phoenix.LiveView.Rendered.t()
   def files(assigns) do
-    {images, others} = Enum.split_with(assigns.files, &Files.image?/1)
-    assigns = assign(assigns, images: images, others: others)
+    {pruned, kept} = Enum.split_with(assigns.files, &JobFile.pruned?/1)
+    {images, others} = Enum.split_with(kept, &Files.image?/1)
+    assigns = assign(assigns, images: images, others: others, pruned: pruned)
 
     ~H"""
     <div class="space-y-3" {@rest}>
@@ -78,6 +82,27 @@ defmodule PipeMaestroWeb.JobFileComponents do
           </span>
         </li>
       </ul>
+
+      <ul
+        :if={@pruned != []}
+        class="divide-y divide-gray-100 rounded-lg border border-dashed border-gray-200 dark:divide-gray-800 dark:border-gray-800"
+      >
+        <li
+          :for={file <- @pruned}
+          class="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 dark:text-gray-400"
+          data-testid={"#{@testid}-pruned-#{@key}-#{file.path}"}
+        >
+          <.icon name="hero-archive-box-x-mark" class="size-4 shrink-0" />
+          <span class="truncate" title={file.path}>{file.path}</span>
+          <.badge
+            color="gray"
+            variant="soft"
+            size="sm"
+            label="removido pela retenção"
+            class="ml-auto shrink-0"
+          />
+        </li>
+      </ul>
     </div>
     """
   end
@@ -91,6 +116,25 @@ defmodule PipeMaestroWeb.JobFileComponents do
     ~H"""
     <.alert color="warning" with_icon {@rest}>
       {@count} {if @count == 1, do: "arquivo não chegou", else: "arquivos não chegaram"} à plataforma: veja o log do runner.
+    </.alert>
+    """
+  end
+
+  @doc """
+  How many of a job's files the workspace's quota refused, as a warning of
+  its own: they did not fail, the quota (`quota_bytes`, `nil` once removed)
+  was full.
+  """
+  attr :count, :integer, required: true
+  attr :quota_bytes, :integer, default: nil
+  attr :rest, :global
+
+  @spec files_refused_quota(map()) :: Phoenix.LiveView.Rendered.t()
+  def files_refused_quota(assigns) do
+    ~H"""
+    <.alert color="warning" with_icon {@rest}>
+      {@count} {if @count == 1, do: "arquivo recusado", else: "arquivos recusados"}: a cota de anexos do workspace{if @quota_bytes,
+        do: " (#{format_mib(@quota_bytes)})"} foi atingida.
     </.alert>
     """
   end

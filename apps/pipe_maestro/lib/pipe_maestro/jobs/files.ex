@@ -163,7 +163,7 @@ defmodule PipeMaestro.Jobs.Files do
           bytes: non_neg_integer(),
           quota_bytes: pos_integer() | nil
         }
-  def workspace_usage(%Workspace{id: workspace_id, job_files_quota_mib: quota_mib}) do
+  def workspace_usage(%Workspace{id: workspace_id} = workspace) do
     bytes =
       Repo.one(
         from f in JobFile,
@@ -171,8 +171,13 @@ defmodule PipeMaestro.Jobs.Files do
           select: coalesce(sum(f.byte_size), 0)
       )
 
-    %{bytes: to_integer(bytes), quota_bytes: quota_mib && quota_mib * @mib}
+    %{bytes: to_integer(bytes), quota_bytes: quota_bytes(workspace)}
   end
+
+  @doc "The workspace's quota of files in bytes, or `nil` without one."
+  @spec quota_bytes(Workspace.t()) :: pos_integer() | nil
+  def quota_bytes(%Workspace{job_files_quota_mib: nil}), do: nil
+  def quota_bytes(%Workspace{job_files_quota_mib: quota_mib}), do: quota_mib * @mib
 
   @doc """
   Takes the content of the files older than their workspace's

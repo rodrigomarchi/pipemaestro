@@ -8,10 +8,12 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
 
   import PipeMaestroWeb.Backoffice.Components
   import PipeMaestroWeb.RunnerComponents
+  import PipeMaestroWeb.RetentionComponents, only: [files_usage: 1, retention_policy: 1]
 
   alias Phoenix.Socket.Broadcast
   alias PipeMaestro.Accounts
   alias PipeMaestro.Accounts.User
+  alias PipeMaestro.Jobs.Files
   alias PipeMaestro.Runners
   alias PipeMaestro.Workspaces
   alias PipeMaestroWeb.RunnerStatus
@@ -24,6 +26,7 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
     {:ok,
      socket
      |> assign(page_title: workspace.name, workspace: workspace)
+     |> assign(files_usage: Files.workspace_usage(workspace))
      |> assign(new_member_form: to_form(Accounts.change_user_registration(%User{})))
      |> load_members()
      |> load_runners()}
@@ -305,6 +308,17 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
             </.card_content>
           </.card>
         </div>
+
+        <.card variant="outline" data-testid="workspace-retention">
+          <.card_header
+            title="Anexos e retenção"
+            description="O que os anexos ocupam contra a cota, e por quanto tempo o conteúdo fica guardado."
+          />
+          <.card_content class="space-y-4">
+            <.files_usage usage={@files_usage} testid="workspace-files-usage" />
+            <.retention_policy workspace={@workspace} data-testid="workspace-retention-policy" />
+          </.card_content>
+        </.card>
 
         <.card variant="outline" data-testid="workspace-runners">
           <.card_header

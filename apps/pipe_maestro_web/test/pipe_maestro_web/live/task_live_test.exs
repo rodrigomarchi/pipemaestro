@@ -792,7 +792,8 @@ defmodule PipeMaestroWeb.TaskLiveTest do
     test "a stage whose events the retention emptied still lists its steps, and says so", ctx do
       task = create_task(ctx)
       finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
-      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      # Stage "a" ended; the task went on to "b", which still runs.
+      job = Enum.find(Tasks.get_task!(ctx.workspace, task.id).stage_runs, &(&1.key == "a")).job
 
       job
       |> Ecto.Changeset.change(finished_at: DateTime.add(DateTime.utc_now(:second), -40, :day))

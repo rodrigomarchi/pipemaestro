@@ -322,6 +322,11 @@ defmodule PipeMaestroWeb.JobLive do
           active={chosen_tab(agent_tabs(@insights), @node_tab)}
           testid="job"
         >
+          <.events_pruned
+            :if={@job.events_pruned_at}
+            class="mb-4"
+            data-testid="job-events-pruned"
+          />
           <p
             :if={@event_count == 0}
             class="text-sm text-gray-500 dark:text-gray-400"

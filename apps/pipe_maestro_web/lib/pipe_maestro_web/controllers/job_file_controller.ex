@@ -2,7 +2,8 @@ defmodule PipeMaestroWeb.JobFileController do
   @moduledoc """
   Downloads a file a job left (`PipeMaestro.Jobs.Files`) for a member of its
   workspace. Raster images open in the browser; everything else, SVG and
-  HTML included, is downloaded, never rendered, and nothing is sniffed.
+  HTML included, is downloaded, never rendered, and nothing is sniffed. A file
+  the workspace's retention emptied answers 410.
   """
   use PipeMaestroWeb, :controller
 
@@ -15,7 +16,7 @@ defmodule PipeMaestroWeb.JobFileController do
   def show(conn, %{"workspace_slug" => slug, "id" => id}) do
     with %Workspace{} = workspace <-
            Workspaces.get_workspace_for_user(conn.assigns.current_scope.user, slug),
-         %JobFile{} = file <- Files.get_for_download(workspace, id) do
+         %JobFile{pruned_at: nil} = file <- Files.get_for_download(workspace, id) do
       disposition = if Files.image?(file), do: "inline", else: "attachment"
 
       conn
@@ -26,7 +27,11 @@ defmodule PipeMaestroWeb.JobFileController do
       |> put_resp_header("cache-control", "private, max-age=3600")
       |> send_resp(200, file.content)
     else
-      nil -> conn |> put_status(404) |> text("Not Found")
+      nil ->
+        conn |> put_status(404) |> text("Not Found")
+
+      %JobFile{} ->
+        conn |> put_status(410) |> text("Este anexo foi removido pela retenção do workspace.")
     end
   end
 
