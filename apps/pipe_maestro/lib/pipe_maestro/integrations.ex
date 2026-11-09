@@ -125,6 +125,19 @@ defmodule PipeMaestro.Integrations do
   end
 
   @doc """
+  Who keeps the pull request of `task` on the git host: `:platform` when it
+  keeps it (`keeps_pull_request?/1`); `:runner_with_status` when the task's
+  repository is linked but its connection leaves the host to the runner,
+  which also sets each stage's commit status; `:runner` for any other task.
+  """
+  @spec pull_request_keeper(PipeMaestro.Tasks.Task.t()) ::
+          :platform | :runner_with_status | :runner
+  def pull_request_keeper(%{linked_repo_id: nil}), do: :runner
+
+  def pull_request_keeper(task),
+    do: if(keeps_pull_request?(task), do: :platform, else: :runner_with_status)
+
+  @doc """
   The git credential a stage job takes to its runner (ADR 0037): the one of
   the connection of the task's linked repository, when it is active; `nil`
   for any other job.

@@ -23,6 +23,7 @@ defmodule PipeMaestro.Integrations.Feedback do
   alias PipeMaestro.{Integrations, Repo, Tasks}
   alias PipeMaestro.Integrations.{Client, Connection, Credentials, IssueState, Labels, LinkedRepo}
   alias PipeMaestro.Tasks.{StageRun, Task}
+  alias PipeMaestro.TaskSources.Origin
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.PrText
 
@@ -107,31 +108,32 @@ defmodule PipeMaestro.Integrations.Feedback do
   take.
   """
   @spec triage_finished(PipeMaestro.Jobs.Job.t()) :: :ok
-  def triage_finished(%{
-        id: job_id,
-        context: %{"proposal" => %{"input" => %{"linked_repo_id" => repo_id}}}
-      })
-      when is_binary(repo_id) do
-    _ = Integrations.background(fn -> tell_triage(job_id) end)
-    :ok
-  end
+  def triage_finished(%{id: job_id, context: context}) do
+    case Origin.from_input(get_in(context || %{}, ["proposal", "input"])) do
+      %Origin{linked_repo_id: repo_id} when is_binary(repo_id) ->
+        _ = Integrations.background(fn -> tell_triage(job_id) end)
+        :ok
 
-  def triage_finished(_job), do: :ok
+      _not_linked ->
+        :ok
+    end
+  end
 
   @doc false
   @spec tell_triage(Ecto.UUID.t()) :: :ok | :skipped | {:error, String.t()}
   def tell_triage(job_id) do
     job = Repo.get!(PipeMaestro.Jobs.Job, job_id)
     input = get_in(job.context, ["proposal", "input"]) || %{}
+    origin = Origin.from_input(input)
 
-    with repo_id when is_binary(repo_id) <- input["linked_repo_id"],
+    with %Origin{linked_repo_id: repo_id, ref: %{"number" => number}} when is_binary(repo_id) <-
+           origin,
          nil <- PipeMaestro.Proposals.created_task_id(job),
          %LinkedRepo{} = repo <- Repo.get(LinkedRepo, repo_id),
          %Connection{api_mode: "control_plane", status: "active"} = connection <-
            Repo.get(Connection, repo.connection_id),
          {:ok, client} <- Credentials.client(connection) do
       body = triage_comment(job, input)
-      number = input["issue_number"]
       _ = set_state_label(client, repo, number, :awaiting_decision)
 
       _ =
@@ -333,7 +335,7 @@ defmodule PipeMaestro.Integrations.Feedback do
     hash =
       desired |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16()
 
-    feedback = with_issue_comment(task.issue_feedback, repo, task.issue_number)
+    feedback = with_issue_comment(task.issue_feedback, repo, number(task))
 
     if feedback["synced_hash"] == hash and feedback["dirty"] != true do
       :unchanged
@@ -399,7 +401,7 @@ defmodule PipeMaestro.Integrations.Feedback do
     if acc["label"] == label or label == nil do
       {:ok, acc}
     else
-      case set_state_label(client, repo, task.issue_number, task.status) do
+      case set_state_label(client, repo, number(task), task.status) do
         :ok -> {:ok, Map.put(acc, "label", label)}
         {:error, error} -> {:error, acc, "labels: " <> Integrations.describe(error)}
       end
@@ -408,7 +410,7 @@ defmodule PipeMaestro.Integrations.Feedback do
 
   defp write_comment(acc, client, repo, task, %{comment: body}) do
     create = fn ->
-      client.provider.create_comment(client, repo.full_name, task.issue_number, body)
+      client.provider.create_comment(client, repo.full_name, number(task), body)
     end
 
     # A status comment someone deleted is written again.
@@ -506,7 +508,7 @@ defmodule PipeMaestro.Integrations.Feedback do
       case client.provider.create_comment(
              client,
              repo.full_name,
-             task.issue_number,
+             number(task),
              mention(client, repo, task, key) <> text
            ) do
         {:ok, _id} -> {:ok, Map.put(acc, "notified", notified ++ [key])}
@@ -518,13 +520,16 @@ defmodule PipeMaestro.Integrations.Feedback do
   # A decision is asked of whoever opened the issue (the platform does not
   # know who of the host is the task's decider).
   defp mention(client, repo, task, "decision:" <> _) do
-    case client.provider.get_issue(client, repo.full_name, task.issue_number) do
+    case client.provider.get_issue(client, repo.full_name, number(task)) do
       {:ok, %{author: author}} when is_binary(author) -> "@#{author} "
       _unknown -> ""
     end
   end
 
   defp mention(_client, _repo, _task, _key), do: ""
+
+  # The number of the task's issue, kept with its origin.
+  defp number(%Task{source_ref: ref}), do: ref["number"]
 
   defp keep(task, feedback, reply) do
     task |> Ecto.Changeset.change(issue_feedback: feedback) |> Repo.update!()

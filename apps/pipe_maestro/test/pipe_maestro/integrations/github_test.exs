@@ -16,6 +16,8 @@ defmodule PipeMaestro.Integrations.GitHubTest do
     Reconciler
   }
 
+  alias PipeMaestro.TaskSources.Origin
+
   @secret "segredo-do-app"
 
   defp sign(body),
@@ -369,10 +371,15 @@ defmodule PipeMaestro.Integrations.GitHubTest do
             "title" => "Corrige",
             "prompt" => "Corrija.",
             "pipeline_id" => pipeline_fixture(workspace, %{"delivery" => "pr"}).id,
-            "project_id" => project.id,
-            "issue_url" => "https://github.test/acme/app/issues/3"
+            "project_id" => project.id
           },
-          issue: %{linked_repo_id: repo.id, issue_number: 3}
+          origin: %Origin{
+            source: "git_issue",
+            external_id: "https://github.test/acme/app/issues/3",
+            url: "https://github.test/acme/app/issues/3",
+            ref: %{"number" => 3},
+            linked_repo_id: repo.id
+          }
         )
 
       task |> Ecto.Changeset.change(head_sha: "abc") |> Repo.update!()

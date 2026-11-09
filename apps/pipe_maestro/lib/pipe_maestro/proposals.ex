@@ -31,7 +31,6 @@ defmodule PipeMaestro.Proposals do
   alias Ecto.Changeset
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
-  alias PipeMaestro.Integrations.{Feedback, LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Notifications
@@ -53,13 +52,15 @@ defmodule PipeMaestro.Proposals do
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.TaskSources
+  alias PipeMaestro.TaskSources.{Item, Origin}
   alias PipeMaestro.Workspaces.Workspace
 
   @capability "scratch"
   # The job's prompt stays under the wire's limit (PipeMaestroProtocol.Job).
   @prompt_bytes 30_000
-  # What of an issue's body a triage reads; the request takes up to 16 000.
-  @issue_body_bytes 12_000
+  # What of an item's description a triage reads; the request takes up to 16 000.
+  @description_bytes 12_000
   @kinds %{
     "project" => ProjectKind,
     "pipeline" => PipelineKind,
@@ -252,29 +253,22 @@ defmodule PipeMaestro.Proposals do
   def checks(_other), do: []
 
   @doc """
-  Has the agent write the task for an issue of a linked repository
-  (`%{"title", "body", "html_url", "number"}`), on the project the repository
-  is linked to (its runner, waiting for it when offline), on behalf of the
-  trigger's person. The trigger's pipeline, if any, is the one the task
-  uses; with `auto_approve`, the task is created as the job ends. The task
-  keeps the link to the issue.
+  Has the agent write the task for an item read on a task source
+  (`PipeMaestro.TaskSources.Item`), on the project its trigger says (the
+  project's runner, waiting for it when offline), on behalf of the trigger's
+  person (`t:PipeMaestro.TaskSources.target/0`). The trigger's pipeline, if
+  any, is the one the task uses; with `auto_approve`, the task is created as
+  the job ends. The proposal and its task keep the item's origin.
   """
-  @spec triage_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map()) ::
+  @spec triage_item(Workspace.t(), Item.t(), TaskSources.target()) ::
           {:ok, Job.t()} | {:error, Changeset.t() | :no_acting_user | :already_triaging}
-  def triage_linked_issue(
-        %Workspace{} = workspace,
-        %LinkedRepo{} = repo,
-        %Trigger{} = trigger,
-        issue
-      ) do
-    case trigger.acting_user_id && Repo.get(User, trigger.acting_user_id) do
+  def triage_item(%Workspace{} = workspace, %Item{} = item, target) do
+    case target.acting_user_id && Repo.get(User, target.acting_user_id) do
       %User{} = user ->
-        triage(workspace, user, issue, %{
-          "project_id" => repo.project_id,
-          "pipeline_id" => trigger.pipeline_id,
-          "auto_approve" => trigger.auto_approve,
-          "linked_repo_id" => repo.id,
-          "issue_number" => issue["number"]
+        triage(workspace, user, item, %{
+          "project_id" => target.project_id,
+          "pipeline_id" => target.pipeline_id,
+          "auto_approve" => Map.get(target, :auto_approve, false)
         })
 
       _nobody ->
@@ -282,24 +276,26 @@ defmodule PipeMaestro.Proposals do
     end
   end
 
-  # One triage per issue at a time: a host may deliver the same event twice,
-  # so the check and the insert run under a lock on the issue.
-  defp triage(workspace, user, issue, attrs) do
-    url = issue["html_url"]
+  # One triage per item at a time: a source may deliver the same event twice,
+  # so the check and the insert run under a lock on the item.
+  defp triage(workspace, user, item, attrs) do
+    origin = Item.origin(item)
 
     Repo.transaction(fn ->
-      Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1))", ["triage:" <> url])
-      if triaging?(workspace, url), do: Repo.rollback(:already_triaging)
+      Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1))", ["triage:" <> item.external_id])
+
+      if triaging?(workspace, item.source, item.external_id),
+        do: Repo.rollback(:already_triaging)
 
       attrs =
         attrs
-        |> Map.put("request", triage_request(issue))
-        |> Map.put("issue_url", url)
+        |> Map.put("request", triage_request(item))
+        |> Map.put("origin", Origin.to_input(origin))
         |> Map.reject(fn {_key, value} -> is_nil(value) end)
 
       case request("task", user, workspace, attrs) do
         {:ok, job} ->
-          Audit.record(workspace, user, "proposal.requested", job, %{"issue_url" => url})
+          Audit.record(workspace, user, "proposal.requested", job, %{"issue_url" => item.url})
           job
 
         {:error, changeset} ->
@@ -308,12 +304,12 @@ defmodule PipeMaestro.Proposals do
     end)
   end
 
-  # The issue's body is cut: a host allows far more than a request takes.
-  defp triage_request(issue) do
+  # The item's description is cut: a source allows far more than a request takes.
+  defp triage_request(item) do
     """
-    # #{issue["title"]}
+    # #{item.title}
 
-    #{Instructions.cut(issue["body"] || "", @issue_body_bytes)}
+    #{Instructions.cut(item.description || "", @description_bytes)}
     """
   end
 
@@ -370,14 +366,38 @@ defmodule PipeMaestro.Proposals do
     end)
   end
 
-  @doc "Whether a task proposal about GitHub issue `issue_url` is still running."
-  @spec triaging?(Workspace.t(), String.t()) :: boolean()
-  def triaging?(%Workspace{id: workspace_id}, issue_url) do
+  @doc "The link of the item a proposal's `input` came from, if any (`PipeMaestro.TaskSources.Origin`)."
+  @spec origin_url(map() | nil) :: String.t() | nil
+  def origin_url(input) do
+    case Origin.from_input(input) do
+      %Origin{url: url} -> url
+      nil -> nil
+    end
+  end
+
+  @doc """
+  Whether a task proposal about the item `external_id` of `source` is still
+  running. A triage of an issue saved before the sources kept only its
+  `issue_url`.
+  """
+  @spec triaging?(Workspace.t(), String.t(), String.t()) :: boolean()
+  def triaging?(%Workspace{id: workspace_id}, source, external_id) do
+    legacy? = source == "git_issue"
+
     Repo.exists?(
       from j in Job,
         where: j.workspace_id == ^workspace_id and j.status in [:queued, :running],
         where: fragment("?->'proposal'->>'kind' = 'task'", j.context),
-        where: fragment("?->'proposal'->'input'->>'issue_url' = ?", j.context, ^issue_url)
+        where:
+          fragment(
+            "(?->'proposal'->'input'->'origin'->>'source' = ? AND ?->'proposal'->'input'->'origin'->>'external_id' = ?)",
+            j.context,
+            ^source,
+            j.context,
+            ^external_id
+          ) or
+            (^legacy? and
+               fragment("?->'proposal'->'input'->>'issue_url' = ?", j.context, ^external_id))
     )
   end
 
@@ -471,8 +491,8 @@ defmodule PipeMaestro.Proposals do
 
     if created == :not_created, do: tell_requester(job)
 
-    # A triage of a linked issue tells the issue how it ended.
-    Feedback.triage_finished(job)
+    # A triage of an item of a source tells the source how it ended.
+    TaskSources.triage_finished(job)
     :ok
   end
 

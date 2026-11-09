@@ -6,6 +6,7 @@ defmodule PipeMaestro.Integrations.ConversationTest do
   alias PipeMaestro.{Audit, FakeForgejo, Integrations, Repo, Runners, Tasks}
   alias PipeMaestro.Integrations.{Connection, Delivery, Ingest}
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.TaskSources.Origin
 
   @fixtures Path.expand("../../support/fixtures/forgejo", __DIR__)
 
@@ -41,10 +42,15 @@ defmodule PipeMaestro.Integrations.ConversationTest do
           "title" => "Corrige login",
           "prompt" => "O login quebra.",
           "pipeline_id" => pipeline_fixture(workspace).id,
-          "project_id" => project.id,
-          "issue_url" => "https://forge.test/acme/app/issues/3"
+          "project_id" => project.id
         },
-        issue: %{linked_repo_id: repo.id, issue_number: 3}
+        origin: %Origin{
+          source: "git_issue",
+          external_id: "https://forge.test/acme/app/issues/3",
+          url: "https://forge.test/acme/app/issues/3",
+          ref: %{"number" => 3},
+          linked_repo_id: repo.id
+        }
       )
 
     %{workspace: workspace, user: user, fake: fake, connection: connection, task: task}

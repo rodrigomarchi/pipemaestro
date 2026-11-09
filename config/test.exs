@@ -25,8 +25,8 @@ config :pipe_maestro, PipeMaestro.Integrations.GitHub,
   api_url: "https://api.github.test",
   web_url: "https://github.test"
 
-# Tests reflect a task on its issue themselves (PipeMaestro.Integrations.Feedback).
-config :pipe_maestro, PipeMaestro.Integrations.FeedbackWorker, false
+# Tests reflect a task on its source themselves (PipeMaestro.TaskSources).
+config :pipe_maestro, PipeMaestro.TaskSources.Dispatcher, false
 
 # Tests look at a task's pull request themselves (PipeMaestro.Integrations.AutoMerge).
 config :pipe_maestro, PipeMaestro.Integrations.AutoMergeWorker, false

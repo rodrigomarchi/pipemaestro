@@ -46,7 +46,6 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
   alias PipeMaestro.Integrations
-  alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Notifications
@@ -59,6 +58,8 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.{Repo, Runners, RunnerTelemetry}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{Contract, Decision, Engine, Questionnaire, StageRun, Task}
+  alias PipeMaestro.TaskSources
+  alias PipeMaestro.TaskSources.{Item, Origin}
   alias PipeMaestro.Workspaces
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.JobFiles
@@ -77,7 +78,7 @@ defmodule PipeMaestro.Tasks do
           | {:workspace, Ecto.UUID.t()}
           | {:decisions, Ecto.UUID.t()}
           | {:events, Ecto.UUID.t()}
-          | :linked
+          | :sourced
 
   @doc "Subscribes the calling process to a task's or a workspace's task updates."
   @spec subscribe(subject()) :: :ok | {:error, term()}
@@ -86,9 +87,10 @@ defmodule PipeMaestro.Tasks do
   def subscribe({:decisions, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:decisions:" <> id)
   def subscribe({:events, id}), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:events:" <> id)
 
-  # Every change of a task that came from an issue of a linked repository
-  # (`{:linked_task_updated, task_id}`), for its feedback on the git host.
-  def subscribe(:linked), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:linked")
+  # Every change of a task that came from a task source
+  # (`{:source_task_updated, task}`), for the source to reflect it
+  # (`PipeMaestro.TaskSources.Dispatcher`).
+  def subscribe(:sourced), do: Phoenix.PubSub.subscribe(@pubsub, "tasks:sourced")
 
   defp announce(%Task{} = task, kind) do
     Phoenix.PubSub.broadcast(
@@ -104,8 +106,8 @@ defmodule PipeMaestro.Tasks do
   defp notify(%Task{} = task) do
     Phoenix.PubSub.broadcast(@pubsub, "tasks:task:" <> task.id, {:task_updated, task})
 
-    if task.linked_repo_id,
-      do: Phoenix.PubSub.broadcast(@pubsub, "tasks:linked", {:linked_task_updated, task.id})
+    if task.source,
+      do: Phoenix.PubSub.broadcast(@pubsub, "tasks:sourced", {:source_task_updated, task})
 
     Phoenix.PubSub.broadcast(
       @pubsub,
@@ -357,9 +359,9 @@ defmodule PipeMaestro.Tasks do
 
   With `proposal: job`, the task is the one the task proposal `job` became
   (`PipeMaestro.Proposals.create_task/4`); a proposal already turned into a
-  task gives an error on `proposal_job_id`. A task from an issue of a linked
-  repository keeps the link: `issue: %{linked_repo_id, issue_number}`, or the
-  one in the proposal's input.
+  task gives an error on `proposal_job_id`. A task from a task source keeps
+  its origin: `origin: %PipeMaestro.TaskSources.Origin{}`, or the one in the
+  proposal's input.
   """
   @spec create_task(User.t(), Workspace.t(), map(), keyword()) ::
           {:ok, Task.t()} | {:error, Ecto.Changeset.t()}
@@ -370,16 +372,13 @@ defmodule PipeMaestro.Tasks do
         nil -> nil
       end
 
-    {linked_repo_id, issue_number} = issue_link(opts)
-
     changeset =
       %Task{
         workspace_id: workspace.id,
         created_by_user_id: user.id,
-        proposal_job_id: proposal_job_id,
-        linked_repo_id: linked_repo_id,
-        issue_number: issue_number
+        proposal_job_id: proposal_job_id
       }
+      |> put_origin(origin(opts))
       |> Task.create_changeset(attrs)
       |> put_pipeline(workspace)
       |> put_project(workspace)
@@ -394,19 +393,26 @@ defmodule PipeMaestro.Tasks do
     end
   end
 
-  # The issue of a linked repository the task comes from: given, or the one
-  # its proposal triaged.
-  defp issue_link(opts) do
-    case {opts[:issue], opts[:proposal]} do
-      {%{linked_repo_id: repo_id, issue_number: number}, _} ->
-        {repo_id, number}
-
-      {nil, %Job{context: %{"proposal" => %{"input" => input}}}} ->
-        {input["linked_repo_id"], input["issue_number"]}
-
-      _none ->
-        {nil, nil}
+  # The origin the task comes from: given, or the one its proposal triaged.
+  defp origin(opts) do
+    case {opts[:origin], opts[:proposal]} do
+      {%Origin{} = origin, _} -> origin
+      {nil, %Job{context: %{"proposal" => %{"input" => input}}}} -> Origin.from_input(input)
+      _none -> nil
     end
+  end
+
+  defp put_origin(task, nil), do: task
+
+  defp put_origin(task, %Origin{} = origin) do
+    %{
+      task
+      | source: origin.source,
+        source_id: origin.external_id,
+        source_url: origin.url,
+        source_ref: origin.ref,
+        linked_repo_id: origin.linked_repo_id
+    }
   end
 
   defp put_pipeline(changeset, workspace) do
@@ -609,7 +615,7 @@ defmodule PipeMaestro.Tasks do
       decision_analysis_job_id: nil,
       decision_owner_id: nil,
       decision_due_at: nil,
-      pending_issue_comment: nil,
+      pending_source_note: nil,
       finished_at: nil
     )
   end
@@ -771,14 +777,20 @@ defmodule PipeMaestro.Tasks do
 
   # What the runner delivers once the stage passed its checks and gates: the
   # push and the platform's block of the pull request (the agent committed).
-  # With a linked repository whose connection lets the platform call the
-  # host, the runner only pushes: the platform keeps the pull request
-  # (`PipeMaestro.Integrations.Feedback`).
-  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => "pr"}} = task, index)
-       when is_binary(task.linked_repo_id) do
-    if Integrations.keeps_pull_request?(task),
-      do: %{"push" => true},
-      else: task |> runner_delivery(index) |> Map.put("status", stage_status(task, index))
+  # Who keeps the pull request on the git host (`PipeMaestro.Integrations`):
+  # the platform, and the runner only pushes; the runner, setting the commit
+  # status of the stage too; or the runner alone.
+  defp delivery(%Task{git: true, pipeline_context: %{"delivery" => "pr"}} = task, index) do
+    case Integrations.pull_request_keeper(task) do
+      :platform ->
+        %{"push" => true}
+
+      :runner_with_status ->
+        task |> runner_delivery(index) |> Map.put("status", stage_status(task, index))
+
+      :runner ->
+        runner_delivery(task, index)
+    end
   end
 
   defp delivery(task, index), do: runner_delivery(task, index)
@@ -811,14 +823,7 @@ defmodule PipeMaestro.Tasks do
         },
         else: %{}
 
-    base =
-      if task.issue_url && task.pending_issue_comment,
-        do:
-          Map.put(base, "issue_comment", %{
-            "url" => task.issue_url,
-            "body" => task.pending_issue_comment
-          }),
-        else: base
+    base = Map.merge(base, TaskSources.runner_delivery(task))
 
     if base == %{}, do: nil, else: base
   end
@@ -827,7 +832,8 @@ defmodule PipeMaestro.Tasks do
 
   @doc """
   The platform's block of the task's pull request (`PipeMaestroProtocol.PrText`):
-  the request, `Closes <issue>` and the stages done so far.
+  the request, the line that names its origin (`Closes <issue>`) and the
+  stages done so far.
   """
   @spec pr_block(Task.t()) :: String.t()
   def pr_block(%Task{status: :succeeded} = task), do: pr_body(task, length(task.stages) - 1)
@@ -845,7 +851,11 @@ defmodule PipeMaestro.Tasks do
         "- [#{if i < index or last?, do: "x", else: " "}] #{stage.name}"
       end)
 
-    closes = if task.issue_url, do: "Closes #{task.issue_url}\n\n", else: ""
+    closes =
+      case TaskSources.pr_reference(task) do
+        nil -> ""
+        line -> line <> "\n\n"
+      end
 
     """
     #{task.prompt}
@@ -2062,7 +2072,7 @@ defmodule PipeMaestro.Tasks do
 
       task = %{
         task
-        | pending_issue_comment: issue_comment(task, action, choice, instructions, answers)
+        | pending_source_note: source_note(task, action, choice, instructions, answers)
       }
 
       analysis = task.decision_analysis_job_id
@@ -2092,10 +2102,10 @@ defmodule PipeMaestro.Tasks do
 
   defp answered(_task, _answers), do: nil
 
-  # Told on the task's issue with the next stage, if it came from one.
-  defp issue_comment(%Task{issue_url: nil}, _action, _choice, _instructions, _answers), do: nil
+  # Told on the task's source with the next stage, if it came from one.
+  defp source_note(%Task{source: nil}, _action, _choice, _instructions, _answers), do: nil
 
-  defp issue_comment(task, action, choice, instructions, answers) do
+  defp source_note(task, action, choice, instructions, answers) do
     stage = Enum.at(task.stages, task.current_stage)
     what = if action == :retry, do: "refazer a etapa", else: "seguir para a próxima etapa"
 
@@ -2202,46 +2212,42 @@ defmodule PipeMaestro.Tasks do
     end
   end
 
-  @doc "Whether a task started from the issue at `url` has not ended yet."
-  @spec active_for_issue?(Workspace.t(), String.t()) :: boolean()
-  def active_for_issue?(%Workspace{id: workspace_id}, url) do
+  @doc "Whether a task started from the item `external_id` of `source` has not ended yet."
+  @spec active_for_source?(Workspace.t(), String.t(), String.t()) :: boolean()
+  def active_for_source?(%Workspace{id: workspace_id}, source, external_id) do
     Repo.exists?(
       from t in Task,
         where:
-          t.workspace_id == ^workspace_id and t.issue_url == ^url and
+          t.workspace_id == ^workspace_id and t.source == ^source and
+            t.source_id == ^external_id and
             t.status in [:queued, :running, :awaiting_decision]
     )
   end
 
   @doc """
-  Starts a task from an issue of a linked repository (`%{"title", "body",
-  "html_url"}`, `number`) with a trigger that goes straight to the task: the
-  trigger's pipeline, on the project the repository is linked to (its
-  runner, waiting for it when offline), on behalf of the trigger's person.
+  Starts a task from an item read on a task source
+  (`PipeMaestro.TaskSources.Item`), as its trigger says
+  (`t:PipeMaestro.TaskSources.target/0`): the trigger's pipeline, on its
+  project (the project's runner, waiting for it when offline), on behalf of
+  the trigger's person. The request is the item's description (its title
+  without one) and its link; the task keeps the item's origin.
   """
-  @spec create_from_linked_issue(Workspace.t(), LinkedRepo.t(), Trigger.t(), map()) ::
+  @spec create_from_item(Workspace.t(), Item.t(), TaskSources.target()) ::
           {:ok, Task.t()} | {:error, Ecto.Changeset.t() | :no_acting_user}
-  def create_from_linked_issue(
-        %Workspace{} = workspace,
-        %LinkedRepo{} = repo,
-        %Trigger{} = trigger,
-        issue
-      ) do
-    case trigger.acting_user_id && Repo.get(User, trigger.acting_user_id) do
+  def create_from_item(%Workspace{} = workspace, %Item{} = item, target) do
+    case target.acting_user_id && Repo.get(User, target.acting_user_id) do
       %User{} = user ->
-        body = blank_to_nil(issue["body"]) || issue["title"]
-
         create_task(
           user,
           workspace,
           %{
-            "title" => String.slice(issue["title"] || "Issue", 0, 120),
-            "prompt" => "#{body}\n\nIssue: #{issue["html_url"]}",
-            "pipeline_id" => trigger.pipeline_id,
-            "project_id" => repo.project_id,
-            "issue_url" => issue["html_url"]
+            "title" => String.slice(item.title || item.kind, 0, 120),
+            "prompt" =>
+              "#{blank_to_nil(item.description) || item.title}\n\n#{item.kind}: #{item.url}",
+            "pipeline_id" => target.pipeline_id,
+            "project_id" => target.project_id
           },
-          issue: %{linked_repo_id: repo.id, issue_number: issue["number"]}
+          origin: Item.origin(item)
         )
 
       _nobody ->

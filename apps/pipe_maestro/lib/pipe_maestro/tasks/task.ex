@@ -11,15 +11,20 @@ defmodule PipeMaestro.Tasks.Task do
   `running` while a stage runs, `awaiting_decision` when a person must say
   how to go on, and ends `succeeded`, `failed` or `canceled`.
 
-  It may come from an issue (`issue_url`; of a repository linked by an
-  integration, also `linked_repo` and `issue_number`, with what the platform
-  already reflected on the host in `issue_feedback` and the last commit pushed
-  in `head_sha`), and from a task proposal
+  It may come from a task source (`PipeMaestro.TaskSources`): its origin is
+  the `source`'s key, the item's id there (`source_id`), its link
+  (`source_url`) and what the source keeps of it (`source_ref`); a decision
+  leaves a note in `pending_source_note` for the source to deliver with the
+  next stage. And from a task proposal
   (`proposal_job`, `PipeMaestro.Proposals.TaskKind`): one proposal becomes
   one task at most. With a pipeline that delivers
   (`PipeMaestro.Pipelines.Pipeline` `delivery`), its draft pull request
-  is `pr_url`, and a decision waits in `pending_issue_comment` to be commented
-  on the issue with the next stage.
+  is `pr_url`.
+
+  The repository of a git host where the platform keeps that pull request is
+  `linked_repo_id`, given by the source; what the platform already reflected
+  on the host is in `issue_feedback` and the last commit pushed in
+  `head_sha` (`PipeMaestro.Integrations`, which alone reads them).
 
   With a pipeline that merges its pull request (`auto_merge`), a task that
   succeeded has a `merge_state`: `"waiting_checks"` (since
@@ -48,11 +53,11 @@ defmodule PipeMaestro.Tasks.Task do
   import Ecto.Changeset
 
   alias PipeMaestro.Accounts.User
-  alias PipeMaestro.Integrations.{IssueUrl, LinkedRepo}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Pipelines.{Pipeline, Stage}
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks.{Decision, StageRun}
+  alias PipeMaestro.TaskSources
   alias PipeMaestro.Workspaces.Workspace
 
   @type status :: :queued | :running | :awaiting_decision | :succeeded | :failed | :canceled
@@ -72,14 +77,15 @@ defmodule PipeMaestro.Tasks.Task do
           decision_owner_id: Ecto.UUID.t() | nil,
           decision_owner: User.t() | Ecto.Association.NotLoaded.t() | nil,
           decision_due_at: DateTime.t() | nil,
-          issue_url: String.t() | nil,
+          source: String.t() | nil,
+          source_id: String.t() | nil,
+          source_url: String.t() | nil,
+          source_ref: map(),
+          pending_source_note: String.t() | nil,
           pr_url: String.t() | nil,
-          pending_issue_comment: String.t() | nil,
-          issue_number: pos_integer() | nil,
           issue_feedback: map(),
           head_sha: String.t() | nil,
           linked_repo_id: Ecto.UUID.t() | nil,
-          linked_repo: LinkedRepo.t() | Ecto.Association.NotLoaded.t() | nil,
           pause_requested: boolean(),
           merge_state: String.t() | nil,
           merge_fixes: non_neg_integer(),
@@ -124,10 +130,12 @@ defmodule PipeMaestro.Tasks.Task do
     field :worktree_error, :string
     field :pending_instructions, :string
     field :decision_due_at, :utc_datetime
-    field :issue_url, :string
+    field :source, :string
+    field :source_id, :string
+    field :source_url, :string
+    field :source_ref, :map, default: %{}
+    field :pending_source_note, :string
     field :pr_url, :string
-    field :pending_issue_comment, :string
-    field :issue_number, :integer
     field :issue_feedback, :map, default: %{}
     field :head_sha, :string
     field :pause_requested, :boolean, default: false
@@ -160,7 +168,8 @@ defmodule PipeMaestro.Tasks.Task do
     belongs_to :decision_owner, User
     belongs_to :decision_analysis_job, Job
     belongs_to :proposal_job, Job
-    belongs_to :linked_repo, LinkedRepo
+    # The git host's repository the source gave (`PipeMaestro.Integrations`).
+    field :linked_repo_id, :binary_id
     has_many :stage_runs, StageRun
     has_many :decisions, Decision
 
@@ -185,8 +194,8 @@ defmodule PipeMaestro.Tasks.Task do
   @spec create_changeset(t(), map()) :: Ecto.Changeset.t()
   def create_changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :prompt, :pipeline_id, :project_id, :issue_url])
-    |> validate_format(:issue_url, IssueUrl.regex(), message: IssueUrl.message())
+    |> cast(attrs, [:title, :prompt, :pipeline_id, :project_id, :source_url])
+    |> put_linked_origin()
     |> update_change(:title, &(&1 && String.trim(&1)))
     |> validate_required([:title], message: "dê um título à tarefa")
     |> validate_required([:prompt], message: "descreva o que deve ser feito")
@@ -195,5 +204,32 @@ defmodule PipeMaestro.Tasks.Task do
     |> validate_length(:title, max: 120)
     |> validate_length(:prompt, max: 16_000, count: :bytes)
     |> unique_constraint(:proposal_job_id, message: "esta proposta já virou uma tarefa")
+  end
+
+  # A link pasted on the task is an origin when a source recognizes it. A
+  # task that already has its origin (from its source or its proposal) keeps it.
+  defp put_linked_origin(%Ecto.Changeset{data: %{source: source}} = changeset)
+       when is_binary(source),
+       do: delete_change(changeset, :source_url)
+
+  defp put_linked_origin(changeset) do
+    case get_change(changeset, :source_url) do
+      nil ->
+        changeset
+
+      url ->
+        case TaskSources.parse_link(url) do
+          {:ok, origin} ->
+            change(changeset,
+              source: origin.source,
+              source_id: origin.external_id,
+              source_url: origin.url,
+              source_ref: origin.ref
+            )
+
+          {:error, message} ->
+            add_error(changeset, :source_url, message)
+        end
+    end
   end
 end

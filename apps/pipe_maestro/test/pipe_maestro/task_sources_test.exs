@@ -48,6 +48,9 @@ defmodule PipeMaestro.TaskSourcesTest.FakeSource do
   def triage_finished(job), do: tell({:fake_triage_finished, job.id})
 
   @impl true
+  def runner_delivery(%{pending_source_note: note}) when is_binary(note),
+    do: %{"fake_note" => note}
+
   def runner_delivery(_task), do: %{}
 
   @impl true
@@ -66,9 +69,9 @@ defmodule PipeMaestro.TaskSourcesTest do
 
   alias PipeMaestro.{Jobs, Tasks, TaskSources}
   alias PipeMaestro.Jobs.Job
+  alias PipeMaestro.Tasks.Task
   alias PipeMaestro.TaskSources.{Commands, Dispatcher, Item, Origin}
   alias PipeMaestro.TaskSourcesTest.FakeSource
-  alias PipeMaestro.Tasks.Task
 
   @url "https://tracker.example.com/browse/FAKE-1"
 
@@ -95,7 +98,16 @@ defmodule PipeMaestro.TaskSourcesTest do
     workspace = workspace_fixture()
     user = member_fixture(workspace)
     {runner, _token} = runner_fixture(workspace, user)
-    runner = with_directories(runner, [%{"name" => "app", "git" => true}])
+
+    # A runner that writes proposals (`scratch`), offering `app` in git.
+    {:ok, runner} =
+      PipeMaestro.Runners.record_hello(
+        runner,
+        hello_fixture(%{
+          capabilities: ["scratch"],
+          directories: [%{"name" => "app", "git" => true}]
+        })
+      )
 
     pipeline =
       pipeline_fixture(workspace, %{
@@ -318,13 +330,19 @@ defmodule PipeMaestro.TaskSourcesTest do
                TaskSources.apply_command(task, cancel, via: "Fake: ana")
     end
 
-    test "a decision leaves a note for the source to deliver", ctx do
+    test "a decision leaves a note the source delivers with the next stage", ctx do
       task = awaiting(ctx)
       {:ok, command} = Commands.parse("/pipemaestro refazer use ISO 8601", "/pipemaestro")
       {:ok, task} = TaskSources.apply_command(task, command, via: "Fake: ana")
 
-      assert task.pending_source_note =~ "Etapa A"
-      assert task.pending_source_note =~ "use ISO 8601"
+      task = Tasks.get_task!(ctx.workspace, task.id)
+      job = Enum.find(task.stage_runs, &(&1.status == :running)).job
+      note = job.context["delivery"]["fake_note"]
+
+      assert note =~ "Etapa A"
+      assert note =~ "use ISO 8601"
+      # Delivered with the stage, the note is no longer pending.
+      assert task.pending_source_note == nil
     end
 
     test "the source reads its item again and answers people", _ctx do

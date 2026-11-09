@@ -3,6 +3,7 @@ defmodule PipeMaestro.TasksTest do
 
   import PipeMaestro.Fixtures
 
+  alias PipeMaestro.Integrations.IssueSource
   alias PipeMaestro.{Jobs, Pipelines, Tasks}
   alias PipeMaestro.Tasks.{StageRun, Task}
 
@@ -899,7 +900,7 @@ defmodule PipeMaestro.TasksTest do
 
       task =
         create_task(%{ctx | pipeline: pipeline}, %{
-          "issue_url" => "https://github.com/acme/app/issues/42"
+          "source_url" => "https://github.com/acme/app/issues/42"
         })
 
       task = block_with_questions(ctx, task)
@@ -931,8 +932,8 @@ defmodule PipeMaestro.TasksTest do
     test "each stage pushes and updates the PR's block; the last one marks it ready", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
       issue = "https://github.com/acme/app/issues/42"
-      task = create_task(ctx, %{"issue_url" => issue})
-      assert task.issue_url == issue
+      task = create_task(ctx, %{"source_url" => issue})
+      assert {task.source, task.source_url} == {"git_issue", issue}
 
       assert_receive {:job_assign, first}
 
@@ -1063,7 +1064,7 @@ defmodule PipeMaestro.TasksTest do
 
     test "a decision is commented on the issue with the next stage", ctx do
       :ok = Jobs.subscribe({:runner, ctx.runner.id})
-      task = create_task(ctx, %{"issue_url" => "https://github.com/acme/app/issues/42"})
+      task = create_task(ctx, %{"source_url" => "https://github.com/acme/app/issues/42"})
       assert_receive {:job_assign, _first}
 
       task =
@@ -1095,10 +1096,10 @@ defmodule PipeMaestro.TasksTest do
                  "prompt" => "p",
                  "pipeline_id" => ctx.pipeline.id,
                  "project_id" => ctx.projects["app"].id,
-                 "issue_url" => "https://exemplo.com/x"
+                 "source_url" => "https://exemplo.com/x"
                })
 
-      assert %{issue_url: [_]} = errors_on(changeset)
+      assert %{source_url: [_]} = errors_on(changeset)
     end
   end
 
@@ -1117,47 +1118,45 @@ defmodule PipeMaestro.TasksTest do
 
       repo = Repo.preload(repo, :project)
 
-      trigger = %PipeMaestro.Integrations.Trigger{
+      target = %{
+        mode: "task",
         acting_user_id: ctx.user.id,
         pipeline_id: ctx.pipeline.id,
-        mode: "task"
+        project_id: repo.project_id
       }
 
       issue = %{
-        "title" => "Botão quebrado",
-        "body" => "Ao clicar nada acontece.",
-        "html_url" => "https://forge.test/acme/app/issues/9",
-        "number" => 9
+        title: "Botão quebrado",
+        body: "Ao clicar nada acontece.",
+        url: "https://forge.test/acme/app/issues/9",
+        number: 9
       }
 
       assert {:ok, task} =
-               Tasks.create_from_linked_issue(ctx.workspace, repo, trigger, issue)
+               Tasks.create_from_item(ctx.workspace, IssueSource.item(repo, issue), target)
 
       assert task.title == "Botão quebrado"
-      assert task.prompt =~ "Ao clicar nada acontece."
-      assert task.issue_url == "https://forge.test/acme/app/issues/9"
-      assert {task.linked_repo_id, task.issue_number} == {repo.id, 9}
+
+      assert task.prompt ==
+               "Ao clicar nada acontece.\n\nIssue: https://forge.test/acme/app/issues/9"
+
+      assert task.source_url == "https://forge.test/acme/app/issues/9"
+      assert {task.linked_repo_id, task.source_ref} == {repo.id, %{"number" => 9}}
       assert task.directory == "app"
       assert task.pipeline_id == ctx.pipeline.id
       assert task.created_by_user_id == ctx.user.id
 
-      empty = %{
-        issue
-        | "body" => nil,
-          "html_url" => "https://forge.test/acme/app/issues/10",
-          "number" => 10
-      }
+      empty = %{issue | body: nil, url: "https://forge.test/acme/app/issues/10", number: 10}
 
       assert {:ok, task} =
-               Tasks.create_from_linked_issue(ctx.workspace, repo, trigger, empty)
+               Tasks.create_from_item(ctx.workspace, IssueSource.item(repo, empty), target)
 
       assert task.prompt =~ "Botão quebrado"
 
-      assert Tasks.create_from_linked_issue(
+      assert Tasks.create_from_item(
                ctx.workspace,
-               repo,
-               %{trigger | acting_user_id: nil},
-               issue
+               IssueSource.item(repo, issue),
+               %{target | acting_user_id: nil}
              ) ==
                {:error, :no_acting_user}
     end

@@ -25,8 +25,9 @@ defmodule PipeMaestro.Integrations.Ingest do
   10. the project can take work (`PipeMaestro.Projects.health/2`): its
       runner offline is fine, the job waits for it; no runner, or the
       directory gone, is `waiting_runner`, for the reconciliation to try again;
-  11. the triage or the task starts, the trigger's firing is kept and the
-      issue is acknowledged.
+  11. the triage or the task starts from the issue's item
+      (`PipeMaestro.Integrations.IssueSource`, `PipeMaestro.TaskSources.start/3`),
+      the trigger's firing is kept and the issue is acknowledged.
 
   The steps of one issue run one delivery at a time. Options: `:presence`
   (`PipeMaestro.Runners.online_ids/2`).
@@ -37,7 +38,7 @@ defmodule PipeMaestro.Integrations.Ingest do
   require Logger
 
   alias PipeMaestro.Accounts.User
-  alias PipeMaestro.{Audit, Integrations, Pipelines, Projects, Proposals, Repo, Runners, Tasks}
+  alias PipeMaestro.{Audit, Integrations, Pipelines, Projects, Repo, Runners, Tasks, TaskSources}
 
   alias PipeMaestro.Integrations.{
     Access,
@@ -47,6 +48,7 @@ defmodule PipeMaestro.Integrations.Ingest do
     Event,
     Feedback,
     GitHub,
+    IssueSource,
     IssueState,
     LinkedRepo,
     Trigger
@@ -440,7 +442,7 @@ defmodule PipeMaestro.Integrations.Ingest do
   defp not_active(repo, %Event{issue: issue}) do
     workspace = %Workspace{id: repo.workspace_id}
 
-    if Tasks.active_for_issue?(workspace, issue.url) or Proposals.triaging?(workspace, issue.url),
+    if TaskSources.active?(workspace, IssueSource.key(), issue.url),
       do: {:ignored, "a issue já tem uma tarefa ou triagem em andamento"},
       else: :ok
   end
@@ -501,18 +503,15 @@ defmodule PipeMaestro.Integrations.Ingest do
   defp start(connection, client, repo, trigger, issue) do
     workspace = Repo.get!(Workspace, repo.workspace_id)
 
-    attrs = %{
-      "title" => issue.title,
-      "body" => issue.body,
-      "html_url" => issue.url,
-      "number" => issue.number
+    target = %{
+      mode: if(trigger.mode == "task", do: "task", else: "triage"),
+      project_id: repo.project_id,
+      pipeline_id: trigger.pipeline_id,
+      acting_user_id: trigger.acting_user_id,
+      auto_approve: trigger.auto_approve
     }
 
-    result =
-      case trigger.mode do
-        "task" -> Tasks.create_from_linked_issue(workspace, repo, trigger, attrs)
-        _triage -> Proposals.triage_linked_issue(workspace, repo, trigger, attrs)
-      end
+    result = TaskSources.start(workspace, IssueSource.item(repo, issue), target)
 
     case result do
       {:ok, %Tasks.Task{id: id}} ->
