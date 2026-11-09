@@ -251,20 +251,41 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-kind]", "Pipeline")
       assert has_element?(view, "[data-testid=proposal-request] em", "issues")
       assert has_element?(view, "[data-testid=proposal-waiting]")
-      assert has_element?(view, "[data-testid=proposal-view-panel-agente]:not(.hidden)")
       assert has_element?(view, "header [data-testid=proposal-status]")
+
+      # The proposal as a pipeline: the request, the agent, the proposal; every
+      # drawer closed until the proposal is ready, and kept in the page.
+      assert has_element?(view, "[data-testid=proposal-node-pedido]", "Entregar")
+      assert has_element?(view, "[data-testid=proposal-node-agente]", "Na fila")
 
       assert has_element?(
                view,
-               "[data-testid=proposal-view-panel-resumo].hidden [data-testid=proposal-request]"
+               "[data-testid=proposal-node-proposta]",
+               "quando o agente terminar"
              )
 
+      refute has_element?(view, "[data-testid=proposal-node-ajustes]")
+
+      assert has_element?(
+               view,
+               "[data-testid=proposal-drawer-pedido].hidden [data-testid=proposal-request]"
+             )
+
+      assert has_element?(view, "[data-testid=proposal-drawer-agente].hidden")
       assert has_element?(view, "[data-testid=proposal-pending]", "ainda está trabalhando")
 
+      view |> element("[data-testid=proposal-node-agente]") |> render_click()
+      assert_patch(view, proposal_path(ctx, job) <> "?no=agente")
+      assert has_element?(view, "[data-testid=proposal-drawer-agente]:not(.hidden)")
+      view |> element("[data-testid=proposal-drawer-agente-close]") |> render_click()
+      assert_patch(view, proposal_path(ctx, job))
+
       succeed(ctx, job, @pipeline_output)
-      # The proposal arrives and takes the page; the agent's work is a tab away.
-      assert has_element?(view, "[data-testid=proposal-view-panel-proposta]:not(.hidden)")
-      assert has_element?(view, "[data-testid=proposal-view-panel-agente].hidden")
+      # The proposal arrives and opens on its own; the agent's work is a place away.
+      assert has_element?(view, "[data-testid=proposal-drawer-proposta]:not(.hidden)")
+      assert has_element?(view, "[data-testid=proposal-drawer-agente].hidden")
+      assert has_element?(view, "[data-testid=proposal-node-proposta]", "Pronta para revisar")
+      assert has_element?(view, "[data-testid=proposal-node-ajustes]")
       assert has_element?(view, "[data-testid=proposal-analysis] strong", "Phoenix")
       assert has_element?(view, "[data-testid=proposal-checks]", "2 avisos")
 
@@ -336,9 +357,18 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
         })
 
       {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      # An answered proposal opens on it, its error included.
+      assert has_element?(view, "[data-testid=proposal-drawer-proposta]:not(.hidden)")
       assert has_element?(view, "[data-testid=proposal-error]", "sem créditos")
+      assert has_element?(view, "[data-testid=proposal-node-proposta]", "sem créditos")
 
-      view |> element("[data-testid=proposal-regenerate]") |> render_click()
+      # Closed, it stays closed.
+      view |> element("[data-testid=proposal-drawer-proposta-close]") |> render_click()
+      assert has_element?(view, "[data-testid=proposal-drawer-proposta].hidden")
+
+      view |> element("[data-testid=proposal-node-ajustes]") |> render_click()
+      assert_patch(view, proposal_path(ctx, job) <> "?no=ajustes")
+      assert has_element?(view, "[data-testid=proposal-drawer-ajustes]:not(.hidden)")
 
       {:error, {:live_redirect, %{to: path}}} =
         view |> form("#feedback-form", round: %{feedback: "Só duas etapas"}) |> render_submit()

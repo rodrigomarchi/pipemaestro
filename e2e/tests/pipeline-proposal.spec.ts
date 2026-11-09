@@ -81,6 +81,16 @@ test.describe("Pipeline proposal", () => {
     await proposal.closeStage();
     await shot(app.page, "proposal-review");
 
+    // The proposal opened on its own; behind it, the proposal as a pipeline.
+    await proposal.closeNode("proposta");
+    await expect(proposal.node("proposta")).toContainText("Pronta para revisar");
+    await expect(proposal.node("ajustes")).toBeVisible();
+    await shot(app.page, "proposal-overview");
+    await proposal.openNode("agente");
+    await shot(app.page, "proposal-agent");
+    await proposal.closeNode("agente");
+    await proposal.openNode("proposta");
+
     await proposal.openPipeline();
     await expect(app.page.getByTestId("pipeline-name")).toHaveValue("Entrega proposta");
     await expect(pipelines.stageGates(1)).toHaveValue("{{projeto.teste}}");
