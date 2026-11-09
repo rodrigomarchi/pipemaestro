@@ -246,7 +246,7 @@ defmodule PipeMaestro.Usage.QualityTest do
   test "nothing delivered in the period", ctx do
     quality = Usage.quality(ctx.workspace, ctx.since)
 
-    assert %{delivered: 0, clean_pct: 0.0, median_merge_ms: nil, review_rounds_per_pr: 0.0} =
+    assert %{delivered: 0, clean_pct: +0.0, median_merge_ms: nil, review_rounds_per_pr: +0.0} =
              quality.total
 
     assert quality.by_pipeline == []
