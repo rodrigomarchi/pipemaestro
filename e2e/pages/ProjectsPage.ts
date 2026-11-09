@@ -94,23 +94,6 @@ export class ProjectsPage {
     return this.page.getByTestId(`project-status-${directory}`);
   }
 
-  /** The warning of a project whose runner no longer offers its directory. */
-  directoryGone(directory: string): Locator {
-    return this.page.getByTestId(`project-directory-gone-${directory}`);
-  }
-
-  /** The latest tasks of the project. */
-  recentTasks(directory: string): Locator {
-    return this.page.getByTestId(`project-recent-tasks-${directory}`);
-  }
-
-  /** Opens the new-job form with the project already chosen. */
-  async newJob(directory: string) {
-    await this.page.getByTestId(`project-new-job-${directory}`).click();
-    await this.page.waitForURL(/\/jobs\?project_id=/);
-    await waitForLiveView(this.page);
-  }
-
   /** Opens the new-task form with the project already chosen. */
   async newTask(directory: string) {
     await this.page.getByTestId(`project-new-task-${directory}`).click();

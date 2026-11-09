@@ -51,32 +51,30 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   def stage_path(slug, %Task{id: id}, nil), do: ~p"/w/#{slug}/tasks/#{id}"
   def stage_path(slug, %Task{id: id}, key), do: ~p"/w/#{slug}/tasks/#{id}?#{[etapa: key]}"
 
-  @doc """
-  The path of the task's page with one of the places that are not a stage
-  open: `"entrada"`, `"entrega"`, `"fim"` or `"corrigir"`.
-  """
+  # The path of the task's page with one of the places that are not a stage
+  # open: `"entrada"`, `"entrega"`, `"fim"` or `"corrigir"`.
   @spec node_path(String.t(), Task.t(), String.t()) :: String.t()
-  def node_path(slug, %Task{id: id}, node), do: ~p"/w/#{slug}/tasks/#{id}?#{[no: node]}"
+  defp node_path(slug, %Task{id: id}, node), do: ~p"/w/#{slug}/tasks/#{id}?#{[no: node]}"
 
-  @doc "The key of the stage the task waits a decision on, or `nil`."
+  # The key of the stage the task waits a decision on, or `nil`.
   @spec awaiting_key(Task.t()) :: String.t() | nil
-  def awaiting_key(%Task{status: :awaiting_decision} = task) do
+  defp awaiting_key(%Task{status: :awaiting_decision} = task) do
     case Enum.at(task.stages, task.current_stage) do
       nil -> nil
       stage -> stage.key
     end
   end
 
-  def awaiting_key(%Task{}), do: nil
+  defp awaiting_key(%Task{}), do: nil
 
   @doc "Whether the pipeline delivers a pull request: the place where it shows."
   @spec delivers_pr?(Task.t()) :: boolean()
   def delivers_pr?(%Task{} = task),
     do: PipelineDiagram.build(PipelineDiagram.for_task(task)).delivery == :pr
 
-  @doc "How many files the attempts of stage `index` sent."
+  # How many files the attempts of stage `index` sent.
   @spec stage_files(Task.t(), map(), non_neg_integer()) :: non_neg_integer()
-  def stage_files(%Task{stage_runs: runs}, files, index) do
+  defp stage_files(%Task{stage_runs: runs}, files, index) do
     for(run <- runs, run.index == index, do: length(Map.get(files, run.id, [])))
     |> Enum.sum()
   end
@@ -533,9 +531,9 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
     """
   end
 
-  @doc "Whether the task can take a message or shows one waiting: its controls show."
+  # Whether the task can take a message or shows one waiting: its controls show.
   @spec controls?(Task.t()) :: boolean()
-  def controls?(%Task{} = task),
+  defp controls?(%Task{} = task),
     do: task.status == :running or (Task.active?(task) and task.pending_instructions != nil)
 
   attr :task, Task, required: true

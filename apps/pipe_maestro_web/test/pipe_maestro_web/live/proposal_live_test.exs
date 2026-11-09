@@ -74,8 +74,9 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
     job
   end
 
+  # A job already started (to relay what the agent types) is finished as it is.
   defp finish(ctx, job, attrs) do
-    {:ok, _started} = Jobs.mark_started(ctx.runner, job.id)
+    _started_now_or_before = Jobs.mark_started(ctx.runner, job.id)
     {:ok, job} = Jobs.finish_job(ctx.runner, job.id, attrs)
     job
   end
@@ -274,6 +275,11 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-drawer-agente].hidden")
       assert has_element?(view, "[data-testid=proposal-pending]", "ainda está trabalhando")
 
+      # What the agent is typing shows on its place.
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      :ok = Jobs.relay_delta(ctx.runner, job.id, "Lendo o mix.exs")
+      assert has_element?(view, "[data-testid=proposal-node-typing]", "Lendo o mix.exs")
+
       view |> element("[data-testid=proposal-node-agente]") |> render_click()
       assert_patch(view, proposal_path(ctx, job) <> "?no=agente")
       assert has_element?(view, "[data-testid=proposal-drawer-agente]:not(.hidden)")
@@ -285,6 +291,8 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-drawer-proposta]:not(.hidden)")
       assert has_element?(view, "[data-testid=proposal-drawer-agente].hidden")
       assert has_element?(view, "[data-testid=proposal-node-proposta]", "Pronta para revisar")
+      # Escape closes the proposed stage's drawer alone, not the proposal's around it.
+      refute has_element?(view, "[data-testid=proposal-drawer-proposta][phx-window-keydown]")
       assert has_element?(view, "[data-testid=proposal-node-ajustes]")
       assert has_element?(view, "[data-testid=proposal-analysis] strong", "Phoenix")
       assert has_element?(view, "[data-testid=proposal-checks]", "2 avisos")
@@ -439,6 +447,13 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
       assert view |> element("[data-testid=proposal-created-task-link]") |> render() =~
                "/w/#{ctx.workspace.slug}/tasks/#{task.id}"
+
+      assert has_element?(view, "[data-testid=proposal-node-proposta]", "Virou uma tarefa")
+
+      # An old link to a tab opens the place that holds it now.
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job) <> "?aba=resumo")
+      assert has_element?(view, "[data-testid=proposal-drawer-pedido]:not(.hidden)")
+      assert has_element?(view, "[data-testid=proposal-drawer-proposta].hidden")
     end
 
     test "a proposal that could not be created on its own says why", ctx do

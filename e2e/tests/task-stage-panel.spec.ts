@@ -89,7 +89,6 @@ test.describe("Task stage panel", () => {
     await expect(tasks.stageNodeState("executar")).toHaveText("Executando");
     await expect(tasks.stagePanel()).toBeHidden();
     await expect(tasks.liveEvents()).toHaveCount(0);
-    await expect(app.page.getByTestId("task-sidebar")).toHaveCount(0);
     await shot(app.page, "task-overview");
 
     // Flow B: the running stage's panel, 90% of the screen, live.

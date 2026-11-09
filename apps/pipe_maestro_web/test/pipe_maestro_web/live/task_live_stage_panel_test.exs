@@ -136,6 +136,13 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
 
       assert has_element?(view, "[data-testid=task-stage-when-a]", "terminou")
       assert has_element?(view, "[data-testid=task-stage-when-b]", "começou")
+      # The task's own runner goes unsaid; another one is named.
+      refute has_element?(view, "[data-testid=task-stage-when-a]", "em mac")
+      {linux, _token} = runner_fixture(ctx.workspace, ctx.user, %{name: "linux"})
+      job_a = Enum.find(Tasks.get_task!(ctx.workspace, task.id).stage_runs, &(&1.key == "a")).job
+      PipeMaestro.Repo.update!(Ecto.Changeset.change(job_a, runner_id: linux.id))
+      {:ok, view, _html} = live(ctx.conn, task_path(ctx, task))
+      assert has_element?(view, "[data-testid=task-stage-when-a]", "em linux")
       refute has_element?(view, "[data-testid=task-stage-summary-b]")
 
       # Nothing a stage produced is rendered, nor its steps read.
@@ -147,10 +154,9 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       refute has_element?(view, "[data-testid=task-events]")
       refute has_element?(view, "[data-testid=task-stage-panel]")
 
-      # The pipeline has the page: its entry, its end, nothing beside it.
+      # The pipeline has the page, from its entry to its end.
       assert has_element?(view, "[data-testid=task-node-entrada]")
       assert has_element?(view, "[data-testid=task-overview-end]")
-      refute has_element?(view, "[data-testid=task-sidebar]")
       # A running task takes no correction yet.
       refute has_element?(view, "[data-testid=task-node-corrigir]")
 

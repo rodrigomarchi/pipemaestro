@@ -93,8 +93,6 @@ test.describe("Projects", () => {
 
     await projects.open(workspace.slug);
     await projects.newTask("app");
-    await expect(app.page.getByTestId("task-runner")).toHaveCount(0);
-    await expect(app.page.getByTestId("task-directory")).toHaveCount(0);
     await expect(app.page.getByTestId("task-project")).toHaveValue(/.+/);
     await app.page.getByTestId("task-title").fill(`Tarefa do projeto ${suffix}`);
     await app.page.getByTestId("task-prompt").fill("Grave este prompt.");

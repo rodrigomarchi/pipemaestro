@@ -123,6 +123,8 @@ defmodule PipeMaestroWeb.JobLiveTest do
     refute has_element?(view, "[data-testid=job-typing]")
     Jobs.relay_delta(runner, job.id, "Estou olhando o **login**")
     assert has_element?(view, "[data-testid=job-typing]", "Estou olhando o")
+    # The agent's place shows it too, without opening its drawer.
+    assert has_element?(view, "[data-testid=job-node-typing]", "Estou olhando o")
 
     {:ok, _} =
       Jobs.append_event(runner, job.id, %{

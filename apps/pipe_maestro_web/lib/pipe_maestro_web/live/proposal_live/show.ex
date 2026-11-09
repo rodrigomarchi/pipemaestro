@@ -558,6 +558,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         id="proposal-drawer-proposta"
         title={kind_label(@kind)}
         open={@node == "proposta"}
+        escape={@kind not in ~w(pipeline improve)}
         testid="proposal-drawer-proposta"
       >
         <p

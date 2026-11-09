@@ -49,11 +49,6 @@ export class ProposalPage {
     await waitForLiveView(this.page);
   }
 
-  /** The project options of the open request form. */
-  get projectOptions(): Locator {
-    return this.page.getByTestId("proposal-request-project").locator("option");
-  }
-
   get status(): Locator {
     return this.page.getByTestId("proposal-status");
   }
