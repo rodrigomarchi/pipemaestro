@@ -173,26 +173,25 @@ defmodule PipeMaestroWeb.RunnersLive do
             />
           </:badge>
           <:meta>
-            <span class="font-mono">{runner.hostname} · {runner.os}/{runner.arch}</span>
-            <span>·</span>
+            <.record_fact icon="hero-computer-desktop" title="Máquina" mono>
+              {runner.hostname} · {runner.os}/{runner.arch}
+            </.record_fact>
+            <.icon name="hero-tag" class="-mr-2 size-3.5 text-gray-400 dark:text-gray-500" />
             <.runner_version
               runner={runner}
               version_testid={"runner-version-#{runner.name}"}
               outdated_testid={"runner-outdated-#{runner.name}"}
             />
-            <span
-              :if={!MapSet.member?(@online, runner.id)}
-              class="whitespace-nowrap"
-            >
-              · visto {time_ago(runner.last_seen_at, @now)}
-            </span>
+            <.record_fact :if={!MapSet.member?(@online, runner.id)} icon="hero-eye" title="Visto">
+              visto {time_ago(runner.last_seen_at, @now)}
+            </.record_fact>
           </:meta>
           <:meta>
             <span
               class="flex flex-wrap items-center gap-1.5"
               data-testid={"runner-agent-#{runner.name}"}
             >
-              <.icon name="hero-cpu-chip" class="size-3.5" />
+              <.icon name="hero-cpu-chip" class="size-3.5 text-gray-400 dark:text-gray-500" />
               <span :if={!runner.agent}>—</span>
               <span :if={runner.agent} class="font-mono">
                 {runner.agent["cli_version"] || "sem claude"}
@@ -220,7 +219,15 @@ defmodule PipeMaestroWeb.RunnersLive do
                 data-testid={"runner-near-limit-#{runner.name}"}
               />
             </span>
-            <span class="flex flex-wrap gap-1" data-testid={"runner-labels-#{runner.name}"}>
+            <span
+              class="flex flex-wrap items-center gap-1"
+              data-testid={"runner-labels-#{runner.name}"}
+            >
+              <.icon
+                :if={runner.labels != []}
+                name="hero-tag"
+                class="size-3.5 text-gray-400 dark:text-gray-500"
+              />
               <.badge
                 :for={label <- runner.labels}
                 size="xs"
@@ -231,7 +238,7 @@ defmodule PipeMaestroWeb.RunnersLive do
             </span>
           </:meta>
           <:aside>
-            <.record_metric>
+            <.record_metric icon="hero-signal" title="Tempo conectado nos últimos 7 dias">
               <span
                 title="Tempo conectado nos últimos 7 dias"
                 data-testid={"runner-uptime-#{runner.name}"}
@@ -239,7 +246,10 @@ defmodule PipeMaestroWeb.RunnersLive do
                 uptime 7d {format_uptime(@uptimes[runner.id])}
               </span>
             </.record_metric>
-            <.record_metric>
+            <.record_metric
+              icon="hero-exclamation-triangle"
+              title="Jobs que falharam entre os que terminaram nos últimos 7 dias"
+            >
               <span
                 title="Jobs que falharam entre os que terminaram nos últimos 7 dias"
                 data-testid={"runner-failures-#{runner.name}"}
@@ -247,7 +257,7 @@ defmodule PipeMaestroWeb.RunnersLive do
                 falhas 7d {format_uptime(@failure_rates[runner.id])}
               </span>
             </.record_metric>
-            <.record_metric label="diretórios">
+            <.record_metric icon="hero-folder" label="diretórios">
               <span
                 :if={runner.directories != []}
                 data-testid={"runner-directories-#{runner.name}"}
@@ -263,10 +273,18 @@ defmodule PipeMaestroWeb.RunnersLive do
                 data-testid={"runner-directories-#{runner.name}"}
               />
             </.record_metric>
-            <.record_metric label="worktrees" testid={"runner-worktrees-#{runner.name}"}>
+            <.record_metric
+              icon="hero-rectangle-stack"
+              label="worktrees"
+              testid={"runner-worktrees-#{runner.name}"}
+            >
               {worktree_usage(runner.worktree_usage)}
             </.record_metric>
-            <.record_metric label="capacidade" testid={"runner-capacity-#{runner.name}"}>
+            <.record_metric
+              icon="hero-squares-plus"
+              label="capacidade"
+              testid={"runner-capacity-#{runner.name}"}
+            >
               {runner.capacity}
             </.record_metric>
           </:aside>

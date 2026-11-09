@@ -72,9 +72,11 @@ defmodule PipeMaestroWeb.BoardLive.DecisionsTab do
         tone={:awaiting}
         dense
       >
-        <:leading><.record_icon icon="hero-hand-raised" color="warning" /></:leading>
+        <:leading><.record_icon icon="hero-hand-raised" color="warning" small /></:leading>
         <:title>{task.title}</:title>
-        <:meta>{stage_progress(task)}</:meta>
+        <:meta>
+          <.record_fact icon="hero-queue-list" title="Etapa">{stage_progress(task)}</.record_fact>
+        </:meta>
         <:body>
           <span class="text-gray-600 dark:text-gray-400">
             {Markdown.inline_html(task.decision_reason)}

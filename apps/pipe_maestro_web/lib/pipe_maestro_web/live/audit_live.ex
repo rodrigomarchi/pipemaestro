@@ -70,6 +70,20 @@ defmodule PipeMaestroWeb.AuditLive do
   defp subject_icon("secret"), do: "hero-key"
   defp subject_icon(_other), do: "hero-document-text"
 
+  # Removals and cancellations in red, creations in green, the rest in the brand.
+  defp action_color(action) do
+    cond do
+      String.ends_with?(action, [".deleted", ".revoked", ".canceled"]) ->
+        "danger"
+
+      String.ends_with?(action, [".created", ".auto_created", ".approved", ".imported"]) ->
+        "success"
+
+      true ->
+        "primary"
+    end
+  end
+
   defp details(%{"version" => version}), do: "v#{version}"
 
   defp details(%{"action" => action, "choice" => choice}) when is_binary(choice),
@@ -98,19 +112,29 @@ defmodule PipeMaestroWeb.AuditLive do
           testid={"audit-event-#{event.id}"}
           dense
         >
-          <:leading><.record_icon icon={subject_icon(event.subject_type)} /></:leading>
+          <:leading>
+            <.record_icon
+              icon={subject_icon(event.subject_type)}
+              color={action_color(event.action)}
+              small
+            />
+          </:leading>
           <:title>{label(event.action)}</:title>
           <:meta>
-            <span class="text-gray-700 dark:text-gray-300">{event.subject_name || "—"}</span>
-            <span :if={details(event.details)}>· {details(event.details)}</span>
+            <span class="font-medium text-gray-700 dark:text-gray-300">
+              {event.subject_name || "—"}
+            </span>
+            <.record_fact :if={details(event.details)} icon="hero-tag">
+              {details(event.details)}
+            </.record_fact>
           </:meta>
           <:aside>
-            <span>
-              {if event.actor_user, do: event.actor_user.name, else: "—"} · {time_ago(
-                event.inserted_at,
-                @now
-              )}
-            </span>
+            <.record_metric icon="hero-user" title="Quem">
+              {if event.actor_user, do: event.actor_user.name, else: "—"}
+            </.record_metric>
+            <.record_metric icon="hero-calendar" title="Quando">
+              {time_ago(event.inserted_at, @now)}
+            </.record_metric>
           </:aside>
         </.record_card>
         <:empty_state>

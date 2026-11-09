@@ -118,8 +118,14 @@ defmodule PipeMaestroWeb.Backoffice.OperatorLive.Index do
               data-testid={"operator-status-#{operator.email}"}
             />
           </:badge>
-          <:meta>{operator.email}</:meta>
-          <:aside>criado em {format_date(operator.inserted_at)}</:aside>
+          <:meta>
+            <.record_fact icon="hero-envelope" title="E-mail">{operator.email}</.record_fact>
+          </:meta>
+          <:aside>
+            <.record_metric icon="hero-calendar" title="Criado em">
+              {format_date(operator.inserted_at)}
+            </.record_metric>
+          </:aside>
           <:actions :if={
             (is_nil(operator.disabled_at) and operator.id != @current_operator.id) or
               operator.disabled_at

@@ -173,7 +173,9 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
                     data-testid={"member-status-#{user.email}"}
                   />
                 </:badge>
-                <:meta>{user.email}</:meta>
+                <:meta>
+                  <.record_fact icon="hero-envelope" title="E-mail">{user.email}</.record_fact>
+                </:meta>
                 <:actions>
                   <.form
                     for={to_form(%{"role" => to_string(role)}, as: "role")}
@@ -341,16 +343,20 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
                     data-testid={"workspace-runner-status-#{runner.name}"}
                   />
                 </:badge>
-                <:meta><span class="font-mono">{runner.hostname}</span></:meta>
+                <:meta>
+                  <.record_fact icon="hero-computer-desktop" title="Máquina" mono>
+                    {runner.hostname}
+                  </.record_fact>
+                </:meta>
                 <:aside>
-                  <.record_metric label="versão">
+                  <.record_metric icon="hero-tag" title="Versão">
                     <span class="font-mono">{runner.runner_version}</span>
                   </.record_metric>
-                  <span>
-                    visto {if MapSet.member?(@online, runner.id),
+                  <.record_metric icon="hero-eye" title="Visto">
+                    {if MapSet.member?(@online, runner.id),
                       do: "agora",
                       else: time_ago(runner.last_seen_at, @now)}
-                  </span>
+                  </.record_metric>
                 </:aside>
               </.record_card>
             </.record_list>

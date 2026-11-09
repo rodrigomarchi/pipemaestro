@@ -11,33 +11,16 @@ defmodule PipeMaestroWeb.NotificationComponents do
   alias PipeMaestroWeb.Markdown
   alias PipeMaestroWeb.RunnerComponents
 
-  @doc """
-  The icon and the color of a notification's kind. A kind this list does not
-  know yet gets a generic bell.
-  """
-  @spec kind_style(atom()) :: {String.t(), String.t()}
-  def kind_style(:task_awaiting_decision),
-    do: {"hero-hand-raised", "text-warning-600 dark:text-warning-400"}
-
-  def kind_style(:task_succeeded),
-    do: {"hero-check-circle", "text-success-600 dark:text-success-400"}
-
-  def kind_style(:task_failed), do: {"hero-x-circle", "text-danger-600 dark:text-danger-400"}
-  def kind_style(:task_canceled), do: {"hero-no-symbol", "text-gray-500 dark:text-gray-400"}
-
-  def kind_style(:task_merged),
-    do: {"hero-arrows-pointing-in", "text-success-600 dark:text-success-400"}
-
-  def kind_style(:task_merge_blocked),
-    do: {"hero-exclamation-triangle", "text-warning-600 dark:text-warning-400"}
-
-  def kind_style(:proposal_ready),
-    do: {"hero-light-bulb", "text-primary-600 dark:text-primary-400"}
-
-  def kind_style(:proposal_failed),
-    do: {"hero-exclamation-triangle", "text-danger-600 dark:text-danger-400"}
-
-  def kind_style(_kind), do: {"hero-bell", "text-gray-500 dark:text-gray-400"}
+  # What a notification's kind looks like: its icon and the color of its tile.
+  defp kind_style(:task_awaiting_decision), do: {"hero-hand-raised", "warning"}
+  defp kind_style(:task_succeeded), do: {"hero-check-circle", "success"}
+  defp kind_style(:task_failed), do: {"hero-x-circle", "danger"}
+  defp kind_style(:task_canceled), do: {"hero-no-symbol", "gray"}
+  defp kind_style(:task_merged), do: {"hero-arrows-pointing-in", "success"}
+  defp kind_style(:task_merge_blocked), do: {"hero-exclamation-triangle", "warning"}
+  defp kind_style(:proposal_ready), do: {"hero-light-bulb", "primary"}
+  defp kind_style(:proposal_failed), do: {"hero-exclamation-triangle", "danger"}
+  defp kind_style(_kind), do: {"hero-bell", "gray"}
 
   @doc "Where a notification leads: its task or its proposal."
   @spec path(String.t(), Notification.t()) :: String.t() | nil
@@ -81,7 +64,7 @@ defmodule PipeMaestroWeb.NotificationComponents do
       class={@unread && "bg-primary-50/60 dark:bg-primary-950/30"}
       dense
     >
-      <:leading><.icon name={@icon} class={["mt-0.5 size-5", @color]} /></:leading>
+      <:leading><.record_icon icon={@icon} color={@color} small /></:leading>
       <:title>
         <span class={["block", !@unread && "font-normal"]}>
           {@notification.title}
@@ -100,6 +83,7 @@ defmodule PipeMaestroWeb.NotificationComponents do
         </span>
       </:title>
       <:meta>
+        <.icon name="hero-clock" class="-mr-2 size-3.5 text-gray-400 dark:text-gray-500" />
         <span
           id={"notification-time-#{@notification.id}"}
           phx-hook="Elapsed"
@@ -187,6 +171,13 @@ defmodule PipeMaestroWeb.NotificationComponents do
       tone={execution_tone(@execution.status)}
       dense
     >
+      <:leading>
+        <.record_icon
+          icon={execution_icon(@execution)}
+          color={status_color(@execution.status)}
+          small
+        />
+      </:leading>
       <:title>{@execution.title}</:title>
       <:badge>
         <.badge size="xs" color={status_color(@execution.status)} dot>
@@ -194,20 +185,23 @@ defmodule PipeMaestroWeb.NotificationComponents do
         </.badge>
       </:badge>
       <:meta>
-        <span :if={@execution.type == :task}>
+        <.record_fact :if={@execution.type == :task} icon="hero-queue-list" title="Etapa">
           etapa {@execution.stage} de {@execution.stage_count}
-        </span>
-        <span :if={@execution.type == :proposal}>proposta · {@execution.proposal_kind}</span>
-        <span :if={@execution.runner_name} class="inline-flex items-center gap-1">
-          <.icon name="hero-server-stack" class="size-3.5" /> {@execution.runner_name}
-        </span>
-        <span :if={@execution.creator_name} class="inline-flex items-center gap-1">
-          <.icon name="hero-user" class="size-3.5" /> {@execution.creator_name}
-        </span>
+        </.record_fact>
+        <.record_fact :if={@execution.type == :proposal} icon="hero-light-bulb" title="Proposta">
+          proposta · {@execution.proposal_kind}
+        </.record_fact>
+        <.record_fact :if={@execution.runner_name} icon="hero-server" title="Runner">
+          {@execution.runner_name}
+        </.record_fact>
+        <.record_fact :if={@execution.creator_name} icon="hero-user" title="Quem pediu">
+          {@execution.creator_name}
+        </.record_fact>
       </:meta>
       <:aside>
+        <.icon name="hero-clock" class="size-3.5 text-gray-400 dark:text-gray-500" />
         <span
-          class="tabular-nums"
+          class="-ml-3 tabular-nums"
           id={"execution-elapsed-#{@execution.id}"}
           phx-hook="Elapsed"
           data-since={@execution.started_at && DateTime.to_iso8601(@execution.started_at)}
@@ -223,6 +217,11 @@ defmodule PipeMaestroWeb.NotificationComponents do
   defp status_label(:running), do: "Rodando"
   defp status_label(:awaiting_decision), do: "Aguardando decisão"
   defp status_label(:queued), do: "Na fila"
+
+  defp execution_icon(%Execution{status: :awaiting_decision}), do: "hero-hand-raised"
+  defp execution_icon(%Execution{status: :queued}), do: "hero-clock"
+  defp execution_icon(%Execution{type: :proposal}), do: "hero-light-bulb"
+  defp execution_icon(%Execution{}), do: "hero-play"
 
   defp execution_tone(:running), do: :running
   defp execution_tone(:awaiting_decision), do: :awaiting

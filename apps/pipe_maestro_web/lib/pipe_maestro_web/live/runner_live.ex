@@ -24,6 +24,7 @@ defmodule PipeMaestroWeb.RunnerLive do
   import PipeMaestroWeb.JobComponents,
     only: [
       job_status: 1,
+      job_mark: 1,
       job_tone: 1,
       prompt_summary: 1,
       prompt_summary: 2,
@@ -332,9 +333,14 @@ defmodule PipeMaestroWeb.RunnerLive do
                   tone={job_tone(job)}
                   dense
                 >
+                  <:leading><.job_mark job={job} small /></:leading>
                   <:title>{prompt_summary(job.prompt)}</:title>
                   <:badge><.job_status job={job} /></:badge>
-                  <:aside>{time_ago(job.started_at || job.inserted_at, @now)}</:aside>
+                  <:aside>
+                    <.record_metric icon="hero-clock">
+                      {time_ago(job.started_at || job.inserted_at, @now)}
+                    </.record_metric>
+                  </:aside>
                 </.record_card>
               </.record_list>
             </.card_content>
@@ -363,21 +369,38 @@ defmodule PipeMaestroWeb.RunnerLive do
                   tone={job_tone(job)}
                   dense
                 >
+                  <:leading><.job_mark job={job} small /></:leading>
                   <:title>{job_label(job)}</:title>
                   <:badge>
                     <.job_status job={job} data-testid={"runner-recent-job-status-#{job.id}"} />
                   </:badge>
                   <:aside>
-                    <.record_metric label="duração" testid={"runner-recent-job-duration-#{job.id}"}>
+                    <.record_metric
+                      icon="hero-clock"
+                      title="Duração"
+                      testid={"runner-recent-job-duration-#{job.id}"}
+                    >
                       {format_duration(job.duration_ms || job.wall_ms)}
                     </.record_metric>
-                    <.record_metric label="custo" testid={"runner-recent-job-cost-#{job.id}"}>
+                    <.record_metric
+                      icon="hero-banknotes"
+                      title="Custo"
+                      testid={"runner-recent-job-cost-#{job.id}"}
+                    >
                       {format_cost(job.cost_usd)}
                     </.record_metric>
-                    <.record_metric label="tokens" testid={"runner-recent-job-tokens-#{job.id}"}>
+                    <.record_metric
+                      icon="hero-cpu-chip"
+                      label="tokens"
+                      testid={"runner-recent-job-tokens-#{job.id}"}
+                    >
                       {tokens(job)}
                     </.record_metric>
-                    <.record_metric label="cache" testid={"runner-recent-job-cache-#{job.id}"}>
+                    <.record_metric
+                      icon="hero-bolt"
+                      label="cache"
+                      testid={"runner-recent-job-cache-#{job.id}"}
+                    >
                       {format_percent(Job.cache_hit(job))}
                     </.record_metric>
                   </:aside>

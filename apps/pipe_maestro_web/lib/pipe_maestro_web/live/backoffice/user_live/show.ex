@@ -211,7 +211,11 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Show do
                   <.avatar name={workspace.name} size="sm" random_color shape="rounded" />
                 </:leading>
                 <:title>{workspace.name}</:title>
-                <:meta><span class="font-mono">/w/{workspace.slug}</span></:meta>
+                <:meta>
+                  <.record_fact icon="hero-link" title="Endereço" mono>
+                    /w/{workspace.slug}
+                  </.record_fact>
+                </:meta>
                 <:actions>
                   <.button
                     size="xs"

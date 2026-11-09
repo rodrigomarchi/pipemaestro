@@ -107,15 +107,26 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
           </:leading>
           <:title><span data-testid={"workspace-#{workspace.slug}"}>{workspace.name}</span></:title>
           <:meta>
-            <span class="font-mono" data-testid={"workspace-address-#{workspace.slug}"}>
+            <.record_fact
+              icon="hero-link"
+              title="Endereço"
+              mono
+              testid={"workspace-address-#{workspace.slug}"}
+            >
               /w/{workspace.slug}
-            </span>
+            </.record_fact>
           </:meta>
           <:aside>
-            <.record_metric label="membros" testid={"workspace-member-count-#{workspace.slug}"}>
+            <.record_metric
+              icon="hero-users"
+              label="membros"
+              testid={"workspace-member-count-#{workspace.slug}"}
+            >
               {workspace.member_count}
             </.record_metric>
-            <span>criado em {format_date(workspace.inserted_at)}</span>
+            <.record_metric icon="hero-calendar" title="Criado em">
+              {format_date(workspace.inserted_at)}
+            </.record_metric>
           </:aside>
           <:actions>
             <.button

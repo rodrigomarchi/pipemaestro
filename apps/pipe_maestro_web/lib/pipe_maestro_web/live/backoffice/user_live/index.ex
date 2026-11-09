@@ -75,9 +75,15 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Index do
           <:badge>
             <.status_badge disabled_at={user.disabled_at} data-testid={"user-status-#{user.email}"} />
           </:badge>
-          <:meta>{user.email}</:meta>
           <:meta>
-            <span class="flex flex-wrap gap-1" data-testid={"user-workspaces-#{user.email}"}>
+            <.record_fact icon="hero-envelope" title="E-mail">{user.email}</.record_fact>
+          </:meta>
+          <:meta>
+            <span
+              class="flex flex-wrap items-center gap-1"
+              data-testid={"user-workspaces-#{user.email}"}
+            >
+              <.icon name="hero-building-office-2" class="size-3.5 text-gray-400 dark:text-gray-500" />
               <.badge
                 :for={workspace <- user.workspaces}
                 size="xs"
@@ -88,7 +94,11 @@ defmodule PipeMaestroWeb.Backoffice.UserLive.Index do
               <span :if={user.workspaces == []} class="text-gray-400">nenhum workspace</span>
             </span>
           </:meta>
-          <:aside>criado em {format_date(user.inserted_at)}</:aside>
+          <:aside>
+            <.record_metric icon="hero-calendar" title="Criado em">
+              {format_date(user.inserted_at)}
+            </.record_metric>
+          </:aside>
         </.record_card>
         <:empty_state>
           <.record_empty

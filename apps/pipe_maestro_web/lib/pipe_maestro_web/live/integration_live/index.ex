@@ -66,22 +66,23 @@ defmodule PipeMaestroWeb.IntegrationLive.Index do
             />
           </:badge>
           <:meta>
-            <span>{provider_name(connection.provider)}</span>
-            <span>·</span>
-            <span class="truncate">{connection.base_url}</span>
-            <span :if={connection.bot_login}>· como {connection.bot_login}</span>
+            <.record_fact icon="hero-globe-alt" title="Host">
+              {provider_name(connection.provider)} · {connection.base_url}
+            </.record_fact>
+            <.record_fact :if={connection.bot_login} icon="hero-user-circle" title="Conta do bot">
+              como {connection.bot_login}
+            </.record_fact>
           </:meta>
           <:aside>
-            <.badge size="xs" color="gray" variant="outline" label={auth_name(connection.auth_kind)} />
-            <.badge
-              size="xs"
-              color="gray"
-              variant="outline"
-              label={api_mode_name(connection.api_mode)}
-            />
-            <span>
+            <.record_metric icon="hero-key" title="Autenticação">
+              {auth_name(connection.auth_kind)}
+            </.record_metric>
+            <.record_metric icon="hero-arrows-right-left" title="Modo da API">
+              {api_mode_name(connection.api_mode)}
+            </.record_metric>
+            <.record_metric icon="hero-folder" title="Repositórios vinculados">
               {plural(Map.get(@repo_counts, connection.id, 0), "repositório", "repositórios")}
-            </span>
+            </.record_metric>
           </:aside>
         </.record_card>
         <:empty_state>

@@ -167,7 +167,7 @@ defmodule PipeMaestroWeb.ListComponents do
             <div
               :for={meta <- @meta}
               class={[
-                "mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500 dark:text-gray-400",
+                "mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400",
                 meta[:interactive] && "relative z-10"
               ]}
             >
@@ -177,7 +177,7 @@ defmodule PipeMaestroWeb.ListComponents do
           <div
             :if={@aside != []}
             class={[
-              "flex shrink-0 flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400",
+              "flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400",
               !@dense && "@2xl:max-w-xs @2xl:flex-col @2xl:items-end @2xl:text-right"
             ]}
           >
@@ -209,16 +209,19 @@ defmodule PipeMaestroWeb.ListComponents do
     """
   end
 
-  attr :label, :string, default: nil
+  attr :label, :string, default: nil, doc: "what the number is, when the icon does not say it"
+  attr :icon, :string, default: nil
+  attr :title, :string, default: nil, doc: "what the number is, on hover"
   attr :testid, :string, default: nil
   attr :class, :any, default: nil
   slot :inner_block, required: true
 
-  @doc "One number of a record, with what it is: for a card's `:aside`."
+  @doc "One number of a record, with its icon or what it is: for a card's `:aside`."
   @spec record_metric(map()) :: Phoenix.LiveView.Rendered.t()
   def record_metric(assigns) do
     ~H"""
-    <span class={["inline-flex items-baseline gap-1", @class]}>
+    <span class={["inline-flex items-center gap-1", @class]} title={@title || @label}>
+      <.icon :if={@icon} name={@icon} class="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
       <span :if={@label} class="text-gray-400 dark:text-gray-500">{@label}</span>
       <span class="font-medium text-gray-700 dark:text-gray-200" data-testid={@testid}>
         {render_slot(@inner_block)}
@@ -228,7 +231,28 @@ defmodule PipeMaestroWeb.ListComponents do
   end
 
   attr :icon, :string, required: true
+  attr :title, :string, default: nil, doc: "what the fact is, on hover"
+  attr :mono, :boolean, default: false, doc: "a path, a host or an address"
+  attr :testid, :string, default: nil
+  attr :class, :any, default: nil
+  slot :inner_block, required: true
+
+  @doc "One fact of a record with its icon (its project, its runner, who, when): for a card's `:meta`."
+  @spec record_fact(map()) :: Phoenix.LiveView.Rendered.t()
+  def record_fact(assigns) do
+    ~H"""
+    <span class={["inline-flex min-w-0 items-center gap-1", @class]} title={@title}>
+      <.icon name={@icon} class="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
+      <span class={["truncate", @mono && "font-mono"]} data-testid={@testid}>
+        {render_slot(@inner_block)}
+      </span>
+    </span>
+    """
+  end
+
+  attr :icon, :string, required: true
   attr :color, :string, default: "gray", values: ~w(gray primary info warning danger success)
+  attr :small, :boolean, default: false, doc: "for a dense card"
   attr :testid, :string, default: nil
 
   @doc "What leads a card: its kind as an icon on a tile."
@@ -236,29 +260,41 @@ defmodule PipeMaestroWeb.ListComponents do
   def record_icon(assigns) do
     ~H"""
     <span
-      class={["flex size-9 items-center justify-center rounded-lg", icon_color(@color)]}
+      class={[
+        "flex shrink-0 items-center justify-center rounded-lg ring-1 ring-inset",
+        if(@small, do: "size-8", else: "size-10"),
+        icon_color(@color)
+      ]}
       data-testid={@testid}
     >
-      <.icon name={@icon} class="size-5" />
+      <.icon name={@icon} class={if @small, do: "size-4", else: "size-5"} />
     </span>
     """
   end
 
-  defp icon_color("gray"), do: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+  defp icon_color("gray"),
+    do:
+      "bg-gray-100 text-gray-500 ring-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700"
 
   defp icon_color("primary"),
-    do: "bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300"
+    do:
+      "bg-primary-50 text-primary-600 ring-primary-100 dark:bg-primary-950 dark:text-primary-300 dark:ring-primary-900"
 
-  defp icon_color("info"), do: "bg-info-50 text-info-600 dark:bg-info-950 dark:text-info-300"
+  defp icon_color("info"),
+    do:
+      "bg-info-50 text-info-600 ring-info-100 dark:bg-info-950 dark:text-info-300 dark:ring-info-900"
 
   defp icon_color("warning"),
-    do: "bg-warning-50 text-warning-600 dark:bg-warning-950 dark:text-warning-300"
+    do:
+      "bg-warning-50 text-warning-600 ring-warning-100 dark:bg-warning-950 dark:text-warning-300 dark:ring-warning-900"
 
   defp icon_color("danger"),
-    do: "bg-danger-50 text-danger-600 dark:bg-danger-950 dark:text-danger-300"
+    do:
+      "bg-danger-50 text-danger-600 ring-danger-100 dark:bg-danger-950 dark:text-danger-300 dark:ring-danger-900"
 
   defp icon_color("success"),
-    do: "bg-success-50 text-success-600 dark:bg-success-950 dark:text-success-300"
+    do:
+      "bg-success-50 text-success-600 ring-success-100 dark:bg-success-950 dark:text-success-300 dark:ring-success-900"
 
   attr :more, :boolean, required: true, doc: "there are more records to load"
   attr :event, :string, default: "load_more"

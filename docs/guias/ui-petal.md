@@ -228,6 +228,39 @@ Toda listagem de registros é uma coluna de cards, igual no desktop e no celular
   - `:actions`: os botões.
 - **As métricas** ficam à direita quando o card é largo (container query) e embaixo antes
   disso. Não há layout separado para o celular.
+- **Todo card tem identidade por ícone:**
+  - **No início do card:** `record_icon/1`, um quadrado colorido, com `small` nos cards
+    `dense`. Tarefas e execuções usam `task_mark/1` e `job_mark/1`, cujo ícone e cor
+    seguem o status.
+  - **Nos fatos do `:meta`:** `record_fact/1`, com ícone, `title` e `mono` para caminhos e
+    endereços. Os fatos se separam por espaço, sem "·".
+  - **Nas métricas do `:aside`:** `record_metric/1` com `icon` e `title`, e `label` só
+    quando o ícone não basta.
+- **Vocabulário de ícones**, o mesmo em toda tela:
+
+  | O quê | Ícone |
+  |---|---|
+  | pipeline | `hero-squares-2x2` |
+  | projeto | `hero-folder` |
+  | diretório | `hero-folder-open` |
+  | runner | `hero-server` |
+  | máquina | `hero-computer-desktop` |
+  | pessoa | `hero-user` |
+  | e-mail | `hero-envelope` |
+  | quando | `hero-calendar` |
+  | duração ou espera | `hero-clock` |
+  | custo | `hero-banknotes` |
+  | tokens | `hero-cpu-chip` |
+  | cache | `hero-bolt` |
+  | etapa | `hero-queue-list` |
+  | versão ou label | `hero-tag` |
+  | endereço | `hero-link` |
+  | visto | `hero-eye` |
+  | capacidade | `hero-squares-plus` |
+  | gatilho | `hero-bolt` |
+  | repositório | `hero-code-bracket` |
+  | segredo | `hero-key` |
+
 - **Com `navigate`, `patch` ou `href`, o card inteiro é o link do registro.** Com
   `click` (e `click_value`, `click_target`), o card manda um evento, como numa
   notificação, que se marca lida antes de abrir. `link_testid` e `link_attrs` vão no

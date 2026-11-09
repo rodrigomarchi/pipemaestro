@@ -58,15 +58,17 @@ defmodule PipeMaestroWeb.BoardLive.RunnersTab do
               />
             </:badge>
             <:aside>
-              <.record_metric label="capacidade">{runner.capacity}</.record_metric>
-              <.record_metric label="versão">
+              <.record_metric icon="hero-squares-plus" title="Capacidade">
+                {runner.capacity}
+              </.record_metric>
+              <.record_metric icon="hero-tag" title="Versão">
                 <span class="font-mono">{runner.runner_version}</span>
               </.record_metric>
-              <span>
-                visto {if MapSet.member?(@online, runner.id),
+              <.record_metric icon="hero-eye" title="Visto">
+                {if MapSet.member?(@online, runner.id),
                   do: "agora",
                   else: time_ago(runner.last_seen_at, @now)}
-              </span>
+              </.record_metric>
             </:aside>
           </.record_card>
         </.record_list>

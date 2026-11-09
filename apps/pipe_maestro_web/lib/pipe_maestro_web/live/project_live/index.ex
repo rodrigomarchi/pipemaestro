@@ -100,13 +100,16 @@ defmodule PipeMaestroWeb.ProjectLive.Index do
             />
           </:badge>
           <:meta>
-            <span class="inline-flex items-center gap-1">
-              <.icon name="hero-server" class="size-3.5" />
-              <span data-testid={"project-runner-#{project.directory}"}>
-                {if project.runner, do: project.runner.name, else: "sem runner"}
-              </span>
-            </span>
-            <span class="font-mono">{project.directory}</span>
+            <.record_fact
+              icon="hero-server"
+              title="Runner"
+              testid={"project-runner-#{project.directory}"}
+            >
+              {if project.runner, do: project.runner.name, else: "sem runner"}
+            </.record_fact>
+            <.record_fact icon="hero-folder-open" title="Diretório" mono>
+              {project.directory}
+            </.record_fact>
           </:meta>
           <:body interactive>
             <.alert
@@ -129,21 +132,28 @@ defmodule PipeMaestroWeb.ProjectLive.Index do
             </.alert>
             <dl class="grid gap-x-6 gap-y-2 sm:grid-cols-2">
               <div :for={
-                {label, value} <- [
-                  {"Setup", project.setup_command},
-                  {"Testes", project.test_command},
-                  {"Lint", project.lint_command},
-                  {"Copiar para o worktree", Enum.join(project.copy_paths, ", ")}
+                {label, icon, value} <- [
+                  {"Setup", "hero-wrench", project.setup_command},
+                  {"Testes", "hero-beaker", project.test_command},
+                  {"Lint", "hero-sparkles", project.lint_command},
+                  {"Copiar para o worktree", "hero-document-duplicate",
+                   Enum.join(project.copy_paths, ", ")}
                 ]
               }>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{label}</dt>
+                <dt class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                  <.icon name={icon} class="size-3.5 text-gray-400 dark:text-gray-500" />
+                  {label}
+                </dt>
                 <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
                   {if value in [nil, ""], do: "—", else: value}
                 </dd>
               </div>
             </dl>
             <div :if={tasks != []} class="mt-3">
-              <p class="text-xs text-gray-500 dark:text-gray-400">Tarefas recentes</p>
+              <p class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                <.icon name="hero-queue-list" class="size-3.5 text-gray-400 dark:text-gray-500" />
+                Tarefas recentes
+              </p>
               <ul class="mt-1 space-y-1" data-testid={"project-recent-tasks-#{project.directory}"}>
                 <li :for={task <- tasks} class="truncate">
                   <.link
