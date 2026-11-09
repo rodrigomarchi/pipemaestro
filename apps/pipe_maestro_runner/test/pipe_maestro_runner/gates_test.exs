@@ -164,7 +164,8 @@ defmodule PipeMaestroRunner.GatesTest do
 
   test "it hands each command's OS pid to whoever may stop it", %{repo: repo} do
     me = self()
-    Gates.run(repo, [counting()], on_os_pid: &send(me, {:pid, &1}))
+    # A command that ends at once may be gone before its pid is read.
+    Gates.run(repo, [gate("sleep 1")], on_os_pid: &send(me, {:pid, &1}))
     assert_received {:pid, pid} when is_integer(pid)
   end
 end
