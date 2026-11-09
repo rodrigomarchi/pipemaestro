@@ -447,7 +447,7 @@ defmodule PipeMaestro.ProposalsTest do
 
     defp both_answered,
       do: [
-        %{"escolhas" => ["5 segundos sob qualquer"], "outro" => nil},
+        %{"escolhas" => ["5 segundos sob qualquer carga"], "outro" => nil},
         %{"escolhas" => [], "outro" => "Só no app móvel"}
       ]
 
@@ -476,7 +476,7 @@ defmodule PipeMaestro.ProposalsTest do
       assert timeout["titulo"] == "Timeout do l"
 
       assert Enum.map(timeout["opcoes"], & &1["rotulo"]) ==
-               ["5 segundos sob qualquer", "30 segundos"]
+               ["5 segundos sob qualquer carga", "30 segundos"]
 
       assert hd(timeout["opcoes"])["recomendada"]
       assert hd(timeout["opcoes"])["preview"] =~ "@timeout"
@@ -507,7 +507,7 @@ defmodule PipeMaestro.ProposalsTest do
 
       assert reason =~ "O agente não considerou a tarefa pronta."
       assert reason =~ ~r/1\. .*Qual o timeout aceitável\?/
-      assert reason =~ "5 segundos sob qualquer (recomendada)"
+      assert reason =~ "5 segundos sob qualquer carga (recomendada)"
       assert reason =~ "30 segundos"
       assert reason =~ ~r/2\. .*Quais telas mostram o erro\?/
     end
@@ -538,7 +538,7 @@ defmodule PipeMaestro.ProposalsTest do
       feedback = input["feedback"]
       assert feedback =~ "Respostas às suas perguntas"
       assert feedback =~ "Qual o timeout aceitável?"
-      assert feedback =~ "5 segundos sob qualquer"
+      assert feedback =~ "5 segundos sob qualquer carga"
       assert feedback =~ "Quais telas mostram o erro?"
       assert feedback =~ "Só no app móvel"
 
