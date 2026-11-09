@@ -3,7 +3,7 @@
  * @flow A [done] A member asks the agent to write a task from an idea, without auto-approval; the proposal opens the new-task form filled with it, and the task runs
  * @flow D [done] A member asks the agent to write a task for a chosen pipeline, auto-approval on (the default); the task is created and started without review
  * @flow E [done] A task the agent finds not ready is left for review, saying why it was not created on its own
- * @flow F Answering the questionnaire of a task not ready asks a new round with the answers, which becomes the task
+ * @flow F [done] Answering the questionnaire of a task not ready asks a new round with the answers, which becomes the task
  * @flow B [done] A task stops for a decision; the agent suggests one, and applying it (retry with its instructions) lets the task finish
  * @flow C [done] An admin asks the agent to improve a pipeline from how its tasks went; the notes are saved and the revised pipeline becomes its next version
  */
@@ -183,8 +183,9 @@ test.describe("Agent proposals", () => {
 
     await projects.open(workspace.slug);
     await app.page.goto(`/w/${workspace.slug}/proposals`);
-    // Three tasks, the decision, the improvement, and the analysis the block asked for by itself.
-    await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(6);
+    // Four tasks (one the round of the answers), the decision, the improvement, and the analysis
+    // the block asked for by itself.
+    await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(7);
     await shot(app.page, "proposals");
     await expectFitsPhone(app.page, "proposals");
   });
