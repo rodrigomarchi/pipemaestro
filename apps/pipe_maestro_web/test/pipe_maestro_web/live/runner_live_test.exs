@@ -416,6 +416,11 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
       assert has_element?(view, "[data-testid=runner-log-not-kept]")
     end
 
+    test "the CLI's sessions not found show with their label" do
+      assert PipeMaestroWeb.RunnerLive.LogTab.kind_label("claude_sessions_not_found") ==
+               "sessões do claude não encontradas"
+    end
+
     test "diagnosis: the latest, and a new one on request through the connection", %{
       conn: conn,
       workspace: workspace,

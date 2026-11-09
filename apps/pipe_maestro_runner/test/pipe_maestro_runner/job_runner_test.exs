@@ -2,12 +2,33 @@ defmodule PipeMaestroRunner.JobRunnerTest do
   use ExUnit.Case, async: true
 
   alias PipeMaestroProtocol.Job
-  alias PipeMaestroRunner.{Claude, JobRunner}
+  alias PipeMaestroRunner.{Claude, ClaudeSessions, JobRunner}
   alias PipeMaestroRunner.Test.FilesServer
 
   @fake Path.expand("../support/fake_claude", __DIR__)
 
   @moduletag :tmp_dir
+
+  @session "2f517ed4-46fa-4ab0-a237-840babadcd65"
+
+  # Receives the runner's operational events (Logger metadata `runner_event`)
+  # logged by any process from now on; tests running at once may log theirs
+  # too, so the assertions match on their own task.
+  defmodule EventSpy do
+    @moduledoc false
+    def log(%{meta: %{runner_event: event} = meta}, %{config: %{pid: pid, ref: ref}}),
+      do: send(pid, {:runner_event, ref, event, Map.get(meta, :event_attrs, %{})})
+
+    def log(_event, _config), do: :ok
+  end
+
+  defp spy_on_events do
+    ref = make_ref()
+    id = :"event_spy_#{System.unique_integer([:positive])}"
+    :ok = :logger.add_handler(id, EventSpy, %{config: %{pid: self(), ref: ref}})
+    on_exit(fn -> :logger.remove_handler(id) end)
+    ref
+  end
 
   defp start_runner(workdir, opts \\ []) do
     start_supervised!(
@@ -762,6 +783,78 @@ defmodule PipeMaestroRunner.JobRunnerTest do
       JobRunner.remove_worktree(runner, "t1", "app")
       assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1"} = reply}, 5_000
       refute Map.has_key?(reply, "error")
+    end
+
+    test "the task's CLI sessions go with its worktree", ctx do
+      projects = Path.join(ctx.tmp_dir, "claude/projects")
+      runner = start_runner(ctx.workdir, root: ctx.root, claude_projects: projects)
+
+      JobRunner.enqueue(runner, %{stage("j1", "t1", nil) | persist_session: true})
+      collect_until_finished("j1")
+      assert ClaudeSessions.marked?(ctx.workdir, "t1")
+
+      cwd = ClaudeSessions.task_cwd(ctx.workdir, "t1")
+      project = Path.join(projects, ClaudeSessions.dir_name(cwd))
+      File.mkdir_p!(Path.join([project, @session, "tool-results"]))
+      File.write!(Path.join(project, @session <> ".jsonl"), JSON.encode!(%{"cwd" => cwd}) <> "\n")
+      File.write!(Path.join([project, @session, "tool-results", "b1.txt"]), "saída")
+      other = Path.join(projects, ClaudeSessions.dir_name(cwd) <> "-x")
+      File.mkdir_p!(other)
+      File.write!(Path.join(other, @session <> ".jsonl"), "{}\n")
+
+      spy = spy_on_events()
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1"} = reply}, 5_000
+      refute Map.has_key?(reply, "error")
+
+      wait_until(fn -> not File.exists?(project) end)
+      refute ClaudeSessions.marked?(ctx.workdir, "t1")
+      assert File.regular?(Path.join(other, @session <> ".jsonl"))
+      dir = Path.join(projects, ClaudeSessions.dir_name(cwd))
+      refute_received {:runner_event, ^spy, "claude_sessions_not_found", %{"dir" => ^dir}}
+    end
+
+    test "a kept session not found: the worktree goes all the same, and an event tells it",
+         ctx do
+      projects = Path.join(ctx.tmp_dir, "claude/projects")
+      runner = start_runner(ctx.workdir, root: ctx.root, claude_projects: projects)
+
+      JobRunner.enqueue(runner, %{stage("j1", "t1", nil) | resume_session_id: "s-1"})
+      collect_until_finished("j1")
+      assert ClaudeSessions.marked?(ctx.workdir, "t1")
+      cwd = ClaudeSessions.task_cwd(ctx.workdir, "t1")
+
+      spy = spy_on_events()
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1"} = reply}, 5_000
+      refute Map.has_key?(reply, "error")
+      refute File.exists?(Path.join([ctx.workdir, "worktrees", "t1"]))
+
+      assert_receive {:runner_event, ^spy, "claude_sessions_not_found", attrs}, 5_000
+      assert attrs["task_id"] == "t1"
+      assert attrs["dir"] == Path.join(projects, ClaudeSessions.dir_name(cwd))
+      assert attrs["reason"] == "not_found"
+      assert Map.has_key?(attrs, "cli_version")
+      refute ClaudeSessions.marked?(ctx.workdir, "t1")
+    end
+
+    test "a task that never kept a session tells nothing when it has none", ctx do
+      projects = Path.join(ctx.tmp_dir, "claude/projects")
+      runner = start_runner(ctx.workdir, root: ctx.root, claude_projects: projects)
+
+      JobRunner.enqueue(runner, stage("j1", "t1", nil))
+      collect_until_finished("j1")
+      refute ClaudeSessions.marked?(ctx.workdir, "t1")
+
+      spy = spy_on_events()
+      JobRunner.remove_worktree(runner, "t1", "app")
+      assert_receive {:job_out, "worktree:removed", %{"task_id" => "t1"} = reply}, 5_000
+      refute Map.has_key?(reply, "error")
+
+      dir =
+        Path.join(projects, ClaudeSessions.dir_name(ClaudeSessions.task_cwd(ctx.workdir, "t1")))
+
+      refute_receive {:runner_event, ^spy, "claude_sessions_not_found", %{"dir" => ^dir}}, 300
     end
 
     test "refuses while the task has a job running or waiting", ctx do
