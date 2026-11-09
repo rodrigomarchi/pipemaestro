@@ -36,8 +36,8 @@ COPY rel rel
 # The image has no .git to read its versions from: `make image` computes and
 # checks the control plane's and the runner's it requires
 # (PipeMaestroProtocol.Version.Git) and passes them. Without either, the build
-# stops here, before compiling; ALLOW_UNVERSIONED=1 builds anyway, with both
-# dev+unknown (a local build only).
+# stops here, before compiling; ALLOW_UNVERSIONED=1 builds anyway, and the
+# missing ones are dev+unknown (a local build only).
 ARG CP_VERSION=""
 ENV CP_VERSION=${CP_VERSION}
 ARG RUNNER_VERSION=""
@@ -46,7 +46,7 @@ ARG ALLOW_UNVERSIONED=""
 
 RUN if [ -z "$CP_VERSION" ] || [ -z "$RUNNER_VERSION" ]; then \
       if [ "$ALLOW_UNVERSIONED" = "1" ]; then \
-        echo "Build local sem versão (ALLOW_UNVERSIONED=1): as duas ficam dev+unknown."; \
+        echo "Build local sem versão (ALLOW_UNVERSIONED=1): as versões que faltam ficam dev+unknown."; \
       else \
         echo "Faltam as versões da imagem: use make image, ou passe --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> (para um build local sem versão, --build-arg ALLOW_UNVERSIONED=1)." >&2; \
         exit 1; \

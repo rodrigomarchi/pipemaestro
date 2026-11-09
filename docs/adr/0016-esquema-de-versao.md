@@ -32,10 +32,10 @@ própria versão. Faltava um número que um operador lesse e comparasse.
      calculado mudaria, então um commit ou uma tag novos aparecem sem `--force`.
    - A variável `CP_VERSION`, quando definida e não vazia na compilação, é usada como
      está. O e2e fixa versões assim, e a imagem Docker também, porque não tem `.git`.
-   - O `make image` calcula `CP_VERSION` e `RUNNER_VERSION` antes do `docker build`. Para
-     se o cálculo falhar ou se uma delas sair do esquema, e só então as passa como
+   - O `make image` calcula `CP_VERSION` e `RUNNER_VERSION` antes do `docker build`. Ele
+     para se o cálculo falhar ou se uma delas sair do esquema, e só então as passa como
      `--build-arg`. O `Dockerfile` exige as duas. A exceção é um build local
-     explícito com `--build-arg ALLOW_UNVERSIONED=1`, em que ficam `dev+unknown`.
+     explícito com `--build-arg ALLOW_UNVERSIONED=1`, em que as que faltam ficam `dev+unknown`.
    - O control plane aceita também uma versão configurada
      (`config :pipe_maestro, PipeMaestro.Version, version: …`), que os
      testes usam para não depender do git do checkout.

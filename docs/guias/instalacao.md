@@ -25,7 +25,7 @@ antes do `docker build` e diz qual versão falhou.
 
 Um `docker build` feito à mão sem as duas versões para antes de compilar e aponta o
 `make image`. Para um build local sem versão, passe `--build-arg ALLOW_UNVERSIONED=1`:
-as duas ficam `dev+unknown`, e o control plane não marca nenhum runner como
+as que faltam ficam `dev+unknown`, e o control plane não marca nenhum runner como
 desatualizado.
 
 ### Variáveis
