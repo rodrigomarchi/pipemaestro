@@ -110,6 +110,11 @@ gates não atendidos. O feedback fica no `StageRun` (`feedback`).
   auto-aprovada termina ([ADR 0031](../adr/0031-auto-aprovacao-da-tarefa-escrita-com-ia.md)).
   A tarefa nasce `running` ou `queued` como qualquer outra, com `proposal_job_id`
   apontando para a proposta; uma proposta gera uma tarefa no máximo.
+- **Origem numa fonte:** a tarefa criada a partir de um item de uma fonte de tarefa
+  ([ADR 0053](../adr/0053-fontes-de-tarefa.md)) guarda `source`, `source_id`, `source_url` e
+  `source_ref`. Cada mudança dela é publicada em `tasks:sourced`, e a fonte a reflete. O
+  motor não conhece a fonte; uma decisão deixa em `pending_source_note` o texto que a fonte
+  leva com a próxima etapa.
 - **Passos em paralelo:** etapas seguidas com o mesmo `group` formam um passo. Elas
   começam juntas, e cada uma passa pelo gate e retenta sozinha. O passo fecha quando
   nenhuma roda mais:
