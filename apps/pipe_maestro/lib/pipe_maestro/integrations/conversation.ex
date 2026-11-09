@@ -6,9 +6,9 @@ defmodule PipeMaestro.Integrations.Conversation do
   - a command in a comment on the task's issue or pull request
     (`PipeMaestro.TaskSources.Commands`), from someone with write access,
     goes to the same functions as the task's screen, on behalf of whoever
-    the task belongs to (`PipeMaestro.TaskSources.apply_command/3`); the host's login is kept in the audit. An applied
-    command gets a 👍; one that does not apply gets an answer with the
-    commands that do;
+    the task belongs to (`PipeMaestro.TaskSources.apply_command/3`); the
+    host's login is kept in the audit. An applied command gets a 👍; one
+    that does not apply gets an answer with the commands that do;
   - a review asking for changes on the pull request of a finished task
     becomes the stage "Correção N";
   - the pull request merged is told on the issue;

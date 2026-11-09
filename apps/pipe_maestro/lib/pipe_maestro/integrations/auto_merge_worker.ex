@@ -3,8 +3,8 @@ defmodule PipeMaestro.Integrations.AutoMergeWorker do
   Looks, every `:every` ms (a minute by default), at the pull requests of the
   tasks waiting for their checks to merge them
   (`PipeMaestro.Integrations.AutoMerge.check/2`). A change of such a task
-  looks at once (`PipeMaestro.Integrations.IssueSource.task_changed/1`); this catches the
-  checks that end on the host with nothing changing on the platform.
+  looks at once (`PipeMaestro.Integrations.IssueSource.task_changed/1`); this
+  catches the checks that end on the host with nothing changing on the platform.
   """
   use GenServer
 
