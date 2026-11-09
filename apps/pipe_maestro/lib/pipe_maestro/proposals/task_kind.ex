@@ -43,10 +43,6 @@ defmodule PipeMaestro.Proposals.TaskKind do
   # (`PipeMaestro.Proposals.answer_questions/4`).
   @feedback_length 8_000
 
-  @doc "How long a round's feedback may be."
-  @spec feedback_length() :: pos_integer()
-  def feedback_length, do: @feedback_length
-
   @impl true
   def name, do: "task"
 

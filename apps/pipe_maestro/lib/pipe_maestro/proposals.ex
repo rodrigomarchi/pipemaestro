@@ -631,7 +631,7 @@ defmodule PipeMaestro.Proposals do
   end
 
   # Each question with its answer; a long "Outro" is cut, so every answer
-  # fits in the round's feedback (`TaskKind.feedback_length/0`).
+  # fits in the round's feedback (`PipeMaestro.Proposals.TaskKind` limits it).
   defp answers_feedback(questions, answers) do
     answers =
       for answer <- answers do
