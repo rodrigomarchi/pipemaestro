@@ -4,6 +4,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
   alias PipeMaestro.{FakeForgejo, Integrations, Jobs, Repo, Runners, RunnerTelemetry, Tasks}
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Runners.Runner
+  alias PipeMaestro.TaskSources.Origin
   alias PipeMaestroProtocol.Hello
   alias PipeMaestroWeb.{RunnerChannel, RunnerSocket, RunnerStatus}
 
@@ -308,7 +309,13 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
             "pipeline_id" => pipeline_fixture(ctx.workspace).id,
             "project_id" => project.id
           },
-          issue: %{linked_repo_id: repo.id, issue_number: 1}
+          origin: %Origin{
+            source: "git_issue",
+            external_id: "https://forge.test/acme/app/issues/1",
+            url: "https://forge.test/acme/app/issues/1",
+            ref: %{"number" => 1},
+            linked_repo_id: repo.id
+          }
         )
 
       task

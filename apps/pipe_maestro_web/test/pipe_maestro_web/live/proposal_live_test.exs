@@ -135,13 +135,13 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
           proposal: %{
             project_id: ctx.app.id,
             request: "O login trava",
-            issue_url: "https://github.com/acme/app/issues/3"
+            source_url: "https://github.com/acme/app/issues/3"
           }
         )
         |> render_submit()
 
       [job] = Proposals.list(ctx.workspace, %{"kind" => "task"})
-      assert Proposals.input(job)["issue_url"] == "https://github.com/acme/app/issues/3"
+      assert Proposals.origin_url(Proposals.input(job)) == "https://github.com/acme/app/issues/3"
     end
 
     test "tasks: a pipeline to write for, and auto-approval on by default", ctx do

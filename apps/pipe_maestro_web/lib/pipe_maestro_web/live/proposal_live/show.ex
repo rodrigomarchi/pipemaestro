@@ -661,14 +661,14 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           </span>
           <span :if={@job.runner}>no runner {@job.runner.name}</span>
           <a
-            :if={@input["issue_url"]}
-            href={@input["issue_url"]}
+            :if={Proposals.origin_url(@input)}
+            href={Proposals.origin_url(@input)}
             target="_blank"
             rel="noopener"
             class="flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
             data-testid="proposal-issue"
           >
-            {IntegrationComponents.issue_label(@input["issue_url"])}
+            {IntegrationComponents.issue_label(Proposals.origin_url(@input))}
             <.icon name="hero-arrow-top-right-on-square" class="size-3" />
           </a>
           <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>

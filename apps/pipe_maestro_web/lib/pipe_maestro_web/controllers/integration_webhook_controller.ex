@@ -4,20 +4,26 @@ defmodule PipeMaestroWeb.IntegrationWebhookController do
   (`POST /api/integrations/<connection>/webhook`); the GitHub App has one for
   every installation (`POST /api/integrations/github/webhook`). The
   delivery is checked against the connection's secret, recorded and answered
-  at once; processing happens in the background
-  (`PipeMaestro.Integrations.Ingest`), since hosts give up on a slow answer
-  and never retry.
+  at once; processing happens in the background, since hosts give up on a
+  slow answer and never retry. Both go to the task source of the issues of a
+  git host (`PipeMaestro.TaskSources`, `PipeMaestro.Integrations.IssueSource`).
   """
   use PipeMaestroWeb, :controller
 
-  alias PipeMaestro.Integrations.Ingest
+  alias PipeMaestro.Integrations.IssueSource
+  alias PipeMaestro.TaskSources
 
   @doc "Takes one delivery of the platform's GitHub App, for whichever installation it is."
   @spec receive_app_event(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def receive_app_event(conn, _params) do
     headers = Map.new(conn.req_headers)
 
-    case Ingest.receive_app_webhook(headers, conn.assigns[:raw_body] || "") do
+    case TaskSources.receive_webhook(
+           IssueSource.key(),
+           nil,
+           headers,
+           conn.assigns[:raw_body] || ""
+         ) do
       {:ok, %{id: id}} ->
         conn |> put_status(202) |> json(%{delivery_id: id})
 
@@ -43,7 +49,12 @@ defmodule PipeMaestroWeb.IntegrationWebhookController do
   def receive_event(conn, %{"connection_id" => connection_id}) do
     headers = Map.new(conn.req_headers)
 
-    case Ingest.receive_webhook(connection_id, headers, conn.assigns[:raw_body] || "") do
+    case TaskSources.receive_webhook(
+           IssueSource.key(),
+           connection_id,
+           headers,
+           conn.assigns[:raw_body] || ""
+         ) do
       {:ok, delivery} ->
         conn |> put_status(202) |> json(%{delivery_id: delivery.id})
 
