@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { clickPageAction } from "../helpers/pageActions";
+import { shot } from "../helpers/screenshots";
 
 /**
  * The backoffice at /backoffice. Every element is reached by its
@@ -94,6 +95,8 @@ export class BackofficePage {
     quotaMib?: string;
     eventsDays?: string;
     eventsAfter?: "metadata" | "delete";
+    /** Captures the filled form under this name (E2E_SHOTS). */
+    shot?: string;
   }) {
     await clickPageAction(this.page, "edit-workspace");
     if (policy.filesDays !== undefined) {
@@ -108,6 +111,7 @@ export class BackofficePage {
     if (policy.eventsAfter !== undefined) {
       await this.page.getByTestId("workspace-events-after").selectOption(policy.eventsAfter);
     }
+    if (policy.shot) await shot(this.page.getByTestId("workspace-name").locator("xpath=ancestor::form"), policy.shot);
     await this.page.getByTestId("workspace-save").click();
     await this.expectToast(`Workspace ${name} atualizado.`);
   }

@@ -44,6 +44,7 @@ test.describe("Task files retention", () => {
       quotaMib: "1",
       eventsDays: "30",
       eventsAfter: "metadata",
+      shot: "backoffice-retention-form",
     });
     await backoffice.openWorkspace(workspace.slug);
     await expect(backoffice.filesUsage).toContainText("de 1 MiB");
