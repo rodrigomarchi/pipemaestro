@@ -103,7 +103,7 @@ defmodule PipeMaestroWeb.ProjectLiveRunnerTest do
       {:error, {:live_redirect, %{to: path}}} =
         view |> element("[data-testid=project-analyze]") |> render_click()
 
-      [job] = Proposals.list_recent(ctx.workspace)
+      [job] = Proposals.list(ctx.workspace)
       assert Proposals.kind(job) == "project"
       assert path == "/w/#{ctx.workspace.slug}/proposals/#{job.id}"
       assert Projects.list_projects(ctx.workspace) == []

@@ -251,30 +251,6 @@ defmodule PipeMaestro.Proposals do
 
   def checks(_other), do: []
 
-  @doc "The workspace's latest proposals (of `kinds`, or all), newest first."
-  @spec list_recent(Workspace.t(), [String.t()] | :all, pos_integer()) :: [Job.t()]
-  def list_recent(%Workspace{id: workspace_id}, kinds \\ :all, limit \\ 50) do
-    query =
-      from j in Job,
-        where: j.workspace_id == ^workspace_id,
-        where: fragment("(?->'proposal') IS NOT NULL", j.context),
-        order_by: [desc: j.inserted_at],
-        limit: ^limit,
-        preload: [:runner, :created_by_user]
-
-    query =
-      if kinds == :all,
-        do: query,
-        else:
-          where(
-            query,
-            [j],
-            fragment("coalesce(?->'proposal'->>'kind', 'pipeline')", j.context) in ^kinds
-          )
-
-    Repo.all(query)
-  end
-
   @doc """
   Has the agent write the task for an issue of a linked repository
   (`%{"title", "body", "html_url", "number"}`), on the project the repository

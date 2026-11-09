@@ -319,7 +319,7 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
             </:action>
           </.card_header>
           <.card_content :if={@runners != []}>
-            <.record_list id="workspace-runners-table">
+            <.record_list id="workspace-runners-list">
               <.record_card
                 :for={runner <- @runners}
                 id={"workspace-runner-#{runner.id}"}

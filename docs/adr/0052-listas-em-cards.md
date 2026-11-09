@@ -20,7 +20,8 @@ linha. As telas de detalhe ganharam o trilho e os cards de lugar
 
 1. **Toda listagem de registros é uma coluna de cards** (`PipeMaestroWeb.ListComponents`):
    - `record_list/1` é a lista; `record_card/1`, cada registro;
-   - `record_metric/1` é um número do registro; `record_empty/1`, o estado vazio;
+   - `record_metric/1` é um número do registro; `record_icon/1`, o ícone que abre o card;
+     `record_empty/1`, o estado vazio;
    - `load_more/1` traz a próxima página.
 2. **Um layout só, no desktop e no celular.**
    - O card põe as métricas à direita quando é largo, por container query, e embaixo antes

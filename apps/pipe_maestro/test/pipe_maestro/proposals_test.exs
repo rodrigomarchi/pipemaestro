@@ -118,9 +118,9 @@ defmodule PipeMaestro.ProposalsTest do
              }
 
       assert Proposals.title(job) == "PRs"
-      assert [listed] = Proposals.list_recent(ctx.workspace)
+      assert [listed] = Proposals.list(ctx.workspace)
       assert listed.id == job.id
-      assert Proposals.list_recent(ctx.workspace, ["task"]) == []
+      assert Proposals.list(ctx.workspace, %{"kind" => "task"}) == []
       assert Proposals.get_proposal!(ctx.workspace, job.id).id == job.id
 
       assert {:error, changeset} =

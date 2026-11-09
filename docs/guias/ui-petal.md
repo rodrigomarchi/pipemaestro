@@ -219,7 +219,7 @@ Toda listagem de registros é uma coluna de cards, igual no desktop e no celular
 ```
 
 - **Os lugares do card:**
-  - `:leading`: ícone, avatar ou tipo;
+  - `:leading`: ícone (`record_icon/1`, um ícone num quadrado com cor), avatar ou tipo;
   - `:title`: o título;
   - `:badge`: o status, ao lado do título;
   - `:meta`: a linha de fatos;
@@ -228,7 +228,10 @@ Toda listagem de registros é uma coluna de cards, igual no desktop e no celular
   - `:actions`: os botões.
 - **As métricas** ficam à direita quando o card é largo (container query) e embaixo antes
   disso. Não há layout separado para o celular.
-- **Com `navigate`, `patch` ou `href`, o card inteiro é o link do registro.**
+- **Com `navigate`, `patch` ou `href`, o card inteiro é o link do registro.** Com
+  `click` (e `click_value`, `click_target`), o card manda um evento, como numa
+  notificação, que se marca lida antes de abrir. `link_testid` e `link_attrs` vão no
+  link ou no botão do título.
   - O link do título se estende sobre o card; não aninhe outro link no título.
   - `:meta` e `:body` com links, botões ou formulário levam `interactive`, que os põe por
     cima do link. `:actions` já vem por cima.

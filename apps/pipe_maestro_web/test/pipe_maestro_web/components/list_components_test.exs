@@ -82,6 +82,27 @@ defmodule PipeMaestroWeb.ListComponentsTest do
     refute html =~ "hero-chevron-right"
   end
 
+  test "a card that sends an event is a button stretched over it, with its attributes" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <ListComponents.record_card
+        click="open"
+        click_value="n1"
+        link_testid="item-n1"
+        link_attrs={%{"data-unread" => "true"}}
+      >
+        <:title>Pronta</:title>
+      </ListComponents.record_card>
+      """)
+
+    assert html =~ ~r/<button[^>]*phx-click="open"[^>]*phx-value-id="n1"/
+    assert html =~ ~r/<button[^>]*data-testid="item-n1"[^>]*data-unread="true"/
+    assert html =~ "after:absolute after:inset-0"
+    assert html =~ "hero-chevron-right"
+  end
+
   test "a tone calls attention" do
     assert render_card(%{tone: :awaiting}) =~ "border-warning-400"
     assert render_card(%{tone: :running}) =~ "border-info-400"

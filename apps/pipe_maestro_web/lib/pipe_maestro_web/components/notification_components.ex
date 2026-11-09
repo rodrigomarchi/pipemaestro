@@ -83,8 +83,15 @@ defmodule PipeMaestroWeb.NotificationComponents do
     >
       <:leading><.icon name={@icon} class={["mt-0.5 size-5", @color]} /></:leading>
       <:title>
-        <span class={["block", !@unread && "font-normal"]}>{@notification.title}</span>
-        <span :if={@unread} class="sr-only">não lida</span>
+        <span class={["block", !@unread && "font-normal"]}>
+          {@notification.title}
+          <span
+            :if={@unread}
+            class="ml-1 inline-block size-2 rounded-full bg-primary-500 align-middle"
+            aria-hidden="true"
+          ></span>
+          <span :if={@unread} class="sr-only">não lida</span>
+        </span>
         <span
           :if={@notification.body}
           class="prose prose-sm mt-1 line-clamp-2 block max-w-none font-normal text-gray-600 dark:prose-invert dark:text-gray-400"
@@ -92,9 +99,6 @@ defmodule PipeMaestroWeb.NotificationComponents do
           {Markdown.to_html(@notification.body)}
         </span>
       </:title>
-      <:badge>
-        <span :if={@unread} class="size-2 rounded-full bg-primary-500" aria-hidden="true"></span>
-      </:badge>
       <:meta>
         <span
           id={"notification-time-#{@notification.id}"}
