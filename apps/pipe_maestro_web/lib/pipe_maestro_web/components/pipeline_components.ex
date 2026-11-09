@@ -31,7 +31,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
   import PipeMaestroWeb.TabComponents, only: [tab_panel: 1]
 
   alias PipeMaestro.Pipelines.{Json, Pipeline, Stage}
-  alias PipeMaestroWeb.{Markdown, PipelineDiagram}
+  alias PipeMaestroWeb.{ListComponents, Markdown, PipelineDiagram}
 
   @doc "What a delivery is called."
   @spec delivery_label(String.t() | nil) :: String.t()
@@ -421,15 +421,8 @@ defmodule PipeMaestroWeb.PipelineComponents do
     """
   end
 
-  defp place_border(:running), do: "border-info-400 ring-2 ring-info-400/30 dark:border-info-600"
-
-  defp place_border(:awaiting),
-    do: "border-warning-400 ring-2 ring-warning-400/40 dark:border-warning-600"
-
-  defp place_border(:ready),
-    do: "border-success-400 ring-2 ring-success-400/30 dark:border-success-600"
-
-  defp place_border(nil), do: "border-gray-200 dark:border-gray-800"
+  defp place_border(:ready), do: ListComponents.attention_class(:success)
+  defp place_border(tone), do: ListComponents.attention_class(tone)
 
   # A pipeline's stage, which no task has run, is numbered in the brand's tint.
   defp marker_tint(nil),
