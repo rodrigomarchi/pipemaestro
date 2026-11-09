@@ -197,62 +197,30 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
         testid="pipelines-proposals"
       />
 
-      <.card :if={@pipelines == []} variant="outline">
-        <.card_content>
-          <.empty
-            data-testid="no-pipelines"
-            title="Nenhum pipeline ainda"
-            description="Comece pelos pipelines padrão (correção de bug, funcionalidade, refatoração, revisão, investigação de produção e outros) e ajuste os prompts ao seu time."
-          >
-            <:icon><.icon name="hero-squares-2x2" /></:icon>
-            <:actions>
-              <.button icon="hero-sparkles" phx-click="create_defaults">
-                Criar pipelines padrão
-              </.button>
-            </:actions>
-          </.empty>
-        </.card_content>
-      </.card>
-
-      <div class="space-y-4">
-        <.card
+      <.record_list id="pipelines" testid="pipelines" empty={@pipelines == []}>
+        <.record_card
           :for={pipeline <- @pipelines}
-          variant="outline"
-          data-testid={"pipeline-#{pipeline.name}"}
+          id={"pipeline-#{pipeline.id}"}
+          testid={"pipeline-#{pipeline.name}"}
+          navigate={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}"}
+          link_testid={"pipeline-open-#{pipeline.name}"}
         >
-          <.card_content class="flex h-full flex-col">
-            <div class="flex items-start gap-3">
-              <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-950 dark:text-primary-300">
-                <.icon name="hero-squares-2x2" class="size-5" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center justify-between gap-3">
-                  <h3 class="truncate font-semibold text-gray-900 dark:text-white">
-                    <.link
-                      navigate={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}"}
-                      class="hover:text-primary-600 dark:hover:text-primary-400"
-                      data-testid={"pipeline-open-#{pipeline.name}"}
-                    >
-                      {pipeline.name}
-                    </.link>
-                  </h3>
-                  <.badge
-                    size="sm"
-                    variant="outline"
-                    color="gray"
-                    label={"v#{pipeline.version}"}
-                    data-testid={"pipeline-version-#{pipeline.name}"}
-                  />
-                </div>
-                <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {Markdown.inline_html(pipeline.description)}
-                </div>
-              </div>
-            </div>
-            <dl
-              class="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400"
-              data-testid={"pipeline-meta-#{pipeline.name}"}
-            >
+          <:leading><.record_icon icon="hero-squares-2x2" color="primary" /></:leading>
+          <:title>{pipeline.name}</:title>
+          <:badge>
+            <.badge
+              size="sm"
+              variant="outline"
+              color="gray"
+              label={"v#{pipeline.version}"}
+              data-testid={"pipeline-version-#{pipeline.name}"}
+            />
+          </:badge>
+          <:meta>
+            <span class="text-sm">{Markdown.inline_html(pipeline.description)}</span>
+          </:meta>
+          <:aside>
+            <dl class="contents" data-testid={"pipeline-meta-#{pipeline.name}"}>
               <div class="flex items-center gap-1">
                 <dt><.icon name={delivery_icon(pipeline.delivery)} class="size-4" /></dt>
                 <dd>{delivery_label(pipeline.delivery)}</dd>
@@ -266,65 +234,80 @@ defmodule PipeMaestroWeb.PipelineLive.Index do
                 <dd>{stages_label(length(pipeline.stages))}</dd>
               </div>
             </dl>
+          </:aside>
+          <:body>
             <.pipeline_diagram
               diagram={PipelineDiagram.build(pipeline)}
               mode={:compact}
-              class="mt-4 flex-1"
               testid={"pipeline-preview-#{pipeline.name}"}
             />
-            <div class="mt-4 flex flex-wrap justify-end gap-1 border-t border-gray-100 pt-3 dark:border-gray-800">
-              <.button
-                size="xs"
-                variant="ghost"
-                color="gray"
-                icon="hero-arrow-down-tray"
-                phx-click="export"
-                phx-value-id={pipeline.id}
-                data-testid={"pipeline-export-#{pipeline.name}"}
-              >
-                Exportar
+          </:body>
+          <:actions>
+            <.button
+              size="xs"
+              variant="ghost"
+              color="gray"
+              icon="hero-arrow-down-tray"
+              phx-click="export"
+              phx-value-id={pipeline.id}
+              data-testid={"pipeline-export-#{pipeline.name}"}
+            >
+              Exportar
+            </.button>
+            <.button
+              :if={can?(@current_scope, :manage_pipelines)}
+              size="xs"
+              variant="ghost"
+              color="gray"
+              icon="hero-arrow-trending-up"
+              phx-click="open_improve"
+              phx-value-id={pipeline.id}
+              data-testid={"pipeline-improve-#{pipeline.name}"}
+            >
+              Melhorar com IA
+            </.button>
+            <.button
+              :if={can?(@current_scope, :manage_pipelines)}
+              link_type="live_redirect"
+              to={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}/edit"}
+              size="xs"
+              variant="ghost"
+              color="gray"
+              icon="hero-pencil-square"
+              data-testid={"pipeline-edit-#{pipeline.name}"}
+            >
+              Editar
+            </.button>
+            <.button
+              :if={can?(@current_scope, :manage_pipelines)}
+              size="xs"
+              variant="ghost"
+              color="danger"
+              icon="hero-trash"
+              phx-click="delete"
+              phx-value-id={pipeline.id}
+              data-confirm={"Remover #{pipeline.name}? Tarefas que já o usaram não mudam."}
+              data-testid={"pipeline-delete-#{pipeline.name}"}
+            >
+              Remover
+            </.button>
+          </:actions>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-pipelines"
+            icon="hero-squares-2x2"
+            title="Nenhum pipeline ainda"
+            description="Comece pelos pipelines padrão (correção de bug, funcionalidade, refatoração, revisão, investigação de produção e outros) e ajuste os prompts ao seu time."
+          >
+            <:actions>
+              <.button icon="hero-sparkles" phx-click="create_defaults">
+                Criar pipelines padrão
               </.button>
-              <.button
-                :if={can?(@current_scope, :manage_pipelines)}
-                size="xs"
-                variant="ghost"
-                color="gray"
-                icon="hero-arrow-trending-up"
-                phx-click="open_improve"
-                phx-value-id={pipeline.id}
-                data-testid={"pipeline-improve-#{pipeline.name}"}
-              >
-                Melhorar com IA
-              </.button>
-              <.button
-                :if={can?(@current_scope, :manage_pipelines)}
-                link_type="live_redirect"
-                to={~p"/w/#{@current_scope.workspace.slug}/pipelines/#{pipeline.id}/edit"}
-                size="xs"
-                variant="ghost"
-                color="gray"
-                icon="hero-pencil-square"
-                data-testid={"pipeline-edit-#{pipeline.name}"}
-              >
-                Editar
-              </.button>
-              <.button
-                :if={can?(@current_scope, :manage_pipelines)}
-                size="xs"
-                variant="ghost"
-                color="danger"
-                icon="hero-trash"
-                phx-click="delete"
-                phx-value-id={pipeline.id}
-                data-confirm={"Remover #{pipeline.name}? Tarefas que já o usaram não mudam."}
-                data-testid={"pipeline-delete-#{pipeline.name}"}
-              >
-                Remover
-              </.button>
-            </div>
-          </.card_content>
-        </.card>
-      </div>
+            </:actions>
+          </.record_empty>
+        </:empty_state>
+      </.record_list>
 
       <.modal
         :if={@exported}

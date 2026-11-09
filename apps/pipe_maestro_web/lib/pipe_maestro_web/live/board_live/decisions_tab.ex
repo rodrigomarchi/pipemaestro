@@ -64,29 +64,24 @@ defmodule PipeMaestroWeb.BoardLive.DecisionsTab do
   @spec decision_list(map()) :: Phoenix.LiveView.Rendered.t()
   def decision_list(assigns) do
     ~H"""
-    <div :if={@awaiting != []} class="divide-y divide-gray-200 dark:divide-gray-800">
-      <.link
+    <.record_list :if={@awaiting != []}>
+      <.record_card
         :for={task <- @awaiting}
+        testid={"#{@testid}-#{task.id}"}
         navigate={~p"/w/#{@slug}/tasks/#{task.id}"}
-        class="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
-        data-testid={"#{@testid}-#{task.id}"}
+        tone={:awaiting}
+        dense
       >
-        <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-warning-100 text-warning-600 dark:bg-warning-500/15 dark:text-warning-400">
-          <.icon name="hero-hand-raised" class="size-4" />
-        </span>
-        <span class="min-w-0">
-          <span class="block text-sm font-semibold text-gray-900 dark:text-white">
-            {task.title}
-            <span class="font-normal text-gray-500 dark:text-gray-400">
-              · {stage_progress(task)}
-            </span>
-          </span>
-          <span class="block text-sm text-gray-600 dark:text-gray-400">
+        <:leading><.record_icon icon="hero-hand-raised" color="warning" /></:leading>
+        <:title>{task.title}</:title>
+        <:meta>{stage_progress(task)}</:meta>
+        <:body>
+          <span class="text-gray-600 dark:text-gray-400">
             {Markdown.inline_html(task.decision_reason)}
           </span>
-        </span>
-      </.link>
-    </div>
+        </:body>
+      </.record_card>
+    </.record_list>
     """
   end
 end

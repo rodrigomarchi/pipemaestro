@@ -1800,6 +1800,15 @@ defmodule PipeMaestro.TasksTest do
                Enum.sort([a.id, c.id])
 
       assert ids.(%{"pipeline" => "", "runner_id" => ""}) == Enum.sort([a.id, b.id, c.id])
+
+      # A page: the newest ones first, filtered or not.
+      newest = ctx.workspace |> Tasks.list_tasks() |> Enum.map(& &1.id)
+
+      assert ctx.workspace |> Tasks.list_tasks(%{}, limit: 2) |> Enum.map(& &1.id) ==
+               Enum.take(newest, 2)
+
+      assert [%{id: id}] = Tasks.list_tasks(ctx.workspace, %{"pipeline" => "Outro"}, limit: 1)
+      assert id == b.id
     end
 
     test "searches titles and prompts", ctx do

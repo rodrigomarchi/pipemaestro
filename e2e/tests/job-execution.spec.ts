@@ -215,6 +215,7 @@ test.describe("Job execution", () => {
     await expect(jobs.listStatus(slowId)).toHaveText("Cancelado");
     await expect(jobs.listStatus(failedId)).toHaveText("Falhou");
     await shot(app.page, "jobs-list");
+    await expectFitsPhone(app.page, "jobs-list");
 
     // Flow F: a run near the account's limits marks its runner.
     await jobs.create("App", "Gaste a conta [limite]");
@@ -222,6 +223,7 @@ test.describe("Job execution", () => {
     await new RunnersPage(app.page).open(workspace.slug);
     await expect(app.page.getByTestId(`runner-near-limit-${runnerName}`)).toBeVisible();
     await shot(app.page, "runners-near-limit");
+    await expectFitsPhone(app.page, "runners-near-limit");
     await app.page.getByTestId(`runner-link-${runnerName}`).click();
     await expect(app.page.getByTestId("runner-rate-limit-five_hour")).toContainText("86%");
     await expect(app.page.getByTestId("runner-rate-limit-seven_day")).toContainText("31%");

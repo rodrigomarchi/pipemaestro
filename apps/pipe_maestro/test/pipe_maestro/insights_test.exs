@@ -183,7 +183,7 @@ defmodule PipeMaestro.InsightsTest do
       Maintenance.run(DateTime.utc_now())
 
       assert Jobs.list_events(job) == []
-      assert Jobs.list_telemetry(job) == []
+      assert job_telemetry(job) == []
       assert Insights.job(Repo.reload!(job)) == before
     end
 

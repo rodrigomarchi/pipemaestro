@@ -347,6 +347,7 @@ test.describe("Task pipeline", () => {
     await expect(tasks.listStatus(bugId)).toHaveText("Concluída");
     await expect(tasks.listStatus(blockedId)).toHaveText("Concluída");
     await shot(app.page, "tasks-list");
+    await expectFitsPhone(app.page, "tasks-list");
 
     await app.page.getByTestId("sidebar-board").click();
     await app.expectBoardTab("visao");

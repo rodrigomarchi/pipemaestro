@@ -606,7 +606,7 @@ defmodule PipeMaestroWeb.RunnerChannelTest do
         })
 
       assert_reply ref, :ok
-      assert [%{name: "api_request"}] = Jobs.list_telemetry(Jobs.get_job!(ctx.workspace, job.id))
+      assert [%{name: "api_request"}] = job_telemetry(Jobs.get_job!(ctx.workspace, job.id))
 
       ref = push(channel, "job:telemetry", %{"job_id" => job.id, "records" => "não é lista"})
       assert_reply ref, :error, %{"reason" => "invalid"}

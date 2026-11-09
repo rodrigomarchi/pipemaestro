@@ -6,7 +6,7 @@ defmodule PipeMaestroWeb.PullRequestsLive do
   """
   use PipeMaestroWeb, :live_view
 
-  import PipeMaestroWeb.TaskComponents, only: [task_status: 1]
+  import PipeMaestroWeb.TaskComponents, only: [task_status: 1, task_tone: 1]
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1]
 
@@ -44,64 +44,50 @@ defmodule PipeMaestroWeb.PullRequestsLive do
       active={:pull_requests}
       title="Pull requests"
     >
-      <.card variant="outline">
-        <.card_header
-          title="PRs abertos pelas tarefas"
-          description="Pipelines com entrega em PR abrem um rascunho na primeira etapa e o marcam como pronto na última."
-        />
-        <.card_content>
-          <p
-            :if={@tasks == []}
-            class="text-sm text-gray-500 dark:text-gray-400"
-            data-testid="no-pull-requests"
-          >
-            Nenhum PR ainda. Escolha "Commits conferidos, push e PR" na entrega de um pipeline.
-          </p>
-          <ul class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
-            <li
-              :for={task <- @tasks}
-              class="flex flex-wrap items-center justify-between gap-3 py-3"
-              data-testid={"pull-request-#{task.id}"}
+      <.record_list id="pull-requests" testid="pull-requests" empty={@tasks == []}>
+        <.record_card
+          :for={task <- @tasks}
+          id={"pull-request-#{task.id}"}
+          testid={"pull-request-#{task.id}"}
+          navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
+          link_testid={"pull-request-link-#{task.id}"}
+          tone={task_tone(task)}
+        >
+          <:leading><.record_icon icon="hero-rocket-launch" color="primary" /></:leading>
+          <:title>{task.title}</:title>
+          <:badge><.task_status task={task} /></:badge>
+          <:meta interactive>
+            <a
+              href={task.pr_url}
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-1 font-mono text-primary-600 hover:underline dark:text-primary-400"
+              data-testid={"pull-request-pr-#{task.id}"}
             >
-              <span class="min-w-0">
-                <.link
-                  navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{task.id}"}
-                  class="font-medium text-gray-900 hover:underline dark:text-white"
-                >
-                  {task.title}
-                </.link>
-                <a
-                  href={task.pr_url}
-                  target="_blank"
-                  rel="noopener"
-                  class="ml-2 font-mono text-xs text-primary-600 hover:underline dark:text-primary-400"
-                >
-                  {task.pr_url |> String.split("/") |> Enum.take(-2) |> Enum.join("/")}
-                </a>
-                <span
-                  class="ml-2 text-xs text-gray-500 dark:text-gray-400"
-                  data-testid={"pull-request-project-#{task.id}"}
-                >
-                  {(task.project || %{})["name"] || task.directory}
-                </span>
-              </span>
-              <span class="flex items-center gap-2">
-                <.task_status task={task} />
-                <span
-                  class="text-xs text-gray-700 dark:text-gray-300"
-                  data-testid={"pull-request-cost-#{task.id}"}
-                >
-                  {format_cost(@costs[task.id] || Decimal.new(0))}
-                </span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{time_ago(
-                  task.updated_at,
-                  @now
-                )}</span>
-              </span>
-            </li>
-          </ul>
-        </.card_content>
-      </.card>
+              {task.pr_url |> String.split("/") |> Enum.take(-2) |> Enum.join("/")}
+              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+            </a>
+            <span>·</span>
+            <span data-testid={"pull-request-project-#{task.id}"}>
+              {(task.project || %{})["name"] || task.directory}
+            </span>
+          </:meta>
+          <:aside>
+            <.record_metric label="Custo" testid={"pull-request-cost-#{task.id}"}>
+              {format_cost(@costs[task.id] || Decimal.new(0))}
+            </.record_metric>
+            <span>{time_ago(task.updated_at, @now)}</span>
+          </:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-pull-requests"
+            icon="hero-rocket-launch"
+            title="Nenhum PR ainda"
+            description={"Pipelines com entrega em PR abrem um rascunho na primeira etapa e o marcam como pronto na última. Escolha \"Commits conferidos, push e PR\" na entrega de um pipeline."}
+          />
+        </:empty_state>
+      </.record_list>
     </Layouts.app>
     """
   end

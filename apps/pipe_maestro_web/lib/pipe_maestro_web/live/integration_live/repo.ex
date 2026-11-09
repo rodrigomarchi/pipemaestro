@@ -262,31 +262,25 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
             >
               Nenhum gatilho: as issues deste repositório ainda não viram tarefas.
             </p>
-            <ul
-              :if={@repo.triggers != []}
-              class="divide-y divide-gray-100 text-sm dark:divide-gray-800"
-            >
-              <li
+            <.record_list :if={@repo.triggers != []} id="triggers" class="mb-4">
+              <.record_card
                 :for={trigger <- @repo.triggers}
-                class="flex flex-wrap items-center justify-between gap-3 py-3"
-                data-testid={"trigger-#{trigger_key(trigger)}"}
+                id={"trigger-#{trigger.id}"}
+                testid={"trigger-#{trigger_key(trigger)}"}
+                dense
               >
-                <div class="min-w-0">
-                  <p class="font-medium text-gray-900 dark:text-white">
-                    {trigger_kind_name(trigger.kind)}
-                    <.badge
-                      :if={!trigger.enabled}
-                      size="xs"
-                      color="gray"
-                      variant="soft"
-                      label="desligado"
-                    />
-                  </p>
-                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    {trigger_detail(trigger, @pipelines)}
-                  </p>
-                </div>
-                <div class="flex gap-2">
+                <:title>{trigger_kind_name(trigger.kind)}</:title>
+                <:badge>
+                  <.badge
+                    :if={!trigger.enabled}
+                    size="xs"
+                    color="gray"
+                    variant="soft"
+                    label="desligado"
+                  />
+                </:badge>
+                <:meta>{trigger_detail(trigger, @pipelines)}</:meta>
+                <:actions>
                   <.button
                     size="xs"
                     variant="outline"
@@ -310,9 +304,9 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
                   >
                     Remover
                   </.button>
-                </div>
-              </li>
-            </ul>
+                </:actions>
+              </.record_card>
+            </.record_list>
 
             <.form
               :if={@trigger_form}

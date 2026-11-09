@@ -11,6 +11,7 @@ import { bootstrapOperator, uniqueSuffix, userPassword } from "../helpers/env";
 import { waitForLiveView } from "../helpers/liveView";
 import { RunnerProcess } from "../helpers/runnerProcess";
 import { shot } from "../helpers/screenshots";
+import { expectFitsPhone } from "../helpers/phone";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
 import { PipelinesPage } from "../pages/PipelinesPage";
@@ -159,5 +160,6 @@ test.describe("Agent proposals", () => {
     // Three tasks, the decision, the improvement, and the analysis the block asked for by itself.
     await expect(app.page.getByTestId("proposals").locator("li")).toHaveCount(6);
     await shot(app.page, "proposals");
+    await expectFitsPhone(app.page, "proposals");
   });
 });

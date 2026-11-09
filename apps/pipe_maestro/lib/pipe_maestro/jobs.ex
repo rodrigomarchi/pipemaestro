@@ -186,37 +186,19 @@ defmodule PipeMaestro.Jobs do
     end)
   end
 
-  @doc "The workspace's most recent jobs, newest first."
-  @spec list_jobs(Workspace.t()) :: [Job.t()]
-  def list_jobs(%Workspace{id: workspace_id}) do
+  @doc """
+  The workspace's most recent jobs, newest first. Options: `limit` (default
+  #{@list_limit}), how many.
+  """
+  @spec list_jobs(Workspace.t(), [{:limit, pos_integer()}]) :: [Job.t()]
+  def list_jobs(%Workspace{id: workspace_id}, opts \\ []) do
     Repo.all(
       from j in Job,
         where: j.workspace_id == ^workspace_id,
         order_by: [desc: j.inserted_at, desc: j.id],
-        limit: @list_limit,
+        limit: ^Keyword.get(opts, :limit, @list_limit),
         preload: [:runner, :created_by_user, :project]
     )
-  end
-
-  @doc """
-  How busy the workspace's runners are: for each runner with unfinished jobs,
-  how many are running and how many wait.
-  """
-  @spec load_by_runner(Workspace.t()) :: %{
-          Ecto.UUID.t() => %{running: non_neg_integer(), queued: non_neg_integer()}
-        }
-  def load_by_runner(%Workspace{id: workspace_id}) do
-    from(j in Job,
-      where: j.workspace_id == ^workspace_id and j.status in [:queued, :running],
-      group_by: [j.runner_id, j.status],
-      select: {j.runner_id, j.status, count(j.id)}
-    )
-    |> Repo.all()
-    |> Enum.reduce(%{}, fn {runner_id, status, count}, acc ->
-      acc
-      |> Map.put_new(runner_id, %{running: 0, queued: 0})
-      |> put_in([runner_id, status], count)
-    end)
   end
 
   @doc "A job by id, of any workspace, or `nil`."
@@ -525,12 +507,6 @@ defmodule PipeMaestro.Jobs do
       totals = Map.merge(current || %{}, increments, fn _key, a, b -> a + b end)
       Repo.update_all(from(j in Job, where: j.id == ^job.id), set: [telemetry_totals: totals])
     end)
-  end
-
-  @doc "A job's OpenTelemetry records, in the order they happened."
-  @spec list_telemetry(Job.t()) :: [JobTelemetry.t()]
-  def list_telemetry(%Job{id: job_id}) do
-    Repo.all(from t in JobTelemetry, where: t.job_id == ^job_id, order_by: [asc: t.at, asc: t.id])
   end
 
   @doc """

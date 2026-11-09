@@ -39,6 +39,7 @@ defmodule PipeMaestro.JobsTest do
       assert_receive {:job_assign, %Job{id: id}} when id == job.id
       assert_receive {:job_updated, %Job{id: ^id}}
       assert [%Job{id: ^id}] = Jobs.list_jobs(ctx.workspace)
+      assert [%Job{id: ^id}] = Jobs.list_jobs(ctx.workspace, limit: 1)
       assert Jobs.get_job!(ctx.workspace, id).prompt == "diga oi"
     end
 
@@ -343,9 +344,9 @@ defmodule PipeMaestro.JobsTest do
       assert job.telemetry_totals == %{"lines_added" => 6, "lines_removed" => 2, "commits" => 1}
 
       assert [%{name: "api_request", attrs: %{"duration_ms" => 1913}} | _] =
-               Jobs.list_telemetry(job)
+               job_telemetry(job)
 
-      assert length(Jobs.list_telemetry(job)) == 6
+      assert length(job_telemetry(job)) == 6
     end
 
     test "a run's tokens and how much of its input came from the cache" do
@@ -408,25 +409,6 @@ defmodule PipeMaestro.JobsTest do
                Jobs.get_job!(ctx.workspace, lost.id)
 
       assert %Job{status: :running} = Jobs.get_job!(ctx.workspace, alive.id)
-    end
-  end
-
-  describe "load_by_runner/1" do
-    test "counts each runner's running and queued jobs", ctx do
-      {other, _token} = runner_fixture(ctx.workspace, ctx.user)
-      running = job_fixture(ctx.runner, ctx.user)
-      _queued = job_fixture(ctx.runner, ctx.user)
-      done = job_fixture(ctx.runner, ctx.user)
-      {:ok, _} = Jobs.mark_started(ctx.runner, running.id)
-      {:ok, _} = Jobs.mark_started(ctx.runner, done.id)
-      {:ok, _} = Jobs.finish_job(ctx.runner, done.id, %{"status" => "succeeded"})
-      elsewhere = workspace_fixture()
-      stranger = member_fixture(elsewhere)
-      {foreign, _token} = runner_fixture(elsewhere, stranger)
-      _foreign_job = job_fixture(foreign, stranger)
-
-      assert Jobs.load_by_runner(ctx.workspace) == %{ctx.runner.id => %{running: 1, queued: 1}}
-      refute Map.has_key?(Jobs.load_by_runner(ctx.workspace), other.id)
     end
   end
 

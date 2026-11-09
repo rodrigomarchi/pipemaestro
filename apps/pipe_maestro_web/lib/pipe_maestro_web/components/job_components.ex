@@ -36,6 +36,12 @@ defmodule PipeMaestroWeb.JobComponents do
     """
   end
 
+  @doc "How a job's card calls attention (`PipeMaestroWeb.ListComponents.record_card/1`)."
+  @spec job_tone(Job.t()) :: atom()
+  def job_tone(%Job{status: :running}), do: :running
+  def job_tone(%Job{status: :failed}), do: :danger
+  def job_tone(%Job{}), do: nil
+
   defp status_label(%Job{status: :running, cancel_requested_at: %DateTime{}}),
     do: {"Cancelando…", "warning"}
 

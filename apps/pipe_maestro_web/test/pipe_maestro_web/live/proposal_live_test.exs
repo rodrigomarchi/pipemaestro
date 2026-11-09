@@ -107,7 +107,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
         )
         |> render_submit()
 
-      [job] = Proposals.list_recent(ctx.workspace)
+      [job] = Proposals.list(ctx.workspace)
       assert path == proposal_path(ctx, job)
       assert Proposals.kind(job) == "pipeline"
       assert job.project_id == ctx.app.id
@@ -140,7 +140,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
         )
         |> render_submit()
 
-      [job] = Proposals.list_recent(ctx.workspace, ["task"])
+      [job] = Proposals.list(ctx.workspace, %{"kind" => "task"})
       assert Proposals.input(job)["issue_url"] == "https://github.com/acme/app/issues/3"
     end
 
@@ -177,7 +177,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
         )
         |> render_submit()
 
-      [job] = Proposals.list_recent(ctx.workspace, ["task"])
+      [job] = Proposals.list(ctx.workspace, %{"kind" => "task"})
       assert Proposals.input(job)["pipeline_id"] == pipeline.id
       assert Proposals.input(job)["auto_approve"] == true
     end
@@ -198,7 +198,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
         )
         |> render_submit()
 
-      [job] = Proposals.list_recent(ctx.workspace, ["task"])
+      [job] = Proposals.list(ctx.workspace, %{"kind" => "task"})
       assert Proposals.input(job)["auto_approve"] == false
       refute Map.has_key?(Proposals.input(job), "pipeline_id")
     end
@@ -219,7 +219,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
         )
         |> render_submit()
 
-      [job] = Proposals.list_recent(ctx.workspace, ["improve"])
+      [job] = Proposals.list(ctx.workspace, %{"kind" => "improve"})
       assert Proposals.input(job)["pipeline_id"] == pipeline.id
     end
   end
@@ -242,6 +242,22 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
 
       succeed(ctx, task, %{})
       assert has_element?(view, "[data-testid=proposal-status-#{task.id}]", "Concluído")
+    end
+
+    test "the proposals are cards, 30 at a time", ctx do
+      for n <- 1..31, do: ask(ctx, "task", %{"request" => "Tarefa #{n}"})
+      [newest | _] = listed = Proposals.list(ctx.workspace)
+      oldest = List.last(listed)
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/proposals")
+      card = "[data-testid=proposals] li[data-testid=proposal-row-#{newest.id}]"
+      assert has_element?(view, "#{card} [data-testid=proposal-link-#{newest.id}]")
+      assert has_element?(view, "#{card} [data-testid=proposal-project-#{newest.id}]", "App")
+
+      refute has_element?(view, "[data-testid=proposal-row-#{oldest.id}]")
+      view |> element("[data-testid=proposals-load-more]") |> render_click()
+      assert has_element?(view, "[data-testid=proposal-row-#{oldest.id}]")
+      refute has_element?(view, "[data-testid=proposals-load-more]")
     end
   end
 
@@ -381,7 +397,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       {:error, {:live_redirect, %{to: path}}} =
         view |> form("#feedback-form", round: %{feedback: "Só duas etapas"}) |> render_submit()
 
-      next = Enum.find(Proposals.list_recent(ctx.workspace), &(&1.id != job.id))
+      next = Enum.find(Proposals.list(ctx.workspace), &(&1.id != job.id))
       assert path == proposal_path(ctx, next)
       assert next.prompt =~ "Só duas etapas"
     end
@@ -548,7 +564,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       {:error, {:live_redirect, %{to: path}}} =
         view |> element("[data-testid=decision-suggest]") |> render_click()
 
-      [job] = Proposals.list_recent(ctx.workspace, ["decision"])
+      [job] = Proposals.list(ctx.workspace, %{"kind" => "decision"})
       assert path == proposal_path(ctx, job)
 
       {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/decisions")
@@ -556,7 +572,7 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       {:error, {:live_redirect, _}} =
         view |> element("[data-testid=decision-suggest-#{ctx.task.id}]") |> render_click()
 
-      assert length(Proposals.list_recent(ctx.workspace, ["decision"])) == 2
+      assert length(Proposals.list(ctx.workspace, %{"kind" => "decision"})) == 2
     end
 
     test "applies the suggested decision with the instructions as left", ctx do

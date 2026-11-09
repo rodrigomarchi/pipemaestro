@@ -49,67 +49,50 @@ defmodule PipeMaestroWeb.IntegrationLive.Index do
         testid="integration-new"
       />
 
-      <.card variant="outline">
-        <.card_header
-          title="Hosts git conectados"
-          description="Issues dos repositórios vinculados viram tarefas, e o andamento volta para a issue e para o pull request."
-        />
-        <.card_content>
-          <div
-            :if={@connections == []}
-            class="flex flex-col items-center gap-3 py-8 text-center"
-            data-testid="no-integrations"
-          >
-            <.icon name="hero-link" class="size-8 text-gray-400" />
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-              Nenhuma conexão ainda. Conecte um Forgejo para começar.
-            </p>
-          </div>
-
-          <ul :if={@connections != []} class="divide-y divide-gray-100 dark:divide-gray-800">
-            <li
-              :for={connection <- @connections}
-              class="flex flex-wrap items-center justify-between gap-3 py-3"
-              data-testid={"integration-#{key(connection.name)}"}
-            >
-              <div class="min-w-0">
-                <.link
-                  navigate={~p"/w/#{@current_scope.workspace.slug}/integrations/#{connection.id}"}
-                  class="font-medium text-gray-900 hover:underline dark:text-white"
-                  data-testid={"integration-link-#{key(connection.name)}"}
-                >
-                  {connection.name}
-                </.link>
-                <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                  {provider_name(connection.provider)} · {connection.base_url}
-                  <span :if={connection.bot_login}>· como {connection.bot_login}</span>
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <.badge
-                  size="xs"
-                  color="gray"
-                  variant="outline"
-                  label={auth_name(connection.auth_kind)}
-                />
-                <.badge
-                  size="xs"
-                  color="gray"
-                  variant="outline"
-                  label={api_mode_name(connection.api_mode)}
-                />
-                <span class="text-xs text-gray-500 dark:text-gray-400">
-                  {plural(Map.get(@repo_counts, connection.id, 0), "repositório", "repositórios")}
-                </span>
-                <.integration_status
-                  connection={connection}
-                  data-testid={"integration-status-#{key(connection.name)}"}
-                />
-              </div>
-            </li>
-          </ul>
-        </.card_content>
-      </.card>
+      <.record_list id="integrations" testid="integrations" empty={@connections == []}>
+        <.record_card
+          :for={connection <- @connections}
+          id={"integration-#{connection.id}"}
+          testid={"integration-#{key(connection.name)}"}
+          navigate={~p"/w/#{@current_scope.workspace.slug}/integrations/#{connection.id}"}
+          link_testid={"integration-link-#{key(connection.name)}"}
+        >
+          <:leading><.record_icon icon="hero-link" color="primary" /></:leading>
+          <:title>{connection.name}</:title>
+          <:badge>
+            <.integration_status
+              connection={connection}
+              data-testid={"integration-status-#{key(connection.name)}"}
+            />
+          </:badge>
+          <:meta>
+            <span>{provider_name(connection.provider)}</span>
+            <span>·</span>
+            <span class="truncate">{connection.base_url}</span>
+            <span :if={connection.bot_login}>· como {connection.bot_login}</span>
+          </:meta>
+          <:aside>
+            <.badge size="xs" color="gray" variant="outline" label={auth_name(connection.auth_kind)} />
+            <.badge
+              size="xs"
+              color="gray"
+              variant="outline"
+              label={api_mode_name(connection.api_mode)}
+            />
+            <span>
+              {plural(Map.get(@repo_counts, connection.id, 0), "repositório", "repositórios")}
+            </span>
+          </:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-integrations"
+            icon="hero-link"
+            title="Nenhuma conexão ainda"
+            description="Conecte um Forgejo ou um GitHub: issues dos repositórios vinculados viram tarefas, e o andamento volta para a issue e para o pull request."
+          />
+        </:empty_state>
+      </.record_list>
     </Layouts.app>
     """
   end

@@ -83,15 +83,17 @@ defmodule PipeMaestroWeb.SecretsLive do
             >
               Nenhum segredo ainda.
             </p>
-            <ul :if={@secrets != []} class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
-              <li
+            <.record_list :if={@secrets != []} id="secrets">
+              <.record_card
                 :for={secret <- @secrets}
-                class="flex items-center justify-between gap-3 py-2"
-                data-testid={"secret-#{secret.name}"}
+                id={"secret-#{secret.name}"}
+                testid={"secret-#{secret.name}"}
+                dense
               >
-                <span class="font-mono text-gray-900 dark:text-white">{secret.name}</span>
-                <span class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                  ••••••••
+                <:leading><.record_icon icon="hero-key" /></:leading>
+                <:title><span class="font-mono">{secret.name}</span></:title>
+                <:meta>••••••••</:meta>
+                <:actions>
                   <.button
                     size="xs"
                     variant="ghost"
@@ -104,9 +106,9 @@ defmodule PipeMaestroWeb.SecretsLive do
                   >
                     Remover
                   </.button>
-                </span>
-              </li>
-            </ul>
+                </:actions>
+              </.record_card>
+            </.record_list>
           </.card_content>
         </.card>
 

@@ -72,54 +72,44 @@ defmodule PipeMaestroWeb.NotificationComponents do
       assign(assigns, icon: icon, color: color, unread: is_nil(assigns.notification.read_at))
 
     ~H"""
-    <li role="listitem">
-      <button
-        type="button"
-        phx-click={@event}
-        phx-value-id={@notification.id}
-        phx-target={@target}
-        data-testid={testid(@notification)}
-        data-unread={to_string(@unread)}
-        class={[
-          "flex w-full gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-primary-500 dark:hover:bg-gray-800",
-          @unread && "bg-primary-50/60 dark:bg-primary-950/30"
-        ]}
-      >
-        <.icon name={@icon} class={["mt-0.5 size-5 shrink-0", @color]} />
-        <span class="min-w-0 flex-1">
-          <span class="flex items-start gap-2">
-            <span class={[
-              "min-w-0 flex-1 text-sm text-gray-900 dark:text-gray-100",
-              @unread && "font-semibold"
-            ]}>
-              {@notification.title}
-            </span>
-            <span
-              :if={@unread}
-              class="mt-1.5 size-2 shrink-0 rounded-full bg-primary-500"
-              aria-hidden="true"
-            ></span>
-            <span :if={@unread} class="sr-only">não lida</span>
-          </span>
+    <.record_card
+      click={@event}
+      click_value={@notification.id}
+      click_target={@target}
+      link_testid={testid(@notification)}
+      link_attrs={%{"data-unread" => to_string(@unread)}}
+      class={@unread && "bg-primary-50/60 dark:bg-primary-950/30"}
+      dense
+    >
+      <:leading><.icon name={@icon} class={["mt-0.5 size-5", @color]} /></:leading>
+      <:title>
+        <span class={["block", !@unread && "font-normal"]}>
+          {@notification.title}
           <span
-            :if={@notification.body}
-            class="prose prose-sm mt-1 line-clamp-2 block max-w-none text-gray-600 dark:prose-invert dark:text-gray-400"
-          >
-            {Markdown.to_html(@notification.body)}
-          </span>
-          <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-            <span
-              id={"notification-time-#{@notification.id}"}
-              phx-hook="Elapsed"
-              data-since={DateTime.to_iso8601(@notification.inserted_at)}
-              data-format="ago"
-            >
-              {RunnerComponents.time_ago(@notification.inserted_at)}
-            </span>
-          </span>
+            :if={@unread}
+            class="ml-1 inline-block size-2 rounded-full bg-primary-500 align-middle"
+            aria-hidden="true"
+          ></span>
+          <span :if={@unread} class="sr-only">não lida</span>
         </span>
-      </button>
-    </li>
+        <span
+          :if={@notification.body}
+          class="prose prose-sm mt-1 line-clamp-2 block max-w-none font-normal text-gray-600 dark:prose-invert dark:text-gray-400"
+        >
+          {Markdown.to_html(@notification.body)}
+        </span>
+      </:title>
+      <:meta>
+        <span
+          id={"notification-time-#{@notification.id}"}
+          phx-hook="Elapsed"
+          data-since={DateTime.to_iso8601(@notification.inserted_at)}
+          data-format="ago"
+        >
+          {RunnerComponents.time_ago(@notification.inserted_at)}
+        </span>
+      </:meta>
+    </.record_card>
     """
   end
 
@@ -191,48 +181,52 @@ defmodule PipeMaestroWeb.NotificationComponents do
   @spec execution_item(map()) :: Phoenix.LiveView.Rendered.t()
   def execution_item(assigns) do
     ~H"""
-    <li role="listitem" data-testid={"notifications-active-item-#{@execution.id}"}>
-      <.link
-        navigate={execution_path(@slug, @execution)}
-        class="block rounded-lg px-3 py-3 transition hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-primary-500 dark:hover:bg-gray-800"
-      >
-        <span class="flex items-start gap-2">
-          <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-            {@execution.title}
-          </span>
-          <span
-            class="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400"
-            id={"execution-elapsed-#{@execution.id}"}
-            phx-hook="Elapsed"
-            data-since={@execution.started_at && DateTime.to_iso8601(@execution.started_at)}
-            data-format="elapsed"
-          >
-            {elapsed(@execution.started_at)}
-          </span>
+    <.record_card
+      testid={"notifications-active-item-#{@execution.id}"}
+      navigate={execution_path(@slug, @execution)}
+      tone={execution_tone(@execution.status)}
+      dense
+    >
+      <:title>{@execution.title}</:title>
+      <:badge>
+        <.badge size="xs" color={status_color(@execution.status)} dot>
+          {status_label(@execution.status)}
+        </.badge>
+      </:badge>
+      <:meta>
+        <span :if={@execution.type == :task}>
+          etapa {@execution.stage} de {@execution.stage_count}
         </span>
-        <span class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
-          <.badge size="xs" color={status_color(@execution.status)} dot>
-            {status_label(@execution.status)}
-          </.badge>
-          <span :if={@execution.type == :task}>
-            etapa {@execution.stage} de {@execution.stage_count}
-          </span>
-          <span :if={@execution.type == :proposal}>proposta · {@execution.proposal_kind}</span>
-          <span :if={@execution.runner_name} class="inline-flex items-center gap-1">
-            <.icon name="hero-server-stack" class="size-3.5" /> {@execution.runner_name}
-          </span>
-          <span :if={@execution.creator_name} class="inline-flex items-center gap-1">
-            <.icon name="hero-user" class="size-3.5" /> {@execution.creator_name}
-          </span>
+        <span :if={@execution.type == :proposal}>proposta · {@execution.proposal_kind}</span>
+        <span :if={@execution.runner_name} class="inline-flex items-center gap-1">
+          <.icon name="hero-server-stack" class="size-3.5" /> {@execution.runner_name}
         </span>
-      </.link>
-    </li>
+        <span :if={@execution.creator_name} class="inline-flex items-center gap-1">
+          <.icon name="hero-user" class="size-3.5" /> {@execution.creator_name}
+        </span>
+      </:meta>
+      <:aside>
+        <span
+          class="tabular-nums"
+          id={"execution-elapsed-#{@execution.id}"}
+          phx-hook="Elapsed"
+          data-since={@execution.started_at && DateTime.to_iso8601(@execution.started_at)}
+          data-format="elapsed"
+        >
+          {elapsed(@execution.started_at)}
+        </span>
+      </:aside>
+    </.record_card>
     """
   end
 
   defp status_label(:running), do: "Rodando"
   defp status_label(:awaiting_decision), do: "Aguardando decisão"
   defp status_label(:queued), do: "Na fila"
+
+  defp execution_tone(:running), do: :running
+  defp execution_tone(:awaiting_decision), do: :awaiting
+  defp execution_tone(:queued), do: nil
 
   defp status_color(:running), do: "info"
   defp status_color(:awaiting_decision), do: "warning"

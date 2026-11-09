@@ -194,6 +194,56 @@ página nova nem inline: a página carrega só o resumo, e o painel lê o resto 
   quando ele termina, ela não abre sozinha, para a tela não pular. Uma tela nova com
   trabalho vivo segue a mesma regra.
 
+## Listas em cards
+
+Toda listagem de registros é uma coluna de cards, igual no desktop e no celular
+([ADR 0052](../adr/0052-listas-em-cards.md)), com `PipeMaestroWeb.ListComponents`:
+
+```heex
+<.record_list testid="tasks" empty={@tasks == []}>
+  <.record_card
+    :for={task <- @tasks}
+    id={"task-row-#{task.id}"}
+    testid={"task-row-#{task.id}"}
+    navigate={~p"/w/#{@slug}/tasks/#{task.id}"}
+    link_testid={"task-link-#{task.id}"}
+  >
+    <:title>{task.title}</:title>
+    <:badge><.task_status task={task} /></:badge>
+    <:meta>{task.pipeline_name} · {task.project_name}</:meta>
+    <:aside><.record_metric label="Custo">{format_cost(task.cost)}</.record_metric></:aside>
+  </.record_card>
+  <:empty_state><.record_empty title="Nenhuma tarefa" testid="no-tasks" /></:empty_state>
+</.record_list>
+<.load_more more={@more} testid="tasks-load-more" />
+```
+
+- **Os lugares do card:**
+  - `:leading`: ícone (`record_icon/1`, um ícone num quadrado com cor), avatar ou tipo;
+  - `:title`: o título;
+  - `:badge`: o status, ao lado do título;
+  - `:meta`: a linha de fatos;
+  - `:body`: o conteúdo próprio do registro;
+  - `:aside`: as métricas, com `record_metric/1`;
+  - `:actions`: os botões.
+- **As métricas** ficam à direita quando o card é largo (container query) e embaixo antes
+  disso. Não há layout separado para o celular.
+- **Com `navigate`, `patch` ou `href`, o card inteiro é o link do registro.** Com
+  `click` (e `click_value`, `click_target`), o card manda um evento, como numa
+  notificação, que se marca lida antes de abrir. `link_testid` e `link_attrs` vão no
+  link ou no botão do título.
+  - O link do título se estende sobre o card; não aninhe outro link no título.
+  - `:meta` e `:body` com links, botões ou formulário levam `interactive`, que os põe por
+    cima do link. `:actions` já vem por cima.
+- **`tone`** (`:running`, `:awaiting`, `:danger`, `:success`) é a borda de atenção, a mesma
+  dos lugares de um pipeline (`place_node/1`). `dense` serve a colunas estreitas, como o
+  Kanban.
+- **O test id da antiga linha vai no card**, e os de dentro ficam.
+- **Listas longas paginam** com `load_more/1`: o limite cresce e a lista recarrega do
+  topo, o que mantém a página atual quando um evento ao vivo recarrega a lista.
+- **Continuam em tabela** as matrizes de números, em que comparar colunas é o ponto (uso
+  por etapa, ferramentas da auditoria), e os logs técnicos.
+
 ## Celular
 
 - Abaixo de `md` a sidebar é uma gaveta que trava o scroll da página (uma classe no

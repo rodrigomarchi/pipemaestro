@@ -446,33 +446,30 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
               >
                 Nenhum repositório vinculado ainda.
               </p>
-              <ul :if={@repos != []} class="divide-y divide-gray-100 text-sm dark:divide-gray-800">
-                <li
+              <.record_list :if={@repos != []} id="repos">
+                <.record_card
                   :for={repo <- @repos}
-                  class="flex flex-wrap items-center justify-between gap-3 py-3"
-                  data-testid={"repo-#{key(repo.full_name)}"}
+                  id={"repo-#{repo.id}"}
+                  testid={"repo-#{key(repo.full_name)}"}
+                  navigate={
+                    ~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}/repos/#{repo.id}"
+                  }
+                  link_testid={"repo-link-#{key(repo.full_name)}"}
+                  dense
                 >
-                  <div class="min-w-0">
-                    <.link
-                      navigate={
-                        ~p"/w/#{@current_scope.workspace.slug}/integrations/#{@connection.id}/repos/#{repo.id}"
-                      }
-                      class="font-mono font-medium text-gray-900 hover:underline dark:text-white"
-                      data-testid={"repo-link-#{key(repo.full_name)}"}
-                    >
-                      {repo.full_name}
-                    </.link>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {plural(
-                        length(repo.triggers),
-                        "gatilho",
-                        "gatilhos"
-                      )}
-                    </p>
-                  </div>
-                  <.webhook_status repo={repo} testid={"repo-webhook-#{key(repo.full_name)}"} />
-                </li>
-              </ul>
+                  <:title><span class="font-mono">{repo.full_name}</span></:title>
+                  <:badge>
+                    <.webhook_status repo={repo} testid={"repo-webhook-#{key(repo.full_name)}"} />
+                  </:badge>
+                  <:meta>
+                    {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {plural(
+                      length(repo.triggers),
+                      "gatilho",
+                      "gatilhos"
+                    )}
+                  </:meta>
+                </.record_card>
+              </.record_list>
             </.card_content>
           </.card>
         </.tab_panel>
@@ -511,91 +508,88 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
               >
                 Nenhuma entrega ainda.
               </p>
-              <ul
-                :if={@deliveries != []}
-                class="divide-y divide-gray-100 text-sm dark:divide-gray-800"
-              >
-                <li
+              <.record_list :if={@deliveries != []} id="deliveries">
+                <.record_card
                   :for={delivery <- @deliveries}
-                  class="py-3"
-                  data-testid={"delivery-#{key(delivery.external_id)}"}
+                  id={"delivery-#{delivery.id}"}
+                  testid={"delivery-#{key(delivery.external_id)}"}
+                  tone={if delivery.status == "failed", do: :danger}
+                  dense
                 >
-                  <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="text-gray-900 dark:text-white">
-                        <.badge
-                          size="xs"
-                          variant="soft"
-                          color={status_color(delivery.status)}
-                          label={status_name(delivery.status)}
-                          data-testid={"delivery-status-#{key(delivery.external_id)}"}
-                        />
-                        <span class="ml-1">{kind_name(delivery.kind)}</span>
-                        <span
-                          :if={delivery.repo_full_name}
-                          class="font-mono text-gray-600 dark:text-gray-300"
-                        >
-                          {delivery.repo_full_name}<span :if={delivery.issue_number}>#{delivery.issue_number}</span>
-                        </span>
-                      </p>
-                      <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                        {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")} · {delivery.source}
-                        <span :if={delivery.outcome}>· {delivery.outcome}</span>
-                        <.link
-                          :if={delivery.task_id}
-                          navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{delivery.task_id}"}
-                          class="text-primary-600 hover:underline dark:text-primary-400"
-                        >
-                          · abrir a tarefa
-                        </.link>
-                        <.link
-                          :if={delivery.proposal_job_id}
-                          navigate={
-                            ~p"/w/#{@current_scope.workspace.slug}/proposals/#{delivery.proposal_job_id}"
-                          }
-                          class="text-primary-600 hover:underline dark:text-primary-400"
-                          data-testid={"delivery-proposal-#{key(delivery.external_id)}"}
-                        >
-                          · abrir a triagem
-                        </.link>
-                      </p>
+                  <:title>
+                    {kind_name(delivery.kind)}
+                    <span
+                      :if={delivery.repo_full_name}
+                      class="font-mono font-normal text-gray-600 dark:text-gray-300"
+                    >
+                      {delivery.repo_full_name}<span :if={delivery.issue_number}>#{delivery.issue_number}</span>
+                    </span>
+                  </:title>
+                  <:badge>
+                    <.badge
+                      size="xs"
+                      variant="soft"
+                      color={status_color(delivery.status)}
+                      label={status_name(delivery.status)}
+                      data-testid={"delivery-status-#{key(delivery.external_id)}"}
+                    />
+                  </:badge>
+                  <:meta interactive>
+                    {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")} · {delivery.source}
+                    <span :if={delivery.outcome}>· {delivery.outcome}</span>
+                    <.link
+                      :if={delivery.task_id}
+                      navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{delivery.task_id}"}
+                      class="text-primary-600 hover:underline dark:text-primary-400"
+                    >
+                      · abrir a tarefa
+                    </.link>
+                    <.link
+                      :if={delivery.proposal_job_id}
+                      navigate={
+                        ~p"/w/#{@current_scope.workspace.slug}/proposals/#{delivery.proposal_job_id}"
+                      }
+                      class="text-primary-600 hover:underline dark:text-primary-400"
+                      data-testid={"delivery-proposal-#{key(delivery.external_id)}"}
+                    >
+                      · abrir a triagem
+                    </.link>
+                  </:meta>
+                  <:body :if={@open_payload && @open_payload.id == delivery.id} interactive>
+                    <div
+                      id={"delivery-payload-#{delivery.id}"}
+                      phx-hook="Highlight"
+                      data-testid={"delivery-payload-#{key(delivery.external_id)}"}
+                    >
+                      <pre class="max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-950"><code class="language-json text-gray-800 dark:text-gray-100">{Jason.encode!(@open_payload.payload, pretty: true)}</code></pre>
                     </div>
-                    <div class="flex gap-2">
-                      <.button
-                        size="xs"
-                        variant="ghost"
-                        color="gray"
-                        icon="hero-code-bracket"
-                        phx-click="toggle_payload"
-                        phx-value-id={delivery.id}
-                        data-testid={"delivery-payload-toggle-#{key(delivery.external_id)}"}
-                      >
-                        Payload
-                      </.button>
-                      <.button
-                        size="xs"
-                        variant="outline"
-                        color="gray"
-                        icon="hero-arrow-path"
-                        phx-click="replay"
-                        phx-value-id={delivery.id}
-                        data-testid={"delivery-replay-#{key(delivery.external_id)}"}
-                      >
-                        Reprocessar
-                      </.button>
-                    </div>
-                  </div>
-                  <div
-                    :if={@open_payload && @open_payload.id == delivery.id}
-                    id={"delivery-payload-#{delivery.id}"}
-                    phx-hook="Highlight"
-                    class="mt-2"
-                    data-testid={"delivery-payload-#{key(delivery.external_id)}"}
-                  >
-                    <pre class="max-h-80 overflow-auto rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900"><code class="language-json text-gray-800 dark:text-gray-100">{Jason.encode!(@open_payload.payload, pretty: true)}</code></pre>
-                  </div>
-                </li>
-              </ul>
+                  </:body>
+                  <:actions>
+                    <.button
+                      size="xs"
+                      variant="ghost"
+                      color="gray"
+                      icon="hero-code-bracket"
+                      phx-click="toggle_payload"
+                      phx-value-id={delivery.id}
+                      data-testid={"delivery-payload-toggle-#{key(delivery.external_id)}"}
+                    >
+                      Payload
+                    </.button>
+                    <.button
+                      size="xs"
+                      variant="outline"
+                      color="gray"
+                      icon="hero-arrow-path"
+                      phx-click="replay"
+                      phx-value-id={delivery.id}
+                      data-testid={"delivery-replay-#{key(delivery.external_id)}"}
+                    >
+                      Reprocessar
+                    </.button>
+                  </:actions>
+                </.record_card>
+              </.record_list>
             </.card_content>
           </.card>
         </.tab_panel>

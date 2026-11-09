@@ -53,36 +53,20 @@ defmodule PipeMaestroWeb.WorkspacePickerLive do
             <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
               Escolha o workspace em que você quer trabalhar.
             </p>
-            <div id="workspaces" class="mt-8 grid gap-4 sm:grid-cols-2">
-              <.link
+            <.record_list id="workspaces" class="mt-8">
+              <.record_card
                 :for={workspace <- @workspaces}
                 id={"workspace-#{workspace.slug}"}
+                testid={"workspace-card-#{workspace.slug}"}
                 href={~p"/w/#{workspace.slug}"}
-                data-testid={"workspace-card-#{workspace.slug}"}
-                class="group"
               >
-                <.card
-                  variant="outline"
-                  class="transition group-hover:-translate-y-0.5 group-hover:border-primary-300 group-hover:shadow-md dark:group-hover:border-primary-500/50"
-                >
-                  <.card_content class="flex items-center gap-4">
-                    <.avatar name={workspace.name} size="md" random_color shape="rounded" />
-                    <div class="min-w-0 flex-1">
-                      <p class="truncate font-semibold text-gray-900 dark:text-white">
-                        {workspace.name}
-                      </p>
-                      <p class="truncate text-sm text-gray-500 dark:text-gray-400">
-                        /w/{workspace.slug}
-                      </p>
-                    </div>
-                    <.icon
-                      name="hero-arrow-right"
-                      class="size-5 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-primary-500"
-                    />
-                  </.card_content>
-                </.card>
-              </.link>
-            </div>
+                <:leading>
+                  <.avatar name={workspace.name} size="md" random_color shape="rounded" />
+                </:leading>
+                <:title>{workspace.name}</:title>
+                <:meta>/w/{workspace.slug}</:meta>
+              </.record_card>
+            </.record_list>
           </div>
 
           <.empty

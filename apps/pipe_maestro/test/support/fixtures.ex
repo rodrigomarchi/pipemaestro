@@ -165,6 +165,18 @@ defmodule PipeMaestro.Fixtures do
     pipeline
   end
 
+  @doc "What a job's run relayed of the CLI's OpenTelemetry, in the order it happened."
+  @spec job_telemetry(PipeMaestro.Jobs.Job.t()) :: [PipeMaestro.Jobs.Telemetry.t()]
+  def job_telemetry(%PipeMaestro.Jobs.Job{id: job_id}) do
+    import Ecto.Query
+
+    PipeMaestro.Repo.all(
+      from t in PipeMaestro.Jobs.Telemetry,
+        where: t.job_id == ^job_id,
+        order_by: [asc: t.at, asc: t.id]
+    )
+  end
+
   @doc "A job `user` sent to `runner` (both of `runner`'s workspace), still queued."
   @spec job_fixture(PipeMaestro.Runners.Runner.t(), Accounts.User.t(), map()) ::
           PipeMaestro.Jobs.Job.t()

@@ -7,7 +7,7 @@ defmodule PipeMaestroWeb.BoardLive.ActivityTab do
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
-  import PipeMaestroWeb.TaskComponents, only: [task_status: 1]
+  import PipeMaestroWeb.TaskComponents, only: [task_status: 1, task_tone: 1]
 
   alias PipeMaestro.Tasks
   alias PipeMaestro.Workspaces.Workspace
@@ -47,25 +47,24 @@ defmodule PipeMaestroWeb.BoardLive.ActivityTab do
   @spec activity_list(map()) :: Phoenix.LiveView.Rendered.t()
   def activity_list(assigns) do
     ~H"""
-    <p :if={@recent == []} class="text-sm text-gray-500 dark:text-gray-400">
-      Nenhuma tarefa ainda.
-    </p>
-    <ul class="space-y-3" data-testid={@testid}>
-      <li :for={task <- @recent} class="flex items-start justify-between gap-3 text-sm">
-        <.link
+    <div data-testid={@testid}>
+      <p :if={@recent == []} class="text-sm text-gray-500 dark:text-gray-400">
+        Nenhuma tarefa ainda.
+      </p>
+      <.record_list :if={@recent != []}>
+        <.record_card
+          :for={task <- @recent}
+          testid={"#{@testid}-#{task.id}"}
           navigate={~p"/w/#{@slug}/tasks/#{task.id}"}
-          class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
+          tone={task_tone(task)}
+          dense
         >
-          {task.title}
-        </.link>
-        <span class="flex shrink-0 items-center gap-2">
-          <.task_status task={task} />
-          <span class="text-xs text-gray-500 dark:text-gray-400">
-            {time_ago(task.updated_at, @now)}
-          </span>
-        </span>
-      </li>
-    </ul>
+          <:title>{task.title}</:title>
+          <:badge><.task_status task={task} /></:badge>
+          <:aside>{time_ago(task.updated_at, @now)}</:aside>
+        </.record_card>
+      </.record_list>
+    </div>
     """
   end
 end

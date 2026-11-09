@@ -29,6 +29,32 @@ defmodule PipeMaestroWeb.AuditLiveTest do
     assert has_element?(view, "[data-testid=sidebar-audit]")
   end
 
+  test "the events are cards, 30 at a time", ctx do
+    pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Meu"})
+
+    for n <- 1..31,
+        do:
+          :ok =
+            PipeMaestro.Audit.record(ctx.workspace, ctx.user, "pipeline.saved", pipeline, %{
+              "version" => n
+            })
+
+    [newest | _] = listed = PipeMaestro.Audit.list_events(ctx.workspace)
+    oldest = List.last(listed)
+
+    {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/audit")
+
+    assert has_element?(
+             view,
+             "[data-testid=audit-events] li[data-testid=audit-event-#{newest.id}]"
+           )
+
+    refute has_element?(view, "[data-testid=audit-event-#{oldest.id}]")
+
+    view |> element("[data-testid=audit-load-more]") |> render_click()
+    assert has_element?(view, "[data-testid=audit-event-#{oldest.id}]", "Pipeline salvo")
+  end
+
   test "a member cannot see it", %{conn: conn, workspace: workspace} do
     member = member_fixture(workspace)
     conn = log_in_user(conn, member)

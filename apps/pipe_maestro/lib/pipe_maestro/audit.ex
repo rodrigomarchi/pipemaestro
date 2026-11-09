@@ -34,14 +34,17 @@ defmodule PipeMaestro.Audit do
     :ok
   end
 
-  @doc "The workspace's most recent events, newest first."
-  @spec list_events(Workspace.t()) :: [Event.t()]
-  def list_events(%Workspace{id: workspace_id}) do
+  @doc """
+  The workspace's most recent events, newest first. Options: `limit`
+  (default #{@list_limit}), how many.
+  """
+  @spec list_events(Workspace.t(), [{:limit, pos_integer()}]) :: [Event.t()]
+  def list_events(%Workspace{id: workspace_id}, opts \\ []) do
     Repo.all(
       from e in Event,
         where: e.workspace_id == ^workspace_id,
         order_by: [desc: e.inserted_at, desc: e.id],
-        limit: @list_limit,
+        limit: ^Keyword.get(opts, :limit, @list_limit),
         preload: :actor_user
     )
   end

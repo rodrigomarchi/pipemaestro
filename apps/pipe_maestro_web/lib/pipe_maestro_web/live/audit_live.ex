@@ -10,6 +10,9 @@ defmodule PipeMaestroWeb.AuditLive do
 
   alias PipeMaestro.Audit
 
+  # How many events a page shows, and how many more each "Carregar mais" adds.
+  @page 30
+
   @labels %{
     "task.created" => "Tarefa criada",
     "task.auto_created" => "Tarefa criada automaticamente da proposta",
@@ -32,12 +35,7 @@ defmodule PipeMaestroWeb.AuditLive do
     scope = socket.assigns.current_scope
 
     if can?(scope, :manage_runners) do
-      {:ok,
-       assign(socket,
-         page_title: "Auditoria",
-         events: Audit.list_events(scope.workspace),
-         now: DateTime.utc_now()
-       )}
+      {:ok, socket |> assign(page_title: "Auditoria", limit: @page) |> load()}
     else
       {:ok,
        socket
@@ -46,7 +44,31 @@ defmodule PipeMaestroWeb.AuditLive do
     end
   end
 
+  @impl true
+  def handle_event("load_more", _params, socket),
+    do: {:noreply, socket |> update(:limit, &(&1 + @page)) |> load()}
+
+  # The newest `limit` events; one more is read to know whether there are more.
+  defp load(socket) do
+    limit = socket.assigns.limit
+    events = Audit.list_events(socket.assigns.current_scope.workspace, limit: limit + 1)
+
+    assign(socket,
+      events: Enum.take(events, limit),
+      more: length(events) > limit,
+      now: DateTime.utc_now()
+    )
+  end
+
   defp label(action), do: Map.get(@labels, action, action)
+
+  # What an event is about, by the kind of its subject.
+  defp subject_icon("task"), do: "hero-queue-list"
+  defp subject_icon("pipeline"), do: "hero-squares-2x2"
+  defp subject_icon("project"), do: "hero-folder"
+  defp subject_icon("runner"), do: "hero-server-stack"
+  defp subject_icon("secret"), do: "hero-key"
+  defp subject_icon(_other), do: "hero-document-text"
 
   defp details(%{"version" => version}), do: "v#{version}"
 
@@ -69,34 +91,38 @@ defmodule PipeMaestroWeb.AuditLive do
       active={:audit}
       title="Auditoria"
     >
-      <.card variant="outline">
-        <.card_header
-          title="Quem fez o quê"
-          description="Tarefas, decisões, pipelines, projetos e runners deste workspace."
-        />
-        <.card_content>
-          <p :if={@events == []} class="text-sm text-gray-500 dark:text-gray-400">
-            Nada registrado ainda.
-          </p>
-          <ol class="divide-y divide-gray-100 text-sm dark:divide-gray-800" data-testid="audit-events">
-            <li :for={event <- @events} class="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span class="min-w-0">
-                <span class="font-medium text-gray-900 dark:text-white">{label(event.action)}</span>
-                <span class="text-gray-700 dark:text-gray-300">· {event.subject_name || "—"}</span>
-                <span :if={details(event.details)} class="text-gray-500 dark:text-gray-400">
-                  ({details(event.details)})
-                </span>
-              </span>
-              <span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                {if event.actor_user, do: event.actor_user.name, else: "—"} · {time_ago(
-                  event.inserted_at,
-                  @now
-                )}
-              </span>
-            </li>
-          </ol>
-        </.card_content>
-      </.card>
+      <.record_list id="audit-events" testid="audit-events" empty={@events == []}>
+        <.record_card
+          :for={event <- @events}
+          id={"audit-event-#{event.id}"}
+          testid={"audit-event-#{event.id}"}
+          dense
+        >
+          <:leading><.record_icon icon={subject_icon(event.subject_type)} /></:leading>
+          <:title>{label(event.action)}</:title>
+          <:meta>
+            <span class="text-gray-700 dark:text-gray-300">{event.subject_name || "—"}</span>
+            <span :if={details(event.details)}>· {details(event.details)}</span>
+          </:meta>
+          <:aside>
+            <span>
+              {if event.actor_user, do: event.actor_user.name, else: "—"} · {time_ago(
+                event.inserted_at,
+                @now
+              )}
+            </span>
+          </:aside>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-audit-events"
+            icon="hero-clipboard-document-list"
+            title="Nada registrado ainda"
+            description="Quem criou, decidiu ou cancelou tarefas, mudou pipelines e projetos e aprovou, renomeou ou revogou runners aparece aqui."
+          />
+        </:empty_state>
+      </.record_list>
+      <.load_more more={@more} testid="audit-load-more" />
     </Layouts.app>
     """
   end

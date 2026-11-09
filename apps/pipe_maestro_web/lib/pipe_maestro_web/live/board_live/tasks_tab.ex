@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
-  import PipeMaestroWeb.TaskComponents, only: [task_progress: 1]
+  import PipeMaestroWeb.TaskComponents, only: [task_progress: 1, task_tone: 1]
 
   alias PipeMaestro.{Pipelines, Projects, Tasks, Workspaces}
   alias PipeMaestro.Workspaces.Workspace
@@ -143,43 +143,34 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
         <.badge size="xs" color="gray" variant="soft" label={Integer.to_string(length(@tasks))} />
       </div>
       <div class="flex flex-1 flex-col gap-3">
-        <.link
-          :for={task <- @tasks}
-          navigate={~p"/w/#{@slug}/tasks/#{task.id}"}
-          data-testid={"board-task-#{task.id}"}
-          class={[
-            "block rounded-lg border bg-white p-3 shadow-xs transition hover:shadow-md dark:bg-gray-900",
-            if(task.status == :awaiting_decision,
-              do: "border-warning-300 dark:border-warning-500/40",
-              else: "border-gray-200 dark:border-gray-800"
-            )
-          ]}
-        >
-          <p class="text-sm font-medium leading-snug text-gray-900 dark:text-white">
-            {task.title}
-          </p>
-          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-            {task.pipeline_name}
-          </p>
-          <.task_progress
-            task={task}
-            class="mt-1.5 text-xs text-gray-500 dark:text-gray-400"
-            testid={"board-task-progress-#{task.id}"}
-          />
-          <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            <span class="flex min-w-0 items-center gap-1">
-              <.icon name="hero-folder-micro" class="size-3.5 shrink-0" />
-              <span
-                class="truncate"
-                title={"#{if task.runner, do: task.runner.name, else: "—"}:#{task.directory}"}
-                data-testid="board-card-project"
-              >
-                {(task.project || %{})["name"] || task.directory}
+        <.record_list :if={@tasks != []}>
+          <.record_card
+            :for={task <- @tasks}
+            testid={"board-task-#{task.id}"}
+            navigate={~p"/w/#{@slug}/tasks/#{task.id}"}
+            tone={task_tone(task)}
+            dense
+          >
+            <:title>{task.title}</:title>
+            <:meta>{task.pipeline_name}</:meta>
+            <:meta>
+              <.task_progress task={task} testid={"board-task-progress-#{task.id}"} />
+            </:meta>
+            <:aside>
+              <span class="flex min-w-0 items-center gap-1">
+                <.icon name="hero-folder-micro" class="size-3.5 shrink-0" />
+                <span
+                  class="truncate"
+                  title={"#{if task.runner, do: task.runner.name, else: "—"}:#{task.directory}"}
+                  data-testid="board-card-project"
+                >
+                  {(task.project || %{})["name"] || task.directory}
+                </span>
               </span>
-            </span>
-            <span class="shrink-0">{time_ago(task.updated_at, @now)}</span>
-          </div>
-        </.link>
+              <span class="shrink-0">{time_ago(task.updated_at, @now)}</span>
+            </:aside>
+          </.record_card>
+        </.record_list>
         <p
           :if={@tasks == []}
           class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs text-gray-400 dark:border-gray-700"

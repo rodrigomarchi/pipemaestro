@@ -65,7 +65,7 @@ defmodule PipeMaestro.MaintenanceTest do
     assert Repo.get(DeviceAuthorization, fresh.id)
     assert [%Event{}] = Jobs.list_events(new_job)
     assert Jobs.list_events(old_job) == []
-    assert Jobs.list_telemetry(old_job) == []
+    assert job_telemetry(old_job) == []
     # The job itself (its outcome and cost) stays.
     assert Jobs.get_job!(workspace, old_job.id).status == :succeeded
   end
