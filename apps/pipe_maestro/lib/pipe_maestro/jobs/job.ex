@@ -15,6 +15,9 @@ defmodule PipeMaestro.Jobs.Job do
   gate commands and how each went) are what the runner reported back, with
   `files_failed`, how many of the files the agent left in `CP_FILES_DIR` did
   not reach the platform (the ones that did are `PipeMaestro.Jobs.JobFile`).
+  `files_refused_quota` is how many of them the control plane refused because
+  the workspace's quota of files was full (`PipeMaestro.Jobs.Files`); the
+  runner counts those in `files_failed` too.
 
   For auditing how the agent worked, the job also keeps what its run reported
   about itself: the CLI's `session_id` (and, for a job that asked to resume
@@ -31,7 +34,9 @@ defmodule PipeMaestro.Jobs.Job do
 
   `insights` is the run's summary (`PipeMaestro.Insights.summarize/1`), kept
   once the run ends: it outlives the events and records it comes from, which
-  `PipeMaestro.Maintenance` removes after a while.
+  `PipeMaestro.Maintenance` removes after a while. `events_pruned_at` is when
+  that happened, under the workspace's retention: its events are gone or keep
+  only their metadata (`PipeMaestro.Jobs.Event.metadata_only/1`).
   """
   use PipeMaestro.Schema
 
@@ -68,6 +73,8 @@ defmodule PipeMaestro.Jobs.Job do
           gates: [map()] | nil,
           delivery: map() | nil,
           files_failed: non_neg_integer() | nil,
+          files_refused_quota: non_neg_integer(),
+          events_pruned_at: DateTime.t() | nil,
           session_id: String.t() | nil,
           session_resumed: boolean() | nil,
           cli_version: String.t() | nil,
@@ -126,6 +133,8 @@ defmodule PipeMaestro.Jobs.Job do
     field :gates, {:array, :map}
     field :delivery, :map
     field :files_failed, :integer
+    field :files_refused_quota, :integer, default: 0
+    field :events_pruned_at, :utc_datetime
     field :session_id, :string
     field :session_resumed, :boolean
     field :cli_version, :string

@@ -126,9 +126,13 @@ defmodule PipeMaestro.Insights do
 
   @doc """
   Keeps the job's summary (`summarize/1`) on it and its tools as
-  `PipeMaestro.Jobs.ToolStat`, replacing what was kept before.
+  `PipeMaestro.Jobs.ToolStat`, replacing what was kept before. A job whose
+  events the retention pruned keeps the summary it has: what is left of its
+  events would not make the same one.
   """
   @spec store_summary(Job.t()) :: :ok
+  def store_summary(%Job{events_pruned_at: %DateTime{}}), do: :ok
+
   def store_summary(%Job{} = job) do
     {summary, tools} = summarize(job)
 
