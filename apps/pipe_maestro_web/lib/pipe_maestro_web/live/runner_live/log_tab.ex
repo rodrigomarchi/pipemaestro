@@ -189,6 +189,7 @@ defmodule PipeMaestroWeb.RunnerLive.LogTab do
   def kind_label("credential_refused"), do: "credencial recusada"
   def kind_label("scratch_remove_failed"), do: "scratch não saiu"
   def kind_label("worktree_remove_failed"), do: "worktree não saiu"
+  def kind_label("claude_sessions_not_found"), do: "sessões do claude não encontradas"
   def kind_label("doctor_changed"), do: "diagnóstico mudou"
   def kind_label(kind), do: kind
 
