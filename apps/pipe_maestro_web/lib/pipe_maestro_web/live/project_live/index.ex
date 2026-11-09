@@ -79,101 +79,41 @@ defmodule PipeMaestroWeb.ProjectLive.Index do
         testid="new-project"
       />
 
-      <.card :if={@projects == []} variant="outline">
-        <.card_content>
-          <.empty
-            data-testid="no-projects"
-            title="Nenhum projeto ainda"
-            description="Um projeto é um diretório de código de um runner: é onde as tarefas rodam. Ele diz como preparar o worktree (setup e o que copiar), como testar e o que os agentes devem saber."
-          >
-            <:icon><.icon name="hero-folder" /></:icon>
-          </.empty>
-        </.card_content>
-      </.card>
-
-      <div class="space-y-4">
-        <.card
+      <.record_list id="projects" testid="projects" empty={@projects == []}>
+        <.record_card
           :for={%{project: project, health: health, tasks: tasks} <- @projects}
-          variant="outline"
-          data-testid={"project-#{project.directory}"}
+          id={"project-#{project.id}"}
+          testid={"project-#{project.directory}"}
+          tone={if health in [:needs_runner, :directory_gone], do: :awaiting}
         >
-          <.card_content>
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="font-semibold text-gray-900 dark:text-white">{project.name}</p>
-                <p class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  <span class="inline-flex items-center gap-1">
-                    <.icon name="hero-server" class="size-3.5" />
-                    <span data-testid={"project-runner-#{project.directory}"}>
-                      {if project.runner, do: project.runner.name, else: "sem runner"}
-                    </span>
-                  </span>
-                  <span class="font-mono">{project.directory}</span>
-                  <.badge
-                    :if={project.runner}
-                    size="sm"
-                    variant="soft"
-                    color={if health == :runner_offline, do: "gray", else: "success"}
-                    dot
-                    label={if health == :runner_offline, do: "offline", else: "online"}
-                    data-testid={"project-status-#{project.directory}"}
-                  />
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <.button
-                  :if={health in [:ok, :runner_offline]}
-                  size="xs"
-                  icon="hero-plus"
-                  link_type="live_redirect"
-                  to={~p"/w/#{@current_scope.workspace.slug}/tasks?project_id=#{project.id}"}
-                  data-testid={"project-new-task-#{project.directory}"}
-                >
-                  Nova tarefa
-                </.button>
-                <.button
-                  :if={health in [:ok, :runner_offline]}
-                  size="xs"
-                  variant="outline"
-                  icon="hero-command-line"
-                  link_type="live_redirect"
-                  to={~p"/w/#{@current_scope.workspace.slug}/jobs?project_id=#{project.id}"}
-                  data-testid={"project-new-job-#{project.directory}"}
-                >
-                  Nova execução
-                </.button>
-              </div>
-              <div :if={can?(@current_scope, :manage_projects)} class="flex gap-2">
-                <.button
-                  size="xs"
-                  variant="outline"
-                  color="gray"
-                  icon="hero-pencil-square"
-                  link_type="live_redirect"
-                  to={~p"/w/#{@current_scope.workspace.slug}/projects/#{project.id}/edit"}
-                  data-testid={"project-edit-#{project.directory}"}
-                >
-                  Editar
-                </.button>
-                <.button
-                  size="xs"
-                  variant="ghost"
-                  color="danger"
-                  icon="hero-trash"
-                  phx-click="delete"
-                  phx-value-id={project.id}
-                  data-confirm={"Remover o projeto #{project.name}?"}
-                  data-testid={"project-delete-#{project.directory}"}
-                >
-                  Remover
-                </.button>
-              </div>
-            </div>
+          <:leading><.record_icon icon="hero-folder" color="primary" /></:leading>
+          <:title>{project.name}</:title>
+          <:badge>
+            <.badge
+              :if={project.runner}
+              size="sm"
+              variant="soft"
+              color={if health == :runner_offline, do: "gray", else: "success"}
+              dot
+              label={if health == :runner_offline, do: "offline", else: "online"}
+              data-testid={"project-status-#{project.directory}"}
+            />
+          </:badge>
+          <:meta>
+            <span class="inline-flex items-center gap-1">
+              <.icon name="hero-server" class="size-3.5" />
+              <span data-testid={"project-runner-#{project.directory}"}>
+                {if project.runner, do: project.runner.name, else: "sem runner"}
+              </span>
+            </span>
+            <span class="font-mono">{project.directory}</span>
+          </:meta>
+          <:body interactive>
             <.alert
               :if={health == :needs_runner}
               color="warning"
               with_icon
-              class="mt-3"
+              class="mb-3"
               data-testid={"project-needs-runner-#{project.directory}"}
             >
               Este projeto precisa de um runner que ofereça o diretório {project.directory}: edite o projeto e escolha um. Até lá, não recebe trabalho.
@@ -182,13 +122,28 @@ defmodule PipeMaestroWeb.ProjectLive.Index do
               :if={health == :directory_gone}
               color="warning"
               with_icon
-              class="mt-3"
+              class="mb-3"
               data-testid={"project-directory-gone-#{project.directory}"}
             >
               O runner {project.runner.name} não oferece mais o diretório {project.directory}: troque o runner do projeto ou devolva o diretório ao runner.
             </.alert>
-            <div :if={tasks != []} class="mt-3 text-sm">
-              <p class="text-gray-500 dark:text-gray-400">Tarefas recentes</p>
+            <dl class="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+              <div :for={
+                {label, value} <- [
+                  {"Setup", project.setup_command},
+                  {"Testes", project.test_command},
+                  {"Lint", project.lint_command},
+                  {"Copiar para o worktree", Enum.join(project.copy_paths, ", ")}
+                ]
+              }>
+                <dt class="text-xs text-gray-500 dark:text-gray-400">{label}</dt>
+                <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
+                  {if value in [nil, ""], do: "—", else: value}
+                </dd>
+              </div>
+            </dl>
+            <div :if={tasks != []} class="mt-3">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Tarefas recentes</p>
               <ul class="mt-1 space-y-1" data-testid={"project-recent-tasks-#{project.directory}"}>
                 <li :for={task <- tasks} class="truncate">
                   <.link
@@ -200,24 +155,65 @@ defmodule PipeMaestroWeb.ProjectLive.Index do
                 </li>
               </ul>
             </div>
-            <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-              <div :for={
-                {label, value} <- [
-                  {"Setup", project.setup_command},
-                  {"Testes", project.test_command},
-                  {"Lint", project.lint_command},
-                  {"Copiar para o worktree", Enum.join(project.copy_paths, ", ")}
-                ]
-              }>
-                <dt class="text-gray-500 dark:text-gray-400">{label}</dt>
-                <dd class="break-all font-mono text-xs text-gray-900 dark:text-white">
-                  {if value in [nil, ""], do: "—", else: value}
-                </dd>
-              </div>
-            </dl>
-          </.card_content>
-        </.card>
-      </div>
+          </:body>
+          <:actions>
+            <.button
+              :if={health in [:ok, :runner_offline]}
+              size="xs"
+              icon="hero-plus"
+              link_type="live_redirect"
+              to={~p"/w/#{@current_scope.workspace.slug}/tasks?project_id=#{project.id}"}
+              data-testid={"project-new-task-#{project.directory}"}
+            >
+              Nova tarefa
+            </.button>
+            <.button
+              :if={health in [:ok, :runner_offline]}
+              size="xs"
+              variant="outline"
+              icon="hero-command-line"
+              link_type="live_redirect"
+              to={~p"/w/#{@current_scope.workspace.slug}/jobs?project_id=#{project.id}"}
+              data-testid={"project-new-job-#{project.directory}"}
+            >
+              Nova execução
+            </.button>
+            <.button
+              :if={can?(@current_scope, :manage_projects)}
+              size="xs"
+              variant="outline"
+              color="gray"
+              icon="hero-pencil-square"
+              link_type="live_redirect"
+              to={~p"/w/#{@current_scope.workspace.slug}/projects/#{project.id}/edit"}
+              data-testid={"project-edit-#{project.directory}"}
+            >
+              Editar
+            </.button>
+            <.button
+              :if={can?(@current_scope, :manage_projects)}
+              size="xs"
+              variant="ghost"
+              color="danger"
+              icon="hero-trash"
+              phx-click="delete"
+              phx-value-id={project.id}
+              data-confirm={"Remover o projeto #{project.name}?"}
+              data-testid={"project-delete-#{project.directory}"}
+            >
+              Remover
+            </.button>
+          </:actions>
+        </.record_card>
+        <:empty_state>
+          <.record_empty
+            testid="no-projects"
+            icon="hero-folder"
+            title="Nenhum projeto ainda"
+            description="Um projeto é um diretório de código de um runner: é onde as tarefas rodam. Ele diz como preparar o worktree (setup e o que copiar), como testar e o que os agentes devem saber."
+          />
+        </:empty_state>
+      </.record_list>
     </Layouts.app>
     """
   end

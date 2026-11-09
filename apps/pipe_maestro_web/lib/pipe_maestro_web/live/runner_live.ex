@@ -24,6 +24,7 @@ defmodule PipeMaestroWeb.RunnerLive do
   import PipeMaestroWeb.JobComponents,
     only: [
       job_status: 1,
+      job_tone: 1,
       prompt_summary: 1,
       prompt_summary: 2,
       format_duration: 1,
@@ -322,26 +323,20 @@ defmodule PipeMaestroWeb.RunnerLive do
               >
                 Nada rodando nem esperando.
               </p>
-              <ul :if={@jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
-                <li
+              <.record_list :if={@jobs != []} id="runner-jobs">
+                <.record_card
                   :for={job <- @jobs}
-                  class="flex items-center justify-between gap-3 py-2 text-sm"
-                  data-testid={"runner-job-#{job.id}"}
+                  id={"runner-job-#{job.id}"}
+                  testid={"runner-job-#{job.id}"}
+                  navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
+                  tone={job_tone(job)}
+                  dense
                 >
-                  <.link
-                    navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
-                    class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
-                  >
-                    {prompt_summary(job.prompt)}
-                  </.link>
-                  <span class="flex shrink-0 items-center gap-2">
-                    <.job_status job={job} />
-                    <span class="text-xs text-gray-500 dark:text-gray-400">
-                      {time_ago(job.started_at || job.inserted_at, @now)}
-                    </span>
-                  </span>
-                </li>
-              </ul>
+                  <:title>{prompt_summary(job.prompt)}</:title>
+                  <:badge><.job_status job={job} /></:badge>
+                  <:aside>{time_ago(job.started_at || job.inserted_at, @now)}</:aside>
+                </.record_card>
+              </.record_list>
             </.card_content>
           </.card>
 
@@ -358,52 +353,36 @@ defmodule PipeMaestroWeb.RunnerLive do
               >
                 Este runner ainda não terminou nenhuma execução.
               </p>
-              <ul :if={@recent_jobs != []} class="divide-y divide-gray-100 dark:divide-gray-800">
-                <li
+              <.record_list :if={@recent_jobs != []} id="runner-recent-jobs-list">
+                <.record_card
                   :for={job <- @recent_jobs}
                   id={"runner-recent-job-#{job.id}"}
-                  class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm"
-                  data-testid={"runner-recent-job-#{job.id}"}
+                  testid={"runner-recent-job-#{job.id}"}
+                  navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
+                  link_testid={"runner-recent-job-link-#{job.id}"}
+                  tone={job_tone(job)}
+                  dense
                 >
-                  <span class="flex min-w-0 items-center gap-2">
+                  <:title>{job_label(job)}</:title>
+                  <:badge>
                     <.job_status job={job} data-testid={"runner-recent-job-status-#{job.id}"} />
-                    <.link
-                      navigate={~p"/w/#{@current_scope.workspace.slug}/jobs/#{job.id}"}
-                      class="min-w-0 truncate text-gray-900 hover:underline dark:text-white"
-                      data-testid={"runner-recent-job-link-#{job.id}"}
-                    >
-                      {job_label(job)}
-                    </.link>
-                  </span>
-                  <dl class="flex shrink-0 items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                    <div class="flex gap-1" title="Duração">
-                      <dt class="sr-only">Duração</dt>
-                      <.icon name="hero-clock" class="size-4" />
-                      <dd data-testid={"runner-recent-job-duration-#{job.id}"}>
-                        {format_duration(job.duration_ms || job.wall_ms)}
-                      </dd>
-                    </div>
-                    <div class="flex gap-1" title="Custo">
-                      <dt class="sr-only">Custo</dt>
-                      <dd class="font-mono" data-testid={"runner-recent-job-cost-#{job.id}"}>
-                        {format_cost(job.cost_usd)}
-                      </dd>
-                    </div>
-                    <div class="flex gap-1" title="Tokens">
-                      <dt class="sr-only">Tokens</dt>
-                      <dd data-testid={"runner-recent-job-tokens-#{job.id}"}>{tokens(job)}</dd>
-                      <span aria-hidden="true">tokens</span>
-                    </div>
-                    <div class="flex gap-1" title="Do cache">
-                      <dt class="sr-only">Do cache</dt>
-                      <dd data-testid={"runner-recent-job-cache-#{job.id}"}>
-                        {format_percent(Job.cache_hit(job))}
-                      </dd>
-                      <span aria-hidden="true">cache</span>
-                    </div>
-                  </dl>
-                </li>
-              </ul>
+                  </:badge>
+                  <:aside>
+                    <.record_metric label="duração" testid={"runner-recent-job-duration-#{job.id}"}>
+                      {format_duration(job.duration_ms || job.wall_ms)}
+                    </.record_metric>
+                    <.record_metric label="custo" testid={"runner-recent-job-cost-#{job.id}"}>
+                      {format_cost(job.cost_usd)}
+                    </.record_metric>
+                    <.record_metric label="tokens" testid={"runner-recent-job-tokens-#{job.id}"}>
+                      {tokens(job)}
+                    </.record_metric>
+                    <.record_metric label="cache" testid={"runner-recent-job-cache-#{job.id}"}>
+                      {format_percent(Job.cache_hit(job))}
+                    </.record_metric>
+                  </:aside>
+                </.record_card>
+              </.record_list>
             </.card_content>
           </.card>
 
