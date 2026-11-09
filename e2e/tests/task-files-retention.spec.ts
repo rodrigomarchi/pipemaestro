@@ -96,7 +96,7 @@ test.describe("Task files retention", () => {
     await expect(usage.filesBytes).toContainText("de 1 MiB");
     await expect(usage.retention).toContainText("30 dias");
     await expect(usage.retention).toContainText("metadados");
-    await usage.files.scrollIntoViewIfNeeded();
+    await expect(usage.files).toBeVisible();
     await shot(app.page, "usage-files-retention");
 
     // The quota is full: a second task's files are refused, and it still ends well.
@@ -138,12 +138,12 @@ test.describe("Task files retention", () => {
     expect(gone.status()).toBe(410);
 
     // The steps stay, with only their metadata, under one notice.
-    const steps = await tasks.openSteps("executar", 1);
+    await tasks.openSteps("executar", 1);
     await expect(tasks.stageRunEventsPruned("executar", 1)).toContainText(
       "conteúdo removido pela retenção",
     );
     await expect(tasks.stageRunEventsPruned("executar", 1)).toHaveCount(1);
-    await shot(steps, "stage-run-steps-pruned");
+    await shot(app.page.getByTestId("stage-run-executar-1-panel-passos"), "stage-run-steps-pruned");
 
     await tasks.closeStage();
     await tasks.openNode("fim", "anexos");

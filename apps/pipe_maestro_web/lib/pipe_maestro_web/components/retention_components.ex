@@ -13,9 +13,13 @@ defmodule PipeMaestroWeb.RetentionComponents do
 
   @doc """
   Bytes in MiB, as Brazilians write numbers: `"1.024 MiB"`, `"0,6 MiB"`.
-  Whole from 10 MiB on, or when exact; one decimal below.
+  Whole from 10 MiB on, or when exact; one decimal below; `"< 0,1 MiB"` for
+  less than that.
   """
   @spec format_mib(non_neg_integer()) :: String.t()
+  def format_mib(bytes) when is_integer(bytes) and bytes > 0 and bytes < div(@mib, 20),
+    do: "< 0,1 MiB"
+
   def format_mib(bytes) when is_integer(bytes) and bytes >= 0 do
     mib = bytes / @mib
 

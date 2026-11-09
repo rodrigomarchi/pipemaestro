@@ -39,8 +39,8 @@ defmodule PipeMaestro.Maintenance do
 
   alias PipeMaestro.{Audit, Insights, Integrations, Notifications, Repo, RunnerTelemetry}
   alias PipeMaestro.Jobs.{Event, Files, Job, Telemetry}
-  alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestro.Runners.DeviceAuthorization
+  alias PipeMaestro.Workspaces.Workspace
 
   @doc "Starts the periodic housekeeping. Options: `:every` (ms)."
   @spec start_link(keyword()) :: GenServer.on_start()

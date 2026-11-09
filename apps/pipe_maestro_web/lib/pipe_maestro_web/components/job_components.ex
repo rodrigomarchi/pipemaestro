@@ -436,6 +436,11 @@ defmodule PipeMaestroWeb.JobComponents do
   attr :event, Event, required: true
   attr :body, :string, required: true
 
+  # Without text (the retention took it), the header alone says what it was.
+  defp event_body(%{event: %Event{type: "assistant_text", data: data}} = assigns)
+       when not is_map_key(data, "text"),
+       do: ~H""
+
   defp event_body(%{event: %Event{type: "assistant_text"}} = assigns) do
     ~H"""
     <div class={[
