@@ -36,6 +36,26 @@ defmodule PipeMaestroWeb.JobComponents do
     """
   end
 
+  attr :job, Job, required: true
+  attr :small, :boolean, default: false
+
+  @doc "What leads a job's card: its status as an icon on a tile."
+  @spec job_mark(map()) :: Phoenix.LiveView.Rendered.t()
+  def job_mark(assigns) do
+    {icon, color} = job_icon(assigns.job.status)
+    assigns = assign(assigns, icon: icon, color: color)
+
+    ~H"""
+    <PipeMaestroWeb.ListComponents.record_icon icon={@icon} color={@color} small={@small} />
+    """
+  end
+
+  defp job_icon(:queued), do: {"hero-clock", "gray"}
+  defp job_icon(:running), do: {"hero-command-line", "info"}
+  defp job_icon(:succeeded), do: {"hero-check", "success"}
+  defp job_icon(:failed), do: {"hero-x-mark", "danger"}
+  defp job_icon(_canceled_or_lost), do: {"hero-no-symbol", "gray"}
+
   @doc "How a job's card calls attention (`PipeMaestroWeb.ListComponents.record_card/1`)."
   @spec job_tone(Job.t()) :: atom()
   def job_tone(%Job{status: :running}), do: :running

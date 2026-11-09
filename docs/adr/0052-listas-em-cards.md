@@ -28,15 +28,19 @@ linha. As telas de detalhe ganharam o trilho e os cards de lugar
      disso.
    - Um card com link é clicável inteiro: o link do título se estende sobre o card. O que é
      interativo dentro dele (ações, formulários, links próprios) fica por cima desse link.
-3. **Os tons de atenção são os mesmos dos lugares de um pipeline** (`attention_class/1`):
+3. **Todo card tem identidade por ícone.** Ele abre com um quadrado de ícone colorido;
+   em tarefas e execuções, o ícone e a cor seguem o status. Os fatos (`record_fact/1`) e
+   as métricas levam ícones de um vocabulário só, descrito no
+   [guia de UI](../guias/ui-petal.md).
+4. **Os tons de atenção são os mesmos dos lugares de um pipeline** (`attention_class/1`):
    rodando, aguardando, erro e sucesso.
-4. **Continuam em tabela** as matrizes de números (uso por etapa, ferramentas e fontes da
+5. **Continuam em tabela** as matrizes de números (uso por etapa, ferramentas e fontes da
    auditoria) e os logs técnicos do runner, porque ali o que importa é comparar colunas.
-5. **Listas longas paginam com "Carregar mais".** Tarefas, execuções, propostas e
+6. **Listas longas paginam com "Carregar mais".** Tarefas, execuções, propostas e
    auditoria começam com 30 itens e somam 30 a cada clique. O limite cresce e a lista
    recarrega do topo, então um evento ao vivo recarrega a lista sem perder o que já foi
    carregado.
-6. **Os test ids ficam.** O da antiga linha passa para o card.
+7. **Os test ids ficam.** O da antiga linha passa para o card.
 
 ## Consequências
 

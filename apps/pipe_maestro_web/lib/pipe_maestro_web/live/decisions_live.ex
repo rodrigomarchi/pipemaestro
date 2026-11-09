@@ -187,14 +187,13 @@ defmodule PipeMaestroWeb.DecisionsLive do
             </.link>
           </:title>
           <:meta>
-            <span>{task.pipeline_name}</span>
-            <span>·</span>
-            <span data-testid={"decision-project-#{task.id}"}>
+            <.record_fact icon="hero-squares-2x2" title="Pipeline">{task.pipeline_name}</.record_fact>
+            <.record_fact icon="hero-folder" title="Projeto" testid={"decision-project-#{task.id}"}>
               {(task.project || %{})["name"] || task.directory}
-            </span>
-            <span class="font-mono">
+            </.record_fact>
+            <.record_fact icon="hero-server" title="Runner e diretório" mono>
               {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
-            </span>
+            </.record_fact>
           </:meta>
           <:aside>
             <.task_progress
@@ -202,12 +201,17 @@ defmodule PipeMaestroWeb.DecisionsLive do
               class="font-medium text-gray-700 dark:text-gray-200"
               testid={"decision-progress-#{task.id}"}
             />
-            <span>esperando {time_ago(task.updated_at, @now)}</span>
-            <span
-              class={overdue?(task, @now) && "font-medium text-danger-600 dark:text-danger-400"}
-              data-testid={"decision-due-#{task.id}"}
-            >
-              {due_label(task.decision_due_at, @now)}
+            <.record_metric icon="hero-clock" title="Esperando desde">
+              esperando {time_ago(task.updated_at, @now)}
+            </.record_metric>
+            <span class="inline-flex items-center gap-1">
+              <.icon name="hero-bell-alert" class="size-3.5 text-gray-400 dark:text-gray-500" />
+              <span
+                class={overdue?(task, @now) && "font-medium text-danger-600 dark:text-danger-400"}
+                data-testid={"decision-due-#{task.id}"}
+              >
+                {due_label(task.decision_due_at, @now)}
+              </span>
             </span>
           </:aside>
           <:body interactive>

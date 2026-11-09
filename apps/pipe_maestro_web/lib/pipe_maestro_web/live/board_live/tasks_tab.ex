@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.RunnerComponents, only: [time_ago: 2]
-  import PipeMaestroWeb.TaskComponents, only: [task_progress: 1, task_tone: 1]
+  import PipeMaestroWeb.TaskComponents, only: [task_mark: 1, task_progress: 1, task_tone: 1]
 
   alias PipeMaestro.{Pipelines, Projects, Tasks, Workspaces}
   alias PipeMaestro.Workspaces.Workspace
@@ -151,14 +151,19 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
             tone={task_tone(task)}
             dense
           >
+            <:leading><.task_mark task={task} small /></:leading>
             <:title>{task.title}</:title>
-            <:meta>{task.pipeline_name}</:meta>
+            <:meta>
+              <.record_fact icon="hero-squares-2x2" title="Pipeline">
+                {task.pipeline_name}
+              </.record_fact>
+            </:meta>
             <:meta>
               <.task_progress task={task} testid={"board-task-progress-#{task.id}"} />
             </:meta>
             <:aside>
               <span class="flex min-w-0 items-center gap-1">
-                <.icon name="hero-folder-micro" class="size-3.5 shrink-0" />
+                <.icon name="hero-folder" class="size-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
                 <span
                   class="truncate"
                   title={"#{if task.runner, do: task.runner.name, else: "—"}:#{task.directory}"}
@@ -167,7 +172,9 @@ defmodule PipeMaestroWeb.BoardLive.TasksTab do
                   {(task.project || %{})["name"] || task.directory}
                 </span>
               </span>
-              <span class="shrink-0">{time_ago(task.updated_at, @now)}</span>
+              <.record_metric icon="hero-clock" title="Atualizada" class="shrink-0">
+                {time_ago(task.updated_at, @now)}
+              </.record_metric>
             </:aside>
           </.record_card>
         </.record_list>

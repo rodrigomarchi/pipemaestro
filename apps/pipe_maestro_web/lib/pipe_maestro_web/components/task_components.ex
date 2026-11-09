@@ -33,6 +33,27 @@ defmodule PipeMaestroWeb.TaskComponents do
   defp task_label(:failed), do: {"Falhou", "danger"}
   defp task_label(:canceled), do: {"Cancelada", "gray"}
 
+  attr :task, Task, required: true
+  attr :small, :boolean, default: false
+
+  @doc "What leads a task's card: its status as an icon on a tile."
+  @spec task_mark(map()) :: Phoenix.LiveView.Rendered.t()
+  def task_mark(assigns) do
+    {icon, color} = task_icon(assigns.task.status)
+    assigns = assign(assigns, icon: icon, color: color)
+
+    ~H"""
+    <PipeMaestroWeb.ListComponents.record_icon icon={@icon} color={@color} small={@small} />
+    """
+  end
+
+  defp task_icon(:queued), do: {"hero-clock", "gray"}
+  defp task_icon(:running), do: {"hero-play", "info"}
+  defp task_icon(:awaiting_decision), do: {"hero-hand-raised", "warning"}
+  defp task_icon(:succeeded), do: {"hero-check", "success"}
+  defp task_icon(:failed), do: {"hero-x-mark", "danger"}
+  defp task_icon(:canceled), do: {"hero-no-symbol", "gray"}
+
   @doc "How a task's card calls attention (`PipeMaestroWeb.ListComponents.record_card/1`)."
   @spec task_tone(Task.t()) :: atom()
   def task_tone(%Task{status: :running}), do: :running

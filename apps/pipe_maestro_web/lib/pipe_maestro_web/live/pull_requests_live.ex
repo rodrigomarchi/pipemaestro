@@ -64,19 +64,29 @@ defmodule PipeMaestroWeb.PullRequestsLive do
               class="inline-flex items-center gap-1 font-mono text-primary-600 hover:underline dark:text-primary-400"
               data-testid={"pull-request-pr-#{task.id}"}
             >
+              <.icon name="hero-code-bracket-square" class="size-3.5" />
               {task.pr_url |> String.split("/") |> Enum.take(-2) |> Enum.join("/")}
               <.icon name="hero-arrow-top-right-on-square" class="size-3" />
             </a>
-            <span>·</span>
-            <span data-testid={"pull-request-project-#{task.id}"}>
+            <.record_fact
+              icon="hero-folder"
+              title="Projeto"
+              testid={"pull-request-project-#{task.id}"}
+            >
               {(task.project || %{})["name"] || task.directory}
-            </span>
+            </.record_fact>
           </:meta>
           <:aside>
-            <.record_metric label="Custo" testid={"pull-request-cost-#{task.id}"}>
+            <.record_metric
+              icon="hero-banknotes"
+              title="Custo"
+              testid={"pull-request-cost-#{task.id}"}
+            >
               {format_cost(@costs[task.id] || Decimal.new(0))}
             </.record_metric>
-            <span>{time_ago(task.updated_at, @now)}</span>
+            <.record_metric icon="hero-calendar" title="Atualizado">
+              {time_ago(task.updated_at, @now)}
+            </.record_metric>
           </:aside>
         </.record_card>
         <:empty_state>

@@ -253,15 +253,17 @@ defmodule PipeMaestroWeb.TaskLive.Index do
           link_testid={"task-link-#{task.id}"}
           tone={task_tone(task)}
         >
+          <:leading><.task_mark task={task} /></:leading>
           <:title>{task.title}</:title>
           <:badge><.task_status task={task} data-testid={"task-status-#{task.id}"} /></:badge>
           <:meta>
-            <span>{task.pipeline_name}</span>
-            <span>·</span>
-            <span>{(task.project || %{})["name"] || task.directory}</span>
-            <span class="font-mono">
+            <.record_fact icon="hero-squares-2x2" title="Pipeline">{task.pipeline_name}</.record_fact>
+            <.record_fact icon="hero-folder" title="Projeto">
+              {(task.project || %{})["name"] || task.directory}
+            </.record_fact>
+            <.record_fact icon="hero-server" title="Runner e diretório" mono>
               {if task.runner, do: task.runner.name, else: "—"}:{task.directory}
-            </span>
+            </.record_fact>
           </:meta>
           <:aside>
             <.task_progress
@@ -269,7 +271,9 @@ defmodule PipeMaestroWeb.TaskLive.Index do
               class="font-medium text-gray-700 dark:text-gray-200"
               testid={"task-progress-#{task.id}"}
             />
-            <span>criada {time_ago(task.inserted_at, @now)}</span>
+            <.record_metric icon="hero-calendar" title="Criada">
+              {time_ago(task.inserted_at, @now)}
+            </.record_metric>
           </:aside>
         </.record_card>
         <:empty_state>

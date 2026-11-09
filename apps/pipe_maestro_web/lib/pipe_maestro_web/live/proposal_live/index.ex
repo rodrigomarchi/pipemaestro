@@ -146,13 +146,17 @@ defmodule PipeMaestroWeb.ProposalLive.Index do
           <:badge><.job_status job={job} data-testid={"proposal-status-#{job.id}"} /></:badge>
           <:meta>
             <.kind_badge kind={Proposals.kind(job)} />
-            <span data-testid={"proposal-project-#{job.id}"}>
+            <.record_fact icon="hero-folder" title="Projeto" testid={"proposal-project-#{job.id}"}>
               {if job.project, do: job.project.name, else: Proposals.input(job)["directory"]}
-            </span>
-            <span :if={job.created_by_user}>· {job.created_by_user.name}</span>
+            </.record_fact>
+            <.record_fact :if={job.created_by_user} icon="hero-user" title="Quem pediu">
+              {job.created_by_user.name}
+            </.record_fact>
           </:meta>
           <:aside>
-            <span>{time_ago(job.inserted_at, DateTime.utc_now())}</span>
+            <.record_metric icon="hero-calendar" title="Pedida">
+              {time_ago(job.inserted_at, DateTime.utc_now())}
+            </.record_metric>
           </:aside>
         </.record_card>
         <:empty_state>

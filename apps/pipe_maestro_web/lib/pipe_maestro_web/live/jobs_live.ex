@@ -129,19 +129,30 @@ defmodule PipeMaestroWeb.JobsLive do
           link_testid={"job-link-#{job.id}"}
           tone={job_tone(job)}
         >
-          <:leading><.record_icon icon="hero-command-line" /></:leading>
+          <:leading><.job_mark job={job} /></:leading>
           <:title>{prompt_summary(job.prompt, 120)}</:title>
           <:badge><.job_status job={job} data-testid={"job-status-#{job.id}"} /></:badge>
           <:meta>
-            <span :if={job.project}>{job.project.name}</span>
-            <span :if={job.project}>·</span>
-            <span>{if job.runner, do: job.runner.name, else: "—"}</span>
-            <span :if={job.created_by_user}>· por {job.created_by_user.name}</span>
+            <.record_fact :if={job.project} icon="hero-folder" title="Projeto">
+              {job.project.name}
+            </.record_fact>
+            <.record_fact icon="hero-server" title="Runner">
+              {if job.runner, do: job.runner.name, else: "—"}
+            </.record_fact>
+            <.record_fact :if={job.created_by_user} icon="hero-user" title="Quem enviou">
+              {job.created_by_user.name}
+            </.record_fact>
           </:meta>
           <:aside>
-            <.record_metric label="Duração">{format_duration(job.duration_ms)}</.record_metric>
-            <.record_metric label="Custo">{format_cost(job.cost_usd)}</.record_metric>
-            <span>criada {time_ago(job.inserted_at, @now)}</span>
+            <.record_metric :if={job.duration_ms} icon="hero-clock" title="Duração">
+              {format_duration(job.duration_ms)}
+            </.record_metric>
+            <.record_metric :if={job.cost_usd} icon="hero-banknotes" title="Custo">
+              {format_cost(job.cost_usd)}
+            </.record_metric>
+            <.record_metric icon="hero-calendar" title="Criada">
+              {time_ago(job.inserted_at, @now)}
+            </.record_metric>
           </:aside>
         </.record_card>
         <:empty_state>

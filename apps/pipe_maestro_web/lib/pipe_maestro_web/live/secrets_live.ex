@@ -90,9 +90,11 @@ defmodule PipeMaestroWeb.SecretsLive do
                 testid={"secret-#{secret.name}"}
                 dense
               >
-                <:leading><.record_icon icon="hero-key" /></:leading>
+                <:leading><.record_icon icon="hero-key" color="warning" small /></:leading>
                 <:title><span class="font-mono">{secret.name}</span></:title>
-                <:meta>••••••••</:meta>
+                <:meta>
+                  <.record_fact icon="hero-lock-closed" title="Valor">••••••••</.record_fact>
+                </:meta>
                 <:actions>
                   <.button
                     size="xs"

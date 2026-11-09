@@ -103,6 +103,30 @@ defmodule PipeMaestroWeb.ListComponentsTest do
     assert html =~ "hero-chevron-right"
   end
 
+  test "facts and metrics carry their icons; the icon tile has a dense size" do
+    assigns = %{}
+
+    html =
+      rendered_to_string(~H"""
+      <ListComponents.record_fact icon="hero-folder" title="Projeto" testid="fact" mono>
+        app
+      </ListComponents.record_fact>
+      <ListComponents.record_metric icon="hero-banknotes" title="Custo" testid="metric">
+        US$ 1
+      </ListComponents.record_metric>
+      <ListComponents.record_icon icon="hero-play" color="info" small />
+      """)
+
+    assert html =~ "hero-folder"
+    assert html =~ ~r/title="Projeto"/
+    assert html =~ ~r/class="truncate font-mono"[^>]*data-testid="fact"/
+    assert html =~ "hero-banknotes"
+    assert html =~ ~r/title="Custo"/
+    assert html =~ "hero-play"
+    assert html =~ "size-8"
+    assert html =~ "bg-info-50"
+  end
+
   test "a tone calls attention" do
     assert render_card(%{tone: :awaiting}) =~ "border-warning-400"
     assert render_card(%{tone: :running}) =~ "border-info-400"

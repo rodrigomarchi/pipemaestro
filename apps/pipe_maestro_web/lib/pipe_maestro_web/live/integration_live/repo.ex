@@ -269,6 +269,13 @@ defmodule PipeMaestroWeb.IntegrationLive.Repo do
                 testid={"trigger-#{trigger_key(trigger)}"}
                 dense
               >
+                <:leading>
+                  <.record_icon
+                    icon="hero-bolt"
+                    color={if trigger.enabled, do: "primary", else: "gray"}
+                    small
+                  />
+                </:leading>
                 <:title>{trigger_kind_name(trigger.kind)}</:title>
                 <:badge>
                   <.badge

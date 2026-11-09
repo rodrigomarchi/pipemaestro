@@ -270,6 +270,16 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
   defp kind_name("check_action"), do: "botão de um check"
   defp kind_name(_other), do: "evento"
 
+  # What a delivery is about, as an icon.
+  defp delivery_icon(kind) when kind in ~w(issue_opened issue_closed),
+    do: "hero-exclamation-circle"
+
+  defp delivery_icon("issue_labels_changed"), do: "hero-tag"
+  defp delivery_icon("issue_comment"), do: "hero-chat-bubble-left-ellipsis"
+  defp delivery_icon(kind) when kind in ~w(pr_review pr_closed), do: "hero-code-bracket-square"
+  defp delivery_icon("check_action"), do: "hero-check-badge"
+  defp delivery_icon(_other), do: "hero-inbox-arrow-down"
+
   defp webhook_status(assigns) do
     {color, label} =
       case {assigns.repo.webhook_status, assigns.repo.webhook_id} do
@@ -457,16 +467,18 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                   link_testid={"repo-link-#{key(repo.full_name)}"}
                   dense
                 >
+                  <:leading><.record_icon icon="hero-code-bracket" color="primary" small /></:leading>
                   <:title><span class="font-mono">{repo.full_name}</span></:title>
                   <:badge>
                     <.webhook_status repo={repo} testid={"repo-webhook-#{key(repo.full_name)}"} />
                   </:badge>
                   <:meta>
-                    {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"} · {plural(
-                      length(repo.triggers),
-                      "gatilho",
-                      "gatilhos"
-                    )}
+                    <.record_fact icon="hero-folder" title="Projeto">
+                      {if repo.project, do: "projeto #{repo.project.name}", else: "sem projeto"}
+                    </.record_fact>
+                    <.record_fact icon="hero-bolt" title="Gatilhos">
+                      {plural(length(repo.triggers), "gatilho", "gatilhos")}
+                    </.record_fact>
                   </:meta>
                 </.record_card>
               </.record_list>
@@ -516,6 +528,13 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                   tone={if delivery.status == "failed", do: :danger}
                   dense
                 >
+                  <:leading>
+                    <.record_icon
+                      icon={delivery_icon(delivery.kind)}
+                      color={status_color(delivery.status)}
+                      small
+                    />
+                  </:leading>
                   <:title>
                     {kind_name(delivery.kind)}
                     <span
@@ -535,8 +554,19 @@ defmodule PipeMaestroWeb.IntegrationLive.Show do
                     />
                   </:badge>
                   <:meta interactive>
-                    {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")} · {delivery.source}
-                    <span :if={delivery.outcome}>· {delivery.outcome}</span>
+                    <.record_fact icon="hero-calendar" title="Quando chegou">
+                      {Calendar.strftime(delivery.inserted_at, "%d/%m %H:%M:%S")}
+                    </.record_fact>
+                    <.record_fact icon="hero-arrow-down-tray" title="Origem">
+                      {delivery.source}
+                    </.record_fact>
+                    <.record_fact
+                      :if={delivery.outcome}
+                      icon="hero-flag"
+                      title="O que a plataforma fez"
+                    >
+                      {delivery.outcome}
+                    </.record_fact>
                     <.link
                       :if={delivery.task_id}
                       navigate={~p"/w/#{@current_scope.workspace.slug}/tasks/#{delivery.task_id}"}
