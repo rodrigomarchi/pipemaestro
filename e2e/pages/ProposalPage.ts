@@ -140,6 +140,29 @@ export class ProposalPage {
     return this.page.getByTestId("proposal-created-task-link");
   }
 
+  /** Task: the questionnaire of the agent's questions (ids suffixed by "proposta"). */
+  get questionnaire(): Locator {
+    return this.page.getByTestId("questionnaire-proposta");
+  }
+
+  /** Task: a part of the questionnaire ("progress", "submit", "review", "confirm"...). */
+  questionnairePart(part: string): Locator {
+    return this.page.getByTestId(`questionnaire-${part}-proposta`);
+  }
+
+  /** Task: option `m` of question `n` (both from 0). */
+  questionOption(n: number, m: number): Locator {
+    return this.page.getByTestId(`question-${n}-option-${m}-proposta`);
+  }
+
+  /** Task: sends the answers, checking them in the review first. */
+  async sendAnswers() {
+    await expect(this.questionnairePart("submit")).toBeEnabled();
+    await this.questionnairePart("submit").click();
+    await expect(this.questionnairePart("review")).toBeVisible();
+    await this.questionnairePart("confirm").click();
+  }
+
   /** Task: why the proposal was left for review instead of created on its own. */
   get autoApproveSkipped(): Locator {
     return this.page.getByTestId("proposal-auto-approve-skipped");

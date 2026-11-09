@@ -69,6 +69,46 @@ defmodule PipeMaestro.Integrations.IngestTest do
     trigger
   end
 
+  defp finish_triage(ctx, job_id, questions) do
+    {:ok, _} = Jobs.mark_started(ctx.runner, job_id)
+
+    {:ok, _} =
+      Jobs.finish_job(ctx.runner, job_id, %{
+        "status" => "succeeded",
+        "structured_output" => %{
+          "analise" => "Falta saber o navegador.",
+          "titulo" => "Normalizar o e-mail",
+          "descricao" => "Detalhes.",
+          "pipeline" => "Correção de bug",
+          "pronta" => false,
+          "perguntas" => questions
+        }
+      })
+  end
+
+  defp browser_questions do
+    [
+      %{
+        "titulo" => "Navegador",
+        "pergunta" => "Em qual navegador acontece?",
+        "multipla" => false,
+        "opcoes" => [
+          %{"rotulo" => "Chrome", "descricao" => "O mais usado.", "recomendada" => false},
+          %{"rotulo" => "Firefox", "descricao" => "O do relato.", "recomendada" => true}
+        ]
+      },
+      %{
+        "titulo" => "Versão",
+        "pergunta" => "Qual versão do app?",
+        "multipla" => false,
+        "opcoes" => [
+          %{"rotulo" => "A última", "descricao" => "2.3.", "recomendada" => true},
+          %{"rotulo" => "Todas", "descricao" => "Desde a 1.0.", "recomendada" => false}
+        ]
+      }
+    ]
+  end
+
   defp payload(name, changes \\ %{}) do
     @fixtures
     |> Path.join(name <> ".json")
@@ -242,6 +282,38 @@ defmodule PipeMaestro.Integrations.IngestTest do
       assert body =~ "/proposals/#{job_id}"
       assert "pipemaestro:aguardando-decisao" in Enum.map(repo.issues[3]["labels"], & &1["name"])
       refute Repo.get_by(Task, proposal_job_id: job_id)
+    end
+
+    test "a triage's structured questions reach the issue numbered, with their options", ctx do
+      %Delivery{proposal_job_id: job_id} = deliver(ctx, "issue_label", payload("issue_label"))
+      finish_triage(ctx, job_id, browser_questions())
+
+      repo =
+        eventually(fn -> FakeForgejo.repo(ctx.fake, "acme/app") end, &(length(&1.comments) == 2))
+
+      assert [_status, %{"body" => body}] = repo.comments
+      assert body =~ ~r/1\. .*Em qual navegador acontece\?/
+      assert body =~ "Firefox (recomendada)"
+      assert body =~ "Chrome"
+      assert body =~ ~r/2\. .*Qual versão do app\?/
+      assert body =~ "responda"
+      assert body =~ "/proposals/#{job_id}"
+    end
+
+    test "a triage without auto approval also tells its questions on the issue", ctx do
+      {:ok, _trigger} =
+        Integrations.save_trigger(ctx.repo, ctx.user, ctx.trigger, %{"auto_approve" => "false"})
+
+      %Delivery{proposal_job_id: job_id} = deliver(ctx, "issue_label", payload("issue_label"))
+      finish_triage(ctx, job_id, browser_questions())
+
+      repo =
+        eventually(fn -> FakeForgejo.repo(ctx.fake, "acme/app") end, &(length(&1.comments) == 2))
+
+      assert [_status, %{"body" => body}] = repo.comments
+      assert body =~ ~r/1\. .*Em qual navegador acontece\?/
+      assert body =~ "Firefox (recomendada)"
+      assert body =~ "/proposals/#{job_id}"
     end
 
     test "a triage that failed says so on the issue", ctx do
