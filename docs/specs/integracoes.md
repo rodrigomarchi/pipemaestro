@@ -1,7 +1,8 @@
 # Integrações com hosts git
 
 > Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md)
-> e [ADR 0037](../adr/0037-credencial-git-por-job.md).
+> e [ADR 0037](../adr/0037-credencial-git-por-job.md). O desfecho do PR (seção 8):
+> [ADR 0053](../adr/0053-qualidade-das-entregas.md).
 
 ## 1. Modelo de dados
 
@@ -12,6 +13,7 @@
 | `Trigger` | `integration_triggers` | O que dispara uma tarefa no repositório (seção 3) |
 | `IssueState` | `integration_issues` | Por issue: o retrato das labels, a última atualização vista, os gatilhos que já dispararam e os comentários já aplicados como comando |
 | `Delivery` | `integration_deliveries` | Cada entrega recebida, reconciliada ou reprocessada, com o evento, o status e o motivo |
+| `PrOutcome` | `integration_pr_outcomes` | O desfecho do PR de cada tarefa entregue: `ready_at`, estado (`open`, `merged`, `closed`) com as datas, rodadas de review e os commits do pipeline e de pessoas, por SHA (seção 8) |
 
 A tarefa guarda `linked_repo_id`, `issue_number`, `issue_url`, `head_sha` (o último commit
 empurrado) e `issue_feedback` (o que já foi aplicado no host).
@@ -29,7 +31,7 @@ na tabela é ignorado com o motivo "evento sem uso".
 | `:issue_comment` | `issue_comment`, `created` (`is_pull` num PR) | `issue_comment`, `created` |
 | `:issue_closed` | `issues`, `closed` | `issues`, `closed` |
 | `:pr_review` | `pull_request_review_approved` e `_rejected` | `pull_request_review`, `submitted` |
-| `:pr_closed` | `pull_request`, `closed` (`merged`) | `pull_request`, `closed` (`merged`) |
+| `:pr_closed` | `pull_request`, `closed` (`merged`, `merged_at`, `closed_at`) | `pull_request`, `closed` (`merged`, `merged_at`, `closed_at`) |
 
 Assinatura: no Forgejo, `X-Forgejo-Signature`, o HMAC-SHA256 do corpo em hex puro; no
 GitHub, `X-Hub-Signature-256`, `sha256=<hex>`. O id da entrega vem de `X-Forgejo-Delivery`
@@ -133,7 +135,11 @@ login); um inválido para o estado recebe uma resposta com os comandos válidos.
 - Review pedindo mudanças num PR de tarefa `succeeded`, de quem tem escrita: nova etapa
   "Correção N" com o texto do review e os comentários de linha como pedido.
 - "Refazer etapa" no check run (GitHub), de quem tem escrita: nova tentativa da etapa.
-- PR fechado com merge: o comentário de status diz "integrado".
+- PR fechado com merge: o comentário de status diz "integrado", e o desfecho do PR fica
+  `merged`, com a data do host (seção 8).
+- PR fechado sem merge: o desfecho fica `closed`. Nada mais dispara.
+- O mesmo review processado de novo (a reconciliação, um replay) não abre uma segunda
+  correção: fica `ignored`, "review já aplicado".
 
 ### Merge automático
 
@@ -152,3 +158,29 @@ e a cada mudança da tarefa:
   "Correção N" com o que falhou, até `max_merge_fixes`. Depois disso, o merge fica
   bloqueado e quem cuida da tarefa é avisado.
 - **Recusa do host, PR fechado ou 6 horas de espera** bloqueiam o merge, sem correção.
+
+## 8. Desfecho do PR
+
+Cada tarefa entregue em PR num repositório vinculado tem um `PrOutcome`
+(`PipeMaestro.Integrations.PrOutcomes`, [ADR 0053](../adr/0053-qualidade-das-entregas.md)),
+que o Uso lê na aba Qualidade (`PipeMaestro.Usage.quality/3`).
+
+- **Pronto** (`ready_at`): a primeira vez que a tarefa terminou `succeeded` com `pr_url`.
+- **Integrado ou fechado:** pelo webhook `:pr_closed` (seção 7), pelo merge automático, ou pela
+  reconciliação, que consulta `get_pr/3` dos PRs em aberto (`GET /pulls/:n`, com `merged_at`
+  e `closed_at`).
+- **Rodadas de review:** cada review com pedido de mudanças que virou "Correção N", contado uma
+  vez (o id do review no GitHub; o id da entrega original no Forgejo, cujo webhook não traz o
+  do review).
+- **Commits:** `Provider.pr_commits/3` lista os commits do PR, do mais antigo para o mais novo,
+  todas as páginas: `GET /repos/:r/pulls/:n/commits`, com `per_page` no GitHub (no máximo 250
+  commits) e `page`/`limit` com `X-Total-Count` no Forgejo. Cada um vira `%{sha, parents,
+  committed_at}`.
+  - Quando o `head_sha` da tarefa é novo e está na lista, os commits até ele são do pipeline,
+    e os que vêm depois são de uma pessoa.
+  - Fora disso, todo SHA que não é do pipeline é de uma pessoa.
+  - Um commit de merge (com mais de um pai) não conta.
+- **Quando lê:** a cada mudança da tarefa (`FeedbackWorker`), no merge e no fechamento, e na
+  reconciliação enquanto o PR está aberto, falta a leitura final ou o host falhou
+  (`commits_error`). Só com `api_mode` `control_plane`; no modo `runner`, `commits_tracked`
+  é falso e só os reviews contam como alteração.

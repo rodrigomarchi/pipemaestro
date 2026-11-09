@@ -1,6 +1,6 @@
 /**
  * @section Uso
- * @flow Q [todo] The quality tab of Usage: empty before any pull request; a task's PR that got a person's commit and was merged shows as accepted with changes, by pipeline, with the rework by stage, and follows the pipeline and project filters
+ * @flow Q [done] The quality tab of Usage: empty before any pull request; a task's PR that got a person's commit and was merged shows as accepted with changes, by pipeline, with the rework by stage, and follows the pipeline and project filters
  */
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";

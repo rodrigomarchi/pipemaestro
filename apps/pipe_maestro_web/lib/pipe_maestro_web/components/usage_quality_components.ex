@@ -123,8 +123,14 @@ defmodule PipeMaestroWeb.UsageQualityComponents do
                 </span>
                 <div class="flex w-full flex-1 items-end">
                   <div
-                    class="w-full rounded-t bg-success-500 dark:bg-success-400"
-                    style={"height: #{max(round(week.clean_pct), 3)}%"}
+                    class={[
+                      "w-full rounded-t",
+                      if(week.accepted_clean == 0,
+                        do: "bg-gray-300 dark:bg-gray-700",
+                        else: "bg-success-500 dark:bg-success-400"
+                      )
+                    ]}
+                    style={"height: #{max(round(week.clean_pct), 2)}%"}
                   />
                 </div>
                 <span class="text-[10px] text-gray-500 dark:text-gray-400">
