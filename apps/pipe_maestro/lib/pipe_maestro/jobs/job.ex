@@ -83,6 +83,7 @@ defmodule PipeMaestro.Jobs.Job do
           cache_creation_tokens: non_neg_integer() | nil,
           thinking_tokens: non_neg_integer() | nil,
           model_usage: map() | nil,
+          session_totals: map() | nil,
           permission_denials: [map()] | nil,
           subagents: map() | nil,
           environment: map() | nil,
@@ -140,6 +141,7 @@ defmodule PipeMaestro.Jobs.Job do
     field :cache_creation_tokens, :integer
     field :thinking_tokens, :integer
     field :model_usage, :map
+    field :session_totals, :map
     field :permission_denials, {:array, :map}
     field :subagents, :map
     field :environment, :map
@@ -246,6 +248,7 @@ defmodule PipeMaestro.Jobs.Job do
       :cache_creation_tokens,
       :thinking_tokens,
       :model_usage,
+      :session_totals,
       :permission_denials,
       :subagents,
       :environment,

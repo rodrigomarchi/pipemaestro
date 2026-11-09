@@ -19,7 +19,7 @@ defmodule PipeMaestro.Jobs do
 
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Insights
-  alias PipeMaestro.Jobs.{Event, Job}
+  alias PipeMaestro.Jobs.{Event, Job, SessionTotals}
   alias PipeMaestro.Jobs.Telemetry, as: JobTelemetry
   alias PipeMaestro.Notifications
   alias PipeMaestro.{Projects, Repo, Runners}
@@ -535,13 +535,15 @@ defmodule PipeMaestro.Jobs do
 
   @doc """
   Records how one of the runner's jobs ended, and keeps the run's summary
-  (`PipeMaestro.Insights.store_summary/1`).
+  (`PipeMaestro.Insights.store_summary/1`). A run that resumed an earlier
+  session keeps only its own cost (`PipeMaestro.Jobs.SessionTotals`).
   """
   @spec finish_job(Runner.t(), String.t(), map()) ::
           {:ok, Job.t()} | {:error, :not_found | :finished | Ecto.Changeset.t()}
   def finish_job(%Runner{} = runner, job_id, attrs) do
     with {:ok, job} <- fetch_for_runner(runner, job_id),
          true <- Job.active?(job) || {:error, :finished},
+         attrs = SessionTotals.own(job, attrs),
          {:ok, job} <- job |> Job.finish_changeset(attrs, now()) |> Repo.update() do
       job = summarize(job)
       notify(job)

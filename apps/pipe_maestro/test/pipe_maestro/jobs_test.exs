@@ -142,6 +142,72 @@ defmodule PipeMaestro.JobsTest do
       assert Map.fetch(finished, :files_failed) == {:ok, nil}
     end
 
+    test "a run that resumed a session keeps only its own cost", ctx do
+      usage = fn cost, output ->
+        %{"opus" => %{"output" => output, "cache_read" => output * 10, "cost_usd" => cost}}
+      end
+
+      finish = fn job, attrs ->
+        {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+        {:ok, job} = Jobs.finish_job(ctx.runner, job.id, Map.put(attrs, "status", "succeeded"))
+        job
+      end
+
+      resuming = fn session ->
+        ctx.runner
+        |> job_fixture(ctx.user)
+        |> Ecto.Changeset.change(context: %{"resume_session_id" => session})
+        |> Repo.update!()
+      end
+
+      first =
+        finish.(job_fixture(ctx.runner, ctx.user), %{
+          "cost_usd" => 1.5,
+          "session_id" => "s1",
+          "model_usage" => usage.(1.5, 100)
+        })
+
+      assert Decimal.equal?(first.cost_usd, Decimal.new("1.5"))
+
+      # The CLI reports the whole session, the first run's spending included.
+      second =
+        finish.(resuming.("s1"), %{
+          "cost_usd" => 4.0,
+          "session_id" => "s2",
+          "session_resumed" => true,
+          "model_usage" => usage.(4.0, 130)
+        })
+
+      assert Decimal.equal?(second.cost_usd, Decimal.new("2.5"))
+      assert second.model_usage == usage.(2.5, 30)
+      assert second.session_totals == %{"cost_usd" => 4.0, "model_usage" => usage.(4.0, 130)}
+
+      # A third resumes the second: its session's totals, not its own cost, come off.
+      third =
+        finish.(resuming.("s2"), %{
+          "cost_usd" => 5.0,
+          "session_resumed" => true,
+          "model_usage" => usage.(5.0, 150)
+        })
+
+      assert Decimal.equal?(third.cost_usd, Decimal.new("1.0"))
+      assert third.model_usage == usage.(1.0, 20)
+
+      # A run that fell back to a new session resumed nothing.
+      fresh =
+        finish.(resuming.("s1"), %{"cost_usd" => 0.75, "session_resumed" => false})
+
+      assert Decimal.equal?(fresh.cost_usd, Decimal.new("0.75"))
+
+      # A job from before the totals were kept counts with its cost.
+      Repo.update!(Ecto.Changeset.change(first, session_totals: nil))
+
+      fourth =
+        finish.(resuming.("s1"), %{"cost_usd" => 2.0, "session_resumed" => true})
+
+      assert Decimal.equal?(fourth.cost_usd, Decimal.new("0.5"))
+    end
+
     test "refuses an unknown status", ctx do
       job = job_fixture(ctx.runner, ctx.user)
 
