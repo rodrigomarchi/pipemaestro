@@ -9,7 +9,6 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
     Delivery,
     Ingest,
     LinkedRepo,
-    PrOutcome,
     PrOutcomes,
     Reconciler
   }

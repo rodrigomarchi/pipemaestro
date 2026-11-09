@@ -4,7 +4,7 @@ defmodule PipeMaestro.Integrations.AutoMergeTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{FakeForgejo, Integrations, Repo, Runners, Tasks}
-  alias PipeMaestro.Integrations.{AutoMerge, Feedback, PrOutcome, PrOutcomes}
+  alias PipeMaestro.Integrations.{AutoMerge, Feedback, PrOutcomes}
   alias PipeMaestro.Notifications.Notification
   alias PipeMaestro.Tasks.Task
 
