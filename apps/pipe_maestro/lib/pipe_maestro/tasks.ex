@@ -14,7 +14,8 @@ defmodule PipeMaestro.Tasks do
   person when there are any (`decision_questionnaire`,
   `PipeMaestro.Tasks.Questionnaire`): those the agent asked, or, on a
   failure, those of an analysis the platform asks the agent for by itself
-  (`request_analysis/1`, `PipeMaestro.Proposals.AnalysisKind`). The person
+  (`request_analysis/1`, `PipeMaestro.Proposals.AnalysisKind`) when the
+  pipeline has `auto_analysis` on, as it is by default. The person
   answers them (`answer/4`) and the next attempt gets the answers in its
   prompt; the manual decision stays available all along.
 
@@ -1232,8 +1233,9 @@ defmodule PipeMaestro.Tasks do
   defp pause_reason(stage, run), do: Engine.rule_pause(run.structured_output, stage.rules)
 
   # `asking` says what the person is asked besides the reason: the
-  # questionnaire of a block, an analysis the agent is asked for (a failure),
-  # or nothing (a rule, the budget, a pause someone asked for).
+  # questionnaire of a block, an analysis the agent is asked for (a failure,
+  # when the task's pipeline has it on), or nothing (a rule, the budget, a
+  # pause someone asked for).
   defp await(task, reason, asking \\ :none) do
     questionnaire =
       case asking do
@@ -1256,8 +1258,11 @@ defmodule PipeMaestro.Tasks do
       |> announce(:awaiting)
       |> tap(&start_next_queued(&1.workspace_id))
 
-    if asking == :analysis, do: request_analysis(task), else: task
+    if asking == :analysis and auto_analysis?(task), do: request_analysis(task), else: task
   end
+
+  # A snapshot from before the setting (no key) analyses, as it did.
+  defp auto_analysis?(task), do: context(task, "auto_analysis") != false
 
   defp finish(task, status) do
     task
