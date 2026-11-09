@@ -137,13 +137,6 @@ export class BackofficePage {
     await waitForLiveView(this.page);
   }
 
-  /** On a user page: adds them to a workspace. */
-  async addUserToWorkspace(workspaceName: string) {
-    await pickComboOption(this.page.getByTestId("add-to-workspace"), workspaceName);
-    await this.page.getByTestId("add-to-workspace-submit").click();
-    await this.expectToast(`agora faz parte de ${workspaceName}.`);
-  }
-
   async resetPassword(newPassword: string) {
     await this.page.getByTestId("reset-password").click();
     await this.page.getByTestId("new-password").fill(newPassword);

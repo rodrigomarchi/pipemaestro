@@ -73,8 +73,15 @@ test.describe("Job execution", () => {
     // The agent ran in a disposable worktree: its file never reached the directory.
     expect(existsSync(join(root, "app", "fake-claude.txt"))).toBe(false);
 
+    // The run as a pipeline: each place says what it holds.
+    await expect(jobs.node("resultado")).toContainText("fake-claude.txt");
+    await expect(jobs.node("fim")).toContainText("US$ 0.0042");
+    await shot(app.page, "job-succeeded");
+    await expectFitsPhone(app.page, "job-succeeded");
+
     // The session, thinking, the Write and its result are icons in one strip;
-    // the answer and the result are blocks of text.
+    // the answer and the result are blocks of text, in the agent's drawer.
+    await jobs.openNode("agente");
     const timeline = jobs.timeline;
     await expect(timeline.icons()).toHaveCount(4);
     await expect(timeline.strip(1).getByTestId(/^job-event-icon-\d+$/)).toHaveCount(4);
@@ -84,7 +91,7 @@ test.describe("Job execution", () => {
       await expect(timeline.panel(seq)).toBeHidden();
     }
     await expect(timeline.icon(3)).toHaveAttribute("data-type", "tool_use");
-    await shot(app.page, "job-succeeded");
+    await shot(app.page, "job-timeline");
 
     // An icon opens its panel; another switches to its own; the same closes it.
     await timeline.toggle(3);
@@ -110,15 +117,16 @@ test.describe("Job execution", () => {
     await timeline.toggle(3);
     if (viewport) await app.page.setViewportSize(viewport);
 
-    // The result and the prompt each have a tab of their own.
-    await jobs.openTab("resultado");
+    // The result and the prompt each have a place of their own.
+    await jobs.openNode("resultado");
     await expect(jobs.result).toContainText("fake-claude.txt");
     await shot(app.page, "job-result");
     await expectFitsPhone(app.page, "job-result");
-    await jobs.openTab("prompt");
+    await jobs.openNode("entrada");
     await expect(app.page.getByTestId("job-prompt-text")).toBeVisible();
     await shot(app.page, "job-prompt");
-    await jobs.openTab("auditoria");
+    // Once the run ended, the audit is a tab of the agent's drawer.
+    await jobs.openNode("agente", "auditoria");
 
     // The audit: what the run reported, and the CLI's telemetry relayed by the
     // runner (the Write took 12 ms in the fake CLI's export).
@@ -145,6 +153,7 @@ test.describe("Job execution", () => {
     // Flow D: an open panel stays open while its strip grows live.
     await jobs.backToList();
     await jobs.create("App", "Use mais uma ferramenta [gotejando]");
+    await jobs.openNode("agente");
     await expect(jobs.timeline.icon(4)).toBeVisible();
     await jobs.timeline.toggle(2);
     await expect(jobs.timeline.panel(2)).toBeVisible();
@@ -165,6 +174,8 @@ test.describe("Job execution", () => {
     // A run in progress gets the room: the sidebar closed to its icons.
     await expect(app.page.getByTestId("app-sidebar")).toHaveAttribute("data-collapsed", "true");
     await expect(app.page.getByTestId("job-live-requests")).toHaveText("1");
+    // The agent's place carries the run as it goes.
+    await expect(jobs.node("agente")).toContainText("até agora US$ 0.0042");
     await shot(app.page, "job-running");
     await jobs.cancel();
     await expect(jobs.status).toHaveText("Cancelado");
@@ -194,7 +205,8 @@ test.describe("Job execution", () => {
     const failedId = await jobs.create("App", "Quebre de propósito [falha]");
     await expect(jobs.status).toHaveText("Falhou");
     await expect(jobs.error).toContainText("falha simulada");
-    await jobs.openTab("resultado");
+    await expect(jobs.node("resultado")).toContainText("terminou com código 1");
+    await jobs.openNode("resultado");
     await expect(jobs.error).toBeVisible();
     await shot(app.page, "job-failed");
 

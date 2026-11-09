@@ -48,11 +48,6 @@ export class PipelinesPage {
     await expect(this.pagePanel).toBeVisible();
   }
 
-  async closeEntry() {
-    await this.page.getByTestId("pipeline-panel-close").click();
-    await expect(this.pagePanel).toBeHidden();
-  }
-
   stagePrompt(index: number): Locator {
     return this.page.getByTestId(`stage-prompt-${index}`);
   }

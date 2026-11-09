@@ -49,11 +49,6 @@ export class ProposalPage {
     await waitForLiveView(this.page);
   }
 
-  /** The project options of the open request form. */
-  get projectOptions(): Locator {
-    return this.page.getByTestId("proposal-request-project").locator("option");
-  }
-
   get status(): Locator {
     return this.page.getByTestId("proposal-status");
   }
@@ -61,6 +56,28 @@ export class ProposalPage {
   /** Waits until the agent has answered. */
   async waitForAnswer() {
     await expect(this.status).toHaveText("Concluído", { timeout: 60_000 });
+  }
+
+  /** A place of the proposal's pipeline: "pedido", "agente", "proposta" or "ajustes". */
+  node(node: "pedido" | "agente" | "proposta" | "ajustes"): Locator {
+    return this.page.getByTestId(`proposal-node-${node}`);
+  }
+
+  /** The drawer of a place of the proposal's pipeline. */
+  drawer(node: "pedido" | "agente" | "proposta" | "ajustes"): Locator {
+    return this.page.getByTestId(`proposal-drawer-${node}`);
+  }
+
+  /** Opens a place's drawer from its node. */
+  async openNode(node: "pedido" | "agente" | "proposta" | "ajustes") {
+    await this.node(node).click();
+    await expect(this.drawer(node)).toBeVisible();
+  }
+
+  /** Closes a place's drawer by its button. */
+  async closeNode(node: "pedido" | "agente" | "proposta" | "ajustes") {
+    await this.page.getByTestId(`proposal-drawer-${node}-close`).click();
+    await expect(this.drawer(node)).toBeHidden();
   }
 
   get analysis(): Locator {

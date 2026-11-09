@@ -17,7 +17,7 @@ import { RunnerProcess } from "../helpers/runnerProcess";
 import { waitForLiveView } from "../helpers/liveView";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
-import { JobsPage, Timeline } from "../pages/JobsPage";
+import { Timeline } from "../pages/JobsPage";
 import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
@@ -129,7 +129,7 @@ test.describe("Landing director", () => {
     await taskPage.show(workspace.slug, couponId);
     await taskPage.openStage("implementacao");
     await page.getByTestId("stage-run-audit-implementacao-1").click();
-    await new JobsPage(page).openTab("auditoria");
+    // The link opens the run's agent on its audit.
     await expect(page.getByTestId("job-audit")).toBeVisible();
     await waitForLiveView(page);
     await capture(page, "audit", { top: "job-audit" });

@@ -76,6 +76,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0048 | [O drawer de um nó em abas: o que importa primeiro](adr/0048-drawer-em-abas.md) | Aceita |
 | 0049 | [A página da tarefa é o pipeline](adr/0049-a-tarefa-e-o-pipeline.md) | Aceita |
 | 0050 | [O custo próprio de uma sessão retomada](adr/0050-custo-proprio-da-sessao-retomada.md) | Aceita |
+| 0051 | [A execução e a proposta como pipeline](adr/0051-execucao-e-proposta-como-pipeline.md) | Aceita |
 
 ## Specs
 

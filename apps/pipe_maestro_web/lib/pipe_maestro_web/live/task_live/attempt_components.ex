@@ -63,12 +63,10 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
     |> Enum.filter(& &1)
   end
 
-  @doc """
-  The tab an attempt opens on: why it was refused, when a gate failed or the
-  delivery did not happen; else what it produced.
-  """
+  # The tab an attempt opens on: why it was refused, when a gate failed or the
+  # delivery did not happen; else what it produced.
   @spec default_tab(StageRun.t()) :: String.t()
-  def default_tab(%StageRun{} = run),
+  defp default_tab(%StageRun{} = run),
     do: if(check_failed?(run), do: "verificacao", else: "resultado")
 
   attr :run, StageRun, required: true
@@ -132,7 +130,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
             {short_number(Job.tokens(@run.job))} tokens · {format_percent(Job.cache_hit(@run.job))} do cache
           </span>
           <.link
-            navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}"}
+            navigate={~p"/w/#{@workspace_slug}/jobs/#{@run.job.id}?aba=auditoria"}
             class="whitespace-nowrap text-primary-600 hover:underline dark:text-primary-400"
             data-testid={"stage-run-audit-#{@ref}"}
           >
@@ -221,10 +219,10 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   # What tells an attempt apart in the test ids and DOM ids: its stage and
   # attempt, and how many times it ran again after its runner lost it.
   @spec run_ref(StageRun.t()) :: String.t()
-  def run_ref(%StageRun{requeue: requeue} = run) when requeue > 0,
+  defp run_ref(%StageRun{requeue: requeue} = run) when requeue > 0,
     do: "#{run.key}-#{run.attempt}-r#{requeue}"
 
-  def run_ref(%StageRun{} = run), do: "#{run.key}-#{run.attempt}"
+  defp run_ref(%StageRun{} = run), do: "#{run.key}-#{run.attempt}"
 
   attr :run, StageRun, required: true
 
@@ -381,7 +379,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   # The files the attempt's job sent, beside its artifact, and how many did not
   # arrive.
   @spec run_files(map()) :: Phoenix.LiveView.Rendered.t()
-  def run_files(assigns) do
+  defp run_files(assigns) do
     assigns = assign(assigns, failed: (assigns.run.job && assigns.run.job.files_failed) || 0)
 
     ~H"""
@@ -459,7 +457,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   # The agent's steps, read when the tab opens (or the button asks for them)
   # and filtered by kind.
   @spec run_steps(map()) :: Phoenix.LiveView.Rendered.t()
-  def run_steps(assigns) do
+  defp run_steps(assigns) do
     ~H"""
     <div>
       <.button
@@ -532,7 +530,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
 
   # The stage's gate commands, each met or not, its output folded.
   @spec gate_results(map()) :: Phoenix.LiveView.Rendered.t()
-  def gate_results(assigns) do
+  defp gate_results(assigns) do
     ~H"""
     <div data-testid={"stage-run-gates-#{@id}"}>
       <p class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -590,7 +588,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
 
   # How the runner prepared the task's worktree, on the attempt that created it.
   @spec setup_report(map()) :: Phoenix.LiveView.Rendered.t()
-  def setup_report(assigns) do
+  defp setup_report(assigns) do
     ~H"""
     <details class="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-950" {@rest}>
       <summary class="cursor-pointer text-gray-700 dark:text-gray-300">

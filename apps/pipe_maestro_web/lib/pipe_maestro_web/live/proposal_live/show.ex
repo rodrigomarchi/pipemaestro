@@ -1,7 +1,14 @@
 defmodule PipeMaestroWeb.ProposalLive.Show do
   @moduledoc """
-  One proposal (`PipeMaestro.Proposals`), in two tabs (`?aba=`): while the
-  agent works, its run as a live timeline; once it ends, the review of its kind
+  One proposal (`PipeMaestro.Proposals`), drawn as a pipeline
+  (`PipeMaestroWeb.PipelineComponents`): the request, the agent at work, the
+  proposal and, once the agent ended, the way to ask again with a comment.
+  Each place opens a drawer, kept in the URL as `?no=<place>`; every drawer
+  stays on the page, hidden while closed, so the agent's timeline (a stream)
+  keeps growing. The proposal's drawer opens on its own when it is ready: on
+  arriving at a proposal already answered, and when the agent finishes.
+
+  The proposal's drawer holds the review of its kind
   (`PipeMaestroWeb.ProposalComponents`), and what the person can do with it:
 
     * project: review the project form filled with the answer and save it
@@ -21,7 +28,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   import PipeMaestroWeb.JobComponents
   import PipeMaestroWeb.ProposalComponents
-  import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
+  import PipeMaestroWeb.PipelineComponents, only: [place_node: 1, rail_item: 1, side_panel: 1]
 
   alias PipeMaestro.{Audit, Jobs, Pipelines, Projects, Proposals, Tasks}
   alias PipeMaestro.Jobs.Job
@@ -45,7 +52,7 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
        |> assign(page_title: "Proposta do agente", job: job, kind: Proposals.kind(job))
        |> assign(input: Proposals.input(job), title: Proposals.title(job))
        |> assign(typing: nil, timeline_tail: timeline_tail(segments), feedback_form: nil)
-       |> assign(tab: nil)
+       |> assign(node: nil, routed: false)
        |> assign_result()
        |> stream(:timeline, segments)}
     else
@@ -56,27 +63,40 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
     end
   end
 
-  # The tabs, by their `aba` parameter: the proposal to review and how the
-  # agent worked on it.
-  @tabs [
-    {"proposta", "Proposta", "hero-light-bulb"},
-    {"agente", "Como o agente trabalhou", "hero-eye"},
-    {"resumo", "Resumo", "hero-information-circle"}
-  ]
+  @nodes ~w(pedido agente proposta ajustes)
 
-  # Without `aba`, the tab follows the run: the agent's work while there is
-  # no proposal yet, the proposal (or its error) once it arrives.
+  # The old tabs (`?aba=`) lead to the place that holds them now.
+  @tab_nodes %{"proposta" => "proposta", "agente" => "agente", "resumo" => "pedido"}
+
+  # Without `no`, the page opens on the proposal when it is ready; once the
+  # person has moved around, no place opens on its own.
   @impl true
   def handle_params(params, _uri, socket) do
-    tab = if Enum.any?(@tabs, &(elem(&1, 0) == params["aba"])), do: params["aba"]
-    {:noreply, assign(socket, tab: tab)}
+    node =
+      cond do
+        params["no"] in @nodes -> params["no"]
+        Map.has_key?(@tab_nodes, params["aba"]) -> Map.fetch!(@tab_nodes, params["aba"])
+        not socket.assigns.routed and ready?(socket.assigns) -> "proposta"
+        true -> nil
+      end
+
+    node = if node == "ajustes" and Job.active?(socket.assigns.job), do: nil, else: node
+
+    {:noreply,
+     socket
+     |> assign(node: node, routed: true)
+     |> assign(
+       feedback_form: if(node == "ajustes", do: to_form(%{"feedback" => ""}, as: "round"))
+     )}
   end
 
-  defp proposal_tabs, do: @tabs
+  defp ready?(%{result: result, error: error}), do: not is_nil(result) or not is_nil(error)
 
-  defp proposal_tab(nil, result, error) when is_nil(result) and is_nil(error), do: "agente"
-  defp proposal_tab(nil, _result, _error), do: "proposta"
-  defp proposal_tab(tab, _result, _error), do: tab
+  defp node_path(%Phoenix.LiveView.Socket{assigns: assigns}, node),
+    do: node_path(assigns.current_scope.workspace.slug, assigns.job, node)
+
+  defp node_path(slug, job, nil), do: ~p"/w/#{slug}/proposals/#{job.id}"
+  defp node_path(slug, job, node), do: ~p"/w/#{slug}/proposals/#{job.id}?#{[no: node]}"
 
   # Subscribe before reading again, so nothing that happens in between is
   # missed. A suggested decision follows its task: once decided, it no longer
@@ -189,10 +209,18 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   def handle_info({:job_updated, %Job{} = job}, socket) do
     created_before = socket.assigns.created_task_id
 
+    was_ready = ready?(socket.assigns)
+
     socket =
       socket
       |> assign(job: job, typing: if(Job.active?(job), do: socket.assigns.typing))
       |> assign_result()
+
+    # The agent just finished: its proposal opens, unless another place is open.
+    socket =
+      if not was_ready and ready?(socket.assigns) and is_nil(socket.assigns.node),
+        do: assign(socket, node: "proposta"),
+        else: socket
 
     {:noreply, follow_created_task(socket, created_before)}
   end
@@ -303,11 +331,8 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   end
 
   # Any kind: ask again with a comment.
-  def handle_event("open_feedback", _params, socket),
-    do: {:noreply, assign(socket, feedback_form: to_form(%{"feedback" => ""}, as: "round"))}
-
-  def handle_event("close_feedback", _params, socket),
-    do: {:noreply, assign(socket, feedback_form: nil)}
+  def handle_event("close_panel", _params, socket),
+    do: {:noreply, push_patch(socket, to: node_path(socket, nil))}
 
   def handle_event("regenerate", %{"round" => %{"feedback" => feedback}}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
@@ -387,6 +412,34 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
 
   defp task_link(workspace, task_id), do: ~p"/w/#{workspace.slug}/tasks/#{task_id}"
 
+  # What the proposal's place says: where it stands.
+  defp proposal_state(_job, _result, _error, id) when is_binary(id), do: "Virou uma tarefa."
+  defp proposal_state(_job, _result, error, _id) when is_binary(error), do: error
+
+  defp proposal_state(_job, result, _error, _id) when not is_nil(result),
+    do: "Pronta para revisar."
+
+  defp proposal_state(job, _result, _error, _id),
+    do:
+      if(Job.active?(job),
+        do: "Aparece aqui quando o agente terminar.",
+        else: "A execução terminou sem proposta."
+      )
+
+  defp kind_label(kind), do: Proposals.kind_module(kind).label()
+
+  defp first_line(nil), do: nil
+
+  defp first_line(text) do
+    text
+    |> String.split("\n", trim: true)
+    |> Enum.find("", &(String.trim(&1) != ""))
+    |> String.replace(~r/^[#>\-*\s]+/, "")
+  end
+
+  defp last_line(text),
+    do: text |> String.split("\n", trim: true) |> List.last() |> Kernel.||("")
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -420,26 +473,93 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
         danger
         testid="proposal-cancel"
       />
-      <:action
-        :if={!Job.active?(@job)}
-        label="Pedir de novo com ajustes"
-        icon="hero-arrow-path"
-        on_click="open_feedback"
-        testid="proposal-regenerate"
-      />
 
-      <.page_tabs
-        tabs={proposal_tabs()}
-        active={proposal_tab(@tab, @result, @error)}
-        path={&~p"/w/#{@current_scope.workspace.slug}/proposals/#{@job.id}?aba=#{&1}"}
-        testid="proposal-view"
-      />
+      <.card variant="outline">
+        <.card_content>
+          <ol class="relative" data-testid="proposal-overview">
+            <.rail_item icon="hero-bolt" tone={:primary}>
+              <.place_node
+                title="Pedido"
+                path={node_path(@current_scope.workspace.slug, @job, "pedido")}
+                open={@node == "pedido"}
+                testid="proposal-node-pedido"
+              >
+                {first_line(@input["request"] || @input["focus"]) || kind_label(@kind)}
+                <span :if={@input["directory"]}>· {@input["directory"]}</span>
+                <span :if={@job.runner}>· em {@job.runner.name}</span>
+              </.place_node>
+            </.rail_item>
 
-      <.tab_panel
-        id="proposta"
-        active={proposal_tab(@tab, @result, @error)}
-        testid="proposal-view"
-        class="mt-6"
+            <.rail_item icon="hero-cpu-chip" tone={if Job.active?(@job), do: :delivery, else: :done}>
+              <.place_node
+                title="Agente"
+                path={node_path(@current_scope.workspace.slug, @job, "agente")}
+                open={@node == "agente"}
+                tone={if Job.active?(@job), do: :running}
+                truncate={false}
+                testid="proposal-node-agente"
+              >
+                <:badge><.job_status job={@job} /></:badge>
+                <p class="truncate">
+                  {cond do
+                    @job.status == :queued -> "Aguardando o runner começar…"
+                    Job.active?(@job) -> "Estudando o projeto e escrevendo a proposta."
+                    true -> "Terminou"
+                  end}
+                  <span :if={@job.duration_ms}>· {format_duration(@job.duration_ms)}</span>
+                  <span :if={@job.cost_usd}>· {format_cost(@job.cost_usd)}</span>
+                </p>
+                <p
+                  :if={@typing}
+                  class="mt-0.5 truncate italic text-gray-600 dark:text-gray-300"
+                  data-testid="proposal-node-typing"
+                >
+                  {last_line(@typing)}
+                </p>
+              </.place_node>
+            </.rail_item>
+
+            <.rail_item
+              icon="hero-light-bulb"
+              tone={if @result, do: :done, else: :neutral}
+              last={Job.active?(@job)}
+              dashed
+            >
+              <.place_node
+                title="Proposta"
+                path={node_path(@current_scope.workspace.slug, @job, "proposta")}
+                open={@node == "proposta"}
+                tone={if @result && !@created_task_id, do: :ready}
+                truncate={false}
+                testid="proposal-node-proposta"
+              >
+                <p class={["line-clamp-2", @error && "text-danger-700 dark:text-danger-400"]}>
+                  {proposal_state(@job, @result, @error, @created_task_id)}
+                </p>
+              </.place_node>
+            </.rail_item>
+
+            <.rail_item :if={!Job.active?(@job)} icon="hero-arrow-path" tone={:ghost} last>
+              <.place_node
+                title="Pedir de novo com ajustes"
+                path={node_path(@current_scope.workspace.slug, @job, "ajustes")}
+                open={@node == "ajustes"}
+                ghost
+                testid="proposal-node-ajustes"
+              >
+                O agente refaz a proposta com o seu comentário.
+              </.place_node>
+            </.rail_item>
+          </ol>
+        </.card_content>
+      </.card>
+
+      <.side_panel
+        id="proposal-drawer-proposta"
+        title={kind_label(@kind)}
+        open={@node == "proposta"}
+        escape={@kind not in ~w(pipeline improve)}
+        testid="proposal-drawer-proposta"
       >
         <p
           :if={!@result and !@error}
@@ -501,120 +621,99 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           job={@job}
           workspace={@current_scope.workspace}
         />
-      </.tab_panel>
+      </.side_panel>
 
-      <.tab_panel
-        id="agente"
-        active={proposal_tab(@tab, @result, @error)}
-        testid="proposal-view"
-        class="mt-6"
+      <.side_panel
+        id="proposal-drawer-agente"
+        title="Como o agente trabalhou"
+        description={if Job.active?(@job), do: "Ao vivo, enquanto ele estuda e escreve."}
+        open={@node == "agente"}
+        testid="proposal-drawer-agente"
       >
-        <.card variant="outline">
-          <.card_content>
-            <.section_heading
-              icon="hero-eye"
-              title="Como o agente trabalhou"
-              description={if Job.active?(@job), do: "Ao vivo, enquanto ele estuda e escreve."}
-            />
-            <p
-              :if={@job.status == :queued}
-              class="text-sm text-gray-500 dark:text-gray-400"
-              data-testid="proposal-waiting"
-            >
-              Aguardando o runner começar…
-            </p>
-            <ol
-              id="proposal-events"
-              phx-update="stream"
-              class="space-y-4"
-              data-testid="proposal-events"
-            >
-              <.timeline_segment
-                :for={{id, segment} <- @streams.timeline}
-                id={id}
-                timeline="proposal-events"
-                segment={segment}
-              />
-            </ol>
-            <.typing :if={@typing} text={@typing} />
-          </.card_content>
-        </.card>
-      </.tab_panel>
+        <p
+          :if={@job.status == :queued}
+          class="text-sm text-gray-500 dark:text-gray-400"
+          data-testid="proposal-waiting"
+        >
+          Aguardando o runner começar…
+        </p>
+        <ol id="proposal-events" phx-update="stream" class="space-y-4" data-testid="proposal-events">
+          <.timeline_segment
+            :for={{id, segment} <- @streams.timeline}
+            id={id}
+            timeline="proposal-events"
+            segment={segment}
+          />
+        </ol>
+        <.typing :if={@typing} text={@typing} />
+      </.side_panel>
 
-      <.tab_panel
-        id="resumo"
-        active={proposal_tab(@tab, @result, @error)}
-        testid="proposal-view"
-        class="mt-6"
+      <.side_panel
+        id="proposal-drawer-pedido"
+        title="Pedido"
+        open={@node == "pedido"}
+        testid="proposal-drawer-pedido"
       >
-        <.card variant="outline">
-          <.card_content>
-            <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
-              <span :if={@input["directory"]} class="flex items-center gap-1">
-                <.icon name="hero-folder-open" class="size-4" />
-                <span data-testid="proposal-directory">{@input["directory"]}</span>
-              </span>
-              <span :if={@job.runner}>no runner {@job.runner.name}</span>
-              <a
-                :if={@input["issue_url"]}
-                href={@input["issue_url"]}
-                target="_blank"
-                rel="noopener"
-                class="flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
-                data-testid="proposal-issue"
-              >
-                {IntegrationComponents.issue_label(@input["issue_url"])}
-                <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-              </a>
-              <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>
-              <span :if={@job.duration_ms}>{format_duration(@job.duration_ms)}</span>
-              <.link
-                :if={@input["task_id"]}
-                navigate={task_link(@current_scope.workspace, @input["task_id"])}
-                class="text-primary-600 hover:underline dark:text-primary-400"
-                data-testid="proposal-task-link"
-              >
-                ver a tarefa
-              </.link>
-            </p>
-            <div
-              :if={@input["request"] || @input["focus"]}
-              id="proposal-request"
-              class="prose prose-sm mt-4 max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
-              data-testid="proposal-request"
-            >
-              {Markdown.to_html(@input["request"] || @input["focus"])}
-            </div>
-          </.card_content>
-        </.card>
-      </.tab_panel>
+        <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
+          <span :if={@input["directory"]} class="flex items-center gap-1">
+            <.icon name="hero-folder-open" class="size-4" />
+            <span data-testid="proposal-directory">{@input["directory"]}</span>
+          </span>
+          <span :if={@job.runner}>no runner {@job.runner.name}</span>
+          <a
+            :if={@input["issue_url"]}
+            href={@input["issue_url"]}
+            target="_blank"
+            rel="noopener"
+            class="flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
+            data-testid="proposal-issue"
+          >
+            {IntegrationComponents.issue_label(@input["issue_url"])}
+            <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+          </a>
+          <span :if={@job.cost_usd}>{format_cost(@job.cost_usd)}</span>
+          <span :if={@job.duration_ms}>{format_duration(@job.duration_ms)}</span>
+          <.link
+            :if={@input["task_id"]}
+            navigate={task_link(@current_scope.workspace, @input["task_id"])}
+            class="text-primary-600 hover:underline dark:text-primary-400"
+            data-testid="proposal-task-link"
+          >
+            ver a tarefa
+          </.link>
+        </p>
+        <div
+          :if={@input["request"] || @input["focus"]}
+          id="proposal-request"
+          class="prose prose-sm mt-4 max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
+          data-testid="proposal-request"
+        >
+          {Markdown.to_html(@input["request"] || @input["focus"])}
+        </div>
+      </.side_panel>
 
-      <.modal
-        :if={@feedback_form}
-        id="feedback-modal"
+      <.side_panel
+        id="proposal-drawer-ajustes"
         title="Pedir de novo com ajustes"
-        max_width="xl"
-        on_cancel={JS.push("close_feedback")}
+        open={@node == "ajustes"}
+        testid="proposal-drawer-ajustes"
       >
-        <.form for={@feedback_form} id="feedback-form" phx-submit="regenerate">
+        <.form :if={@feedback_form} for={@feedback_form} id="feedback-form" phx-submit="regenerate">
           <.markdown_editor
             id="proposal-feedback"
             field={@feedback_form[:feedback]}
             label="O que mudar na proposta"
             icon="hero-chat-bubble-left-ellipsis"
             testid="proposal-feedback"
-            rows={5}
+            rows={8}
           />
-          <div class="flex flex-wrap justify-end gap-2">
-            <.button type="button" variant="ghost" color="gray" phx-click="close_feedback">
-              Cancelar
-            </.button>
+          <div class="flex justify-end">
             <.button type="submit" icon="hero-arrow-path" data-testid="proposal-feedback-submit">
               Pedir de novo
             </.button>
           </div>
         </.form>
-      </.modal>
+      </.side_panel>
     </Layouts.app>
     """
   end

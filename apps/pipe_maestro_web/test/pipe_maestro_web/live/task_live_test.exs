@@ -1025,6 +1025,9 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       |> render_submit(%{"action" => "advance"})
 
       assert has_element?(view, "[data-testid=task-stage-state-b]", "Executando")
+      # Both chained on the pipeline, in the order they were taken.
+      assert has_element?(view, "[data-testid=task-decision-0]", "refazer, com instruções")
+      assert has_element?(view, "[data-testid=task-decision-1]", "decidiu seguir")
       assert render_click(view, "decide", %{"action" => "retry"}) =~ "não está aguardando"
     end
 

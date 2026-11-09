@@ -58,18 +58,9 @@ export class TasksPage {
     return this.page.getByTestId("task-runner-offline");
   }
 
-  /** The notice a task shows while its first stage waits for the project's runner. */
-  get waitingRunner(): Locator {
-    return this.page.getByTestId("task-waiting-runner");
-  }
-
   /** The task's project (a link to it) and its snapshot, in the entry's "Projeto" tab. */
   get project(): Locator {
     return this.page.getByTestId("task-project");
-  }
-
-  get projectSnapshot(): Locator {
-    return this.page.getByTestId("task-project-snapshot");
   }
 
   stageRunStatus(key: string, attempt: number): Locator {

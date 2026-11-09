@@ -43,21 +43,21 @@ defmodule PipeMaestroWeb.TaskLive.NodePanel do
 
   def chosen(_task, _node), do: nil
 
-  @doc "The tabs of a place's drawer."
+  # The tabs of a place's drawer.
   @spec tabs(String.t(), Task.t(), map(), list()) :: [{String.t(), String.t(), String.t()}]
-  def tabs("entrada", _task, _files, _changed),
+  defp tabs("entrada", _task, _files, _changed),
     do: [
       {"pedido", "Pedido", "hero-document-text"},
       {"projeto", "Projeto", "hero-folder"}
     ]
 
-  def tabs("entrega", _task, _files, changed),
+  defp tabs("entrega", _task, _files, changed),
     do: [
       {"arquivos", "Arquivos (#{length(changed)})", "hero-document-duplicate"},
       {"merge", "Merge", "hero-arrows-pointing-in"}
     ]
 
-  def tabs("fim", task, files, changed) do
+  defp tabs("fim", task, files, changed) do
     attached = files |> Map.values() |> Enum.concat() |> length()
 
     [
@@ -69,7 +69,7 @@ defmodule PipeMaestroWeb.TaskLive.NodePanel do
     |> Enum.filter(& &1)
   end
 
-  def tabs("corrigir", _task, _files, _changed), do: [{"corrigir", "Corrigir", "hero-plus"}]
+  defp tabs("corrigir", _task, _files, _changed), do: [{"corrigir", "Corrigir", "hero-plus"}]
 
   attr :node, :string, required: true
   attr :tab, :string, default: nil

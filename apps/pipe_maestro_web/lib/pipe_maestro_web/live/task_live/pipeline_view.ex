@@ -34,6 +34,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
     only: [
       delivery_icon: 1,
       delivery_label: 1,
+      place_node: 1,
       rail_item: 1,
       stage_state_badge: 1,
       stage_state_marker: 1
@@ -50,32 +51,30 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   def stage_path(slug, %Task{id: id}, nil), do: ~p"/w/#{slug}/tasks/#{id}"
   def stage_path(slug, %Task{id: id}, key), do: ~p"/w/#{slug}/tasks/#{id}?#{[etapa: key]}"
 
-  @doc """
-  The path of the task's page with one of the places that are not a stage
-  open: `"entrada"`, `"entrega"`, `"fim"` or `"corrigir"`.
-  """
+  # The path of the task's page with one of the places that are not a stage
+  # open: `"entrada"`, `"entrega"`, `"fim"` or `"corrigir"`.
   @spec node_path(String.t(), Task.t(), String.t()) :: String.t()
-  def node_path(slug, %Task{id: id}, node), do: ~p"/w/#{slug}/tasks/#{id}?#{[no: node]}"
+  defp node_path(slug, %Task{id: id}, node), do: ~p"/w/#{slug}/tasks/#{id}?#{[no: node]}"
 
-  @doc "The key of the stage the task waits a decision on, or `nil`."
+  # The key of the stage the task waits a decision on, or `nil`.
   @spec awaiting_key(Task.t()) :: String.t() | nil
-  def awaiting_key(%Task{status: :awaiting_decision} = task) do
+  defp awaiting_key(%Task{status: :awaiting_decision} = task) do
     case Enum.at(task.stages, task.current_stage) do
       nil -> nil
       stage -> stage.key
     end
   end
 
-  def awaiting_key(%Task{}), do: nil
+  defp awaiting_key(%Task{}), do: nil
 
   @doc "Whether the pipeline delivers a pull request: the place where it shows."
   @spec delivers_pr?(Task.t()) :: boolean()
   def delivers_pr?(%Task{} = task),
     do: PipelineDiagram.build(PipelineDiagram.for_task(task)).delivery == :pr
 
-  @doc "How many files the attempts of stage `index` sent."
+  # How many files the attempts of stage `index` sent.
   @spec stage_files(Task.t(), map(), non_neg_integer()) :: non_neg_integer()
-  def stage_files(%Task{stage_runs: runs}, files, index) do
+  defp stage_files(%Task{stage_runs: runs}, files, index) do
     for(run <- runs, run.index == index, do: length(Map.get(files, run.id, [])))
     |> Enum.sum()
   end
@@ -243,38 +242,6 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
 
   defp count_label(1, one, _many), do: "1 #{one}"
   defp count_label(n, _one, many), do: "#{n} #{many}"
-
-  attr :title, :string, required: true
-  attr :path, :string, required: true
-  attr :open, :boolean, default: false
-  attr :ghost, :boolean, default: false, doc: "dashed: something that may still be done"
-  attr :testid, :string, required: true
-  slot :inner_block, required: true
-
-  # A place that is not a stage, as a link to its drawer, with its light facts.
-  defp place_node(assigns) do
-    ~H"""
-    <.link
-      patch={@path}
-      class={[
-        "-mt-1 flex items-center gap-3 rounded-xl border px-4 py-2.5 transition hover:border-primary-400 hover:shadow-sm dark:hover:border-primary-500",
-        @ghost && "border-dashed border-gray-300 dark:border-gray-700",
-        !@ghost && "bg-white dark:bg-gray-900",
-        !@ghost && !@open && "border-gray-200 dark:border-gray-800",
-        @open && "border-primary-500 ring-2 ring-primary-500/30"
-      ]}
-      data-testid={@testid}
-    >
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-gray-900 dark:text-white">{@title}</p>
-        <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-          {render_slot(@inner_block)}
-        </p>
-      </div>
-      <.icon name="hero-chevron-right" class="size-4 shrink-0 text-gray-400" />
-    </.link>
-    """
-  end
 
   attr :decision, :map, required: true
   attr :n, :integer, required: true, doc: "its place among the task's decisions"
@@ -564,9 +531,9 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
     """
   end
 
-  @doc "Whether the task can take a message or shows one waiting: its controls show."
+  # Whether the task can take a message or shows one waiting: its controls show.
   @spec controls?(Task.t()) :: boolean()
-  def controls?(%Task{} = task),
+  defp controls?(%Task{} = task),
     do: task.status == :running or (Task.active?(task) and task.pending_instructions != nil)
 
   attr :task, Task, required: true

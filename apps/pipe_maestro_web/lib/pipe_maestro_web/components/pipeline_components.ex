@@ -373,6 +373,64 @@ defmodule PipeMaestroWeb.PipelineComponents do
     """
   end
 
+  attr :title, :string, required: true
+  attr :path, :string, required: true, doc: "the page with this place's drawer open (a patch)"
+  attr :open, :boolean, default: false, doc: "its drawer is open"
+  attr :ghost, :boolean, default: false, doc: "dashed: something that may still be done"
+
+  attr :tone, :atom,
+    default: nil,
+    values: [nil, :running, :awaiting, :ready],
+    doc: "a ring that calls attention: it runs, waits on a person, or is ready to review"
+
+  attr :truncate, :boolean, default: true, doc: "its facts on one line"
+  attr :testid, :string, required: true
+  slot :badge, doc: "beside the title: its state"
+  slot :inner_block, required: true, doc: "its light facts"
+
+  @doc """
+  A place on a vertical rail (`rail_item/1`) as a link to its drawer, with
+  its light facts: every flow drawn as a pipeline (a task, a run, a proposal)
+  opens what belongs to a place from here.
+  """
+  @spec place_node(map()) :: Phoenix.LiveView.Rendered.t()
+  def place_node(assigns) do
+    ~H"""
+    <.link
+      patch={@path}
+      class={[
+        "-mt-1 flex items-center gap-3 rounded-xl border px-4 py-2.5 transition hover:border-primary-400 hover:shadow-sm dark:hover:border-primary-500",
+        @ghost && "border-dashed border-gray-300 dark:border-gray-700",
+        !@ghost && "bg-white dark:bg-gray-900",
+        !@ghost && !@open && place_border(@tone),
+        @open && "border-primary-500 ring-2 ring-primary-500/30"
+      ]}
+      data-testid={@testid}
+    >
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{@title}</p>
+          {render_slot(@badge)}
+        </div>
+        <div class={["mt-0.5 text-xs text-gray-500 dark:text-gray-400", @truncate && "truncate"]}>
+          {render_slot(@inner_block)}
+        </div>
+      </div>
+      <.icon name="hero-chevron-right" class="size-4 shrink-0 text-gray-400" />
+    </.link>
+    """
+  end
+
+  defp place_border(:running), do: "border-info-400 ring-2 ring-info-400/30 dark:border-info-600"
+
+  defp place_border(:awaiting),
+    do: "border-warning-400 ring-2 ring-warning-400/40 dark:border-warning-600"
+
+  defp place_border(:ready),
+    do: "border-success-400 ring-2 ring-success-400/30 dark:border-success-600"
+
+  defp place_border(nil), do: "border-gray-200 dark:border-gray-800"
+
   # A pipeline's stage, which no task has run, is numbered in the brand's tint.
   defp marker_tint(nil),
     do: "!bg-primary-50 !text-primary-700 dark:!bg-primary-950 dark:!text-primary-300"
@@ -857,9 +915,9 @@ defmodule PipeMaestroWeb.PipelineComponents do
   def chosen_tab([{first, _, _} | _] = tabs, tab),
     do: if(Enum.any?(tabs, &(elem(&1, 0) == tab)), do: tab, else: first)
 
-  @doc "The tabs of a stage's details: its prompt, and how it is checked and its output when it has them."
+  # The tabs of a stage's details: its prompt, and how it is checked and its output when it has them.
   @spec stage_detail_tabs(Stage.t()) :: [drawer_tab()]
-  def stage_detail_tabs(%Stage{} = stage) do
+  defp stage_detail_tabs(%Stage{} = stage) do
     [
       {"prompt", "Prompt", "hero-pencil-square"},
       (stage.gates != [] or stage.rules != []) &&
@@ -927,9 +985,9 @@ defmodule PipeMaestroWeb.PipelineComponents do
   defp merge_method_label("merge"), do: "merge commit"
   defp merge_method_label(method), do: method
 
-  @doc "The tabs of a pipeline's summary: the general one, and its MCP servers and agents when it has them."
+  # The tabs of a pipeline's summary: the general one, and its MCP servers and agents when it has them.
   @spec pipeline_summary_tabs(Pipeline.t()) :: [drawer_tab()]
-  def pipeline_summary_tabs(%Pipeline{} = pipeline) do
+  defp pipeline_summary_tabs(%Pipeline{} = pipeline) do
     advanced? = mcp_names(pipeline) != [] or names(pipeline.agents) != []
 
     [
@@ -1028,13 +1086,18 @@ defmodule PipeMaestroWeb.PipelineComponents do
   attr :testid, :string, default: nil
   attr :target, :any, default: nil, doc: "where `close_panel` goes (`phx-target`)"
 
+  attr :escape, :boolean,
+    default: true,
+    doc: "Escape closes it; off when it holds a drawer of its own, which Escape closes alone"
+
   slot :inner_block, required: true
   slot :footer
 
   @doc """
   A drawer fixed to the right edge, 90% of a wide screen and all of a
   phone's, over a backdrop. It closes with `close_panel`: its button, Escape
-  or a click on the backdrop. Closed, it stays in the page, hidden.
+  (unless `escape` is off) or a click on the backdrop. Closed, it stays in
+  the page, hidden.
   """
   def side_panel(assigns) do
     ~H"""
@@ -1054,7 +1117,7 @@ defmodule PipeMaestroWeb.PipelineComponents do
       ]}
       role="dialog"
       aria-labelledby={"#{@id}-title"}
-      phx-window-keydown={@open && "close_panel"}
+      phx-window-keydown={@open && @escape && "close_panel"}
       phx-target={@target}
       phx-key="escape"
       data-testid={@testid}
