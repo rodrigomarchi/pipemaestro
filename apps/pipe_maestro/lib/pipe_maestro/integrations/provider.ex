@@ -112,10 +112,17 @@ defmodule PipeMaestro.Integrations.Provider do
 
   @doc """
   A pull request, as the other calls answer it plus `head_sha`, `base`,
-  `state` (`"open"` or `"closed"`) and `mergeable` (`nil` while the host
-  works it out).
+  `state` (`"open"` or `"closed"`), `merged_at`, `closed_at` and
+  `mergeable` (`nil` while the host works it out).
   """
   @callback get_pr(Client.t(), repo(), number :: pos_integer()) :: {:ok, map()} | error()
+
+  @doc """
+  The commits of a pull request, oldest first (every page): `%{sha,
+  parents, committed_at}`, `parents` by SHA. GitHub lists at most 250.
+  """
+  @callback pr_commits(Client.t(), repo(), number :: pos_integer()) ::
+              {:ok, [map()]} | error()
 
   @doc """
   The checks on a commit, the latest of each: commit statuses and, on

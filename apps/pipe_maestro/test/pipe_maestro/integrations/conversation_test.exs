@@ -359,7 +359,8 @@ defmodule PipeMaestro.Integrations.ConversationTest do
         head_sha: "p1",
         pr_url: "https://forge.test/acme/app/pulls/7",
         issue_feedback: %{"pr_number" => 7},
-        finished_at: DateTime.add(DateTime.utc_now(:second), -3_600)
+        # Before the merge the payloads below date (2026-11-05).
+        finished_at: ~U[2026-11-04 10:00:00Z]
       )
       |> Repo.update!()
     end

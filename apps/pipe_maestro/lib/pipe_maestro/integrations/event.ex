@@ -9,7 +9,8 @@ defmodule PipeMaestro.Integrations.Event do
   - `issue`: `%{number, title, body, url, author, labels, updated_at,
     is_pull}` (labels by name);
   - `comment`: `%{id, body, author}`;
-  - `pr`: `%{number, merged, head}`;
+  - `pr`: `%{number, merged, head, merged_at, closed_at}` (the dates when
+    the host sends them);
   - `review`: `%{state, body}`, `state` being `:approved` or `:rejected`;
   - `check`: `%{head_sha, name, action}`, a button of a check run pressed
     (`:check_action`, GitHub);

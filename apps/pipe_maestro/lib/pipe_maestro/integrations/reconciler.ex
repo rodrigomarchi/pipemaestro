@@ -13,7 +13,11 @@ defmodule PipeMaestro.Integrations.Reconciler do
   up to `@max_attempts` times in the last day (and those whose processing was
   lost, still `"received"` after ten minutes), and the feedback of tasks that
   could not be written on their issue (`PipeMaestro.Integrations.Feedback`).
-  The GitHub App's deliveries that failed are asked again from GitHub.
+  The GitHub App's deliveries that failed are asked again from GitHub. The
+  pull requests delivered and still open, or whose commits were not read
+  after the merge or the close, are looked at on the host
+  (`PipeMaestro.Integrations.PrOutcomes.reconcile/1`): a merge or a close the
+  webhook missed is recorded (`outcomes`, how many it found).
 
   Comments are not read back: a command lost costs little to repeat.
 
@@ -35,7 +39,8 @@ defmodule PipeMaestro.Integrations.Reconciler do
     GitHub,
     Ingest,
     IssueState,
-    LinkedRepo
+    LinkedRepo,
+    PrOutcomes
   }
 
   @margin_seconds 120
@@ -46,13 +51,15 @@ defmodule PipeMaestro.Integrations.Reconciler do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  One pass at `now`: answers how many issues it took in and how many
-  deliveries it tried again. Options as in `PipeMaestro.Integrations.Ingest`.
+  One pass at `now`: answers how many issues it took in, how many
+  deliveries it tried again and how many pull requests it found merged or
+  closed. Options as in `PipeMaestro.Integrations.Ingest`.
   """
   @spec run(DateTime.t(), keyword()) :: %{
           issues: non_neg_integer(),
           retried: non_neg_integer(),
           feedback: non_neg_integer(),
+          outcomes: non_neg_integer(),
           redelivered: non_neg_integer()
         }
   def run(now, opts \\ []) do
@@ -69,10 +76,17 @@ defmodule PipeMaestro.Integrations.Reconciler do
         &(guarded(fn -> Feedback.sync(&1) end, :error) == :ok)
       )
 
+    outcomes =
+      Enum.count(
+        PrOutcomes.pending_task_ids(),
+        &guarded(fn -> PrOutcomes.reconcile(&1) end, false)
+      )
+
     %{
       issues: issues,
       retried: retry(now, opts),
       feedback: feedback,
+      outcomes: outcomes,
       redelivered: guarded(&redeliver/0, 0)
     }
   end

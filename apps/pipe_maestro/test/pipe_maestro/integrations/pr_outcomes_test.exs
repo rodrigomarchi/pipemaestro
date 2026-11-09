@@ -293,13 +293,13 @@ defmodule PipeMaestro.Integrations.PrOutcomesTest do
 
   describe "classify/1" do
     test "merged, closed or open, with or without changes" do
-      merged = %{state: "merged", human_shas: [], review_rounds: 0}
+      merged = %PrOutcome{state: "merged", human_shas: [], review_rounds: 0}
 
       assert PrOutcome.classify(merged) == :accepted_clean
       assert PrOutcome.classify(%{merged | human_shas: ["h1"]}) == :accepted_changed
       assert PrOutcome.classify(%{merged | review_rounds: 1}) == :accepted_changed
-      assert PrOutcome.classify(%{state: "closed", human_shas: ["h1"]}) == :closed
-      assert PrOutcome.classify(%{state: "open"}) == :open
+      assert PrOutcome.classify(%PrOutcome{state: "closed", human_shas: ["h1"]}) == :closed
+      assert PrOutcome.classify(%PrOutcome{state: "open"}) == :open
     end
   end
 

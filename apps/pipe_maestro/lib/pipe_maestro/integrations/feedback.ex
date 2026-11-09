@@ -21,7 +21,17 @@ defmodule PipeMaestro.Integrations.Feedback do
   import Ecto.Query
 
   alias PipeMaestro.{Integrations, Repo, Tasks}
-  alias PipeMaestro.Integrations.{Client, Connection, Credentials, IssueState, Labels, LinkedRepo}
+
+  alias PipeMaestro.Integrations.{
+    Client,
+    Connection,
+    Credentials,
+    IssueState,
+    Labels,
+    LinkedRepo,
+    PrOutcomes
+  }
+
   alias PipeMaestro.Tasks.{StageRun, Task}
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.PrText
@@ -485,8 +495,13 @@ defmodule PipeMaestro.Integrations.Feedback do
 
     case result do
       {:ok, opened} ->
-        if opened.url != task.pr_url,
-          do: task |> Ecto.Changeset.change(pr_url: opened.url) |> Repo.update!()
+        task =
+          if opened.url != task.pr_url,
+            do: task |> Ecto.Changeset.change(pr_url: opened.url) |> Repo.update!(),
+            else: task
+
+        # The pull request may be opened only after the task succeeded.
+        _ = PrOutcomes.ready(%{task | issue_feedback: Map.put(acc, "pr_number", opened.number)})
 
         {:ok, Map.put(acc, "pr_number", opened.number)}
 

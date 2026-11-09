@@ -109,7 +109,7 @@ defmodule PipeMaestro.Integrations.AutoMergeTest do
   end
 
   test "the pull request the feedback opened is ready, and the merge is its outcome", ctx do
-    task = waiting(ctx)
+    task = waiting(ctx, finished_at: DateTime.utc_now(:second))
 
     assert %{state: "open", pr_number: 1, ready_at: ready_at} = PrOutcomes.get(task.id)
     assert ready_at == task.finished_at

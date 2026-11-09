@@ -11,7 +11,8 @@ defmodule PipeMaestro.Integrations.Conversation do
     commands that do;
   - a review asking for changes on the pull request of a finished task
     becomes the stage "Correção N";
-  - the pull request merged is told on the issue;
+  - the pull request merged is told on the issue; merged or closed, it is
+    the outcome of the task's delivery (`PipeMaestro.Integrations.PrOutcomes`);
   - "Refazer etapa" on a stopped stage's check run (GitHub) runs it again.
 
   Anything else goes on to the triggers (`:continue`). Commands need the
@@ -30,7 +31,8 @@ defmodule PipeMaestro.Integrations.Conversation do
     Event,
     Feedback,
     IssueState,
-    LinkedRepo
+    LinkedRepo,
+    PrOutcomes
   }
 
   alias PipeMaestro.Tasks.Task
@@ -87,17 +89,32 @@ defmodule PipeMaestro.Integrations.Conversation do
         :continue
 
       task ->
-        task
-        |> Ecto.Changeset.change(issue_feedback: Map.put(task.issue_feedback, "merged", true))
-        |> Repo.update!()
+        task =
+          task
+          |> Ecto.Changeset.change(issue_feedback: Map.put(task.issue_feedback, "merged", true))
+          |> Repo.update!()
 
+        _ = PrOutcomes.ready(task)
+        _ = PrOutcomes.merged(task, event.pr[:merged_at])
+        _ = PrOutcomes.observe(task.id)
         _ = Feedback.sync(task.id)
         {:processed, "pull request integrado", %{task_id: task.id}}
     end
   end
 
-  def handle(_connection, _repo, %Event{kind: :pr_closed}),
-    do: {:ignored, "pull request fechado sem integrar"}
+  # Closed without the merge: only its outcome is kept.
+  def handle(_connection, repo, %Event{kind: :pr_closed} = event) do
+    case task_for(repo, event) do
+      nil ->
+        {:ignored, "pull request fechado sem integrar"}
+
+      task ->
+        _ = PrOutcomes.ready(task)
+        _ = PrOutcomes.closed(task, event.pr[:closed_at])
+        _ = PrOutcomes.observe(task.id)
+        {:processed, "pull request fechado sem integrar", %{task_id: task.id}}
+    end
+  end
 
   # "Refazer etapa" on a stopped stage's check run (GitHub).
   def handle(
@@ -129,21 +146,43 @@ defmodule PipeMaestro.Integrations.Conversation do
   defp task_for_commit(repo, sha) when is_binary(sha), do: latest_task(repo, head_sha: sha)
   defp task_for_commit(_repo, _sha), do: nil
 
-  # A review's text goes into the agent's prompt: only a writer's.
+  # A review's text goes into the agent's prompt: only a writer's. A review
+  # becomes one correction, however many times it is processed, and counts
+  # as a round of its pull request (`PipeMaestro.Integrations.PrOutcomes`).
   defp correct_from_review(connection, repo, task, event) do
+    key = review_key(event)
+
+    if PrOutcomes.reviewed?(task, key),
+      do: {:ignored, "review já aplicado"},
+      else: review_correction(connection, repo, task, event, key)
+  end
+
+  defp review_correction(connection, repo, task, event, key) do
     with {:ok, client} <- client(connection),
          :ok <- Access.writer(client, repo, event.sender) do
       prompt = review_prompt(client, repo, event)
 
       case Tasks.correct(task, prompt,
              by: owner(task),
-             via: "#{provider_name(connection)}: #{event.sender}"
+             via: "#{provider_name(connection)}: #{event.sender}",
+             origin: :review
            ) do
-        {:ok, task} -> {:processed, "correção pedida pelo review", %{task_id: task.id}}
-        {:error, reason} -> {:ignored, "a correção não pôde começar (#{reason})"}
+        {:ok, task} ->
+          _ = PrOutcomes.review_round(task, key)
+          {:processed, "correção pedida pelo review", %{task_id: task.id}}
+
+        {:error, reason} ->
+          {:ignored, "a correção não pôde começar (#{reason})"}
       end
     end
   end
+
+  # The review's id when the host names it (GitHub); otherwise its
+  # delivery's, the same when it is processed again or replayed.
+  defp review_key(%Event{review: %{id: id}}) when not is_nil(id), do: "review:#{id}"
+
+  defp review_key(%Event{external_id: id}),
+    do: "delivery:" <> Regex.replace(~r/^replay:(.+):\d+$/, id || "", "\\1")
 
   # The review's text and its comments on lines of the code.
   defp review_prompt(client, repo, event) do
