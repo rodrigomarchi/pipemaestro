@@ -285,6 +285,15 @@ defmodule PipeMaestro.MaintenanceTest do
       assert Repo.reload!(job).insights == summary
     end
 
+    test "a pruned job without a summary is not summarized from what is left", ctx do
+      job = ended_job(ctx.runner, ctx.user, 40)
+      Maintenance.run(DateTime.utc_now())
+      job |> Repo.reload!() |> Ecto.Changeset.change(insights: nil) |> Repo.update!()
+
+      assert %{summarized: 0} = Maintenance.run(DateTime.utc_now())
+      assert Repo.reload!(job).insights == nil
+    end
+
     test "usage, the audit and the run's insights stay the same", ctx do
       runner = with_directories(ctx.runner, [%{"name" => "app", "git" => true}])
 

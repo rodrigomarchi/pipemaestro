@@ -8,8 +8,8 @@ defmodule PipeMaestro.Maintenance do
       500) per run;
     * past their workspace's `agent_events_retention_days` from when they
       ended, the jobs' OpenTelemetry records go and their events either go
-      (`:delete`) or keep only their metadata (`:metadata`,
-      `PipeMaestro.Jobs.Event.metadata_only/1`), once the job's summary is
+      (`:delete`) or keep only their metadata (`:metadata`, the keys of
+      `PipeMaestro.Jobs.Event.metadata_keys/0`), once the job's summary is
       written from them: the job keeps its outcome, cost, tokens, artifact,
       the totals and the summary of its run, and is marked
       (`events_pruned_at`) so it is not taken again. At most `:batch` jobs
@@ -62,7 +62,9 @@ defmodule PipeMaestro.Maintenance do
 
     summarized =
       Repo.all(
-        from j in Job, where: not is_nil(j.finished_at) and is_nil(j.insights), limit: ^batch
+        from j in Job,
+          where: not is_nil(j.finished_at) and is_nil(j.insights) and is_nil(j.events_pruned_at),
+          limit: ^batch
       )
 
     Enum.each(summarized, &Insights.store_summary/1)
@@ -113,8 +115,8 @@ defmodule PipeMaestro.Maintenance do
   end
 
   defp prune_job(job, policy, now) do
-    # Its summary is written once more, final, from what is still whole; a
-    # job the global retention of before already emptied keeps the one it has.
+    # Its summary is written once more, final, from what is still whole; a job
+    # with no events nor records left keeps the one it has.
     if has_events_or_records?(job.id), do: Insights.store_summary(job)
 
     {telemetry, _} = Repo.delete_all(from t in Telemetry, where: t.job_id == ^job.id)
