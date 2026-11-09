@@ -65,7 +65,9 @@ location / {
 O `proxy_read_timeout` longo evita que o proxy derrube runners ociosos. O runner
 reconecta sozinho, mas cada queda é uma reconexão à toa. O `client_max_body_size`
 deixa passar os arquivos que os runners sobem dos jobs, de até 10 MiB cada. O padrão do
-nginx, 1 MB, os recusaria com 413.
+nginx, 1 MB, os recusaria com 413. A recusa por cota do workspace também é um 413, mas
+vem do app, com o corpo `{"error": "quota_exceeded"}`
+([ADR 0053](../adr/0053-retencao-por-workspace.md)).
 
 ### Primeiro operador, workspace e pessoas
 

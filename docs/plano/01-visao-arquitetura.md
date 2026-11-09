@@ -220,7 +220,7 @@ Organização · Membro/Papel · Projeto (repositório + configuração) · Exec
 - Executores BYO exigem Docker (ou runtime de containers compatível) e acesso de saída à internet para o control plane, host git, registries e API da Anthropic.
 - Imagens de toolchain por repositório são responsabilidade do cliente (o produto fornece imagens base e um guia).
 - O MVP suporta apenas GitHub como host de git e GitHub Issues como fonte de tarefas.
-- Dados de transcript/eventos do agente podem conter trechos de código; a retenção no control plane deve ser configurável pelo cliente, com opção de manter apenas metadados.
+- Dados de transcript/eventos do agente podem conter trechos de código; a retenção no control plane deve ser configurável pelo cliente, com opção de manter apenas metadados (feito por workspace: [ADR 0053](../adr/0053-retencao-por-workspace.md)).
 
 ---
 
@@ -267,7 +267,7 @@ Organização · Membro/Papel · Projeto (repositório + configuração) · Exec
 
 1. Formato e escopo da definição de pipeline no repositório: quanto de prompt vive no arquivo de pipeline versus em arquivos de agente/skill separados.
 2. Como o gatilho na issue é expresso (label, comando, atribuição a um usuário-bot) e quem pode acioná-lo.
-3. Política padrão de retenção de eventos do agente no control plane (metadados apenas vs. conteúdo completo).
+3. ~~Política padrão de retenção de eventos do agente no control plane (metadados apenas vs. conteúdo completo).~~ Respondida no [ADR 0053](../adr/0053-retencao-por-workspace.md): conteúdo completo por 30 dias depois do fim do job e, depois, só metadados. Cada workspace pode mudar o prazo ou apagar os eventos.
 4. Estratégia para imagens de toolchain: catálogo mantido pelo produto, Dockerfile no repositório do cliente, ou ambos.
 5. Como representar decisões humanas na issue do GitHub (comentário com opções, labels, formulário no PR) e se há SLA.
 6. Limites de plataforma não desligáveis pelo cliente (tempo máximo de etapa, turnos, tamanho de diff) e seus valores iniciais.

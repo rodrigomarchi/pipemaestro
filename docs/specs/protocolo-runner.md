@@ -378,6 +378,7 @@ Só um runner com a capacidade `"files"` os envia, e o control plane só cita
   | `401` | `{"error": "unauthorized"}` | sem token, ou com token inválido ou revogado |
   | `404` | `{"error": "not_found"}` | o job não existe ou é de outro runner |
   | `413` | `{"error": "too_large", "limit"}` | passou do limite do arquivo ou do job |
+  | `413` | `{"error": "quota_exceeded", "quota_bytes"}` | o arquivo levaria os anexos do workspace além da cota ([ADR 0053](../adr/0053-retencao-por-workspace.md)); o control plane conta a recusa no job |
   | `415` | `{"error": "unsupported"}` | o corpo não é `application/octet-stream` |
   | `422` | `{"error": "invalid_path"}` | o caminho foi recusado |
 
