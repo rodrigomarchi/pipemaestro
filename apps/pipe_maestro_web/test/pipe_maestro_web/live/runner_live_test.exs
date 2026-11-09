@@ -4,6 +4,7 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
   import Phoenix.LiveViewTest
 
   alias PipeMaestro.{Jobs, Runners, RunnerTelemetry, Tasks}
+  alias PipeMaestroWeb.RunnerLive.LogTab
 
   setup :register_and_log_in_member
 
@@ -417,7 +418,7 @@ defmodule PipeMaestroWeb.RunnerLiveTest do
     end
 
     test "the CLI's sessions not found show with their label" do
-      assert PipeMaestroWeb.RunnerLive.LogTab.kind_label("claude_sessions_not_found") ==
+      assert LogTab.kind_label("claude_sessions_not_found") ==
                "sessões do claude não encontradas"
     end
 
