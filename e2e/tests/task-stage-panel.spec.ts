@@ -89,7 +89,7 @@ test.describe("Task stage panel", () => {
     await expect(tasks.stageNodeState("executar")).toHaveText("Executando");
     await expect(tasks.stagePanel()).toBeHidden();
     await expect(tasks.liveEvents()).toHaveCount(0);
-    await expect(tasks.sidebar().getByTestId("task-interrupt")).toBeVisible();
+    await expect(app.page.getByTestId("task-sidebar")).toHaveCount(0);
     await shot(app.page, "task-overview");
 
     // Flow B: the running stage's panel, 90% of the screen, live.
@@ -98,6 +98,8 @@ test.describe("Task stage panel", () => {
     const viewport = app.page.viewportSize();
     expect(panel && viewport && panel.width / viewport.width).toBeGreaterThanOrEqual(0.85);
     await expect(tasks.stagePanel().getByTestId("task-events")).toBeVisible();
+    // The message, pause and interruption, in the panel of the stage it is on.
+    await expect(tasks.stagePanel().getByTestId("task-interrupt")).toBeVisible();
     await expect(tasks.stagePanel().getByTestId("stage-run-spent-executar-1")).toContainText("até agora");
     await shot(app.page, "task-stage-panel-live");
 

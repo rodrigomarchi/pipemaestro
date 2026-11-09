@@ -93,6 +93,10 @@ test.describe("Issue to task", () => {
     if (!taskUrl.test(app.page.url())) await proposal.createdTaskLink.click();
     await app.page.waitForURL(taskUrl);
     await waitForLiveView(app.page);
+    await expect(app.page.getByTestId("task-node-entrada")).toContainText("Correção de bug");
+    // Where the task came from, at the pipeline's entry.
+    await app.page.getByTestId("task-node-entrada").click();
+    await app.page.getByTestId("task-node-tab-projeto").click();
     await expect(app.page.getByTestId("task-issue")).toContainText(`${repoName}#3`);
     await expect(app.page.getByTestId("task-pipeline-name")).toContainText("Correção de bug");
     await shot(app.page, "task-from-issue");

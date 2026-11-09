@@ -131,10 +131,23 @@ test.describe("Task pipeline", () => {
     await tasks.openStage("pr");
     await expect(tasks.stageRunStatus("pr", 1)).toHaveText("Aprovada no gate");
     await tasks.closeStage();
-    await expect(app.page.getByTestId("task-branch")).toContainText("cp/botao-de-login-nao-responde-");
-
+    // The request is the pipeline's entry; where it ran is a tab away.
+    await tasks.openNode("entrada");
+    await expect(app.page.getByTestId("task-prompt-text")).toBeVisible();
+    await shot(app.page, "task-request");
+    await tasks.openNode("entrada", "projeto");
     const worktree = join(runner.workdir, "worktrees", bugId);
     await expect(app.page.getByTestId("task-worktree")).toHaveText(worktree);
+    await expect(app.page.getByTestId("task-branch")).toContainText("cp/botao-de-login-nao-responde-");
+    await shot(app.page, "task-entry-project");
+    // A stage opens the PR here, not the platform's delivery: what the task
+    // changed hangs on its end.
+    await expect(tasks.node("entrega")).toHaveCount(0);
+    await tasks.openNode("fim", "arquivos");
+    await expect(app.page.getByTestId("task-files")).toContainText("06-pr.md");
+    await expect(app.page.getByTestId("task-files")).toContainText("fake-claude.txt");
+    await shot(app.page, "task-end-files");
+    await tasks.closeNode();
     for (const artifact of ["01-triagem", "03-reproducao", "06-pr"]) {
       expect(existsSync(join(worktree, ".control-plane", bugId, `${artifact}.md`))).toBe(true);
     }
@@ -143,8 +156,6 @@ test.describe("Task pipeline", () => {
     // Flow E: what each stage changed (its artifact and the file the fake agent writes).
     await tasks.openStage("triagem");
     await expect(app.page.getByTestId("stage-run-changes-triagem-1")).toContainText("2 arquivos alterados");
-    await expect(app.page.getByTestId("task-files")).toContainText("06-pr.md");
-    await expect(app.page.getByTestId("task-files")).toContainText("fake-claude.txt");
     // The artifact's code block is highlighted in the browser.
     await expect(app.page.getByTestId("stage-run-artifact-triagem-1")).toHaveAttribute("data-highlighted", "true");
     await shot(app.page, "task-succeeded");
@@ -154,14 +165,7 @@ test.describe("Task pipeline", () => {
     await app.page.getByTestId("stage-run-changes-summary-triagem-1").click();
     await expect(app.page.getByTestId("stage-run-patch-triagem-1")).toContainText("+# Artefato do fake_claude");
     await shot(app.page, "task-succeeded-checks");
-    // The request, the files and the decisions each have a tab of their own.
     await tasks.closeStage();
-    await app.page.getByTestId("task-tab-pedido").click();
-    await expect(app.page.getByTestId("task-prompt-text")).toBeVisible();
-    await shot(app.page, "task-request");
-    await app.page.getByTestId("task-tab-arquivos").click();
-    await expect(app.page.getByTestId("task-files")).toBeVisible();
-    await app.page.getByTestId("task-tab-etapas").click();
     // The pipeline, vertical: every stage passed, each a link to its panel.
     await expect(tasks.stageNode("triagem")).toHaveAttribute("data-state", "passed");
     await expect(tasks.stageNode("pr")).toHaveAttribute("data-state", "passed");
@@ -197,18 +201,26 @@ test.describe("Task pipeline", () => {
     await shot(app.page, "task-stage-context");
     expect(readFileSync(join(worktree, "deps", "jason", "mix.exs"), "utf8")).toBe("jason\n");
     await tasks.removeWorktree();
+    await tasks.openNode("entrada", "projeto");
     await expect(tasks.worktreeState).toHaveText("Removido do runner.");
     expect(existsSync(worktree)).toBe(false);
     await shot(app.page, "task-worktree-removed");
 
-    // Flow J: a correction after the task ended, in a worktree made again.
-    await expect(app.page.getByTestId("task-correct")).toBeVisible();
+    // Flow J: a correction after the task ended, in a worktree made again:
+    // a place after the end of the pipeline.
+    await expect(tasks.node("corrigir")).toBeVisible();
+    await tasks.openNode("corrigir");
+    await shot(app.page, "task-correct");
     await tasks.correct("Registre também a correção pedida.");
     await expect(tasks.status).toHaveText("Concluída");
     await tasks.openStage("correcao-1");
     await expect(tasks.stageRunStatus("correcao-1", 1)).toHaveText("Aprovada no gate");
     await expect(tasks.stageRun("correcao-1", 1)).toContainText("Registre também a correção pedida.");
-    await expect(app.page.getByTestId("task-decisions")).toContainText("Corrigir");
+    await tasks.closeStage();
+    // The decision, chained on the pipeline before the stage it added.
+    await expect(app.page.getByTestId("task-decision-0")).toContainText("corrigir com um prompt");
+    await shot(app.page, "task-page-corrected");
+    await tasks.openStage("correcao-1");
     expect(existsSync(join(worktree, ".control-plane", bugId, "07-correcao-1.md"))).toBe(true);
     await shot(app.page, "task-corrected");
 
@@ -277,7 +289,7 @@ test.describe("Task pipeline", () => {
     await shot(app.page, "task-interrupted");
     await clickPageAction(app.page, "task-cancel");
     await expect(tasks.status).toHaveText("Cancelada");
-    await expect(app.page.getByTestId("task-correct")).toBeVisible();
+    await expect(tasks.node("corrigir")).toBeVisible();
 
     // Flow G: a project for `app`, its setup and its test command as a gate.
     await projects.open(workspace.slug);

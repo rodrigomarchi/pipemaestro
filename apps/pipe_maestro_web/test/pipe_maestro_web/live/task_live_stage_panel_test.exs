@@ -130,9 +130,20 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       refute has_element?(view, "[data-testid=task-events]")
       refute has_element?(view, "[data-testid=task-stage-panel]")
 
-      # What concerns the task as a whole sits beside the pipeline.
-      assert has_element?(view, "[data-testid=task-sidebar] #instruct-form")
-      assert has_element?(view, "[data-testid=task-sidebar] [data-testid=task-interrupt]")
+      # The pipeline has the page: its entry, its end, nothing beside it.
+      assert has_element?(view, "[data-testid=task-node-entrada]")
+      assert has_element?(view, "[data-testid=task-overview-end]")
+      refute has_element?(view, "[data-testid=task-sidebar]")
+      # A running task takes no correction yet.
+      refute has_element?(view, "[data-testid=task-node-corrigir]")
+
+      # The message, pause and interruption go in the panel of the stage it is on.
+      refute has_element?(view, "#instruct-form")
+      view |> element("[data-testid=task-stage-a]") |> render_click()
+      refute has_element?(view, "[data-testid=task-controls]")
+      view |> element("[data-testid=task-stage-b]") |> render_click()
+      assert has_element?(view, "[data-testid=task-stage-panel] #instruct-form")
+      assert has_element?(view, "[data-testid=task-stage-panel] [data-testid=task-interrupt]")
     end
 
     test "a stage with more than one attempt says how many", ctx do
@@ -217,7 +228,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       # The browser's back: the URL without the stage.
       view |> element("[data-testid=task-stage-a]") |> render_click()
       assert_patch(view)
-      render_patch(view, task_path(ctx, task, "?aba=etapas"))
+      render_patch(view, task_path(ctx, task))
       refute has_element?(view, panel)
     end
 
@@ -225,7 +236,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       task = create_task(ctx)
       finish(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
 
-      {:ok, view, _html} = live(ctx.conn, task_path(ctx, task, "?aba=etapas&etapa=a"))
+      {:ok, view, _html} = live(ctx.conn, task_path(ctx, task, "?etapa=a"))
       assert has_element?(view, "[data-testid=task-stage-panel] [data-testid=stage-run-a-1]")
 
       {:ok, view, _html} = live(ctx.conn, task_path(ctx, task, "?etapa=nao-existe"))
@@ -458,7 +469,7 @@ defmodule PipeMaestroWeb.TaskLiveStagePanelTest do
       refute has_element?(view, "[data-testid=decision-panel]")
       # The panel stays on the stage, now on its new attempt.
       assert has_element?(view, "#{panel} [data-testid=stage-run-a-2]", "com teste")
-      assert has_element?(view, "[data-testid=task-decisions]", "No servidor")
+      assert has_element?(view, "[data-testid=task-decision-0]", "No servidor")
     end
   end
 end

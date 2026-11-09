@@ -1,6 +1,6 @@
 # 0046 — A página da tarefa em fases
 
-- **Status:** aceita
+- **Status:** aceita; as abas e a coluna lateral foram substituídas pela [ADR 0049](0049-a-tarefa-e-o-pipeline.md)
 - **Data:** 08/11/2026
 - **Relacionadas:** [ADR 0040](0040-diagrama-do-pipeline.md), [ADR 0039](0039-telemetria-do-runner.md), [ADR 0042](0042-arquivos-gerados-pela-etapa.md)
 

@@ -118,6 +118,9 @@ test.describe("Decision questionnaire", () => {
 
     await expect(tasks.status).toHaveText("Concluída");
     await expect(tasks.stageRun("executar", 2)).toContainText("[desbloqueio] e no menu");
+    // The answers, chained on the pipeline after the stage that asked.
+    await tasks.closeStageIfOpen();
+    await app.page.getByTestId("task-decision-details-0").click();
     await expect(app.page.getByTestId("task-decision-answers-0")).toContainText("[desbloqueio] e no menu");
     await shot(app.page, "questionnaire-history");
   });

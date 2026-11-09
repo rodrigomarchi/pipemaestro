@@ -1,26 +1,27 @@
 defmodule PipeMaestroWeb.TaskLive.PipelineView do
   @moduledoc """
-  The task's "Etapas" tab at a glance: the pipeline the task runs, top to
-  bottom (entry, each step, the delivery of a pull request, the end), drawn
-  from the same model as every other diagram
-  (`PipeMaestroWeb.PipelineDiagram.build/2` with `task_states/1`) and the same
-  vocabulary of states, on the same rail as every pipeline
-  (`PipeMaestroWeb.PipelineComponents.rail_item/1`). A step in
+  The task's page is its pipeline, top to bottom, drawn from the same model as
+  every other diagram (`PipeMaestroWeb.PipelineDiagram.build/2` with
+  `task_states/1`) and the same vocabulary of states, on the same rail as
+  every pipeline (`PipeMaestroWeb.PipelineComponents.rail_item/1`). A step in
   parallel puts its stages side by side.
 
-  Each stage is a node with only light facts: its marker, name and state, how
-  many attempts, its group and, once its last attempt ended, how long it took
-  and what it cost. A node is a link that opens the stage's panel
-  (`?etapa=<key>`); nothing a stage produced is read or rendered here.
+  Every place on the rail opens a drawer, and the task's content hangs on the
+  place it belongs to: the request and where it runs at the entry
+  (`?no=entrada`), each stage's attempts at the stage (`?etapa=<key>`), the
+  files changed and the branch at the pull request (`?no=entrega`), the cost
+  and the files the stages sent at the end (`?no=fim`), and the correction of
+  a task that ended in a place after the end (`?no=corrigir`). The decisions
+  people took are chained on the rail where they changed the course. A node
+  carries only light facts: nothing a stage produced is read here.
 
-  Beside it, `task_sidebar/1` holds what concerns the whole task: the
-  runner's alerts, the message, pause and interruption of a running task and
-  the correction of one that ended. `decision_banner/1` says the task waits
-  for a decision and opens the stage that waits.
+  Over the pipeline, `decision_banner/1` and `runner_alerts/1` say what holds
+  the task up; `task_controls/1` goes in the panel of the stage it is on.
   """
   use PipeMaestroWeb, :html
 
   import PipeMaestroWeb.JobComponents, only: [format_cost: 1, format_duration: 1]
+  import PipeMaestroWeb.QuestionnaireComponents, only: [answer_list: 1]
 
   import PipeMaestroWeb.PipelineComponents,
     only: [
@@ -36,12 +37,17 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   alias PipeMaestroWeb.{Markdown, PipelineDiagram}
   alias PipeMaestroWeb.TaskLive.AttemptComponents
 
-  @doc "The path of the task's page with the stage `key` open."
+  @doc "The path of the task's page with the stage `key` open, or none when `nil`."
   @spec stage_path(String.t(), Task.t(), String.t() | nil) :: String.t()
-  def stage_path(slug, %Task{id: id}, nil), do: ~p"/w/#{slug}/tasks/#{id}?aba=etapas"
+  def stage_path(slug, %Task{id: id}, nil), do: ~p"/w/#{slug}/tasks/#{id}"
+  def stage_path(slug, %Task{id: id}, key), do: ~p"/w/#{slug}/tasks/#{id}?#{[etapa: key]}"
 
-  def stage_path(slug, %Task{id: id}, key),
-    do: ~p"/w/#{slug}/tasks/#{id}?#{[aba: "etapas", etapa: key]}"
+  @doc """
+  The path of the task's page with one of the places that are not a stage
+  open: `"entrada"`, `"entrega"`, `"fim"` or `"corrigir"`.
+  """
+  @spec node_path(String.t(), Task.t(), String.t()) :: String.t()
+  def node_path(slug, %Task{id: id}, node), do: ~p"/w/#{slug}/tasks/#{id}?#{[no: node]}"
 
   @doc "The key of the stage the task waits a decision on, or `nil`."
   @spec awaiting_key(Task.t()) :: String.t() | nil
@@ -54,10 +60,32 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
 
   def awaiting_key(%Task{}), do: nil
 
+  @doc "Whether the pipeline delivers a pull request: the place where it shows."
+  @spec delivers_pr?(Task.t()) :: boolean()
+  def delivers_pr?(%Task{} = task),
+    do: PipelineDiagram.build(PipelineDiagram.for_task(task)).delivery == :pr
+
+  @doc "How many files the attempts of stage `index` sent."
+  @spec stage_files(Task.t(), map(), non_neg_integer()) :: non_neg_integer()
+  def stage_files(%Task{stage_runs: runs}, files, index) do
+    for(run <- runs, run.index == index, do: length(Map.get(files, run.id, [])))
+    |> Enum.sum()
+  end
+
   attr :task, Task, required: true
   attr :slug, :string, required: true
+  attr :decisions, :list, required: true, doc: "the decisions taken, oldest first"
+  attr :files, :map, required: true, doc: "the files the attempts sent, by stage run id"
+  attr :changed_files, :list, required: true
+  attr :cost, :any, required: true
+  attr :open, :string, default: nil, doc: "the place whose drawer is open"
 
-  @doc "The pipeline, vertical: every stage of the task's snapshot and where it stands."
+  @doc """
+  The pipeline, vertical: the request at its entry, every stage of the task's
+  snapshot and where it stands, the decisions taken between them, the pull
+  request, the end and, once the task ended, the correction that may follow.
+  Each place opens its drawer.
+  """
   @spec overview(map()) :: Phoenix.LiveView.Rendered.t()
   def overview(assigns) do
     task = assigns.task
@@ -67,24 +95,49 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
         states: PipelineDiagram.task_states(task)
       )
 
-    runs = Enum.group_by(task.stage_runs, & &1.index)
+    decisions =
+      assigns.decisions
+      |> Enum.with_index()
+      |> Enum.group_by(fn {decision, _n} ->
+        {if(decision.action == :correct, do: :before, else: :after), decision.stage_index}
+      end)
 
-    assigns = assign(assigns, diagram: diagram, runs: runs)
+    attached = assigns.files |> Map.values() |> Enum.concat() |> length()
+
+    assigns =
+      assign(assigns,
+        diagram: diagram,
+        runs: Enum.group_by(task.stage_runs, & &1.index),
+        decided: decisions,
+        attached: attached,
+        correctable: not Task.active?(task)
+      )
 
     ~H"""
     <ol class="relative" data-testid="task-overview">
       <.rail_item icon="hero-bolt" tone={:primary}>
-        <p class="text-sm font-medium text-gray-900 dark:text-white">Entrada</p>
-        <p class="text-xs text-gray-500 dark:text-gray-400">
-          {@task.pipeline_name} · v{@task.pipeline_version}
-        </p>
+        <.place_node
+          title="Entrada"
+          path={node_path(@slug, @task, "entrada")}
+          open={@open == "entrada"}
+          testid="task-node-entrada"
+        >
+          Pedido · {(@task.project || %{})["name"] || @task.directory} · {@task.pipeline_name} v{@task.pipeline_version}
+        </.place_node>
       </.rail_item>
 
       <%= for step <- @diagram.steps do %>
+        <.decision_item
+          :for={{decision, n} <- decided(@decided, :before, step)}
+          decision={decision}
+          n={n}
+          task={@task}
+        />
         <.rail_item :if={!step.parallel?} marker={hd(step.nodes)}>
           <.stage_node
             node={hd(step.nodes)}
             runs={Map.get(@runs, hd(step.nodes).index, [])}
+            attached={stage_files(@task, @files, hd(step.nodes).index)}
             task={@task}
             slug={@slug}
           />
@@ -101,47 +154,191 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
               :for={node <- step.nodes}
               node={node}
               runs={Map.get(@runs, node.index, [])}
+              attached={stage_files(@task, @files, node.index)}
               task={@task}
               slug={@slug}
               marker
             />
           </div>
         </.rail_item>
+        <.decision_item
+          :for={{decision, n} <- decided(@decided, :after, step)}
+          decision={decision}
+          n={n}
+          task={@task}
+        />
       <% end %>
 
       <.rail_item :if={@diagram.delivery == :pr} icon={delivery_icon("pr")} tone={:delivery}>
-        <p class="text-sm font-medium text-gray-900 dark:text-white">{delivery_label("pr")}</p>
-        <p :if={@task.pr_url} class="text-xs">
-          <a
-            href={@task.pr_url}
-            target="_blank"
-            rel="noopener"
-            class="text-primary-600 hover:underline dark:text-primary-400"
-            data-testid="task-overview-pr"
-          >
-            Abrir o pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-          </a>
-        </p>
+        <.place_node
+          title={delivery_label("pr")}
+          path={node_path(@slug, @task, "entrega")}
+          open={@open == "entrega"}
+          testid="task-node-entrega"
+        >
+          {count_label(length(@changed_files), "arquivo alterado", "arquivos alterados")}
+          <span :if={@task.pr_url}>· PR aberto</span>
+        </.place_node>
+        <a
+          :if={@task.pr_url}
+          href={@task.pr_url}
+          target="_blank"
+          rel="noopener"
+          class="mt-1 inline-flex items-center gap-1 text-xs text-primary-600 hover:underline dark:text-primary-400"
+          data-testid="task-overview-pr"
+        >
+          Abrir o pull request <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+        </a>
       </.rail_item>
 
       <.rail_item
         icon={if @diagram.done?, do: "hero-check-circle", else: "hero-flag"}
         tone={if @diagram.done?, do: :done, else: :neutral}
-        last
+        last={!@correctable}
+        dashed
       >
-        <p class="text-sm font-medium text-gray-900 dark:text-white" data-testid="task-overview-end">
-          Fim
-        </p>
+        <.place_node
+          title="Fim"
+          path={node_path(@slug, @task, "fim")}
+          open={@open == "fim"}
+          testid="task-overview-end"
+        >
+          {format_cost(@cost)} · {count_label(@attached, "anexo", "anexos")}
+        </.place_node>
+      </.rail_item>
+
+      <.rail_item :if={@correctable} icon="hero-plus" tone={:ghost} last>
+        <.place_node
+          title="Corrigir com um prompt"
+          path={node_path(@slug, @task, "corrigir")}
+          open={@open == "corrigir"}
+          ghost
+          testid="task-node-corrigir"
+        >
+          <span
+            :if={no_pr?(@task)}
+            class="text-warning-700 dark:text-warning-400"
+            data-testid="task-no-pr-warning"
+          >
+            A tarefa terminou sem PR: peça para abri-lo.
+          </span>
+          <span :if={!no_pr?(@task)}>Roda como uma nova etapa, na branch desta tarefa.</span>
+        </.place_node>
       </.rail_item>
     </ol>
     """
   end
+
+  # The decisions taken before or after a step's stages, with their place in the task.
+  defp decided(decided, side, step),
+    do: Enum.flat_map(step.nodes, &Map.get(decided, {side, &1.index}, []))
+
+  defp count_label(1, one, _many), do: "1 #{one}"
+  defp count_label(n, _one, many), do: "#{n} #{many}"
+
+  attr :title, :string, required: true
+  attr :path, :string, required: true
+  attr :open, :boolean, default: false
+  attr :ghost, :boolean, default: false, doc: "dashed: something that may still be done"
+  attr :testid, :string, required: true
+  slot :inner_block, required: true
+
+  # A place that is not a stage, as a link to its drawer, with its light facts.
+  defp place_node(assigns) do
+    ~H"""
+    <.link
+      patch={@path}
+      class={[
+        "-mt-1 flex items-center gap-3 rounded-xl border px-4 py-2.5 transition hover:border-primary-400 hover:shadow-sm dark:hover:border-primary-500",
+        @ghost && "border-dashed border-gray-300 dark:border-gray-700",
+        !@ghost && "bg-white dark:bg-gray-900",
+        !@ghost && !@open && "border-gray-200 dark:border-gray-800",
+        @open && "border-primary-500 ring-2 ring-primary-500/30"
+      ]}
+      data-testid={@testid}
+    >
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-gray-900 dark:text-white">{@title}</p>
+        <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+          {render_slot(@inner_block)}
+        </p>
+      </div>
+      <.icon name="hero-chevron-right" class="size-4 shrink-0 text-gray-400" />
+    </.link>
+    """
+  end
+
+  attr :decision, :map, required: true
+  attr :n, :integer, required: true, doc: "its place among the task's decisions"
+  attr :task, Task, required: true
+
+  # A decision a person took, chained on the rail where it changed the course.
+  defp decision_item(assigns) do
+    assigns =
+      assign(assigns,
+        details?: assigns.decision.answers != nil or assigns.decision.instructions != nil
+      )
+
+    ~H"""
+    <.rail_item icon="hero-hand-raised" tone={:decision} small testid={"task-decision-#{@n}"}>
+      <p class="text-sm text-gray-900 dark:text-white">
+        <span class="font-medium">
+          {if @decision.decided_by_user, do: @decision.decided_by_user.name, else: "Alguém"}
+        </span>
+        decidiu {decision_label(@decision)}
+        <span :if={@decision.choice} class="text-gray-600 dark:text-gray-300">
+          · escolha: {@decision.choice}
+        </span>
+      </p>
+      <p class="text-xs text-gray-500 dark:text-gray-400">
+        {Calendar.strftime(@decision.inserted_at, "%d/%m %H:%M")}
+        <span :if={@decision.decided_via} data-testid={"task-decision-via-#{@n}"}>
+          · via {@decision.decided_via}
+        </span>
+      </p>
+      <details
+        :if={@details?}
+        id={"task-decision-details-#{@n}"}
+        class="mt-1 text-sm"
+        phx-mounted={JS.ignore_attributes(["open"])}
+      >
+        <summary
+          class="cursor-pointer text-xs text-gray-500 dark:text-gray-400"
+          data-testid={"task-decision-details-#{@n}"}
+        >
+          {if @decision.answers, do: "Respostas", else: "Instruções"}
+        </summary>
+        <.answer_list
+          :if={@decision.answers}
+          answers={Map.merge(@decision.questions || %{}, @decision.answers)}
+          class="my-1 space-y-1 text-sm"
+          data-testid={"task-decision-answers-#{@n}"}
+        />
+        <div
+          :if={@decision.instructions}
+          class="prose prose-sm max-w-none text-gray-600 dark:prose-invert dark:text-gray-300"
+        >
+          {Markdown.to_html(@decision.instructions)}
+        </div>
+      </details>
+    </.rail_item>
+    """
+  end
+
+  defp decision_label(%{action: :retry, instructions: i}) when is_binary(i),
+    do: "refazer, com instruções"
+
+  defp decision_label(%{action: :retry}), do: "refazer"
+  defp decision_label(%{action: :advance}), do: "seguir"
+  defp decision_label(%{action: :cancel}), do: "cancelar"
+  defp decision_label(%{action: :correct}), do: "corrigir com um prompt"
 
   attr :node, :map, required: true, doc: "a `PipeMaestroWeb.PipelineDiagram` stage node"
   attr :runs, :list, required: true, doc: "the stage's attempts, light"
   attr :task, Task, required: true
   attr :slug, :string, required: true
   attr :marker, :boolean, default: false, doc: "its own marker, for a stage of a group"
+  attr :attached, :integer, default: 0, doc: "how many files its attempts sent"
 
   # A stage, as a link to its panel, with what tells where it stands.
   defp stage_node(assigns) do
@@ -199,6 +396,14 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
           <span :if={@metrics} data-testid={"task-stage-metrics-#{@stage.key}"}>
             {@metrics}
           </span>
+          <span
+            :if={@attached > 0}
+            class="inline-flex items-center gap-0.5"
+            title="Arquivos enviados pelo agente"
+            data-testid={"task-stage-files-#{@stage.key}"}
+          >
+            <.icon name="hero-paper-clip" class="size-3" /> {@attached}
+          </span>
         </div>
       </div>
       <.icon name="hero-chevron-right" class="mt-1 size-4 shrink-0 text-gray-400" />
@@ -214,8 +419,9 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
   defp node_border(_state), do: "border-gray-200 dark:border-gray-800"
 
   # How long the last attempt took and what it cost, once it ended.
-  defp metrics(%StageRun{status: status, job: %{} = job}) when status != :running,
-    do: "#{format_duration(job.duration_ms)} · #{format_cost(job.cost_usd)}"
+  defp metrics(%StageRun{status: status, job: %{duration_ms: ms} = job})
+       when status != :running and is_integer(ms),
+       do: "#{format_duration(job.duration_ms)} · #{format_cost(job.cost_usd)}"
 
   defp metrics(_run), do: nil
 
@@ -232,9 +438,7 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <p class="font-medium">A tarefa aguarda uma decisão.</p>
-          <div class="prose prose-sm max-w-none dark:prose-invert">
-            {Markdown.inline_html(@task.decision_reason)}
-          </div>
+          <div class="text-sm">{Markdown.inline_html(@task.decision_reason)}</div>
         </div>
         <.button
           size="sm"
@@ -253,159 +457,165 @@ defmodule PipeMaestroWeb.TaskLive.PipelineView do
 
   attr :task, Task, required: true
   attr :online, :any, required: true
-  attr :correct_form, Phoenix.HTML.Form, required: true
-  attr :runner_choices, :list, required: true
+
+  @doc "Over the pipeline: the runner the task waits for, or the one gone offline under it."
+  @spec runner_alerts(map()) :: Phoenix.LiveView.Rendered.t()
+  def runner_alerts(assigns) do
+    ~H"""
+    <.alert
+      :if={Tasks.waiting_for_runner?(@task, @online)}
+      color="info"
+      with_icon
+      data-testid="task-waiting-runner"
+    >
+      Aguardando o runner {runner_name(@task)} ficar online: a etapa começa assim que ele conectar.
+    </.alert>
+    <.alert
+      :if={Tasks.runner_offline?(@task, @online) and not Tasks.waiting_for_runner?(@task, @online)}
+      color="danger"
+      with_icon
+      data-testid="task-runner-offline"
+    >
+      <p>
+        A tarefa está parada: o runner {runner_name(@task)} está offline.
+        Interrompa a etapa para decidir: refazer em outro runner, seguir ou cancelar.
+      </p>
+      <.button
+        size="xs"
+        color="danger"
+        variant="outline"
+        icon="hero-hand-raised"
+        phx-click="interrupt"
+        class="mt-2"
+        data-testid="task-runner-offline-interrupt"
+      >
+        Interromper a etapa
+      </.button>
+    </.alert>
+    """
+  end
+
+  @doc "Whether the task can take a message or shows one waiting: its controls show."
+  @spec controls?(Task.t()) :: boolean()
+  def controls?(%Task{} = task),
+    do: task.status == :running or (Task.active?(task) and task.pending_instructions != nil)
+
+  attr :task, Task, required: true
 
   @doc """
-  What concerns the whole task: the runner's alerts, the message, pause and
-  interruption of a running task, and the correction of one that ended.
+  In the panel of the stage the task is on: the message waiting for the next
+  attempt or stage and, while it runs, a new message, the pause after this
+  stage and the interruption.
   """
-  @spec task_sidebar(map()) :: Phoenix.LiveView.Rendered.t()
-  def task_sidebar(assigns) do
+  @spec task_controls(map()) :: Phoenix.LiveView.Rendered.t()
+  def task_controls(assigns) do
     assigns = assign(assigns, instruct: to_form(%{"text" => ""}, as: "instruct"))
 
     ~H"""
-    <div class="space-y-4" data-testid="task-sidebar">
-      <.alert
-        :if={Tasks.waiting_for_runner?(@task, @online)}
-        color="info"
-        with_icon
-        data-testid="task-waiting-runner"
+    <div
+      :if={controls?(@task)}
+      class="rounded-xl border border-gray-200 p-4 dark:border-gray-800"
+      data-testid="task-controls"
+    >
+      <div
+        :if={@task.pending_instructions}
+        class="mb-3 rounded-lg bg-info-50 px-3 py-2 text-sm text-info-900 dark:bg-info-950/40 dark:text-info-100"
+        data-testid="task-pending-instructions"
       >
-        Aguardando o runner {runner_name(@task)} ficar online: a etapa começa assim que ele conectar.
-      </.alert>
-      <.alert
-        :if={Tasks.runner_offline?(@task, @online) and not Tasks.waiting_for_runner?(@task, @online)}
-        color="danger"
-        with_icon
-        data-testid="task-runner-offline"
-      >
-        <p>
-          A tarefa está parada: o runner {runner_name(@task)} está offline.
-          Interrompa a etapa para decidir: refazer em outro runner, seguir ou cancelar.
-        </p>
-        <.button
-          size="xs"
-          color="danger"
-          variant="outline"
-          icon="hero-hand-raised"
-          phx-click="interrupt"
-          class="mt-2"
-          data-testid="task-runner-offline-interrupt"
+        <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
+        <div class="prose prose-sm max-w-none dark:prose-invert">
+          {Markdown.to_html(@task.pending_instructions)}
+        </div>
+      </div>
+      <.form :if={@task.status == :running} for={@instruct} id="instruct-form" phx-submit="instruct">
+        <.markdown_editor
+          id="task-instruct-text"
+          field={@instruct[:text]}
+          label="Mensagem para a tarefa"
+          icon="hero-chat-bubble-bottom-center-text"
+          rows={2}
+          placeholder="Ex.: não mexa no módulo de pagamentos."
+          help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
+          testid="task-instruct-text"
+        />
+        <p
+          :if={@task.pause_requested}
+          class="mb-2 text-sm text-warning-700 dark:text-warning-400"
+          data-testid="task-pause-requested"
         >
-          Interromper a etapa
-        </.button>
-      </.alert>
-
-      <.card
-        :if={@task.status == :running or (Task.active?(@task) and @task.pending_instructions)}
-        variant="outline"
-      >
-        <.card_content>
-          <div
-            :if={@task.pending_instructions}
-            class="mb-3 rounded-lg bg-info-50 px-3 py-2 text-sm text-info-900 dark:bg-info-950/40 dark:text-info-100"
-            data-testid="task-pending-instructions"
+          Pausa pedida: a tarefa para quando esta etapa terminar.
+        </p>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <.button
+            :if={not @task.pause_requested}
+            type="button"
+            size="sm"
+            variant="outline"
+            color="gray"
+            icon="hero-pause"
+            phx-click="request_pause"
+            data-testid="task-request-pause"
           >
-            <p class="font-medium">Vai na próxima tentativa ou etapa:</p>
-            <div class="prose prose-sm max-w-none dark:prose-invert">
-              {Markdown.to_html(@task.pending_instructions)}
-            </div>
-          </div>
-          <.form
-            :if={@task.status == :running}
-            for={@instruct}
-            id="instruct-form"
-            phx-submit="instruct"
-          >
-            <.markdown_editor
-              id="task-instruct-text"
-              field={@instruct[:text]}
-              label="Mensagem para a tarefa"
-              icon="hero-chat-bubble-bottom-center-text"
-              rows={2}
-              placeholder="Ex.: não mexa no módulo de pagamentos."
-              help_text="Não interrompe a etapa em execução: entra no prompt da próxima tentativa ou etapa."
-              testid="task-instruct-text"
-            />
-            <p
-              :if={@task.pause_requested}
-              class="mb-2 text-sm text-warning-700 dark:text-warning-400"
-              data-testid="task-pause-requested"
-            >
-              Pausa pedida: a tarefa para quando esta etapa terminar.
-            </p>
-            <div class="flex flex-wrap items-center justify-end gap-2">
-              <.button
-                :if={not @task.pause_requested}
-                type="button"
-                size="sm"
-                variant="outline"
-                color="gray"
-                icon="hero-pause"
-                phx-click="request_pause"
-                data-testid="task-request-pause"
-              >
-                Pausar depois desta etapa
-              </.button>
-              <.button
-                type="button"
-                size="sm"
-                variant="outline"
-                color="warning"
-                icon="hero-hand-raised"
-                phx-click="interrupt"
-                data-confirm="Interromper a etapa em execução? A tarefa vai aguardar uma decisão: refazer com instruções, seguir ou cancelar."
-                data-testid="task-interrupt"
-              >
-                Interromper agora
-              </.button>
-              <.button size="sm" icon="hero-paper-airplane" data-testid="task-instruct">
-                Enviar
-              </.button>
-            </div>
-          </.form>
-        </.card_content>
-      </.card>
-
-      <.card :if={!Task.active?(@task)} variant="outline" data-testid="task-correct">
-        <.card_content>
-          <.section_heading
-            icon="hero-wrench-screwdriver"
-            title="Corrigir com um prompt"
-            description="Roda no worktree e na branch desta tarefa como uma nova etapa, com as verificações, os gates e a entrega de sempre."
-          />
-          <.alert
-            :if={no_pr?(@task)}
+            Pausar depois desta etapa
+          </.button>
+          <.button
+            type="button"
+            size="sm"
+            variant="outline"
             color="warning"
-            with_icon
-            class="mb-3"
-            data-testid="task-no-pr-warning"
+            icon="hero-hand-raised"
+            phx-click="interrupt"
+            data-confirm="Interromper a etapa em execução? A tarefa vai aguardar uma decisão: refazer com instruções, seguir ou cancelar."
+            data-testid="task-interrupt"
           >
-            A tarefa terminou sem PR: a entrega não chegou a abri-lo. Peça a correção abaixo.
-          </.alert>
-          <.form for={@correct_form} id="correct-form" phx-submit="correct">
-            <.markdown_editor
-              id="task-correct-text"
-              field={@correct_form[:prompt]}
-              label="O que fazer"
-              icon="hero-chat-bubble-bottom-center-text"
-              rows={3}
-              placeholder="Ex.: resolva o conflito com a main; o PR acusou erro no CI; ajuste o que a revisão pediu."
-              testid="task-correct-text"
-            />
-            <.rerun_runner
-              form={@correct_form}
-              runners={@runner_choices}
-              online={@online}
-              testid="task-correct-runner"
-            />
-            <div class="flex justify-end">
-              <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
-            </div>
-          </.form>
-        </.card_content>
-      </.card>
+            Interromper agora
+          </.button>
+          <.button size="sm" icon="hero-paper-airplane" data-testid="task-instruct">
+            Enviar
+          </.button>
+        </div>
+      </.form>
+    </div>
+    """
+  end
+
+  attr :task, Task, required: true
+  attr :online, :any, required: true
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :runner_choices, :list, required: true
+
+  @doc "The correction of a task that ended: a prompt run as a new stage."
+  @spec correction(map()) :: Phoenix.LiveView.Rendered.t()
+  def correction(assigns) do
+    ~H"""
+    <div class="space-y-4" data-testid="task-correct">
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Roda no worktree e na branch desta tarefa como uma nova etapa, com as verificações,
+        os gates e a entrega de sempre.
+      </p>
+      <.alert :if={no_pr?(@task)} color="warning" with_icon>
+        A tarefa terminou sem PR: a entrega não chegou a abri-lo. Peça a correção abaixo.
+      </.alert>
+      <.form for={@form} id="correct-form" phx-submit="correct">
+        <.markdown_editor
+          id="task-correct-text"
+          field={@form[:prompt]}
+          label="O que fazer"
+          icon="hero-chat-bubble-bottom-center-text"
+          rows={8}
+          placeholder="Ex.: resolva o conflito com a main; o PR acusou erro no CI; ajuste o que a revisão pediu."
+          testid="task-correct-text"
+        />
+        <.rerun_runner
+          form={@form}
+          runners={@runner_choices}
+          online={@online}
+          testid="task-correct-runner"
+        />
+        <div class="flex justify-end">
+          <.button icon="hero-play" data-testid="task-correct-submit">Rodar a correção</.button>
+        </div>
+      </.form>
     </div>
     """
   end

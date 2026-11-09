@@ -97,8 +97,12 @@ test.describe("Agent proposals", () => {
     if (!taskUrl.test(app.page.url())) await proposal.createdTaskLink.click();
     await app.page.waitForURL(taskUrl);
     await waitForLiveView(app.page);
+    await expect(app.page.getByTestId("task-node-entrada")).toContainText("Correção de bug");
+    // The request is the pipeline's entry, opened in a drawer (one more step back).
+    await app.page.getByTestId("task-node-entrada").click();
     await expect(app.page.getByTestId("task-prompt-text")).toContainText("Critérios de aceite");
-    await expect(app.page.getByTestId("task-pipeline-name")).toContainText("Correção de bug");
+    await app.page.goBack();
+    await expect(app.page.getByTestId("task-node-panel")).toHaveCount(0);
     await app.page.goBack();
     await waitForLiveView(app.page);
     await expect(proposal.createdTaskLink).toBeVisible();

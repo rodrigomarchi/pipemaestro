@@ -130,7 +130,7 @@ test.describe("Merging the pull request", () => {
     // Every stage done, the PR waits for the CI.
     await expect(app.page.getByTestId("task-status")).toHaveText("Concluída", { timeout: 120_000 });
     await expect(app.page.getByTestId("task-merge-state")).toHaveText("Merge: aguardando checks", { timeout: 30_000 });
-    await expect(app.page.getByTestId("task-pr")).toHaveAttribute("href", /\/pulls\/1$/);
+    await expect(app.page.getByTestId("task-overview-pr")).toHaveAttribute("href", /\/pulls\/1$/);
     await shot(app.page, "task-waiting-checks");
     expect((await forgejoState(repoName)).pulls[0].merged).toBeFalsy();
 
