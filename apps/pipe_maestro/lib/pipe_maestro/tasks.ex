@@ -1261,7 +1261,8 @@ defmodule PipeMaestro.Tasks do
     if asking == :analysis and auto_analysis?(task), do: request_analysis(task), else: task
   end
 
-  # A snapshot from before the setting (no key) analyses, as it did.
+  # Only an explicit `false` in the task's snapshot turns the analysis off; a
+  # snapshot without the key (or none) analyses.
   defp auto_analysis?(task), do: context(task, "auto_analysis") != false
 
   defp finish(task, status) do

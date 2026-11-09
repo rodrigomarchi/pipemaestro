@@ -166,9 +166,10 @@ segunda recebe `:not_awaiting`.
 
 **Análise automática.** Na pausa por falha, ou num bloqueio sem perguntas, com o ajuste
 `auto_analysis` do pipeline ligado (o padrão; uma tarefa cujo `pipeline_context` não tem a
-chave conta como ligada), a plataforma pede uma proposta `analysis` (`Tasks.request_analysis/1`) e guarda o job em
-`decision_analysis_job_id`. Quando ela termina com perguntas válidas, e a pausa ainda é a
-mesma, o diagnóstico e as perguntas viram o `decision_questionnaire` (origem `analise`).
+chave conta como ligada), a plataforma pede uma proposta `analysis`
+(`Tasks.request_analysis/1`) e guarda o job em `decision_analysis_job_id`. Quando ela
+termina com perguntas válidas, e a pausa ainda é a mesma, o diagnóstico e as perguntas
+viram o `decision_questionnaire` (origem `analise`).
 Qualquer decisão, ou `redo_from`, cancela a análise ativa; o início de uma etapa e o fim
 da tarefa limpam `decision_questionnaire` e `decision_analysis_job_id`. Com o ajuste
 desligado, a pausa leva só o motivo, sem `decision_analysis_job_id`, e a pessoa decide à
