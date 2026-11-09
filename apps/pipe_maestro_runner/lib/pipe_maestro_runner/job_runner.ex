@@ -510,12 +510,12 @@ defmodule PipeMaestroRunner.JobRunner do
 
     result =
       try do
-        ClaudeSessions.clean(projects, cwd, kept?)
+        result = ClaudeSessions.clean(projects, cwd, kept?)
+        :ok = ClaudeSessions.forget(workdir, task_id)
+        result
       rescue
         error -> {:unexpected, :error, Exception.message(error)}
       end
-
-    :ok = ClaudeSessions.forget(workdir, task_id)
 
     case result do
       {:ok, _bytes} -> :ok
