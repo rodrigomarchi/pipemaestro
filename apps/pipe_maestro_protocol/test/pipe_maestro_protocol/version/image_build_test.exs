@@ -212,7 +212,7 @@ defmodule PipeMaestroProtocol.Version.ImageBuildTest do
       guard =
         build_stage
         |> String.split(~r/^RUN /m)
-        |> Enum.find(&(&1 =~ "ALLOW_UNVERSIONED"))
+        |> Enum.find(&(&1 =~ "$ALLOW_UNVERSIONED"))
 
       assert guard, "no RUN in the build stage checks ALLOW_UNVERSIONED before mix compile"
       assert guard =~ "CP_VERSION"
