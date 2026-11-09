@@ -104,10 +104,16 @@ defmodule PipeMaestroRunner.GateCache do
 
   # The tree of the working directory as it is: a copy of the real index
   # (whose stat cache spares hashing what did not change), every change
-  # added to it, the excluded paths taken out.
+  # added to it, the excluded paths taken out. The copy sits next to the
+  # index, under a random name: other runners (other VMs) on the machine make
+  # copies of their own at the same time. It is no newer than the index:
+  # git rehashes the entries changed as late as its index ("racy" ones), and
+  # a copy made now would hide a file rewritten, same size, in the second of
+  # the index.
   defp tree(dir, index, exclude) do
-    copy = Path.join(System.tmp_dir!(), "pipemaestro-gates-#{System.unique_integer([:positive])}")
-    _copied = File.cp(index, copy)
+    suffix = 12 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+    copy = Path.join(Path.dirname(index), "pipemaestro-gates-index-" <> suffix)
+    _copied = copy_index(index, copy)
     env = [{"GIT_INDEX_FILE", copy}]
 
     try do
@@ -117,6 +123,15 @@ defmodule PipeMaestroRunner.GateCache do
       end
     after
       File.rm(copy)
+    end
+  end
+
+  # The index's time comes in whole seconds, cut down: a second earlier
+  # still, the copy is never newer than the index.
+  defp copy_index(index, copy) do
+    with :ok <- File.cp(index, copy),
+         {:ok, %File.Stat{mtime: mtime}} <- File.stat(index, time: :posix) do
+      File.touch(copy, mtime - 1)
     end
   end
 
