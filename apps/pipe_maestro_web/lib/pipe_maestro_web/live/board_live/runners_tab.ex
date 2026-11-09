@@ -35,41 +35,42 @@ defmodule PipeMaestroWeb.BoardLive.RunnersTab do
           </.button>
         </:action>
       </.card_header>
-      <.table
-        :if={@runners != []}
-        class="mt-4"
-        id="board-runners"
-        rows={@runners}
-        row_id={&"board-runner-#{&1.id}"}
-        density="compact"
-      >
-        <:col :let={runner} label="Executor">
-          <div
-            class="flex items-center gap-2 font-medium text-gray-900 dark:text-white"
-            data-testid={"board-runner-#{runner.name}"}
+      <.card_content :if={@runners != []}>
+        <.record_list id="board-runners">
+          <.record_card
+            :for={runner <- @runners}
+            id={"board-runner-#{runner.id}"}
+            testid={"board-runner-row-#{runner.name}"}
+            navigate={~p"/w/#{@slug}/runners/#{runner.id}"}
+            dense
           >
-            <.icon name="hero-server" class="size-4 text-gray-400" />
-            {runner.name}
-          </div>
-        </:col>
-        <:col :let={runner} label="Status">
-          <.runner_status
-            online={MapSet.member?(@online, runner.id)}
-            data-testid={"board-runner-status-#{runner.name}"}
-          />
-        </:col>
-        <:col :let={runner} label="Capacidade">{runner.capacity}</:col>
-        <:col :let={runner} label="Versão">
-          <span class="font-mono text-xs">{runner.runner_version}</span>
-        </:col>
-        <:col :let={runner} label="Visto">
-          <span class="text-gray-500 dark:text-gray-400">
-            {if MapSet.member?(@online, runner.id),
-              do: "agora",
-              else: time_ago(runner.last_seen_at, @now)}
-          </span>
-        </:col>
-      </.table>
+            <:leading>
+              <.record_icon
+                icon="hero-server"
+                color={if MapSet.member?(@online, runner.id), do: "success", else: "gray"}
+              />
+            </:leading>
+            <:title><span data-testid={"board-runner-#{runner.name}"}>{runner.name}</span></:title>
+            <:badge>
+              <.runner_status
+                online={MapSet.member?(@online, runner.id)}
+                data-testid={"board-runner-status-#{runner.name}"}
+              />
+            </:badge>
+            <:aside>
+              <.record_metric label="capacidade">{runner.capacity}</.record_metric>
+              <.record_metric label="versão">
+                <span class="font-mono">{runner.runner_version}</span>
+              </.record_metric>
+              <span>
+                visto {if MapSet.member?(@online, runner.id),
+                  do: "agora",
+                  else: time_ago(runner.last_seen_at, @now)}
+              </span>
+            </:aside>
+          </.record_card>
+        </.record_list>
+      </.card_content>
       <.card_content :if={@runners == []}>
         <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="board-no-runners">
           Nenhum runner conectado.

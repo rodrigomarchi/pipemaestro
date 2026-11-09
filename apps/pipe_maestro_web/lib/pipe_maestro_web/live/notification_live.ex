@@ -138,7 +138,7 @@ defmodule PipeMaestroWeb.NotificationLive do
 
         <.card :if={@notifications != []}>
           <.card_content>
-            <ul role="list" class="space-y-1">
+            <ul role="list" class="space-y-2">
               <NotificationComponents.notification_item
                 :for={notification <- @notifications}
                 notification={notification}

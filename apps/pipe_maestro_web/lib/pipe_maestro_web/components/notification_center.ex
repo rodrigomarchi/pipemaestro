@@ -260,7 +260,7 @@ defmodule PipeMaestroWeb.NotificationCenter do
 
             <NotificationComponents.empty_inbox :if={@inbox == []} unread_only={@unread_only} />
 
-            <ul :if={@inbox != []} role="list" class="space-y-1">
+            <ul :if={@inbox != []} role="list" class="space-y-2">
               <NotificationComponents.notification_item
                 :for={notification <- @inbox}
                 notification={notification}
@@ -320,7 +320,7 @@ defmodule PipeMaestroWeb.NotificationCenter do
       <h3 class="px-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
         {@label} ({length(@executions)})
       </h3>
-      <ul role="list" class="mt-1 space-y-1">
+      <ul role="list" class="mt-1 space-y-2">
         <NotificationComponents.execution_item
           :for={execution <- @executions}
           execution={execution}

@@ -64,7 +64,11 @@ defmodule PipeMaestroWeb.ListComponents do
   attr :navigate, :string, default: nil, doc: "the record's page: the card is its link"
   attr :patch, :string, default: nil
   attr :href, :string, default: nil
-  attr :link_testid, :string, default: nil, doc: "the title's link"
+  attr :click, :any, default: nil, doc: "an event the card sends instead of a link"
+  attr :click_value, :any, default: nil, doc: "the event's `phx-value-id`"
+  attr :click_target, :any, default: nil, doc: "the event's `phx-target`"
+  attr :link_testid, :string, default: nil, doc: "the title's link or button"
+  attr :link_attrs, :map, default: %{}, doc: "more attributes of the title's link or button"
   attr :tone, :atom, default: nil, values: @tones
   attr :dense, :boolean, default: false, doc: "smaller, for a narrow column or a short list"
   attr :class, :any, default: nil
@@ -87,11 +91,16 @@ defmodule PipeMaestroWeb.ListComponents do
 
   @doc """
   One record as a card. With `navigate`, `patch` or `href` the card is its
-  link; the title carries it, stretched over the card.
+  link, and with `click` it sends an event; the title carries either,
+  stretched over the card.
   """
   @spec record_card(map()) :: Phoenix.LiveView.Rendered.t()
   def record_card(assigns) do
-    assigns = assign(assigns, linked: !!(assigns.navigate || assigns.patch || assigns.href))
+    assigns =
+      assign(assigns,
+        linked: !!(assigns.navigate || assigns.patch || assigns.href),
+        clickable: !is_nil(assigns.click)
+      )
 
     ~H"""
     <li
@@ -100,7 +109,8 @@ defmodule PipeMaestroWeb.ListComponents do
         "@container relative rounded-xl border bg-white transition dark:bg-gray-900",
         if(@dense, do: "px-3 py-2.5", else: "px-4 py-3"),
         attention_class(@tone),
-        @linked && "hover:border-primary-400 hover:shadow-sm dark:hover:border-primary-500",
+        (@linked or @clickable) &&
+          "hover:border-primary-400 hover:shadow-sm dark:hover:border-primary-500",
         @class
       ]}
       data-testid={@testid}
@@ -124,11 +134,27 @@ defmodule PipeMaestroWeb.ListComponents do
                   if(@dense, do: "text-sm", else: "text-base")
                 ]}
                 data-testid={@link_testid}
+                {@link_attrs}
               >
                 {render_slot(@title)}
               </.link>
+              <button
+                :if={@clickable}
+                type="button"
+                phx-click={@click}
+                phx-value-id={@click_value}
+                phx-target={@click_target}
+                class={[
+                  "min-w-0 break-words text-left font-semibold text-gray-900 after:absolute after:inset-0 after:rounded-xl focus:outline-none focus-visible:after:ring-2 focus-visible:after:ring-primary-500 dark:text-white",
+                  if(@dense, do: "text-sm", else: "text-base")
+                ]}
+                data-testid={@link_testid}
+                {@link_attrs}
+              >
+                {render_slot(@title)}
+              </button>
               <span
-                :if={!@linked}
+                :if={!@linked and !@clickable}
                 class={[
                   "min-w-0 break-words font-semibold text-gray-900 dark:text-white",
                   if(@dense, do: "text-sm", else: "text-base")
@@ -159,7 +185,7 @@ defmodule PipeMaestroWeb.ListComponents do
           </div>
         </div>
         <.icon
-          :if={@linked and @actions == []}
+          :if={(@linked or @clickable) and @actions == []}
           name="hero-chevron-right"
           class="mt-1 size-4 shrink-0 text-gray-400"
         />
