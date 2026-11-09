@@ -89,6 +89,28 @@ defmodule PipeMaestro.FakeForgejo do
     )
   end
 
+  @doc """
+  Adds a pull request as the host has it. Its `"commits"` (oldest first,
+  as `commit_json/2` builds them) answer `GET /pulls/:n/commits`.
+  """
+  @spec put_pull(pid(), String.t(), map()) :: :ok
+  def put_pull(fake, name, pull) do
+    Agent.update(
+      fake,
+      &update_in(&1, [:repos, name, :pulls], fn pulls -> pulls ++ [pull] end)
+    )
+  end
+
+  @doc "A commit of a pull request as the API lists it: its SHA and its parents' SHAs."
+  @spec commit_json(String.t(), [String.t()]) :: map()
+  def commit_json(sha, parents \\ ["base"]) do
+    %{
+      "sha" => sha,
+      "parents" => Enum.map(parents, &%{"sha" => &1}),
+      "commit" => %{"committer" => %{"date" => "2026-11-01T12:00:00Z"}}
+    }
+  end
+
   @doc "Adds a commit status, as a CI would."
   @spec put_status(pid(), String.t(), String.t(), String.t(), String.t()) :: :ok
   def put_status(fake, name, sha, context, state) do
@@ -423,6 +445,23 @@ defmodule PipeMaestro.FakeForgejo do
       )
 
     respond(conn, 200, (review && review["comments"]) || [])
+  end
+
+  defp repo_route(conn, _fake, _full, repo, "GET", ["pulls", number, "commits"]) do
+    page = String.to_integer(conn.query_params["page"] || "1")
+    limit = String.to_integer(conn.query_params["limit"] || "30")
+
+    case Enum.find(repo.pulls, &(to_string(&1["number"]) == number)) do
+      nil ->
+        respond(conn, 404, %{"message" => "not found"})
+
+      pull ->
+        all = pull["commits"] || []
+
+        conn
+        |> put_resp_header("x-total-count", to_string(length(all)))
+        |> respond(200, all |> Enum.drop((page - 1) * limit) |> Enum.take(limit))
+    end
   end
 
   defp repo_route(conn, _fake, _full, repo, "GET", ["pulls"]) do
