@@ -270,6 +270,30 @@ defmodule PipeMaestro.RunnerTelemetryTest do
       assert {:error, _} = RunnerTelemetry.record_log(runner, %{"lines" => "x"})
     end
 
+    test "the CLI's sessions not found are a worktree event of the task", %{runner: runner} do
+      now = DateTime.utc_now()
+      task_id = Ecto.UUID.generate()
+
+      payload =
+        log([
+          RunnerLog.line(
+            now,
+            "warning",
+            "As sessões do claude da tarefa não estavam onde se esperava",
+            "claude_sessions_not_found",
+            %{"task_id" => task_id, "dir" => "/x/projects/-w-t", "reason" => "not_found"}
+          )
+        ])
+
+      assert {:ok, 1} = RunnerTelemetry.record_log(runner, payload)
+
+      assert [%Event{kind: "claude_sessions_not_found", task_id: ^task_id}] =
+               RunnerTelemetry.events(runner, DateTime.add(now, -60), "worktree")
+
+      assert Event.group("claude_sessions_not_found") == "worktree"
+      assert "claude_sessions_not_found" in Event.kinds()
+    end
+
     test "a workspace that keeps no log keeps only the events", %{runner: runner} do
       set_retention(runner, 0)
       refute RunnerTelemetry.keep_logs?(runner)

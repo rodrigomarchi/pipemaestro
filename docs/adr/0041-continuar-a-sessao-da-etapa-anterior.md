@@ -47,8 +47,8 @@ decidido e precisava reconstruir tudo.
 - A sessão continuada carrega todo o histórico da anterior: mais contexto e mais
   cache por etapa. Compactar a sessão fica para depois.
 - Com `persist_session`, o CLI grava a transcrição em `~/.claude/projects/` na máquina
-  do runner, o que antes não acontecia. Apagar essas sessões quando o worktree da
-  tarefa sai fica pendente: o diretório é do CLI, não do runner.
+  do runner, o que antes não acontecia. Essas sessões saem com o worktree da tarefa
+  ([ADR 0053](0053-apagar-as-sessoes-do-cli-com-o-worktree.md)).
 - A detecção da sessão ausente depende de o CLI falhar antes da linha `system`. Se
   uma versão do CLI emitir a linha antes de falhar, a tentativa falha normalmente e
   a próxima segue o fluxo de tentativas, sem travar a tarefa.

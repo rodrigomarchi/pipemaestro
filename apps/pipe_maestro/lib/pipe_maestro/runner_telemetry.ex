@@ -340,7 +340,8 @@ defmodule PipeMaestro.RunnerTelemetry do
         record_event(runner, kind, line["level"], line["message"],
           at: line["at"],
           attrs: line["attrs"],
-          job_id: uuid(line["attrs"]["job_id"])
+          job_id: uuid(line["attrs"]["job_id"]),
+          task_id: uuid(line["attrs"]["task_id"])
         )
       end
 

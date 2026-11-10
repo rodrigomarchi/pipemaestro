@@ -31,8 +31,11 @@ própria versão. Faltava um número que um operador lesse e comparasse.
      num atributo de módulo. `__mix_recompile__?/0` os recompila quando o valor
      calculado mudaria, então um commit ou uma tag novos aparecem sem `--force`.
    - A variável `CP_VERSION`, quando definida e não vazia na compilação, é usada como
-     está. A imagem Docker não tem `.git` (`make image` passa a versão como
-     `--build-arg`), e o e2e fixa versões assim.
+     está. O e2e fixa versões assim, e a imagem Docker também, porque não tem `.git`.
+   - O `make image` calcula `CP_VERSION` e `RUNNER_VERSION` antes do `docker build`. Ele
+     para se o cálculo falhar ou se uma delas sair do esquema, e só então as passa como
+     `--build-arg`. O `Dockerfile` exige as duas. A exceção é um build local
+     explícito com `--build-arg ALLOW_UNVERSIONED=1`, em que as que faltam ficam `dev+unknown`.
    - O control plane aceita também uma versão configurada
      (`config :pipe_maestro, PipeMaestro.Version, version: …`), que os
      testes usam para não depender do git do checkout.
@@ -79,11 +82,17 @@ própria versão. Faltava um número que um operador lesse e comparasse.
 - **Data local e tags locais.** A próxima versão vem das tags que a máquina conhece.
   Sem `git fetch --tags` antes, dá para recriar uma tag já publicada; nesse caso, o
   push dela falha. O guia pede o fetch antes da release.
-- **Imagem sem `CP_VERSION`.** Um `docker build` feito à mão, sem o argumento, gera um
-  control plane `dev+unknown`, que não marca nenhum runner.
-- **`make image` não valida a versão.** O alvo pega a última linha de
-  `mix runner.version`. Se a compilação falhar, o build segue com o que vier nessa
-  linha. O `runner.release` valida o formato; o `image`, ainda não.
+- **A imagem só sai com versão válida.**
+  - O `Makefile` define as expressões do esquema uma vez, espelhando as de
+    `PipeMaestroProtocol.Version`. O `runner.release` exige uma release pura. O `image`
+    aceita as três formas de um build (`AAAA-MM-DD.NN`, `AAAA-MM-DD.NN+dev.<commit>` e
+    `dev+<commit>`) e recusa o resto: vazia, linha de erro e `dev+unknown`.
+  - `make cp.version` e `make runner.version` falham quando o `mix` falha. Com a
+    compilação quebrada, o `image` para antes do `docker build` e diz qual versão
+    falhou e o que veio.
+  - Um `docker build` à mão sem as duas versões para antes de compilar, apontando o
+    `make image`. Com `--build-arg ALLOW_UNVERSIONED=1`, a imagem sai `dev+unknown` e
+    não marca nenhum runner como desatualizado. Serve só a builds locais.
 - **Cada `mix compile` roda git** para decidir se recompila os dois módulos de versão.
   O custo é pequeno. Sem git, o valor é estável (`dev+unknown`) e não força
   recompilação.
