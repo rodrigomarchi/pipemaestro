@@ -36,6 +36,7 @@ defmodule PipeMaestro.RunnerTelemetry.Event do
     "credential_refused" => "git",
     "scratch_remove_failed" => "worktree",
     "worktree_remove_failed" => "worktree",
+    "claude_sessions_not_found" => "worktree",
     "doctor_changed" => "doctor"
   }
 

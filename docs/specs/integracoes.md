@@ -2,7 +2,7 @@
 
 > Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md)
 > e [ADR 0037](../adr/0037-credencial-git-por-job.md). O desfecho do PR (seção 8):
-> [ADR 0053](../adr/0053-qualidade-das-entregas.md).
+> [ADR 0054](../adr/0054-qualidade-das-entregas.md).
 
 ## 1. Modelo de dados
 
@@ -162,7 +162,7 @@ e a cada mudança da tarefa:
 ## 8. Desfecho do PR
 
 Cada tarefa entregue em PR num repositório vinculado tem um `PrOutcome`
-(`PipeMaestro.Integrations.PrOutcomes`, [ADR 0053](../adr/0053-qualidade-das-entregas.md)),
+(`PipeMaestro.Integrations.PrOutcomes`, [ADR 0054](../adr/0054-qualidade-das-entregas.md)),
 que o Uso lê na aba Qualidade (`PipeMaestro.Usage.quality/3`).
 
 - **Pronto** (`ready_at`): a primeira vez que a tarefa terminou `succeeded` com `pr_url`.

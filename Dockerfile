@@ -2,7 +2,8 @@
 # protocol, never the runner) on the same Elixir/OTP image it was built with,
 # so the release's runtime matches the system's libraries.
 #
-#   make image   (docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .)
+#   make image   (checks both versions, then docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .)
+#   docker build --build-arg ALLOW_UNVERSIONED=1 -t pipemaestro .   (local build only: versions dev+unknown)
 #   docker run -p 4000:4000 -e DATABASE_URL=... -e SECRET_KEY_BASE=... \
 #     -e SECRETS_KEY=... -e PHX_HOST=plataforma.exemplo.com pipemaestro
 #
@@ -32,13 +33,25 @@ COPY apps apps
 COPY config/runtime.exs config/
 COPY rel rel
 
-# The image has no .git to read its versions from: `make image` passes the
-# control plane's and the runner's it requires
-# (PipeMaestroProtocol.Version.Git); without them, dev+unknown.
+# The image has no .git to read its versions from: `make image` computes and
+# checks the control plane's and the runner's it requires
+# (PipeMaestroProtocol.Version.Git) and passes them. Without either, the build
+# stops here, before compiling; ALLOW_UNVERSIONED=1 builds anyway, and the
+# missing ones are dev+unknown (a local build only).
 ARG CP_VERSION=""
 ENV CP_VERSION=${CP_VERSION}
 ARG RUNNER_VERSION=""
 ENV RUNNER_VERSION=${RUNNER_VERSION}
+ARG ALLOW_UNVERSIONED=""
+
+RUN if [ -z "$CP_VERSION" ] || [ -z "$RUNNER_VERSION" ]; then \
+      if [ "$ALLOW_UNVERSIONED" = "1" ]; then \
+        echo "Build local sem versão (ALLOW_UNVERSIONED=1): as versões que faltam ficam dev+unknown."; \
+      else \
+        echo "Faltam as versões da imagem: use make image, ou passe --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> (para um build local sem versão, --build-arg ALLOW_UNVERSIONED=1)." >&2; \
+        exit 1; \
+      fi; \
+    fi
 
 RUN mix compile \
     && cd apps/pipe_maestro_web && mix assets.deploy && cd ../.. \

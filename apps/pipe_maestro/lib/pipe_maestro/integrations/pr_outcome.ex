@@ -1,7 +1,7 @@
 defmodule PipeMaestro.Integrations.PrOutcome do
   @moduledoc """
   What became of the pull request a task delivered on a linked repository
-  ([ADR 0053](docs/adr/0053-qualidade-das-entregas.md)), one per task, kept
+  ([ADR 0054](docs/adr/0054-qualidade-das-entregas.md)), one per task, kept
   by `PipeMaestro.Integrations.PrOutcomes`:
 
   - `ready_at`: the first time the task succeeded with its pull request,

@@ -22,7 +22,7 @@ defmodule PipeMaestroProtocol.RunnerLog do
 
   @levels ~w(debug info warning error)
   @events ~w(update_applied update_failed update_draining scratch_remove_failed outbox_dropped
-             connection_lost log_dropped)
+             connection_lost log_dropped claude_sessions_not_found)
 
   @max_lines 200
   @max_message_bytes 4_096

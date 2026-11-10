@@ -78,7 +78,8 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0050 | [O custo próprio de uma sessão retomada](adr/0050-custo-proprio-da-sessao-retomada.md) | Aceita |
 | 0051 | [A execução e a proposta como pipeline](adr/0051-execucao-e-proposta-como-pipeline.md) | Aceita |
 | 0052 | [Listas em cards](adr/0052-listas-em-cards.md) | Aceita |
-| 0053 | [Qualidade das entregas: o desfecho do PR e o commit humano](adr/0053-qualidade-das-entregas.md) | Aceita |
+| 0053 | [As sessões do CLI saem com o worktree da tarefa](adr/0053-apagar-as-sessoes-do-cli-com-o-worktree.md) | Aceita |
+| 0054 | [Qualidade das entregas: o desfecho do PR e o commit humano](adr/0054-qualidade-das-entregas.md) | Aceita |
 
 ## Specs
 
