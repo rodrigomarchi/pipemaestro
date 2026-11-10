@@ -6,11 +6,17 @@ defmodule PipeMaestro.Maintenance do
     * jobs that ended without a kept summary get one
       (`PipeMaestro.Insights.store_summary/1`), at most `:batch` (default
       500) per run;
-    * the events and the OpenTelemetry records of jobs that ended more than
-      `:job_events_days` ago (default 30) go, once the job's summary is
+    * past their workspace's `agent_events_retention_days` from when they
+      ended, the jobs' OpenTelemetry records go and their events either go
+      (`:delete`) or keep only their metadata (`:metadata`, the keys of
+      `PipeMaestro.Jobs.Event.metadata_keys/0`), once the job's summary is
       written from them: the job keeps its outcome, cost, tokens, artifact,
-      the totals and the summary of its run. At most `:batch` jobs per run;
-      the rest go on the next.
+      the totals and the summary of its run, and is marked
+      (`events_pruned_at`) so it is not taken again. At most `:batch` jobs
+      per run; the rest go on the next.
+    * the jobs' files past their workspace's `job_files_retention_days` lose
+      their content, keeping their name (`PipeMaestro.Jobs.Files.prune/2`),
+      at most `:batch` per run;
     * audit entries older than `:audit_days` (default 365) go;
     * the integrations' deliveries older than `:deliveries_days` (default 30)
       go (`PipeMaestro.Integrations.prune_deliveries/1`);
@@ -32,8 +38,9 @@ defmodule PipeMaestro.Maintenance do
   import Ecto.Query
 
   alias PipeMaestro.{Audit, Insights, Integrations, Notifications, Repo, RunnerTelemetry}
-  alias PipeMaestro.Jobs.{Event, Job, Telemetry}
+  alias PipeMaestro.Jobs.{Event, Files, Job, Telemetry}
   alias PipeMaestro.Runners.DeviceAuthorization
+  alias PipeMaestro.Workspaces.Workspace
 
   @doc "Starts the periodic housekeeping. Options: `:every` (ms)."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -42,7 +49,6 @@ defmodule PipeMaestro.Maintenance do
   @doc "Does the housekeeping once, as of `now`; returns how much each part removed."
   @spec run(DateTime.t(), keyword()) :: %{atom() => non_neg_integer()}
   def run(now, opts \\ []) do
-    job_events_days = Keyword.get(opts, :job_events_days, 30)
     audit_days = Keyword.get(opts, :audit_days, 365)
     deliveries_days = Keyword.get(opts, :deliveries_days, 30)
     health_days = Keyword.get(opts, :health_days, 7)
@@ -56,35 +62,22 @@ defmodule PipeMaestro.Maintenance do
 
     summarized =
       Repo.all(
-        from j in Job, where: not is_nil(j.finished_at) and is_nil(j.insights), limit: ^batch
+        from j in Job,
+          where: not is_nil(j.finished_at) and is_nil(j.insights) and is_nil(j.events_pruned_at),
+          limit: ^batch
       )
 
     Enum.each(summarized, &Insights.store_summary/1)
 
-    # The jobs past retention that still have events or records: their
-    # summary is written once more, final, before those go.
-    old_jobs =
-      Repo.all(
-        from j in Job,
-          as: :job,
-          where:
-            j.finished_at < ^DateTime.add(now, -job_events_days, :day) and
-              (exists(from e in Event, where: e.job_id == parent_as(:job).id, select: 1) or
-                 exists(from t in Telemetry, where: t.job_id == parent_as(:job).id, select: 1)),
-          limit: ^batch
-      )
-
-    Enum.each(old_jobs, &Insights.store_summary/1)
-    old_ids = Enum.map(old_jobs, & &1.id)
-
-    {job_events, _} = Repo.delete_all(from e in Event, where: e.job_id in ^old_ids)
-    {job_telemetry, _} = Repo.delete_all(from t in Telemetry, where: t.job_id in ^old_ids)
+    pruned = prune_events(now, batch)
 
     %{
       device_authorizations: device_authorizations,
       summarized: length(summarized),
-      job_events: job_events,
-      job_telemetry: job_telemetry,
+      job_events: pruned.deleted,
+      job_events_stripped: pruned.stripped,
+      job_telemetry: pruned.telemetry,
+      job_files: Files.prune(now, batch: batch),
       audit_events: Audit.prune(DateTime.add(now, -audit_days, :day)),
       deliveries: Integrations.prune_deliveries(DateTime.add(now, -deliveries_days, :day)),
       health_samples: RunnerTelemetry.prune_health(DateTime.add(now, -health_days, :day)),
@@ -92,6 +85,81 @@ defmodule PipeMaestro.Maintenance do
         Notifications.delete_read_before(DateTime.add(now, -notifications_days, :day))
     }
     |> Map.merge(runner_logs(RunnerTelemetry.prune_logs(now)))
+  end
+
+  # The jobs past their workspace's retention of events, not pruned yet.
+  defp prune_events(now, batch) do
+    now = DateTime.truncate(now, :second)
+
+    jobs =
+      Repo.all(
+        from j in Job,
+          join: w in Workspace,
+          on: w.id == j.workspace_id,
+          where:
+            is_nil(j.events_pruned_at) and not is_nil(j.finished_at) and
+              j.finished_at <
+                fragment(
+                  "? - make_interval(days => ?)",
+                  type(^now, :utc_datetime),
+                  w.agent_events_retention_days
+                ),
+          select: {j, w.agent_events_after_retention},
+          limit: ^batch
+      )
+
+    Enum.reduce(jobs, %{deleted: 0, stripped: 0, telemetry: 0}, fn {job, policy}, acc ->
+      {:ok, counts} = Repo.transact(fn -> {:ok, prune_job(job, policy, now)} end)
+      Map.merge(acc, counts, fn _key, a, b -> a + b end)
+    end)
+  end
+
+  defp prune_job(job, policy, now) do
+    # Its summary is written once more, final, from what is still whole; a job
+    # with no events nor records left keeps the one it has.
+    if has_events_or_records?(job.id), do: Insights.store_summary(job)
+
+    {telemetry, _} = Repo.delete_all(from t in Telemetry, where: t.job_id == ^job.id)
+    {deleted, stripped} = prune_job_events(job.id, policy)
+
+    {1, _} =
+      Repo.update_all(from(j in Job, where: j.id == ^job.id), set: [events_pruned_at: now])
+
+    %{deleted: deleted, stripped: stripped, telemetry: telemetry}
+  end
+
+  defp prune_job_events(job_id, :delete) do
+    {deleted, _} = Repo.delete_all(from e in Event, where: e.job_id == ^job_id)
+    {deleted, 0}
+  end
+
+  defp prune_job_events(job_id, :metadata) do
+    keys = Event.metadata_keys()
+
+    {stripped, _} =
+      Repo.update_all(
+        from(e in Event,
+          where: e.job_id == ^job_id,
+          update: [
+            set: [
+              data:
+                fragment(
+                  "(SELECT coalesce(jsonb_object_agg(k, v), '{}'::jsonb) FROM jsonb_each(?) AS kv(k, v) WHERE k = ANY(?))",
+                  e.data,
+                  type(^keys, {:array, :string})
+                )
+            ]
+          ]
+        ),
+        []
+      )
+
+    {0, stripped}
+  end
+
+  defp has_events_or_records?(job_id) do
+    Repo.exists?(from e in Event, where: e.job_id == ^job_id) or
+      Repo.exists?(from t in Telemetry, where: t.job_id == ^job_id)
   end
 
   defp runner_logs(%{lines: lines, events: events}),

@@ -149,7 +149,7 @@ Valem só em `awaiting_decision`:
   nas instruções e os gates, tentativas, modelo e timeout da última etapa. Ela roda e
   entrega como qualquer etapa. O `Decision` tem `action: :correct` e `origin`, quem pediu:
   `:person` (padrão, a tela ou um comando), `:review` (o review do PR) ou `:auto_merge`
-  ([ADR 0054](../adr/0054-qualidade-das-entregas.md)). Com
+  ([ADR 0055](../adr/0055-qualidade-das-entregas.md)). Com
   `merge_fix: true` (o merge automático), conta em `merge_fixes` e deixa a tarefa em
   `fixing`.
 - `retry_merge(task, pessoa)`: num merge `blocked` de uma tarefa `succeeded`, volta a

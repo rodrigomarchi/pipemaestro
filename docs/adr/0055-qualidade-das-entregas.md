@@ -1,4 +1,4 @@
-# 0054 — Qualidade das entregas: o desfecho do PR e o commit humano
+# 0055 — Qualidade das entregas: o desfecho do PR e o commit humano
 
 - **Status:** aceita
 - **Data:** 09/11/2026

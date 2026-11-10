@@ -2,7 +2,7 @@
 
 > Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md)
 > e [ADR 0037](../adr/0037-credencial-git-por-job.md). O desfecho do PR (seção 8):
-> [ADR 0054](../adr/0054-qualidade-das-entregas.md).
+> [ADR 0055](../adr/0055-qualidade-das-entregas.md).
 
 ## 1. Modelo de dados
 
@@ -108,6 +108,13 @@ de novo. Comentários novos, que notificam, só quando a tarefa espera uma decis
 (mencionando quem abriu a issue), quando o PR fica pronto, quando ela é cancelada e quando
 a triagem termina sem criar a tarefa.
 
+O comentário de uma triagem que termina sem tarefa diz por quê. Quando o agente não achou a
+tarefa pronta, ele lista as perguntas numeradas, cada uma com as suas opções e a
+recomendada marcada ("(recomendada)"), no formato do questionário do
+[ADR 0029](../adr/0029-questionario-de-decisao.md). Uma proposta antiga mostra as frases
+em lista. O comentário manda responder na plataforma, pelo link da proposta. Responder
+pede uma nova rodada, que vira a tarefa sozinha quando o gatilho tem `auto_approve`.
+
 Commit status no `head_sha`, um por etapa, com `context` `pipemaestro/<chave da etapa>`:
 `success` para a que passou, `pending` para a atual, `warning` para a pausada, `failure` para
 a esgotada e `error` quando a tarefa foi cancelada. No GitHub, um check run por etapa,
@@ -162,7 +169,7 @@ e a cada mudança da tarefa:
 ## 8. Desfecho do PR
 
 Cada tarefa entregue em PR num repositório vinculado tem um `PrOutcome`
-(`PipeMaestro.Integrations.PrOutcomes`, [ADR 0054](../adr/0054-qualidade-das-entregas.md)),
+(`PipeMaestro.Integrations.PrOutcomes`, [ADR 0055](../adr/0055-qualidade-das-entregas.md)),
 que o Uso lê na aba Qualidade (`PipeMaestro.Usage.quality/3`).
 
 - **Pronto** (`ready_at`): a primeira vez que a tarefa terminou `succeeded` com `pr_url`.

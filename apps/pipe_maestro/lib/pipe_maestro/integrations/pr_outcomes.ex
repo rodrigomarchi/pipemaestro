@@ -2,7 +2,7 @@ defmodule PipeMaestro.Integrations.PrOutcomes do
   @moduledoc """
   The outcome of the pull request each task delivers on a linked repository
   (`PipeMaestro.Integrations.PrOutcome`,
-  [ADR 0054](docs/adr/0054-qualidade-das-entregas.md)):
+  [ADR 0055](docs/adr/0055-qualidade-das-entregas.md)):
 
   - `ready/1`, when the task succeeds with its pull request (from
     `PipeMaestro.Tasks` and from `PipeMaestro.Integrations.Feedback`, which may

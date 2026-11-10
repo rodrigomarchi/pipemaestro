@@ -3,7 +3,8 @@ defmodule PipeMaestroWeb.UsageLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.Jobs
+  alias PipeMaestro.{Jobs, Workspaces}
+  alias PipeMaestro.Jobs.Files
 
   setup :register_and_log_in_member
 
@@ -158,6 +159,35 @@ defmodule PipeMaestroWeb.UsageLiveTest do
     # Anything not offered is ignored.
     view |> form("#usage-period", period: %{pipeline: "", days: "7"}) |> render_change()
     assert has_element?(view, "[data-testid=usage-total-runs]", "2")
+  end
+
+  test "shows the files against the quota and the retention in force, read only", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage")
+    assert has_element?(view, "[data-testid=usage-files-bytes]", "sem cota")
+    assert has_element?(view, "[data-testid=usage-retention]", "30 dias")
+    assert has_element?(view, "[data-testid=usage-retention]", "metadados")
+    assert has_element?(view, "[data-testid=usage-retention]", "sem limite")
+
+    {:ok, _} =
+      Workspaces.update_workspace(workspace, %{
+        job_files_quota_mib: 1024,
+        job_files_retention_days: 90,
+        agent_events_after_retention: "delete"
+      })
+
+    {runner, _token} = runner_fixture(workspace, user)
+    job = job_fixture(runner, user)
+    {:ok, _} = Files.store(runner, job.id, "a.bin", :binary.copy("a", 2 * 1_048_576))
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage")
+    assert has_element?(view, "[data-testid=usage-files-bytes]", "2 MiB de 1.024 MiB")
+    assert has_element?(view, "[data-testid=usage-retention]", "90 dias")
+    assert has_element?(view, "[data-testid=usage-retention]", "apagados")
+    refute has_element?(view, "[data-testid=usage-files] form")
   end
 
   describe "the quality tab" do

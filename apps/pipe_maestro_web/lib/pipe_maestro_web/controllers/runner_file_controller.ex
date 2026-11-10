@@ -5,6 +5,9 @@ defmodule PipeMaestroWeb.RunnerFileController do
   /api/runner/jobs/:job_id/files?path=<relative path>`, with the runner's
   token as `Bearer` and the raw file as an `application/octet-stream` body.
 
+  A file past the workspace's quota is refused with a 413 whose body says
+  `quota_exceeded` (the runner does not repeat a 4xx); the job counts it.
+
   Neither the body nor the path is ever logged.
   """
   use PipeMaestroWeb, :controller
@@ -12,6 +15,7 @@ defmodule PipeMaestroWeb.RunnerFileController do
   alias PipeMaestro.Jobs.Files
   alias PipeMaestro.Runners
   alias PipeMaestro.Runners.Runner
+  alias PipeMaestro.Workspaces
   alias PipeMaestroProtocol.JobFiles
 
   # How much of the body one read takes.
@@ -20,10 +24,16 @@ defmodule PipeMaestroWeb.RunnerFileController do
   @doc "Keeps the file at `path` of the runner's job."
   @spec create(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def create(conn, %{"job_id" => job_id} = params) do
-    with {:ok, runner} <- authenticate(conn),
-         :ok <- octet_stream(conn),
+    case authenticate(conn) do
+      {:ok, runner} -> store(conn, runner, job_id, Map.get(params, "path", ""))
+      {:error, reason} -> error(conn, reason)
+    end
+  end
+
+  defp store(conn, runner, job_id, path) do
+    with :ok <- octet_stream(conn),
          {:ok, content, conn} <- read_file(conn),
-         {:ok, file} <- Files.store(runner, job_id, Map.get(params, "path", ""), content) do
+         {:ok, file} <- Files.store(runner, job_id, path, content) do
       conn
       |> put_status(201)
       |> json(%{
@@ -33,8 +43,15 @@ defmodule PipeMaestroWeb.RunnerFileController do
         content_type: file.content_type
       })
     else
-      {:error, reason} -> error(conn, reason)
-      {:error, reason, conn} -> error(conn, reason)
+      {:error, :quota_exceeded} ->
+        workspace = Workspaces.get_workspace!(runner.workspace_id)
+        reply(conn, 413, %{error: "quota_exceeded", quota_bytes: Files.quota_bytes(workspace)})
+
+      {:error, reason} ->
+        error(conn, reason)
+
+      {:error, reason, conn} ->
+        error(conn, reason)
     end
   end
 

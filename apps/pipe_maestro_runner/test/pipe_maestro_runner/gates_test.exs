@@ -67,6 +67,25 @@ defmodule PipeMaestroRunner.GatesTest do
     assert runs(repo) == 3
   end
 
+  # Git rehashes a file whose stat matches its index entry only when the
+  # entry is as new as the index ("racily clean"); the copy of the index the
+  # tree is computed from must keep that.
+  test "a change of the same size, in the second the index was written, is seen",
+       %{repo: repo} do
+    second = 1_700_000_000
+    lib = Path.join(repo, "lib.ex")
+    File.touch!(lib, second)
+    git!(repo, ["add", "lib.ex"])
+    File.touch!(Path.join([repo, ".git", "index"]), second)
+    assert [%{"passed" => true}] = Gates.run(repo, [counting()])
+
+    File.write!(lib, "v2")
+    File.touch!(lib, second)
+    assert [%{"passed" => true} = changed] = Gates.run(repo, [counting()])
+    refute changed["cached"]
+    assert runs(repo) == 2
+  end
+
   test "the excluded paths do not change the tree", %{repo: repo} do
     artifacts = ".control-plane/t"
     Gates.run(repo, [counting()], exclude: [artifacts])

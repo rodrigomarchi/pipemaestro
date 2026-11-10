@@ -3,8 +3,10 @@ defmodule PipeMaestroWeb.TaskLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Jobs, Tasks}
-  alias PipeMaestro.Jobs.Files
+  import Ecto.Query
+
+  alias PipeMaestro.{Jobs, Maintenance, Repo, Tasks, Workspaces}
+  alias PipeMaestro.Jobs.{Files, JobFile}
   alias PipeMaestroWeb.RunnerStatus
 
   setup :register_and_log_in_member
@@ -707,6 +709,109 @@ defmodule PipeMaestroWeb.TaskLiveTest do
       view |> element("[data-testid=task-node-tab-arquivos]") |> render_click()
       assert has_element?(view, "[data-testid=task-files]", "lib/login.ex")
       assert has_element?(view, "[data-testid=task-node-tab-arquivos]", "Arquivos (1)")
+    end
+
+    test "a file the retention emptied shows its name and why, without a link", ctx do
+      png =
+        Base.decode64!(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+
+      {:ok, _} = Workspaces.update_workspace(ctx.workspace, %{job_files_retention_days: 1})
+      task = create_task(ctx)
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      {:ok, _} = Files.store(ctx.runner, job.id, "a.png", png)
+      {:ok, _} = Files.store(ctx.runner, job.id, "dados/r.csv", "a,b\n1,2\n")
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+
+      at = DateTime.add(DateTime.utc_now(:second), -2, :day)
+      Repo.update_all(from(f in JobFile, where: f.job_id == ^job.id), set: [inserted_at: at])
+      assert Files.prune(DateTime.utc_now()) == 2
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
+
+      for path <- ["a.png", "dados/r.csv"] do
+        assert has_element?(
+                 view,
+                 ~s([data-testid="stage-run-file-pruned-a-1-#{path}"]),
+                 "removido pela retenção"
+               )
+
+        assert has_element?(view, ~s([data-testid="stage-run-file-pruned-a-1-#{path}"]), path)
+        refute has_element?(view, ~s([data-testid="stage-run-file-download-a-1-#{path}"]))
+        refute has_element?(view, ~s([data-testid="stage-run-file-thumb-a-1-#{path}"]))
+      end
+
+      view |> element("[data-testid=task-overview-end]") |> render_click()
+      view |> element("[data-testid=task-node-tab-anexos]") |> render_click()
+
+      assert has_element?(
+               view,
+               ~s([data-testid=task-node-panel-anexos] [data-testid="task-attachment-pruned-a-1-a.png"]),
+               "removido pela retenção"
+             )
+
+      refute has_element?(view, ~s([data-testid="task-attachment-download-a-1-a.png"]))
+    end
+
+    test "files the workspace's quota refused get their own warning", ctx do
+      {:ok, _} = Workspaces.update_workspace(ctx.workspace, %{job_files_quota_mib: 1})
+      task = create_task(ctx)
+      job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job
+      {:ok, _} = Jobs.mark_started(ctx.runner, job.id)
+      big = :binary.copy("a", 900 * 1024)
+      {:ok, _} = Files.store(ctx.runner, job.id, "a.bin", big)
+      {:error, :quota_exceeded} = Files.store(ctx.runner, job.id, "b.bin", big)
+      {:error, :quota_exceeded} = Files.store(ctx.runner, job.id, "c.bin", big)
+
+      # The runner counts the refused files among those that did not arrive, plus one lost.
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"}, %{
+        "files_failed" => 3
+      })
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-files-refused-a-1]",
+               "2 arquivos recusados: a cota de anexos do workspace (1 MiB) foi atingida"
+             )
+
+      refute has_element?(view, "[data-testid=stage-run-files-refused-a-1]", "log do runner")
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-files-failed-a-1]",
+               "1 arquivo não chegou"
+             )
+
+      assert has_element?(view, "[data-testid=task-stage-state-a]", "Concluída")
+    end
+
+    test "a stage whose events the retention emptied still lists its steps, and says so", ctx do
+      task = create_task(ctx)
+      finish_current(ctx, task, %{"status" => "ok", "resumo" => "a feita"})
+      # Stage "a" ended; the task went on to "b", which still runs.
+      job = Enum.find(Tasks.get_task!(ctx.workspace, task.id).stage_runs, &(&1.key == "a")).job
+
+      job
+      |> Ecto.Changeset.change(finished_at: DateTime.add(DateTime.utc_now(:second), -40, :day))
+      |> Repo.update!()
+
+      Maintenance.run(DateTime.utc_now())
+
+      {:ok, view, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks/#{task.id}?etapa=a")
+      view |> element("[data-testid=stage-run-a-1-tab-passos]") |> render_click()
+
+      assert has_element?(
+               view,
+               "[data-testid=stage-run-events-pruned-a-1]",
+               "conteúdo removido pela retenção"
+             )
+
+      assert has_element?(view, "[data-testid=stage-run-steps-a-1]")
+      refute has_element?(view, "[data-testid=stage-run-steps-a-1]", "trabalhando")
     end
 
     test "shows the files each attempt sent: images as thumbnails, the others to download",

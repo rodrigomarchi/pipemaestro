@@ -358,6 +358,26 @@ export class TasksPage {
     return this.page.getByTestId(`stage-run-files-failed-${key}-${attempt}`);
   }
 
+  /** A file the retention emptied: its name and why, without a link. */
+  stageRunFilePruned(key: string, attempt: number, path: string): Locator {
+    return this.page.getByTestId(`stage-run-file-pruned-${key}-${attempt}-${path}`);
+  }
+
+  /** The warning that the workspace's quota refused some of an attempt's files. */
+  stageRunFilesRefused(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-files-refused-${key}-${attempt}`);
+  }
+
+  /** The notice, over a finished attempt's steps, that their content was removed. */
+  stageRunEventsPruned(key: string, attempt: number): Locator {
+    return this.page.getByTestId(`stage-run-events-pruned-${key}-${attempt}`);
+  }
+
+  /** A file the retention emptied, in the end's "Anexos" tab. */
+  attachmentPruned(key: string, attempt: number, path: string): Locator {
+    return this.page.getByTestId(`task-attachment-pruned-${key}-${attempt}-${path}`);
+  }
+
   /** An attempt's group in the end's "Anexos" tab. */
   attachments(key: string, attempt: number): Locator {
     return this.page.getByTestId(`task-attachments-${key}-${attempt}`);

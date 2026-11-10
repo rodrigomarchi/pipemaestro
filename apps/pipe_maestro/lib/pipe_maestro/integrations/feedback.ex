@@ -20,7 +20,7 @@ defmodule PipeMaestro.Integrations.Feedback do
 
   import Ecto.Query
 
-  alias PipeMaestro.{Integrations, Repo, Tasks}
+  alias PipeMaestro.{Integrations, Proposals, Repo, Tasks}
 
   alias PipeMaestro.Integrations.{
     Client,
@@ -32,7 +32,7 @@ defmodule PipeMaestro.Integrations.Feedback do
     PrOutcomes
   }
 
-  alias PipeMaestro.Tasks.{StageRun, Task}
+  alias PipeMaestro.Tasks.{Questionnaire, StageRun, Task}
   alias PipeMaestro.Workspaces.Workspace
   alias PipeMaestroProtocol.PrText
 
@@ -135,7 +135,7 @@ defmodule PipeMaestro.Integrations.Feedback do
     input = get_in(job.context, ["proposal", "input"]) || %{}
 
     with repo_id when is_binary(repo_id) <- input["linked_repo_id"],
-         nil <- PipeMaestro.Proposals.created_task_id(job),
+         nil <- Proposals.created_task_id(job),
          %LinkedRepo{} = repo <- Repo.get(LinkedRepo, repo_id),
          %Connection{api_mode: "control_plane", status: "active"} = connection <-
            Repo.get(Connection, repo.connection_id),
@@ -170,16 +170,33 @@ defmodule PipeMaestro.Integrations.Feedback do
       case {job.status, get_in(job.context, ["proposal", "auto_approve"]), input["auto_approve"]} do
         {:succeeded, %{"status" => "skipped", "reason" => reason}, _auto} ->
           "A IA leu a issue, mas a tarefa ainda não começou:\n\n#{reason}\n\n" <>
-            "Complete a issue e ponha a label de novo, ou responda e crie a tarefa na plataforma."
+            "Complete a issue e ponha a label de novo, ou responda às perguntas e crie a " <>
+            "tarefa na plataforma, pelo link da proposta."
 
         {:succeeded, _none, _auto} ->
-          "A IA escreveu a tarefa a partir desta issue; ela espera alguém revisar e criar na plataforma."
+          case open_questions(job) do
+            "" ->
+              "A IA escreveu a tarefa a partir desta issue; ela espera alguém revisar e criar na plataforma."
+
+            questions ->
+              "A IA escreveu a tarefa a partir desta issue, mas tem perguntas antes:\n\n" <>
+                "#{questions}\n\nResponda às perguntas na plataforma, pelo link da proposta."
+          end
 
         {status, _none, _auto} ->
           "A triagem não terminou (#{status}). Veja o motivo na plataforma e ponha a label de novo para tentar outra vez."
       end
 
     "**PipeMaestro** · triagem\n\n#{why}\n\n[Abrir a proposta](#{url})"
+  end
+
+  # The questions of a task the agent did not find ready, as text; empty
+  # when it is ready or asks nothing.
+  defp open_questions(job) do
+    case Proposals.result(job) do
+      {:ok, %{ready: false} = result} -> Proposals.questions_text(result)
+      _ready_or_unreadable -> ""
+    end
   end
 
   @doc """
@@ -216,8 +233,7 @@ defmodule PipeMaestro.Integrations.Feedback do
         questions =
           (task.decision_questionnaire || %{})
           |> Map.get("perguntas", [])
-          |> Enum.with_index(1)
-          |> Enum.map_join("\n", fn {question, n} -> "#{n}. #{question_text(question)}" end)
+          |> Questionnaire.to_text()
 
         "\n**Esperando uma decisão:** #{task.decision_reason}\n" <>
           if(questions == "", do: "", else: "\n#{questions}\n") <>
@@ -238,11 +254,6 @@ defmodule PipeMaestro.Integrations.Feedback do
     #{decision}
     """
     |> String.trim()
-  end
-
-  defp question_text(question) do
-    options = Enum.map_join(question["opcoes"] || [], " · ", & &1["rotulo"])
-    if options == "", do: question["pergunta"], else: "#{question["pergunta"]} (#{options})"
   end
 
   defp status_text(:queued), do: "na fila"
