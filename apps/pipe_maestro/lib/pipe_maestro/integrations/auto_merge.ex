@@ -31,7 +31,7 @@ defmodule PipeMaestro.Integrations.AutoMerge do
 
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.{Integrations, Repo, Tasks}
-  alias PipeMaestro.Integrations.{Credentials, Feedback, LinkedRepo}
+  alias PipeMaestro.Integrations.{Credentials, Feedback, LinkedRepo, PrOutcomes}
   alias PipeMaestro.Tasks.Task
 
   @own_checks "pipemaestro/"
@@ -106,7 +106,8 @@ defmodule PipeMaestro.Integrations.AutoMerge do
   defp open_at_head?(task, pr),
     do: not pr.merged and pr.state != "closed" and not pr.draft and pr.head_sha == task.head_sha
 
-  defp decide(task, _repo, _client, %{merged: true}, _checks), do: merged(task)
+  defp decide(task, _repo, _client, %{merged: true} = pr, _checks),
+    do: merged(task, pr[:merged_at])
 
   defp decide(task, _repo, _client, %{state: "closed"}, _checks),
     do: block(task, "o PR foi fechado sem o merge")
@@ -159,11 +160,15 @@ defmodule PipeMaestro.Integrations.AutoMerge do
     end
   end
 
-  defp merged(task) do
+  defp merged(task, at \\ nil) do
     task =
       task
       |> Ecto.Changeset.change(issue_feedback: Map.put(task.issue_feedback, "merged", true))
       |> Repo.update!()
+
+    _ = PrOutcomes.ready(task)
+    _ = PrOutcomes.merged(task, at)
+    _ = PrOutcomes.observe(task.id)
 
     Tasks.put_merge(task, %{merge_state: "merged", merge_reason: nil})
     _ = Feedback.sync(task.id)
@@ -181,7 +186,12 @@ defmodule PipeMaestro.Integrations.AutoMerge do
     if task.merge_fixes < max do
       owner = task.created_by_user_id && Repo.get(User, task.created_by_user_id)
 
-      case Tasks.correct(task, prompt, by: owner, via: "merge automático", merge_fix: true) do
+      case Tasks.correct(task, prompt,
+             by: owner,
+             via: "merge automático",
+             merge_fix: true,
+             origin: :auto_merge
+           ) do
         {:ok, _task} ->
           :fixing
 

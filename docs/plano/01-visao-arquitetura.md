@@ -260,6 +260,7 @@ Organização · Membro/Papel · Projeto (repositório + configuração) · Exec
 - Executores hospedados usando o mesmo protocolo.
 - Adaptadores: GitLab; ClickUp, Jira, Linear.
 - Templates avançados, métricas de qualidade (taxa de PRs aceitos sem alteração, retrabalho por etapa).
+  - As métricas de qualidade estão na aba Qualidade do Uso ([ADR 0055](../adr/0055-qualidade-das-entregas.md)); a taxa de revert pós-merge e o tamanho do diff por PR continuam em aberto.
 
 ---
 

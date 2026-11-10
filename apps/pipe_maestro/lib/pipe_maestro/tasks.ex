@@ -47,7 +47,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
   alias PipeMaestro.Integrations
-  alias PipeMaestro.Integrations.{LinkedRepo, Trigger}
+  alias PipeMaestro.Integrations.{LinkedRepo, PrOutcomes, Trigger}
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Notifications
@@ -1276,6 +1276,7 @@ defmodule PipeMaestro.Tasks do
     )
     |> Ecto.Changeset.change(merge_fields(task, status))
     |> Repo.update!()
+    |> tap(&PrOutcomes.ready/1)
     |> announce(status)
     |> tap(&tell_merge_blocked/1)
     |> tap(&start_next_queued(&1.workspace_id))
@@ -1740,7 +1741,8 @@ defmodule PipeMaestro.Tasks do
           via: String.t() | nil,
           runner_id: String.t() | nil,
           runner_online?: boolean(),
-          merge_fix: boolean()
+          merge_fix: boolean(),
+          origin: Decision.origin()
         ]
 
   @typedoc "Why a task's stage could not be run again."
@@ -1798,6 +1800,8 @@ defmodule PipeMaestro.Tasks do
   `redo_from/4`, plus `merge_fix: true` when it fixes what kept the platform
   from merging the pull request (`PipeMaestro.Integrations.AutoMerge`): the
   task counts it in `merge_fixes` and is `"fixing"` until it succeeds again.
+  `:origin` says who asked for it (`PipeMaestro.Tasks.Decision`): `:person`
+  by default, `:review` or `:auto_merge`.
   A person's correction leaves the merge to be worked out again then.
   """
   @spec correct(Task.t(), String.t() | nil, rerun_opts()) ::
@@ -1827,6 +1831,7 @@ defmodule PipeMaestro.Tasks do
             task_id: task.id,
             stage_index: index,
             action: :correct,
+            origin: Keyword.get(opts, :origin, :person),
             instructions: String.trim(prompt),
             decided_by_user_id: opts[:by] && opts[:by].id,
             decided_via: opts[:via]

@@ -5,12 +5,13 @@ defmodule PipeMaestro.Integrations.FeedbackWorker do
   it listens to `PipeMaestro.Tasks.subscribe(:linked)`. A sync that fails is
   left for the reconciliation (`PipeMaestro.Integrations.Reconciler`). A task
   waiting to merge its pull request is then looked at
-  (`PipeMaestro.Integrations.AutoMerge.check/2`).
+  (`PipeMaestro.Integrations.AutoMerge.check/2`), and the commits of a
+  delivered pull request read (`PipeMaestro.Integrations.PrOutcomes.observe/1`).
   """
   use GenServer
 
   alias PipeMaestro.Integrations
-  alias PipeMaestro.Integrations.{AutoMerge, Feedback}
+  alias PipeMaestro.Integrations.{AutoMerge, Feedback, PrOutcomes}
   alias PipeMaestro.Tasks
 
   @doc "Starts the worker."
@@ -33,6 +34,7 @@ defmodule PipeMaestro.Integrations.FeedbackWorker do
 
   defp sync_and_merge(task_id) do
     _synced = Feedback.sync(task_id)
+    _observed = PrOutcomes.observe(task_id)
     AutoMerge.check(task_id)
   end
 end

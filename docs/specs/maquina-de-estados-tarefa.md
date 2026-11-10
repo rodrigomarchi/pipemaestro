@@ -56,6 +56,9 @@ Sem uma integração que deixe a plataforma chamar o host, a tarefa termina já 
 `blocked`. Uma correção pedida por uma pessoa limpa o estado, que volta quando a tarefa
 termina de novo; cancelar a tarefa durante `waiting_checks` ou `fixing` também o limpa.
 
+Terminar `succeeded` com PR num repositório vinculado registra o desfecho do PR
+(`PipeMaestro.Integrations.PrOutcomes`, `ready_at` só na primeira vez).
+
 Entrar em `awaiting_decision` e terminar (`succeeded`, `failed`, `canceled`) gera, além do
 toast e da notificação do navegador, uma notificação guardada na caixa do criador e do
 dono da decisão; sem nenhum dos dois no workspace, vai para os admins
@@ -144,7 +147,9 @@ Valem só em `awaiting_decision`:
 - `correct(task, prompt, runner_id:)`: numa tarefa encerrada, acrescenta a etapa
   "Correção N" ao fim de `task.stages`, com o template de correção, o prompt da pessoa
   nas instruções e os gates, tentativas, modelo e timeout da última etapa. Ela roda e
-  entrega como qualquer etapa. O `Decision` tem `action: :correct`. Com
+  entrega como qualquer etapa. O `Decision` tem `action: :correct` e `origin`, quem pediu:
+  `:person` (padrão, a tela ou um comando), `:review` (o review do PR) ou `:auto_merge`
+  ([ADR 0055](../adr/0055-qualidade-das-entregas.md)). Com
   `merge_fix: true` (o merge automático), conta em `merge_fixes` e deixa a tarefa em
   `fixing`.
 - `retry_merge(task, pessoa)`: num merge `blocked` de uma tarefa `succeeded`, volta a

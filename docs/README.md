@@ -80,6 +80,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0052 | [Listas em cards](adr/0052-listas-em-cards.md) | Aceita |
 | 0053 | [As sessões do CLI saem com o worktree da tarefa](adr/0053-apagar-as-sessoes-do-cli-com-o-worktree.md) | Aceita |
 | 0054 | [Retenção por workspace para anexos e eventos do agente](adr/0054-retencao-por-workspace.md) | Aceita |
+| 0055 | [Qualidade das entregas: o desfecho do PR e o commit humano](adr/0055-qualidade-das-entregas.md) | Aceita |
 
 ## Specs
 

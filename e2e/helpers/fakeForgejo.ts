@@ -14,7 +14,9 @@
  *     platform did (`GET /__e2e/state?repo=owner/name`).
  *
  * A pull request's head is the last commit the platform set a status on (the
- * fake knows no git), and it always merges cleanly.
+ * fake knows no git), and it always merges cleanly. Its commits are the ones
+ * the platform set a status on, in order, then those a spec pushed as a
+ * person (`POST /__e2e/pull-commits`).
  *
  * The authorize page answers at once with a code, as if the person clicked
  * "authorize". Specs create repositories with unique names, so they share
@@ -118,6 +120,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (method === "POST" && parts[1] === "ci") {
       repoOf(body.repo).ci = body.state;
       return send(res, 200, { ci: body.state });
+    }
+    if (method === "POST" && parts[1] === "pull-commits") {
+      const pull = repoOf(body.repo).pulls.find((candidate) => candidate.number === body.number);
+      if (!pull) return send(res, 404, { message: "pull not found" });
+      pull.personCommits = [...(pull.personCommits || []), body.sha];
+      return send(res, 201, { sha: body.sha });
     }
     if (method === "GET" && parts[1] === "state") {
       const repo = repoOf(url.searchParams.get("repo") || "");
@@ -275,6 +283,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       const head = repo.statuses.at(-1)?.sha;
       return send(res, 200, { mergeable: true, merged: false, ...pull, head: { ...pull.head, sha: head } });
     }
+    case "GET pulls/:n/commits": {
+      const pull = repo.pulls.find((candidate) => candidate.number === n);
+      if (!pull) return send(res, 404, { message: "pull not found" });
+      const pushed = [...new Set(repo.statuses.map((status) => status.sha))];
+      const commits = [...pushed, ...(pull.personCommits || [])].map((sha) => ({
+        sha,
+        parents: [{ sha: "base" }],
+        commit: { committer: { date: new Date().toISOString() } },
+      }));
+      const { slice, headers } = page(commits, url.searchParams);
+      return send(res, 200, slice, headers);
+    }
     case "POST pulls/:n/merge": {
       const pull = repo.pulls.find((candidate) => candidate.number === n);
       if (!pull) return send(res, 404, { message: "pull not found" });
@@ -339,5 +359,14 @@ export async function setForgejoCi(repo: string, state: string | null): Promise<
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ repo, state }),
+  });
+}
+
+/** Pushes `sha` to a pull request of the fake, as a person would. */
+export async function pushForgejoPullCommit(repo: string, number: number, sha: string): Promise<void> {
+  await fetch(`${fakeForgejo.url}/__e2e/pull-commits`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ repo, number, sha }),
   });
 }

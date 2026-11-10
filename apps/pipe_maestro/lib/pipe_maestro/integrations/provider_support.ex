@@ -37,6 +37,23 @@ defmodule PipeMaestro.Integrations.ProviderSupport do
   end
 
   @doc """
+  A commit of a pull request as GitHub and Forgejo list it (`GET
+  /pulls/:n/commits`): its SHA, its parents' SHAs and when it was committed.
+  """
+  @spec pr_commit(map()) :: %{
+          sha: String.t(),
+          parents: [String.t()],
+          committed_at: DateTime.t() | nil
+        }
+  def pr_commit(commit) do
+    %{
+      sha: commit["sha"],
+      parents: Enum.map(commit["parents"] || [], & &1["sha"]),
+      committed_at: datetime(get_in(commit, ["commit", "committer", "date"]))
+    }
+  end
+
+  @doc """
   The commit statuses of a host's combined status (`GET
   /commits/:sha/status`) as checks: the latest of each context, which the
   combined status already is.

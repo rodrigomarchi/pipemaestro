@@ -4,7 +4,7 @@ defmodule PipeMaestro.Integrations.AutoMergeTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{FakeForgejo, Integrations, Repo, Runners, Tasks}
-  alias PipeMaestro.Integrations.{AutoMerge, Feedback}
+  alias PipeMaestro.Integrations.{AutoMerge, Feedback, PrOutcomes}
   alias PipeMaestro.Notifications.Notification
   alias PipeMaestro.Tasks.Task
 
@@ -108,6 +108,18 @@ defmodule PipeMaestro.Integrations.AutoMergeTest do
     assert AutoMerge.check(task.id) == :skipped
   end
 
+  test "the pull request the feedback opened is ready, and the merge is its outcome", ctx do
+    task = waiting(ctx, finished_at: DateTime.utc_now(:second))
+
+    assert %{state: "open", pr_number: 1, ready_at: ready_at} = PrOutcomes.get(task.id)
+    assert ready_at == task.finished_at
+
+    assert AutoMerge.check(task.id) == :merged
+
+    assert %{state: "merged", merged_at: %DateTime{}, human_shas: []} =
+             PrOutcomes.get(task.id)
+  end
+
   test "waits for a check still running, then merges once it passed", ctx do
     task = waiting(ctx)
     status(ctx, "ci/test", "pending")
@@ -143,6 +155,8 @@ defmodule PipeMaestro.Integrations.AutoMergeTest do
     assert [%{action: :correct, instructions: prompt, decided_via: "merge automático"}] =
              Tasks.list_decisions(task)
 
+    assert [%{origin: :auto_merge}] = Tasks.list_decisions(task)
+    assert %{review_rounds: 0} = PrOutcomes.get(task.id)
     assert prompt =~ "`ci/test`"
     assert prompt =~ "https://forge.test/acme/app/actions/runs/1"
     refute pull(ctx)["merged"]
