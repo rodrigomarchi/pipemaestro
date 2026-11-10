@@ -25,6 +25,7 @@ defmodule PipeMaestro.Pipelines.Yaml do
       {"auto_merge", if(pipeline.auto_merge, do: true)},
       {"merge_method", if(pipeline.auto_merge, do: pipeline.merge_method)},
       {"max_merge_fixes", if(pipeline.auto_merge, do: pipeline.max_merge_fixes)},
+      {"auto_analysis", if(pipeline.auto_analysis, do: nil, else: false)},
       {"mcp_config", pipeline.mcp_config},
       {"agents", pipeline.agents}
     ]
@@ -127,7 +128,7 @@ defmodule PipeMaestro.Pipelines.Yaml do
   def from_map(%{} = map) do
     map
     |> Map.take(
-      ~w(name description system_prompt max_task_cost_usd delivery auto_merge merge_method max_merge_fixes)
+      ~w(name description system_prompt max_task_cost_usd delivery auto_merge merge_method max_merge_fixes auto_analysis)
     )
     |> put_json(map, "mcp_config")
     |> put_json(map, "agents")
@@ -138,6 +139,7 @@ defmodule PipeMaestro.Pipelines.Yaml do
   `attrs` (from `from_map/1`) without what only a person sets: no cost caps
   (`max_task_cost_usd`, `max_budget_usd` on any stage) and no merge of the
   pull request by the platform (`auto_merge` and its settings).
+  `auto_analysis` stays: turning it off only lowers cost.
   """
   @spec without_caps(map()) :: map()
   def without_caps(%{} = attrs) do

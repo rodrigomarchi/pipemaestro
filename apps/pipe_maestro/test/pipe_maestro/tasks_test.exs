@@ -4,6 +4,7 @@ defmodule PipeMaestro.TasksTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{Jobs, Pipelines, Tasks}
+  alias PipeMaestro.Pipelines.Pipeline
   alias PipeMaestro.Tasks.{StageRun, Task}
 
   setup do
@@ -920,6 +921,172 @@ defmodule PipeMaestro.TasksTest do
       assert comment =~ "Safari 17"
       assert comment =~ "Quais telas mudam?"
       assert comment =~ "e o menu"
+    end
+  end
+
+  describe "a pipeline with the automatic analysis off" do
+    setup ctx do
+      {:ok, _project} =
+        PipeMaestro.Projects.update_project(ctx.projects["app"], %{
+          "name" => "App",
+          "test_command" => "mix test"
+        })
+
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "name" => "Sem análise",
+          "auto_analysis" => "false",
+          "stages" => [
+            %{
+              "key" => "a",
+              "name" => "Etapa A",
+              "prompt" => "Faça A",
+              "max_attempts" => 1,
+              "gates_text" => "{{projeto.teste}}"
+            },
+            %{"key" => "b", "name" => "Etapa B", "prompt" => "Faça B"}
+          ]
+        })
+
+      %{pipeline: pipeline}
+    end
+
+    # The analysis proposals the platform asked for this task.
+    defp analysis_jobs(task) do
+      for job <- Repo.all(PipeMaestro.Jobs.Job),
+          job.workspace_id == task.workspace_id,
+          match?(%{"proposal" => _}, job.context),
+          PipeMaestro.Proposals.kind(job) == "analysis",
+          PipeMaestro.Proposals.input(job)["task_id"] == task.id,
+          do: job
+    end
+
+    defp fail_gate(ctx, task) do
+      run_current(ctx, task, %{
+        "structured_output" => %{"status" => "ok", "resumo" => "Mudei o login."},
+        "gates" => [
+          %{
+            "command" => "mix test",
+            "expect" => "pass",
+            "exit_code" => 2,
+            "output" => "1 test, 1 failure: LoginTest",
+            "passed" => false
+          }
+        ]
+      })
+    end
+
+    test "the task keeps the setting from the pipeline", ctx do
+      assert %{"auto_analysis" => false} = create_task(ctx).pipeline_context
+      assert %{"auto_analysis" => true} = Pipeline.context(pipeline_fixture(ctx.workspace))
+    end
+
+    test "a gate that fails every attempt pauses with the reason and no analysis", ctx do
+      task = fail_gate(ctx, create_task(ctx))
+
+      assert %Task{status: :awaiting_decision, decision_reason: reason} = task
+      assert reason =~ "Etapa A"
+      assert reason =~ "mix test"
+      assert task.decision_questionnaire == nil
+      assert task.decision_analysis_job_id == nil
+      assert analysis_jobs(task) == []
+      assert Tasks.questionnaire(task) == %{questionnaire: nil, analysis: :none}
+
+      # The manual decision works as always.
+      assert {:ok, %Task{status: :running}} = Tasks.retry_stage(task, "Tente de novo")
+    end
+
+    test "a CLI error that exhausts the attempts pauses with no analysis", ctx do
+      task = fail_stage(ctx, create_task(ctx))
+
+      assert %Task{status: :awaiting_decision} = task
+      assert task.decision_analysis_job_id == nil
+      assert analysis_jobs(task) == []
+    end
+
+    test "a block with nothing to ask pauses with no analysis", ctx do
+      task =
+        run_current(ctx, create_task(ctx), %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "Algo deu errado"}
+        })
+
+      assert %Task{status: :awaiting_decision} = task
+      assert task.decision_questionnaire == nil
+      assert task.decision_analysis_job_id == nil
+      assert analysis_jobs(task) == []
+    end
+
+    test "a block with questions still shows the agent's questionnaire", ctx do
+      task = block_with_questions(ctx, create_task(ctx))
+
+      assert %Task{status: :awaiting_decision} = task
+      assert %{"origem" => "agente", "perguntas" => [_, _]} = task.decision_questionnaire
+      assert analysis_jobs(task) == []
+    end
+
+    test "a group with nothing to ask pauses with no analysis", ctx do
+      pipeline =
+        pipeline_fixture(ctx.workspace, %{
+          "name" => "Grupo sem análise",
+          "auto_analysis" => "false",
+          "stages" => [
+            %{"key" => "impl", "name" => "Implementar", "prompt" => "p"},
+            %{"key" => "seg", "name" => "Segurança", "prompt" => "p", "group" => "g"},
+            %{"key" => "perf", "name" => "Desempenho", "prompt" => "p", "group" => "g"}
+          ]
+        })
+
+      task = create_task(%{ctx | pipeline: pipeline})
+      task = run_stage(ctx, task, "impl", %{})
+
+      task =
+        run_stage(ctx, task, "seg", %{
+          "structured_output" => %{"status" => "bloqueado", "resumo" => "Falta acesso"}
+        })
+
+      task = run_stage(ctx, task, "perf", %{})
+
+      assert %Task{status: :awaiting_decision, decision_reason: reason} = task
+      assert reason =~ "Falta acesso"
+      assert task.decision_analysis_job_id == nil
+      assert analysis_jobs(task) == []
+    end
+
+    test "turning it on in the pipeline later does not change a task already created", ctx do
+      task = create_task(ctx)
+      {:ok, _pipeline} = Pipelines.update_pipeline(ctx.pipeline, %{"auto_analysis" => "true"})
+
+      task = fail_gate(ctx, task)
+      assert %Task{status: :awaiting_decision, decision_analysis_job_id: nil} = task
+      assert analysis_jobs(task) == []
+    end
+
+    test "turning it off in the pipeline later does not change a task already created", ctx do
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Com análise"})
+      ctx = %{ctx | pipeline: pipeline}
+      task = create_task(ctx)
+      {:ok, _pipeline} = Pipelines.update_pipeline(pipeline, %{"auto_analysis" => "false"})
+
+      task = fail_stage(ctx, task)
+      task = fail_stage(ctx, task)
+      assert PipeMaestro.Proposals.kind(analysis_job(ctx, task)) == "analysis"
+    end
+
+    test "a task whose snapshot has no setting is analysed as before", ctx do
+      pipeline = pipeline_fixture(ctx.workspace, %{"name" => "Antigo"})
+      ctx = %{ctx | pipeline: pipeline}
+      task = create_task(ctx)
+
+      {:ok, task} =
+        task
+        |> Ecto.Changeset.change(
+          pipeline_context: Map.delete(task.pipeline_context, "auto_analysis")
+        )
+        |> Repo.update()
+
+      task = fail_stage(ctx, task)
+      task = fail_stage(ctx, task)
+      assert PipeMaestro.Proposals.kind(analysis_job(ctx, task)) == "analysis"
     end
   end
 
