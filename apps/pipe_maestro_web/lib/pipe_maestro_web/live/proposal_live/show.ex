@@ -35,7 +35,14 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   alias PipeMaestro.Pipelines.Pipeline
   alias PipeMaestro.Projects.Project
   alias PipeMaestro.Proposals.DecisionKind
-  alias PipeMaestroWeb.{ChangesetErrors, Markdown, PipelineExplorer, QuestionnaireComponents}
+
+  alias PipeMaestroWeb.{
+    ChangesetErrors,
+    Markdown,
+    PipelineExplorer,
+    QuestionnaireComponents,
+    QuestionnaireLive
+  }
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -333,6 +340,20 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
   # Any kind: ask again with a comment.
   def handle_event("close_panel", _params, socket),
     do: {:noreply, push_patch(socket, to: node_path(socket, nil))}
+
+  # A task proposal's questions: answering asks a new round with the answers.
+  def handle_event("questionnaire", %{"action" => "answer"} = params, socket) do
+    %{workspace: workspace, user: user} = socket.assigns.current_scope
+    answers = QuestionnaireComponents.decode_answers(params["answers"])
+
+    case Proposals.answer_questions(user, workspace, socket.assigns.job, answers) do
+      {:ok, next} ->
+        {:noreply, push_navigate(socket, to: ~p"/w/#{workspace.slug}/proposals/#{next.id}")}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
 
   def handle_event("regenerate", %{"round" => %{"feedback" => feedback}}, socket) do
     %{workspace: workspace, user: user} = socket.assigns.current_scope
@@ -918,6 +939,33 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
           </.card_content>
         </.card>
       </div>
+      <.card :if={@result.questions != []} variant="outline" data-testid="proposal-task-answers">
+        <.card_content>
+          <.section_heading
+            icon="hero-chat-bubble-left-right"
+            title="Perguntas do agente"
+            description={
+              if @created_task_id,
+                do: "A proposta já virou uma tarefa.",
+                else: "Responda para o agente reescrever a tarefa com as suas escolhas."
+            }
+          />
+          <.live_component
+            :if={!@created_task_id}
+            module={QuestionnaireLive}
+            id="proposal-questionnaire"
+            key="proposta"
+            questionnaire={%{"perguntas" => @result.questions}}
+            actions={[:answer]}
+            submit_label="Responder e reescrever a tarefa"
+          />
+          <QuestionnaireComponents.questionnaire
+            :if={@created_task_id}
+            questionnaire={%{"perguntas" => @result.questions}}
+            key="proposta"
+          />
+        </.card_content>
+      </.card>
       <div class="grid gap-6 xl:grid-cols-2">
         <.card variant="outline">
           <.card_content>
@@ -937,11 +985,13 @@ defmodule PipeMaestroWeb.ProposalLive.Show do
               data-testid="proposal-task-ready"
             />
             <ul
-              :if={@result.questions != []}
+              :if={@result.legacy_questions != []}
               class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-200"
               data-testid="proposal-task-questions"
             >
-              <li :for={question <- @result.questions}>{Markdown.inline_html(question)}</li>
+              <li :for={question <- @result.legacy_questions}>
+                {Markdown.inline_html(question)}
+              </li>
             </ul>
             <p
               class="mt-4 flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300"
