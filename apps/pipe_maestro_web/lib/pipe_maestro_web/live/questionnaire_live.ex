@@ -8,13 +8,15 @@ defmodule PipeMaestroWeb.QuestionnaireLive do
   It keeps the answers in progress while the questionnaire stays the same.
   What the person chose goes straight to the LiveView it lives in, so the
   decision is taken while the click is handled: the event `"questionnaire"`
-  with `task_id`, `action` (`"answer"`, to answer and run the stage again;
-  `"advance"`, to go on, answered or not; `"cancel"`) and `answers` (JSON,
-  one per question). The LiveView decides through `PipeMaestro.Tasks`, which
-  validates the answers.
+  with `action` (`"answer"`, to answer and run the stage again; `"advance"`,
+  to go on, answered or not; `"cancel"`), `answers` (JSON, one per question)
+  and, for a task, its `task_id`. The LiveView decides through its context
+  (`PipeMaestro.Tasks` for a task's pause, `PipeMaestro.Proposals` for a task
+  proposal's questions), which validates the answers.
 
-  Assigns: `id`, `task_id`, `questionnaire`, `key` (the test ids' suffix on a
-  page with several) and `can_cancel`.
+  Assigns: `id`, `questionnaire`, `task_id` (the task paused, if any), `key`
+  (the test ids' suffix), `can_cancel`, `actions` (which of `:answer`,
+  `:advance` and `:cancel` it offers; all by default) and `submit_label`.
   """
   use PipeMaestroWeb, :live_component
 
@@ -33,7 +35,10 @@ defmodule PipeMaestroWeb.QuestionnaireLive do
      socket
      |> assign(assigns)
      |> assign_new(:key, fn -> nil end)
+     |> assign_new(:task_id, fn -> nil end)
      |> assign_new(:can_cancel, fn -> false end)
+     |> assign_new(:actions, fn -> [:answer, :advance, :cancel] end)
+     |> assign_new(:submit_label, fn -> "Responder e continuar" end)
      |> then(&if(same?, do: &1, else: assign(&1, answers: %{}, review: false)))}
   end
 
@@ -213,7 +218,7 @@ defmodule PipeMaestroWeb.QuestionnaireLive do
 
         <div class="flex flex-wrap justify-end gap-2">
           <.button
-            :if={@can_cancel}
+            :if={@can_cancel and :cancel in @actions}
             type="button"
             variant="ghost"
             color="danger"
@@ -229,6 +234,7 @@ defmodule PipeMaestroWeb.QuestionnaireLive do
             Cancelar a tarefa
           </.button>
           <.button
+            :if={:advance in @actions}
             type="button"
             variant="outline"
             icon="hero-forward"
@@ -248,7 +254,7 @@ defmodule PipeMaestroWeb.QuestionnaireLive do
             class="w-full sm:w-auto"
             data-testid={testid("questionnaire-submit", @key)}
           >
-            Responder e continuar
+            {@submit_label}
           </.button>
         </div>
       </form>

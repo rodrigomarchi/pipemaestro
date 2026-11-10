@@ -424,6 +424,8 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
       assert has_element?(view, "[data-testid=proposal-task-prompt] h2", "Problema")
       assert has_element?(view, "[data-testid=proposal-task-ready]", "Ainda não")
       assert has_element?(view, "[data-testid=proposal-task-questions]", "Qual o timeout?")
+      # Old phrases are not a questionnaire to answer.
+      refute has_element?(view, "[data-testid=questionnaire-proposta]")
       assert has_element?(view, "[data-testid=proposal-task-pipeline]", "Correção de bug")
 
       {:ok, tasks, _html} = live(ctx.conn, ~p"/w/#{ctx.workspace.slug}/tasks?proposta=#{job.id}")
@@ -436,6 +438,143 @@ defmodule PipeMaestroWeb.ProposalLiveTest do
                Tasks.list_tasks(ctx.workspace)
 
       assert pipeline_id == pipeline.id
+    end
+  end
+
+  describe "task: the agent's questionnaire" do
+    @questions [
+      %{
+        "titulo" => "Timeout",
+        "pergunta" => "Qual o timeout aceitável?",
+        "multipla" => false,
+        "opcoes" => [
+          %{"rotulo" => "30 segundos", "descricao" => "Folgado.", "recomendada" => false},
+          %{
+            "rotulo" => "5 segundos",
+            "descricao" => "O que o produto pede.",
+            "recomendada" => true,
+            "preview" => "@timeout 5_000"
+          }
+        ]
+      },
+      %{
+        "titulo" => "Telas",
+        "pergunta" => "Quais telas mostram o erro?",
+        "multipla" => true,
+        "opcoes" => [
+          %{"rotulo" => "Login", "descricao" => "A de entrada.", "recomendada" => true},
+          %{"rotulo" => "Cadastro", "descricao" => "A de conta nova.", "recomendada" => false}
+        ]
+      }
+    ]
+
+    @not_ready %{
+      "analise" => "Falta saber o timeout.",
+      "titulo" => "Destravar o login",
+      "descricao" => "## Problema\n\nO `Auth` espera sem timeout.",
+      "pipeline" => "Correção de bug",
+      "pronta" => false,
+      "perguntas" => @questions
+    }
+
+    setup ctx do
+      bring_online(ctx.runner)
+      %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})}
+    end
+
+    defp questioned(ctx) do
+      job = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "false"})
+      succeed(ctx, job, @not_ready)
+    end
+
+    defp answer(view, answers) do
+      view
+      |> element("[data-testid=questionnaire-form-proposta]")
+      |> render_change(%{"answers" => answers})
+    end
+
+    test "the questions are a questionnaire to answer, not a list", ctx do
+      job = questioned(ctx)
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+
+      assert has_element?(view, "[data-testid=proposal-task-ready]", "Ainda não")
+      refute has_element?(view, "[data-testid=proposal-task-questions]")
+      assert has_element?(view, "[data-testid=questionnaire-proposta]")
+      assert has_element?(view, "[data-testid=question-0-proposta]", "Qual o timeout aceitável?")
+      # The recommended option comes first, marked, with its preview.
+      assert has_element?(view, "[data-testid=question-0-option-0-proposta]", "5 segundos")
+      assert has_element?(view, "[data-testid=question-0-option-0-proposta]", "recomendada")
+      assert has_element?(view, "[data-testid=question-0-preview-0-proposta]", "@timeout")
+      assert has_element?(view, "[data-testid=question-1-other-proposta]")
+      assert has_element?(view, "[data-testid=questionnaire-progress-proposta]", "0 de 2")
+      assert has_element?(view, "[data-testid=questionnaire-submit-proposta][disabled]")
+      # A proposal has no task to advance or cancel.
+      refute has_element?(view, "[data-testid=questionnaire-advance-proposta]")
+      refute has_element?(view, "[data-testid=questionnaire-cancel-proposta]")
+    end
+
+    test "answering asks the agent to rewrite the task with the answers", ctx do
+      job = questioned(ctx)
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+
+      answer(view, %{
+        "0" => %{"escolhas" => ["5 segundos"], "outro" => ""},
+        "1" => %{"escolhas" => [], "outro" => "Só no app móvel"}
+      })
+
+      assert has_element?(view, "[data-testid=questionnaire-progress-proposta]", "2 de 2")
+      view |> element("[data-testid=questionnaire-form-proposta]") |> render_submit()
+      assert has_element?(view, "[data-testid=questionnaire-review-proposta]", "5 segundos")
+
+      assert has_element?(
+               view,
+               "[data-testid=questionnaire-review-proposta]",
+               "Só no app móvel"
+             )
+
+      {:error, {:live_redirect, %{to: path}}} =
+        view |> element("[data-testid=questionnaire-confirm-proposta]") |> render_click()
+
+      next = Enum.find(Proposals.list(ctx.workspace), &(&1.id != job.id))
+      assert path == proposal_path(ctx, next)
+
+      feedback = Proposals.input(next)["feedback"]
+      assert feedback =~ "Qual o timeout aceitável?"
+      assert feedback =~ "5 segundos"
+      assert feedback =~ "Quais telas mostram o erro?"
+      assert feedback =~ "Só no app móvel"
+      assert next.prompt =~ "Só no app móvel"
+    end
+
+    test "answers that do not answer every question are refused", ctx do
+      job = questioned(ctx)
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+
+      html =
+        render_click(view, "questionnaire", %{
+          "action" => "answer",
+          "answers" => Jason.encode!([%{"escolhas" => ["5 segundos"], "outro" => nil}])
+        })
+
+      assert html =~ "Responda às 2 pergunta(s)."
+      assert [_only_the_first] = Proposals.list(ctx.workspace)
+    end
+
+    test "a proposal turned into a task shows its questions without sending", ctx do
+      job = questioned(ctx)
+      {:ok, result} = Proposals.result(job)
+
+      {:ok, _task} =
+        Proposals.create_task(ctx.user, ctx.workspace, job, %{
+          result.task_params
+          | "pipeline_id" => ctx.pipeline.id
+        })
+
+      {:ok, view, _html} = live(ctx.conn, proposal_path(ctx, job))
+      assert has_element?(view, "[data-testid=questionnaire-proposta]")
+      assert has_element?(view, "[data-testid=question-0-proposta]", "Qual o timeout aceitável?")
+      refute has_element?(view, "[data-testid=questionnaire-form-proposta]")
+      refute has_element?(view, "[data-testid=questionnaire-submit-proposta]")
     end
   end
 

@@ -120,6 +120,28 @@ defmodule PipeMaestro.Integrations.ForgejoTest do
                Forgejo.parse_event(headers("pull_request"), fixture("pull_request_closed"))
     end
 
+    test "a closed pull request brings when it was merged or closed" do
+      merged =
+        put_in(
+          fixture("pull_request_closed_merged"),
+          ["pull_request", "merged_at"],
+          "2026-11-05T10:00:00Z"
+        )
+
+      assert {:ok, %Event{pr: %{merged_at: ~U[2026-11-05 10:00:00Z]}}} =
+               Forgejo.parse_event(headers("pull_request"), merged)
+
+      closed =
+        put_in(
+          fixture("pull_request_closed"),
+          ["pull_request", "closed_at"],
+          "2026-11-06T09:00:00Z"
+        )
+
+      assert {:ok, %Event{pr: %{merged_at: nil, closed_at: ~U[2026-11-06 09:00:00Z]}}} =
+               Forgejo.parse_event(headers("pull_request"), closed)
+    end
+
     test "ignores what the platform does not use" do
       assert {:ignore, "evento sem uso: push"} =
                Forgejo.parse_event(headers("push"), fixture("push"))
@@ -326,5 +348,49 @@ defmodule PipeMaestro.Integrations.ForgejoTest do
 
   test "builds a client of the instance's API" do
     assert %Client{provider: Forgejo, base_url: "https://forge.test"} = client()
+  end
+
+  describe "a pull request's commits" do
+    setup do
+      fake = FakeForgejo.start()
+
+      FakeForgejo.put_pull(fake, "acme/app", %{
+        "number" => 7,
+        "state" => "closed",
+        "merged" => true,
+        "merged_at" => "2026-11-05T10:00:00Z",
+        "closed_at" => "2026-11-05T10:00:00Z",
+        "head" => %{"ref" => "cp/x", "sha" => "c60"},
+        "base" => %{"ref" => "main"},
+        "html_url" => "https://forge.test/acme/app/pulls/7",
+        "commits" =>
+          for(n <- 1..60, do: FakeForgejo.commit_json("c#{n}")) ++
+            [FakeForgejo.commit_json("m1", ["c60", "main"])]
+      })
+
+      %{fake: fake}
+    end
+
+    test "every page, oldest first, with each commit's parents and date" do
+      assert {:ok, commits} = Forgejo.pr_commits(client(), "acme/app", 7)
+      assert length(commits) == 61
+
+      assert hd(commits) == %{
+               sha: "c1",
+               parents: ["base"],
+               committed_at: ~U[2026-11-01 12:00:00Z]
+             }
+
+      assert List.last(commits).parents == ["c60", "main"]
+    end
+
+    test "a pull request that does not exist is an error" do
+      assert {:error, %{status: 404}} = Forgejo.pr_commits(client(), "acme/app", 99)
+    end
+
+    test "the pull request says when it was merged" do
+      assert {:ok, %{merged: true, merged_at: ~U[2026-11-05 10:00:00Z], closed_at: _}} =
+               Forgejo.get_pr(client(), "acme/app", 7)
+    end
   end
 end

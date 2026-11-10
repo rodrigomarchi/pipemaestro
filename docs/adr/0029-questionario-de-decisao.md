@@ -61,14 +61,31 @@ no texto final se perde.
   Os botões de envio mandam o evento direto à LiveView, que decide enquanto trata o
   clique; assim a outra sessão já recebe a mudança quando o clique termina.
 
+- **A proposta de tarefa usa o mesmo questionário.** As `perguntas` da proposta `task`
+  (`Proposals.TaskKind`) seguem `Prompt.questions_schema/0`, só quando `pronta` é `false`.
+  `TaskKind.result/2` as normaliza com `Questionnaire.normalize/1` (`questions`). Uma
+  resposta antiga, de frases, fica em `legacy_questions` e é mostrada como lista.
+  - A página da proposta mostra o `QuestionnaireLive` só com "responder". O componente tem
+    ações (`actions`) e rótulo de envio configuráveis, e `task_id` opcional.
+  - Responder (`Proposals.answer_questions/4`) pede uma nova rodada da proposta, pelo
+    mesmo caminho do "pedir de novo", com as perguntas e as respostas em Markdown no
+    `feedback`. O texto de "Outro" é cortado por resposta para caber no limite.
+  - Responde quem revisa a proposta (`:run_tasks`), enquanto ela não virou tarefa.
+  - O motivo do auto-approve e o comentário de triagem na issue listam as perguntas
+    numeradas, com as opções e a recomendada indicada (`Questionnaire.to_text/1`).
+
 ## Consequências
 
 - O protocolo não muda: o `output_schema` do job é um mapa livre, e um runner antigo
   repassa o schema maior ao `--json-schema` como qualquer outro.
-- Cada pausa por falha custa até US$ 1 de análise. Um ajuste por pipeline para desligá-la
-  fica para depois.
+- Cada pausa por falha custa até US$ 1 de análise. O pipeline a desliga com
+  `auto_analysis` (switch "Analisar falhas com IA", ligado por padrão): desligado, a pausa
+  leva só o motivo e a decisão manual, e "Sugerir com IA" segue disponível. A tarefa
+  guarda o valor no retrato do pipeline (`pipeline_context`); um retrato sem a chave conta
+  como ligado. Um bloqueio com perguntas do agente mostra o questionário dele de qualquer
+  forma.
 - As análises aparecem na página Propostas, filtráveis pelo tipo, e a página da proposta
   só as lê: a resposta acontece na tarefa.
 - Decisões antigas, sem `questions`/`answers`, continuam lidas pelo formato de antes.
-- As `perguntas` do tipo `task` continuam uma lista de frases; o componente aceita o
-  formato estruturado para ser reaproveitado quando migrarem.
+- Propostas de tarefa antigas, com `perguntas` em frases, continuam lidas como estão,
+  sem migração. Respondê-las continua sendo pelo "pedir de novo" com comentário livre.

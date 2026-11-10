@@ -14,7 +14,8 @@ defmodule PipeMaestro.Tasks do
   person when there are any (`decision_questionnaire`,
   `PipeMaestro.Tasks.Questionnaire`): those the agent asked, or, on a
   failure, those of an analysis the platform asks the agent for by itself
-  (`request_analysis/1`, `PipeMaestro.Proposals.AnalysisKind`). The person
+  (`request_analysis/1`, `PipeMaestro.Proposals.AnalysisKind`) when the
+  pipeline has `auto_analysis` on, as it is by default. The person
   answers them (`answer/4`) and the next attempt gets the answers in its
   prompt; the manual decision stays available all along.
 
@@ -46,6 +47,7 @@ defmodule PipeMaestro.Tasks do
   alias PipeMaestro.Accounts.User
   alias PipeMaestro.Audit
   alias PipeMaestro.Integrations
+  alias PipeMaestro.Integrations.PrOutcomes
   alias PipeMaestro.Jobs
   alias PipeMaestro.Jobs.Job
   alias PipeMaestro.Notifications
@@ -1242,8 +1244,9 @@ defmodule PipeMaestro.Tasks do
   defp pause_reason(stage, run), do: Engine.rule_pause(run.structured_output, stage.rules)
 
   # `asking` says what the person is asked besides the reason: the
-  # questionnaire of a block, an analysis the agent is asked for (a failure),
-  # or nothing (a rule, the budget, a pause someone asked for).
+  # questionnaire of a block, an analysis the agent is asked for (a failure,
+  # when the task's pipeline has it on), or nothing (a rule, the budget, a
+  # pause someone asked for).
   defp await(task, reason, asking \\ :none) do
     questionnaire =
       case asking do
@@ -1266,8 +1269,12 @@ defmodule PipeMaestro.Tasks do
       |> announce(:awaiting)
       |> tap(&start_next_queued(&1.workspace_id))
 
-    if asking == :analysis, do: request_analysis(task), else: task
+    if asking == :analysis and auto_analysis?(task), do: request_analysis(task), else: task
   end
+
+  # Only an explicit `false` in the task's snapshot turns the analysis off; a
+  # snapshot without the key (or none) analyses.
+  defp auto_analysis?(task), do: context(task, "auto_analysis") != false
 
   defp finish(task, status) do
     task
@@ -1280,6 +1287,7 @@ defmodule PipeMaestro.Tasks do
     )
     |> Ecto.Changeset.change(merge_fields(task, status))
     |> Repo.update!()
+    |> tap(&PrOutcomes.ready/1)
     |> announce(status)
     |> tap(&tell_merge_blocked/1)
     |> tap(&start_next_queued(&1.workspace_id))
@@ -1744,7 +1752,8 @@ defmodule PipeMaestro.Tasks do
           via: String.t() | nil,
           runner_id: String.t() | nil,
           runner_online?: boolean(),
-          merge_fix: boolean()
+          merge_fix: boolean(),
+          origin: Decision.origin()
         ]
 
   @typedoc "Why a task's stage could not be run again."
@@ -1802,6 +1811,8 @@ defmodule PipeMaestro.Tasks do
   `redo_from/4`, plus `merge_fix: true` when it fixes what kept the platform
   from merging the pull request (`PipeMaestro.Integrations.AutoMerge`): the
   task counts it in `merge_fixes` and is `"fixing"` until it succeeds again.
+  `:origin` says who asked for it (`PipeMaestro.Tasks.Decision`): `:person`
+  by default, `:review` or `:auto_merge`.
   A person's correction leaves the merge to be worked out again then.
   """
   @spec correct(Task.t(), String.t() | nil, rerun_opts()) ::
@@ -1831,6 +1842,7 @@ defmodule PipeMaestro.Tasks do
             task_id: task.id,
             stage_index: index,
             action: :correct,
+            origin: Keyword.get(opts, :origin, :person),
             instructions: String.trim(prompt),
             decided_by_user_id: opts[:by] && opts[:by].id,
             decided_via: opts[:via]

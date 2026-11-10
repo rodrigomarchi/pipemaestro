@@ -1,6 +1,6 @@
 defmodule PipeMaestro.TaskSources.Item do
   @moduledoc """
-  An item read on a task source, normalized whatever the source (ADR 0053):
+  An item read on a task source, normalized whatever the source (ADR 0056):
   its `title`, `description`, `author`, `labels`, `priority` (`nil` when the
   source has none) and link (`url`), with the `source`, the item's id there
   (`external_id`) and what the source keeps of it (`ref`).

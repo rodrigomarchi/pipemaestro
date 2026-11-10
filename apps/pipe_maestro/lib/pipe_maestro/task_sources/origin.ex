@@ -1,6 +1,6 @@
 defmodule PipeMaestro.TaskSources.Origin do
   @moduledoc """
-  Where a task or a triage came from (ADR 0053): the `source`'s key, the
+  Where a task or a triage came from (ADR 0056): the `source`'s key, the
   item's id there (`external_id`), its link (`url`), what the source keeps of
   it (`ref`, opaque to the task engine) and the repository of a git host the
   source knows (`linked_repo_id`, `PipeMaestro.TaskSources.Item`).

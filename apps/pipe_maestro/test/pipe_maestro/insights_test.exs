@@ -3,7 +3,7 @@ defmodule PipeMaestro.InsightsTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{Insights, Jobs, Maintenance, Repo}
+  alias PipeMaestro.{Insights, Jobs, Maintenance, Repo, Workspaces}
 
   setup do
     workspace = workspace_fixture()
@@ -154,6 +154,7 @@ defmodule PipeMaestro.InsightsTest do
 
     test "a run past the retention of its events still counts", ctx do
       job = audited_job(ctx)
+      delete_after_retention(ctx)
       age(job, 60)
 
       Maintenance.run(DateTime.utc_now())
@@ -176,6 +177,7 @@ defmodule PipeMaestro.InsightsTest do
   describe "the kept summary" do
     test "is written when the run ends and outlives its events", ctx do
       job = audited_job(ctx)
+      delete_after_retention(ctx)
       assert %{"api" => %{"requests" => 3}, "compactions" => 1} = job.insights
       before = Insights.job(job)
 
@@ -185,6 +187,23 @@ defmodule PipeMaestro.InsightsTest do
       assert Jobs.list_events(job) == []
       assert job_telemetry(job) == []
       assert Insights.job(Repo.reload!(job)) == before
+    end
+
+    test "outlives the events' content, and is not written again from what is left", ctx do
+      job = audited_job(ctx)
+      before = Insights.job(job)
+      kept = Repo.reload!(job).insights
+
+      age(job, 40)
+      Maintenance.run(DateTime.utc_now())
+
+      job = Repo.reload!(job)
+      assert %DateTime{} = Map.get(job, :events_pruned_at)
+      assert length(Jobs.list_events(job)) == 12
+      assert Insights.job(job) == before
+
+      Insights.store_summary(job)
+      assert Repo.reload!(job).insights == kept
     end
 
     test "takes in records that arrive after the run ended", ctx do
@@ -328,6 +347,11 @@ defmodule PipeMaestro.InsightsTest do
       assert Insights.live(job_fixture(ctx.runner, ctx.user)) ==
                %{requests: 0, cost_usd: 0, tokens: 0, tool_calls: 0}
     end
+  end
+
+  defp delete_after_retention(ctx) do
+    {:ok, _} =
+      Workspaces.update_workspace(ctx.workspace, %{agent_events_after_retention: "delete"})
   end
 
   defp age(job, days) do

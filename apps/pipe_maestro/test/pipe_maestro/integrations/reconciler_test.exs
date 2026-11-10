@@ -3,8 +3,17 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
 
   import PipeMaestro.Fixtures
 
-  alias PipeMaestro.{FakeForgejo, Integrations, Proposals, Repo, Runners}
-  alias PipeMaestro.Integrations.{Delivery, Ingest, LinkedRepo, Reconciler}
+  alias PipeMaestro.{FakeForgejo, Integrations, Proposals, Repo, Runners, Tasks}
+
+  alias PipeMaestro.Integrations.{
+    Delivery,
+    Ingest,
+    LinkedRepo,
+    PrOutcomes,
+    Reconciler
+  }
+
+  alias PipeMaestro.TaskSources.Origin
 
   setup do
     workspace = workspace_fixture()
@@ -222,5 +231,98 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
 
     assert Reconciler.sync_repo(repo, DateTime.utc_now(), ctx.opts) == 1
     assert triages(ctx) == 1
+  end
+
+  describe "the outcome of the pull requests" do
+    setup ctx do
+      {:ok, task} =
+        Tasks.create_task(
+          ctx.user,
+          ctx.workspace,
+          %{
+            "title" => "Corrige login",
+            "prompt" => "O login quebra.",
+            "pipeline_id" => pipeline_fixture(ctx.workspace).id,
+            "project_id" => ctx.project.id
+          },
+          origin: %Origin{
+            source: "git_issue",
+            external_id: "https://forge.test/acme/app/issues/3",
+            url: "https://forge.test/acme/app/issues/3",
+            ref: %{"number" => 3},
+            linked_repo_id: ctx.repo.id
+          }
+        )
+
+      task =
+        task
+        |> Ecto.Changeset.change(
+          status: :succeeded,
+          head_sha: "p1",
+          pr_url: "https://forge.test/acme/app/pulls/7",
+          issue_feedback: %{"pr_number" => 7},
+          finished_at: DateTime.add(DateTime.utc_now(:second), -3_600)
+        )
+        |> Repo.update!()
+
+      FakeForgejo.put_pull(ctx.fake, "acme/app", %{
+        "number" => 7,
+        "state" => "open",
+        "head" => %{"ref" => task.branch, "sha" => "p1"},
+        "base" => %{"ref" => "main"},
+        "html_url" => "https://forge.test/acme/app/pulls/7",
+        "commits" => [FakeForgejo.commit_json("p1")]
+      })
+
+      PrOutcomes.ready(task)
+      %{task: task}
+    end
+
+    test "a merge the webhook missed is found on the host, with its date", ctx do
+      FakeForgejo.edit_pull(
+        ctx.fake,
+        "acme/app",
+        7,
+        &Map.merge(&1, %{
+          "state" => "closed",
+          "merged" => true,
+          "merged_at" => "2026-11-05T10:00:00Z",
+          "closed_at" => "2026-11-05T10:00:00Z",
+          "commits" => [FakeForgejo.commit_json("p1"), FakeForgejo.commit_json("h1")]
+        })
+      )
+
+      assert %{outcomes: 1} = Reconciler.run(DateTime.utc_now(), ctx.opts)
+
+      assert %{
+               state: "merged",
+               merged_at: ~U[2026-11-05 10:00:00Z],
+               human_shas: ["h1"],
+               commits_final: true
+             } = PrOutcomes.get(ctx.task.id)
+
+      # Settled: the next pass leaves it alone.
+      assert %{outcomes: 0} = Reconciler.run(DateTime.utc_now(), ctx.opts)
+    end
+
+    test "a host that fails is kept for the next pass, and the pass goes on", ctx do
+      FakeForgejo.fail(ctx.fake, {"GET", "/api/v1/repos/acme/app/pulls/7"}, 500, 1)
+
+      assert %{outcomes: 0} = Reconciler.run(DateTime.utc_now(), ctx.opts)
+      assert %{state: "open", commits_error: error} = PrOutcomes.get(ctx.task.id)
+      assert is_binary(error)
+
+      FakeForgejo.edit_pull(
+        ctx.fake,
+        "acme/app",
+        7,
+        &Map.merge(&1, %{"state" => "closed", "closed_at" => "2026-11-06T09:00:00Z"})
+      )
+
+      assert %{outcomes: 1} = Reconciler.run(DateTime.utc_now(), ctx.opts)
+
+      assert %{state: "closed", closed_at: ~U[2026-11-06 09:00:00Z], commits_error: nil} =
+               PrOutcomes.get(ctx.task.id)
+    end
   end
 end

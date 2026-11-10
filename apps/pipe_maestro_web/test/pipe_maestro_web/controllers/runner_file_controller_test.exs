@@ -2,7 +2,7 @@ defmodule PipeMaestroWeb.RunnerFileControllerTest do
   use PipeMaestroWeb.ConnCase, async: true
 
   alias PipeMaestro.Jobs.{Files, JobFile}
-  alias PipeMaestro.{Repo, Runners, Tasks}
+  alias PipeMaestro.{Repo, Runners, Tasks, Workspaces}
   alias PipeMaestroProtocol.JobFiles
 
   # A PNG of 1×1 pixel.
@@ -134,5 +134,35 @@ defmodule PipeMaestroWeb.RunnerFileControllerTest do
            |> response(415)
 
     assert Repo.all(JobFile) == []
+  end
+
+  describe "the workspace's quota" do
+    setup ctx do
+      {:ok, _} = Workspaces.update_workspace(ctx.workspace, %{job_files_quota_mib: 1})
+      :ok
+    end
+
+    test "413 quota_exceeded, which the runner does not repeat; the file is not kept", ctx do
+      first = :binary.copy("a", 900 * 1024)
+
+      assert %{"path" => "a.bin"} =
+               ctx.conn |> upload(ctx.token, ctx.job.id, "a.bin", first) |> json_response(201)
+
+      assert build_conn()
+             |> upload(ctx.token, ctx.job.id, "b.bin", first)
+             |> json_response(413) == %{"error" => "quota_exceeded", "quota_bytes" => 1_048_576}
+
+      assert [%{path: "a.bin"}] = Repo.all(JobFile)
+      assert Map.get(Repo.get!(PipeMaestro.Jobs.Job, ctx.job.id), :files_refused_quota) == 1
+    end
+
+    test "replacing a path discounts the file it replaces", ctx do
+      {:ok, _} = Files.store(ctx.runner, ctx.job.id, "a.bin", :binary.copy("a", 900 * 1024))
+
+      assert %{"byte_size" => 1_000_000} =
+               ctx.conn
+               |> upload(ctx.token, ctx.job.id, "a.bin", :binary.copy("b", 1_000_000))
+               |> json_response(201)
+    end
   end
 end

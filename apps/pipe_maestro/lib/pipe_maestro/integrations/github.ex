@@ -356,6 +356,8 @@ defmodule PipeMaestro.Integrations.GitHub do
       base: get_in(pr, ["base", "ref"]),
       state: pr["state"],
       merged: pr["merged"] == true,
+      merged_at: datetime(pr["merged_at"]),
+      closed_at: datetime(pr["closed_at"]),
       mergeable: pr["mergeable"],
       draft: pr["draft"] == true
     }
@@ -649,6 +651,12 @@ defmodule PipeMaestro.Integrations.GitHub do
   def get_pr(client, full_name, number) do
     with {:ok, pr, _} <- Client.request(client, url: "/repos/#{full_name}/pulls/#{number}"),
          do: {:ok, pull(pr)}
+  end
+
+  @impl true
+  def pr_commits(client, full_name, number) do
+    with {:ok, commits} <- all_pages(client, "/repos/#{full_name}/pulls/#{number}/commits", []),
+         do: {:ok, Enum.map(commits, &pr_commit/1)}
   end
 
   @impl true

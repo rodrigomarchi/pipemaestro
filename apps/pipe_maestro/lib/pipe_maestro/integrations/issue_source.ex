@@ -1,7 +1,7 @@
 defmodule PipeMaestro.Integrations.IssueSource do
   @moduledoc """
   The issues of a git host (Forgejo and GitHub) as a task source, under the
-  key `"git_issue"` (ADR 0053, `docs/specs/integracoes.md`): the integration
+  key `"git_issue"` (ADR 0056, `docs/specs/integracoes.md`): the integration
   behind the interface of `PipeMaestro.TaskSources.Source`.
 
   - **trigger**: the webhooks (`PipeMaestro.Integrations.Ingest`) and the
@@ -10,6 +10,7 @@ defmodule PipeMaestro.Integrations.IssueSource do
     its id is its link, and it keeps its `number`. A link pasted on a task is
     an issue's on any host (`PipeMaestro.Integrations.IssueUrl`);
   - **work**: the feedback on the host (`PipeMaestro.Integrations.Feedback`),
+    the commits of the pull request read (`PipeMaestro.Integrations.PrOutcomes`),
     then the merge of the pull request (`PipeMaestro.Integrations.AutoMerge`),
     for a task of a linked repository; the runner comments a decision on the
     issue when it calls the host itself; the pull request closes the issue;
@@ -28,6 +29,7 @@ defmodule PipeMaestro.Integrations.IssueSource do
     Ingest,
     IssueUrl,
     LinkedRepo,
+    PrOutcomes,
     Reconciler
   }
 
@@ -104,6 +106,7 @@ defmodule PipeMaestro.Integrations.IssueSource do
 
   defp sync_and_merge(task_id) do
     _synced = Feedback.sync(task_id)
+    _observed = PrOutcomes.observe(task_id)
     AutoMerge.check(task_id)
   end
 

@@ -19,8 +19,10 @@ defmodule PipeMaestro.Proposals.TaskKind do
 
   alias Ecto.Changeset
   alias PipeMaestro.Pipelines
+  alias PipeMaestro.Pipelines.Prompt
   alias PipeMaestro.Proposals
   alias PipeMaestro.Proposals.Instructions
+  alias PipeMaestro.Tasks.Questionnaire
   alias PipeMaestro.TaskSources
   alias PipeMaestro.TaskSources.Origin
   alias PipeMaestro.Workspaces.Workspace
@@ -36,6 +38,10 @@ defmodule PipeMaestro.Proposals.TaskKind do
     pipeline_id: :binary_id,
     auto_approve: :boolean
   }
+
+  # A round's feedback: a comment, or the answers to the agent's questions
+  # (`PipeMaestro.Proposals.answer_questions/4`).
+  @feedback_length 8_000
 
   @impl true
   def name, do: "task"
@@ -53,7 +59,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
     |> Changeset.validate_required([:project_id], message: "escolha um projeto")
     |> Changeset.validate_required([:request], message: "conte a ideia da tarefa")
     |> Changeset.validate_length(:request, max: 16_000)
-    |> Changeset.validate_length(:feedback, max: 4_000)
+    |> Changeset.validate_length(:feedback, max: @feedback_length)
     |> put_linked_origin()
     |> validate_pipeline(workspace)
   end
@@ -153,8 +159,25 @@ defmodule PipeMaestro.Proposals.TaskKind do
       - os critérios de aceite, verificáveis;
       - o que está fora do escopo;
     - `pipeline`: o nome exato de um dos pipelines do workspace que melhor serve, ou vazio;
-    - `pronta`: se a ideia está clara o bastante para rodar sozinha; se não estiver, liste
-      em `perguntas` o que uma pessoa precisa responder antes.
+    - `pronta`: se a ideia está clara o bastante para rodar sozinha.
+
+    ## Perguntas
+
+    Só quando `pronta` é `false`: em `perguntas`, de 1 a 4 perguntas que uma pessoa precisa
+    responder antes. Com `pronta: true`, omita `perguntas`.
+
+    - cada pergunta é uma decisão que muda a tarefa e que o código não responde; não
+      pergunte o que você pode descobrir lendo o projeto;
+    - `titulo`: um rótulo curto do assunto (até 12 caracteres); `pergunta`: termina com "?";
+      `multipla`: `true` quando mais de uma opção pode ser escolhida;
+    - `opcoes`: de 2 a 4, cada uma com `rotulo` (até 5 palavras), `descricao` (o que essa
+      escolha implica para a tarefa) e `preview` opcional (um exemplo em Markdown);
+    - marque a opção que você recomenda com `recomendada: true` (uma só, a primeira);
+    - "Outro", com texto livre, é sempre oferecido pela plataforma: não o ponha nas opções;
+    - a ferramenta `AskUserQuestion` não existe aqui: toda pergunta vai em `perguntas`.
+
+    A pessoa responde na plataforma, e as respostas voltam numa nova rodada para você
+    reescrever a tarefa com elas.
 
     Responda no formato pedido, com `analise` (Markdown: o que você entendeu do pedido e do
     código). Escreva em português.
@@ -174,7 +197,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
         "descricao" => %{"type" => "string"},
         "pipeline" => %{"type" => "string"},
         "pronta" => %{"type" => "boolean"},
-        "perguntas" => %{"type" => "array", "items" => %{"type" => "string"}}
+        "perguntas" => Prompt.questions_schema()
       }
     }
   end
@@ -191,6 +214,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
       suggested = Proposals.text(output["pipeline"])
       pipeline = chosen_pipeline(job, input["pipeline_id"]) || find_pipeline(job, suggested)
       pipeline_name = if pipeline, do: pipeline.name, else: suggested
+      {questions, legacy_questions} = questions(output["perguntas"])
 
       {:ok,
        %{
@@ -201,7 +225,8 @@ defmodule PipeMaestro.Proposals.TaskKind do
          pipeline: pipeline,
          ready: output["pronta"] == true,
          auto_approve: input["auto_approve"] == true,
-         questions: output["perguntas"] |> List.wrap() |> Enum.filter(&is_binary/1),
+         questions: questions,
+         legacy_questions: legacy_questions,
          task_params:
            %{
              "title" => String.slice(title, 0, 120),
@@ -236,6 +261,18 @@ defmodule PipeMaestro.Proposals.TaskKind do
           {:error, message} ->
             Changeset.add_error(changeset, :source_url, message)
         end
+    end
+  end
+
+  # The questionnaire of ADR 0029 when the agent asked in it; else the
+  # phrases of an older answer, read as they are.
+  defp questions(perguntas) do
+    case Questionnaire.normalize(perguntas) do
+      {:ok, questions} ->
+        {questions, []}
+
+      :error ->
+        {[], perguntas |> List.wrap() |> Enum.filter(&(is_binary(&1) and String.trim(&1) != ""))}
     end
   end
 

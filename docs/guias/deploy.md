@@ -10,7 +10,11 @@ repositório `retro_hex_chat_infra`, do mesmo jeito que os outros apps Elixir de
 - **nginx e certificado:** `pipemaestro.app`. O `www` responde 301. O `server` precisa
   de `client_max_body_size 12m;`, porque os runners sobem os arquivos dos jobs (até
   10 MiB cada, [ADR 0042](../adr/0042-arquivos-gerados-pela-etapa.md)). Com o padrão de
-  1 MB, os maiores voltam com 413 e aparecem na tarefa como "não chegaram".
+  1 MB, os maiores voltam com 413 e aparecem na tarefa como "não chegaram". Com 12m
+  há folga sobre os 10 MiB (10.485.760 bytes). Uma recusa por cota do workspace
+  ([ADR 0054](../adr/0054-retencao-por-workspace.md)) **não** é um 413 do nginx: ela vem
+  do app, com o corpo JSON `{"error": "quota_exceeded", "quota_bytes"}`, e aparece na
+  tarefa como "arquivos recusados".
 
 Os segredos ficam no vault da infra e entram no ambiente do app pelo DeployEx:
 

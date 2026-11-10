@@ -2,8 +2,9 @@
 
 > Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md)
 > e [ADR 0037](../adr/0037-credencial-git-por-job.md). As issues são uma fonte de tarefa
-> (`PipeMaestro.TaskSources`, [ADR 0053](../adr/0053-fontes-de-tarefa.md)); o push, o PR, o
-> commit status e o auto-merge são do host git, e não da fonte.
+> (`PipeMaestro.TaskSources`, [ADR 0056](../adr/0056-fontes-de-tarefa.md)); o push, o PR, o
+> commit status e o auto-merge são do host git, e não da fonte. O desfecho do PR (seção 8):
+> [ADR 0055](../adr/0055-qualidade-das-entregas.md).
 
 ## 1. Modelo de dados
 
@@ -14,6 +15,7 @@
 | `Trigger` | `integration_triggers` | O que dispara uma tarefa no repositório (seção 3) |
 | `IssueState` | `integration_issues` | Por issue: o retrato das labels, a última atualização vista, os gatilhos que já dispararam e os comentários já aplicados como comando |
 | `Delivery` | `integration_deliveries` | Cada entrega recebida, reconciliada ou reprocessada, com o evento, o status e o motivo |
+| `PrOutcome` | `integration_pr_outcomes` | O desfecho do PR de cada tarefa entregue: `ready_at`, estado (`open`, `merged`, `closed`) com as datas, rodadas de review e os commits do pipeline e de pessoas, por SHA (seção 8) |
 
 A tarefa guarda a origem genérica (`source`, `source_id`, `source_url`, `source_ref`, e em
 `pending_source_note` a nota de uma decisão), `linked_repo_id` (o repositório do host git
@@ -30,7 +32,7 @@ issues do Forgejo e do GitHub:
 |---|---|---|
 | gatilho | `receive_webhook/4`, `poll/2` | o webhook entra por `Ingest` (a chave é a conexão; sem chave, o App do GitHub); o polling é o `Reconciler` |
 | item | `fetch_item/1`, `parse_link/1` | lê a issue com a conexão do repositório vinculado e a normaliza num `Item`; reconhece o link de issue de qualquer host |
-| andamento | `task_changed/1`, `triage_finished/1`, `runner_delivery/1`, `pr_reference/1` | `Feedback.sync/1` e `AutoMerge.check/1` para tarefa de repositório vinculado; o comentário da decisão que o runner leva; `Closes <issue>` no PR |
+| andamento | `task_changed/1`, `triage_finished/1`, `runner_delivery/1`, `pr_reference/1` | `Feedback.sync/1`, `PrOutcomes.observe/1` e `AutoMerge.check/1` para tarefa de repositório vinculado; o comentário da decisão que o runner leva; `Closes <issue>` no PR |
 | respostas e comandos | `reply/3` | comenta na issue; os comandos chegam por `Conversation` e valem por `TaskSources.apply_command/3` |
 
 ## 2. Eventos normalizados
@@ -46,7 +48,7 @@ na tabela é ignorado com o motivo "evento sem uso".
 | `:issue_comment` | `issue_comment`, `created` (`is_pull` num PR) | `issue_comment`, `created` |
 | `:issue_closed` | `issues`, `closed` | `issues`, `closed` |
 | `:pr_review` | `pull_request_review_approved` e `_rejected` | `pull_request_review`, `submitted` |
-| `:pr_closed` | `pull_request`, `closed` (`merged`) | `pull_request`, `closed` (`merged`) |
+| `:pr_closed` | `pull_request`, `closed` (`merged`, `merged_at`, `closed_at`) | `pull_request`, `closed` (`merged`, `merged_at`, `closed_at`) |
 
 Assinatura: no Forgejo, `X-Forgejo-Signature`, o HMAC-SHA256 do corpo em hex puro; no
 GitHub, `X-Hub-Signature-256`, `sha256=<hex>`. O id da entrega vem de `X-Forgejo-Delivery`
@@ -124,6 +126,13 @@ de novo. Comentários novos, que notificam, só quando a tarefa espera uma decis
 (mencionando quem abriu a issue), quando o PR fica pronto, quando ela é cancelada e quando
 a triagem termina sem criar a tarefa.
 
+O comentário de uma triagem que termina sem tarefa diz por quê. Quando o agente não achou a
+tarefa pronta, ele lista as perguntas numeradas, cada uma com as suas opções e a
+recomendada marcada ("(recomendada)"), no formato do questionário do
+[ADR 0029](../adr/0029-questionario-de-decisao.md). Uma proposta antiga mostra as frases
+em lista. O comentário manda responder na plataforma, pelo link da proposta. Responder
+pede uma nova rodada, que vira a tarefa sozinha quando o gatilho tem `auto_approve`.
+
 Commit status no `head_sha`, um por etapa, com `context` `pipemaestro/<chave da etapa>`:
 `success` para a que passou, `pending` para a atual, `warning` para a pausada, `failure` para
 a esgotada e `error` quando a tarefa foi cancelada. No GitHub, um check run por etapa,
@@ -154,7 +163,11 @@ login); um inválido para o estado recebe uma resposta com os comandos válidos.
 - Review pedindo mudanças num PR de tarefa `succeeded`, de quem tem escrita: nova etapa
   "Correção N" com o texto do review e os comentários de linha como pedido.
 - "Refazer etapa" no check run (GitHub), de quem tem escrita: nova tentativa da etapa.
-- PR fechado com merge: o comentário de status diz "integrado".
+- PR fechado com merge: o comentário de status diz "integrado", e o desfecho do PR fica
+  `merged`, com a data do host (seção 8).
+- PR fechado sem merge: o desfecho fica `closed`. Nada mais dispara.
+- O mesmo review processado de novo (a reconciliação, um replay) não abre uma segunda
+  correção: fica `ignored`, "review já aplicado".
 
 ### Merge automático
 
@@ -173,3 +186,29 @@ e a cada mudança da tarefa:
   "Correção N" com o que falhou, até `max_merge_fixes`. Depois disso, o merge fica
   bloqueado e quem cuida da tarefa é avisado.
 - **Recusa do host, PR fechado ou 6 horas de espera** bloqueiam o merge, sem correção.
+
+## 8. Desfecho do PR
+
+Cada tarefa entregue em PR num repositório vinculado tem um `PrOutcome`
+(`PipeMaestro.Integrations.PrOutcomes`, [ADR 0055](../adr/0055-qualidade-das-entregas.md)),
+que o Uso lê na aba Qualidade (`PipeMaestro.Usage.quality/3`).
+
+- **Pronto** (`ready_at`): a primeira vez que a tarefa terminou `succeeded` com `pr_url`.
+- **Integrado ou fechado:** pelo webhook `:pr_closed` (seção 7), pelo merge automático, ou pela
+  reconciliação, que consulta `get_pr/3` dos PRs em aberto (`GET /pulls/:n`, com `merged_at`
+  e `closed_at`).
+- **Rodadas de review:** cada review com pedido de mudanças que virou "Correção N", contado uma
+  vez (o id do review no GitHub; o id da entrega original no Forgejo, cujo webhook não traz o
+  do review).
+- **Commits:** `Provider.pr_commits/3` lista os commits do PR, do mais antigo para o mais novo,
+  todas as páginas: `GET /repos/:r/pulls/:n/commits`, com `per_page` no GitHub (no máximo 250
+  commits) e `page`/`limit` com `X-Total-Count` no Forgejo. Cada um vira `%{sha, parents,
+  committed_at}`.
+  - Quando o `head_sha` da tarefa é novo e está na lista, os commits até ele são do pipeline,
+    e os que vêm depois são de uma pessoa.
+  - Fora disso, todo SHA que não é do pipeline é de uma pessoa.
+  - Um commit de merge (com mais de um pai) não conta.
+- **Quando lê:** a cada mudança da tarefa (`IssueSource.task_changed/1`), no merge e no fechamento, e na
+  reconciliação enquanto o PR está aberto, falta a leitura final ou o host falhou
+  (`commits_error`). Só com `api_mode` `control_plane`; no modo `runner`, `commits_tracked`
+  é falso e só os reviews contam como alteração.

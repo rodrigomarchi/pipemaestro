@@ -62,6 +62,27 @@ defmodule PipeMaestroProtocol.RunnerLogTest do
     assert RunnerLog.logs?(%{"runner_id" => "r1"})
   end
 
+  test "the CLI's sessions not found where expected are an event" do
+    assert "claude_sessions_not_found" in RunnerLog.events()
+
+    line =
+      RunnerLog.line(
+        @at,
+        "warning",
+        "As sessões do claude não estavam lá",
+        "claude_sessions_not_found",
+        %{
+          "task_id" => "t1",
+          "dir" => "/home/r/.claude/projects/-w-worktrees-t1",
+          "reason" => "not_found",
+          "cli_version" => "2.1.319"
+        }
+      )
+
+    assert {:ok, [%{"event" => "claude_sessions_not_found", "attrs" => %{"task_id" => "t1"}}]} =
+             RunnerLog.parse(%{"lines" => [line]})
+  end
+
   test "a runner draining its jobs before updating is an event" do
     assert "update_draining" in RunnerLog.events()
 

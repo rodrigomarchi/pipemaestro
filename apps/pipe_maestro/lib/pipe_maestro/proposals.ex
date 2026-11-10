@@ -23,7 +23,10 @@ defmodule PipeMaestro.Proposals do
   `proposal_job_id`), and its id is kept with the proposal
   (`created_task_id/1`). Asked with `auto_approve`, the task is created as
   the job ends (`job_finished/1`), on behalf of who asked; when it cannot be,
-  the proposal waits for review and says why (`auto_approve/1`).
+  the proposal waits for review and says why (`auto_approve/1`). A task the
+  agent did not find ready asks its questions in the questionnaire of ADR
+  0029; answering them (`answer_questions/4`) asks a new round with the
+  answers.
   """
 
   import Ecto.Query
@@ -51,7 +54,7 @@ defmodule PipeMaestro.Proposals do
   alias PipeMaestro.Runners
   alias PipeMaestro.Runners.Runner
   alias PipeMaestro.Tasks
-  alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.Tasks.{Questionnaire, Task}
   alias PipeMaestro.TaskSources
   alias PipeMaestro.TaskSources.{Item, Origin}
   alias PipeMaestro.Workspaces.Workspace
@@ -61,6 +64,9 @@ defmodule PipeMaestro.Proposals do
   @prompt_bytes 30_000
   # What of an item's description a triage reads; the request takes up to 16 000.
   @description_bytes 12_000
+  # The "Outro" of each answer to a task proposal's questions: four of them,
+  # with the questions, stay under the round's feedback limit.
+  @other_bytes 1_500
   @kinds %{
     "project" => ProjectKind,
     "pipeline" => PipelineKind,
@@ -536,12 +542,11 @@ defmodule PipeMaestro.Proposals do
       {:error, reason} ->
         {:skip, reason}
 
-      {:ok, %{ready: false, questions: questions}} ->
+      {:ok, %{ready: false} = result} ->
         {:skip,
-         Enum.join(
-           ["O agente não considerou a tarefa pronta." | Enum.map(questions, &("- " <> &1))],
-           "\n"
-         )}
+         ["O agente não considerou a tarefa pronta.", questions_text(result)]
+         |> Enum.reject(&(&1 == ""))
+         |> Enum.join("\n\n")}
 
       {:ok, %{pipeline: nil, pipeline_name: name}} ->
         {:skip, "Nenhum pipeline do workspace corresponde ao sugerido pelo agente (\"#{name}\")."}
@@ -582,6 +587,92 @@ defmodule PipeMaestro.Proposals do
     |> Enum.flat_map(fn {_field, messages} -> messages end)
     |> Enum.join("; ")
   end
+
+  @doc """
+  The questions of a task proposal's result in plain Markdown, for a reason or
+  an issue comment: the questionnaire numbered, each question with its
+  options and the recommended one marked, or an older answer's phrases as a
+  list. Empty without questions.
+  """
+  @spec questions_text(map()) :: String.t()
+  def questions_text(%{questions: [_ | _] = questions}), do: Questionnaire.to_text(questions)
+
+  def questions_text(%{legacy_questions: [_ | _] = phrases}),
+    do: Enum.map_join(phrases, "\n", &("- " <> &1))
+
+  def questions_text(_result), do: ""
+
+  @doc """
+  Answers the questions of a task proposal (`answers`, one per question, as
+  `PipeMaestro.Tasks.Questionnaire` takes them) by asking a new round of it,
+  on behalf of `user`: the round's feedback carries each question with its
+  answer, for the agent to write them into the task. Only a proposal that
+  finished, asked questions and did not become a task yet is answered.
+  """
+  @spec answer_questions(User.t(), Workspace.t(), Job.t(), term()) ::
+          {:ok, Job.t()} | {:error, String.t()}
+  def answer_questions(%User{} = user, %Workspace{} = workspace, %Job{} = job, answers) do
+    with {:ok, questions} <- open_questions(job),
+         {:ok, answers} <- Questionnaire.validate_answers(questions, answers) do
+      attrs =
+        Map.merge(input(job), %{
+          "runner_id" => job.runner_id,
+          "feedback" => answers_feedback(questions, answers)
+        })
+
+      case request("task", user, workspace, attrs, job) do
+        {:ok, next} ->
+          Audit.record(workspace, user, "proposal.answered", next, %{"proposal_id" => job.id})
+          {:ok, next}
+
+        {:error, changeset} ->
+          {:error, "Não foi possível pedir de novo: " <> errors_text(changeset)}
+      end
+    end
+  end
+
+  defp open_questions(job) do
+    cond do
+      not proposal?(job) or kind(job) != "task" ->
+        {:error, "Só uma proposta de tarefa tem perguntas a responder."}
+
+      job.status != :succeeded ->
+        {:error, "A proposta ainda não terminou bem."}
+
+      created_task_id(job) ->
+        {:error, "Esta proposta já virou uma tarefa."}
+
+      true ->
+        case result(job) do
+          {:ok, %{questions: [_ | _] = questions}} -> {:ok, questions}
+          _none -> {:error, "Esta proposta não tem perguntas a responder."}
+        end
+    end
+  end
+
+  # Each question with its answer; a long "Outro" is cut, so every answer
+  # fits in the round's feedback (`PipeMaestro.Proposals.TaskKind` limits it).
+  defp answers_feedback(questions, answers) do
+    answers =
+      for answer <- answers do
+        %{
+          "escolhas" => Questionnaire.choices(answer),
+          "outro" => answer |> Questionnaire.other() |> cut_other()
+        }
+      end
+
+    """
+    ### Respostas às suas perguntas
+
+    #{Questionnaire.to_markdown(questions, answers)}
+
+    Incorpore estas respostas na descrição da tarefa (contexto, comportamento e critérios de
+    aceite) e não pergunte de novo o que já foi respondido.
+    """
+  end
+
+  defp cut_other(nil), do: nil
+  defp cut_other(text), do: Instructions.cut(text, @other_bytes)
 
   @doc "`value` when it is text, else `\"\"`: the agent's answer, read defensively."
   @spec text(term()) :: String.t()

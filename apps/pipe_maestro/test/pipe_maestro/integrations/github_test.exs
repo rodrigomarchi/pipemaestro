@@ -119,6 +119,13 @@ defmodule PipeMaestro.Integrations.GitHubTest do
                  "repository" => repo
                })
 
+      assert {:ok, %Event{pr: %{merged_at: ~U[2026-11-05 10:00:00Z]}}} =
+               GitHub.parse_event(headers("pull_request"), %{
+                 "action" => "closed",
+                 "pull_request" => Map.put(pr, "merged_at", "2026-11-05T10:00:00Z"),
+                 "repository" => repo
+               })
+
       assert {:ignore, "evento sem uso: push"} = GitHub.parse_event(headers("push"), %{})
     end
   end
@@ -323,6 +330,32 @@ defmodule PipeMaestro.Integrations.GitHubTest do
                {"lint", :pending},
                {"docs", :success}
              ]
+    end
+
+    test "lists the pull request's commits, every page", ctx do
+      commits = for n <- 1..45, do: PipeMaestro.FakeForgejo.commit_json("c#{n}")
+      FakeGitHub.edit_pull(ctx.fake, "acme/app", 1, &Map.put(&1, "commits", commits))
+
+      assert {:ok, listed} = GitHub.pr_commits(ctx.client, "acme/app", 1)
+      assert Enum.map(listed, & &1.sha) == Enum.map(1..45, &"c#{&1}")
+      assert hd(listed) == %{sha: "c1", parents: ["base"], committed_at: ~U[2026-11-01 12:00:00Z]}
+    end
+
+    test "the pull request says when it was merged or closed", ctx do
+      FakeGitHub.edit_pull(
+        ctx.fake,
+        "acme/app",
+        1,
+        &Map.merge(&1, %{
+          "state" => "closed",
+          "merged" => true,
+          "merged_at" => "2026-11-05T10:00:00Z",
+          "closed_at" => "2026-11-05T10:00:00Z"
+        })
+      )
+
+      assert {:ok, %{merged: true, merged_at: ~U[2026-11-05 10:00:00Z], closed_at: _}} =
+               GitHub.get_pr(ctx.client, "acme/app", 1)
     end
 
     test "merges with the method, refused when the head moved", ctx do

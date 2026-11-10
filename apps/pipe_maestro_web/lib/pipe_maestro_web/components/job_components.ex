@@ -436,6 +436,11 @@ defmodule PipeMaestroWeb.JobComponents do
   attr :event, Event, required: true
   attr :body, :string, required: true
 
+  # Without text (the retention took it), the header alone says what it was.
+  defp event_body(%{event: %Event{type: "assistant_text", data: data}} = assigns)
+       when not is_map_key(data, "text"),
+       do: ~H""
+
   defp event_body(%{event: %Event{type: "assistant_text"}} = assigns) do
     ~H"""
     <div class={[
@@ -670,6 +675,21 @@ defmodule PipeMaestroWeb.JobComponents do
     |> then(fn {short, long, structured} ->
       {Enum.reverse(short), Enum.reverse(long), Enum.reverse(structured)}
     end)
+  end
+
+  @doc """
+  The notice, once over a run's events, that the workspace's retention took
+  their content: each event keeps only its metadata.
+  """
+  attr :rest, :global
+
+  @spec events_pruned(map()) :: Phoenix.LiveView.Rendered.t()
+  def events_pruned(assigns) do
+    ~H"""
+    <.alert color="info" with_icon {@rest}>
+      Eventos com o conteúdo removido pela retenção do workspace: cada um guarda só o tipo, a ferramenta, a duração, os tokens, o custo e o erro.
+    </.alert>
+    """
   end
 
   @doc ~s(How the CLI signed in, from its `apiKeySource`: "none" is the login of whoever ran `claude`.)

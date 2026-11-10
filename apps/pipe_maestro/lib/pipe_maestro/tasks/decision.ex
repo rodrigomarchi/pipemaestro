@@ -5,6 +5,10 @@ defmodule PipeMaestro.Tasks.Decision do
   prompt run as a new stage of a task that ended), the
   instructions given, who decided and when.
 
+  A correction keeps who asked for it in `origin`: a person (on the screen
+  or in a comment), a review asking for changes on the pull request, or the
+  automatic merge (`PipeMaestro.Integrations.AutoMerge`).
+
   When the pause had a questionnaire (`PipeMaestro.Tasks.Questionnaire`),
   `questions` keeps its questions (`%{"perguntas" => [...]}`) and `answers`
   what the person answered (`%{"respostas" => [...]}`). `options` (the
@@ -17,6 +21,7 @@ defmodule PipeMaestro.Tasks.Decision do
   alias PipeMaestro.Tasks.Task
 
   @type action :: :retry | :advance | :cancel | :correct
+  @type origin :: :person | :review | :auto_merge
 
   @type t :: %__MODULE__{
           id: Ecto.UUID.t() | nil,
@@ -24,6 +29,7 @@ defmodule PipeMaestro.Tasks.Decision do
           question: String.t() | nil,
           options: [String.t()],
           action: action(),
+          origin: origin() | nil,
           choice: String.t() | nil,
           instructions: String.t() | nil,
           questions: map() | nil,
@@ -41,6 +47,7 @@ defmodule PipeMaestro.Tasks.Decision do
     field :question, :string
     field :options, {:array, :string}, default: []
     field :action, Ecto.Enum, values: [:retry, :advance, :cancel, :correct]
+    field :origin, Ecto.Enum, values: [:person, :review, :auto_merge]
     field :choice, :string
     field :instructions, :string
     field :questions, :map

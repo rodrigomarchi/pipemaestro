@@ -105,7 +105,10 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
             "perguntas" => [
               %{
                 "pergunta" => "Qual banco?",
-                "opcoes" => [%{"rotulo" => "Postgres"}, %{"rotulo" => "MySQL"}]
+                "opcoes" => [
+                  %{"rotulo" => "Postgres", "recomendada" => true},
+                  %{"rotulo" => "MySQL"}
+                ]
               }
             ]
           }
@@ -115,7 +118,7 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
 
       assert desired.label == "pipemaestro:aguardando-decisao"
       assert desired.comment =~ "faltou contexto"
-      assert desired.comment =~ "1. Qual banco? (Postgres · MySQL)"
+      assert desired.comment =~ "1. Qual banco? — Postgres (recomendada) · MySQL"
       assert desired.statuses == []
       assert {"decision:1:" <> _, text} = desired.notify
       assert text =~ "espera uma decisão"

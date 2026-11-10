@@ -36,7 +36,7 @@ pipeline volta para uma pessoa, que pede uma correção à mão.
   - `merged`;
   - `blocked`, com `merge_reason`.
 - **O que a plataforma olha, a cada minuto** (`AutoMergeWorker`) **e a cada mudança da
-  tarefa** (`FeedbackWorker`):
+  tarefa** (`IssueSource.task_changed/1`):
   - **Espera** enquanto:
     - o PR é rascunho;
     - a head do PR não é o último commit da tarefa;

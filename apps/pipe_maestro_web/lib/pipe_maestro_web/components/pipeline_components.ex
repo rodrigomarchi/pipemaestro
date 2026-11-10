@@ -1041,6 +1041,14 @@ defmodule PipeMaestroWeb.PipelineComponents do
               Merge sozinha ({merge_method_label(@pipeline.merge_method)}, até {@pipeline.max_merge_fixes} correções)
             </dd>
           </div>
+          <div
+            :if={@pipeline.auto_analysis == false}
+            class="flex items-center gap-1"
+            data-testid="pipeline-summary-no-analysis"
+          >
+            <dt><.icon name="hero-sparkles" class="size-4" /></dt>
+            <dd>Sem análise automática de falhas</dd>
+          </div>
         </dl>
         <div :if={@pipeline.system_prompt not in [nil, ""]}>
           <.block_heading icon="hero-command-line" title="Instruções de sistema" />

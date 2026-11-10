@@ -67,20 +67,21 @@ defmodule PipeMaestroRunner.GatesTest do
     assert runs(repo) == 3
   end
 
-  test "a file rewritten with the same size in the second the index was written is a change",
+  # Git rehashes a file whose stat matches its index entry only when the
+  # entry is as new as the index ("racily clean"); the copy of the index the
+  # tree is computed from must keep that.
+  test "a change of the same size, in the second the index was written, is seen",
        %{repo: repo} do
-    file = Path.join(repo, "lib.ex")
-    index = Path.join([repo, ".git", "index"])
-    past = System.os_time(:second) - 100
-    File.touch!(file, past)
+    second = 1_700_000_000
+    lib = Path.join(repo, "lib.ex")
+    File.touch!(lib, second)
     git!(repo, ["add", "lib.ex"])
-    File.touch!(index, past)
-    Gates.run(repo, [counting()])
+    File.touch!(Path.join([repo, ".git", "index"]), second)
+    assert [%{"passed" => true}] = Gates.run(repo, [counting()])
 
-    File.write!(file, "v2")
-    File.touch!(file, past)
-
-    assert [changed] = Gates.run(repo, [counting()])
+    File.write!(lib, "v2")
+    File.touch!(lib, second)
+    assert [%{"passed" => true} = changed] = Gates.run(repo, [counting()])
     refute changed["cached"]
     assert runs(repo) == 2
   end
@@ -164,8 +165,7 @@ defmodule PipeMaestroRunner.GatesTest do
 
   test "it hands each command's OS pid to whoever may stop it", %{repo: repo} do
     me = self()
-    # A command that ends at once may be gone before its pid is read.
-    Gates.run(repo, [gate("sleep 1")], on_os_pid: &send(me, {:pid, &1}))
+    Gates.run(repo, [counting()], on_os_pid: &send(me, {:pid, &1}))
     assert_received {:pid, pid} when is_integer(pid)
   end
 end

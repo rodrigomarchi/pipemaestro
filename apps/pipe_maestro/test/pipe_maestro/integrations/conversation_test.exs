@@ -4,8 +4,8 @@ defmodule PipeMaestro.Integrations.ConversationTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{Audit, FakeForgejo, Integrations, Repo, Runners, Tasks}
-  alias PipeMaestro.Integrations.{Connection, Delivery, Ingest}
-  alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.Integrations.{Connection, Delivery, Ingest, PrOutcome, PrOutcomes}
+  alias PipeMaestro.Tasks.{Decision, Task}
   alias PipeMaestro.TaskSources.Origin
 
   @fixtures Path.expand("../../support/fixtures/forgejo", __DIR__)
@@ -53,7 +53,14 @@ defmodule PipeMaestro.Integrations.ConversationTest do
         }
       )
 
-    %{workspace: workspace, user: user, fake: fake, connection: connection, task: task}
+    %{
+      workspace: workspace,
+      user: user,
+      fake: fake,
+      connection: connection,
+      task: task,
+      repo: repo
+    }
   end
 
   defp payload(name, changes) do
@@ -329,6 +336,164 @@ defmodule PipeMaestro.Integrations.ConversationTest do
 
       assert %Task{issue_feedback: %{"merged" => true}} = Repo.reload!(ctx.task)
       assert Enum.any?(comments(ctx), &(&1["body"] =~ "integrado ✅"))
+    end
+  end
+
+  describe "the pull request's outcome" do
+    setup ctx do
+      FakeForgejo.put_pull(ctx.fake, "acme/app", %{
+        "number" => 7,
+        "state" => "open",
+        "head" => %{"ref" => ctx.task.branch, "sha" => "p1"},
+        "base" => %{"ref" => "main"},
+        "html_url" => "https://forge.test/acme/app/pulls/7",
+        "commits" => [FakeForgejo.commit_json("p1")]
+      })
+
+      # The pipeline delivered p1 on PR 7 and the task ended: it is ready,
+      # with the pipeline's commits read.
+      task = delivered(ctx.task)
+      PrOutcomes.ready(task)
+      :ok = PrOutcomes.observe(task.id)
+      %{task: task}
+    end
+
+    defp delivered(task) do
+      task
+      |> Ecto.Changeset.change(
+        status: :succeeded,
+        head_sha: "p1",
+        pr_url: "https://forge.test/acme/app/pulls/7",
+        issue_feedback: %{"pr_number" => 7},
+        # Before the merge the payloads below date (2026-11-05).
+        finished_at: ~U[2026-11-04 10:00:00Z]
+      )
+      |> Repo.update!()
+    end
+
+    defp pr_payload(ctx, name, changes \\ %{}) do
+      payload(name, %{
+        "pull_request" => Map.merge(%{"head" => %{"ref" => ctx.task.branch}}, changes)
+      })
+    end
+
+    defp merge(ctx),
+      do:
+        deliver(
+          ctx,
+          "pull_request",
+          pr_payload(ctx, "pull_request_closed_merged", %{
+            "merged_at" => "2026-11-05T10:00:00Z",
+            "closed_at" => "2026-11-05T10:00:00Z"
+          })
+        )
+
+    defp outcome(ctx), do: PrOutcomes.get(ctx.task.id)
+
+    test "a commit the pipeline did not push, then the merge: accepted with changes", ctx do
+      FakeForgejo.edit_pull(
+        ctx.fake,
+        "acme/app",
+        7,
+        &Map.put(&1, "commits", [FakeForgejo.commit_json("p1"), FakeForgejo.commit_json("h1")])
+      )
+
+      assert %Delivery{status: "processed", outcome: "pull request integrado"} = merge(ctx)
+
+      assert %{
+               state: "merged",
+               merged_at: ~U[2026-11-05 10:00:00Z],
+               human_shas: ["h1"],
+               pipeline_shas: ["p1"],
+               commits_final: true
+             } = outcome(ctx)
+
+      assert PrOutcome.classify(outcome(ctx)) == :accepted_changed
+    end
+
+    test "merged as the pipeline left it: accepted without changes", ctx do
+      assert %Delivery{status: "processed"} = merge(ctx)
+      assert PrOutcome.classify(outcome(ctx)) == :accepted_clean
+      assert DateTime.diff(outcome(ctx).merged_at, outcome(ctx).ready_at) > 0
+    end
+
+    test "closed without merging is recorded, and starts nothing", ctx do
+      closed =
+        pr_payload(ctx, "pull_request_closed", %{"closed_at" => "2026-11-06T09:00:00Z"})
+
+      assert %Delivery{status: "processed", outcome: "pull request fechado sem integrar"} =
+               deliver(ctx, "pull_request", closed)
+
+      assert %{state: "closed", closed_at: ~U[2026-11-06 09:00:00Z], merged_at: nil} =
+               outcome(ctx)
+
+      assert PrOutcome.classify(outcome(ctx)) == :closed
+
+      task = Repo.reload!(ctx.task)
+      assert task.status == :succeeded
+      assert length(task.stages) == 2
+    end
+
+    test "a review that became a correction counts as a round, once, and changes the PR",
+         ctx do
+      review = pr_payload(ctx, "pull_request_review_rejected")
+
+      assert %Delivery{status: "processed", outcome: "correção pedida pelo review"} =
+               delivery = deliver(ctx, "pull_request_review_rejected", review)
+
+      assert %{review_rounds: 1} = outcome(ctx)
+
+      assert [%{action: :correct, origin: :review}] =
+               Repo.all(from d in Decision, where: d.task_id == ^ctx.task.id)
+
+      # The correction ends; the same review processed again (the
+      # reconciliation, a person's replay) is not a second round.
+      delivered(Repo.reload!(ctx.task))
+
+      assert %Delivery{status: "ignored", outcome: "review já aplicado"} =
+               Ingest.process(Repo.reload!(delivery))
+
+      assert {:ok, %Delivery{status: "ignored", outcome: "review já aplicado"}} =
+               Ingest.replay(Repo.reload!(delivery), ctx.user)
+
+      assert %{review_rounds: 1} = outcome(ctx)
+      assert Repo.aggregate(from(d in Decision, where: d.task_id == ^ctx.task.id), :count) == 1
+
+      assert %Delivery{status: "processed"} = merge(ctx)
+      assert %{human_shas: []} = outcome(ctx)
+      assert PrOutcome.classify(outcome(ctx)) == :accepted_changed
+    end
+
+    test "a correction a person asks for in a comment is no review round", ctx do
+      assert %Delivery{status: "processed"} =
+               comment(ctx, "/pipemaestro corrigir falta o teste do espaço")
+
+      assert %{review_rounds: 0} = outcome(ctx)
+
+      assert [%{action: :correct, origin: :person}] =
+               Repo.all(from d in Decision, where: d.task_id == ^ctx.task.id)
+    end
+
+    test "the same merge delivered again changes nothing", ctx do
+      FakeForgejo.edit_pull(
+        ctx.fake,
+        "acme/app",
+        7,
+        &Map.put(&1, "commits", [FakeForgejo.commit_json("p1"), FakeForgejo.commit_json("h1")])
+      )
+
+      delivery = merge(ctx)
+      before = outcome(ctx)
+
+      Ingest.process(Repo.reload!(delivery))
+      {:ok, _copy} = Ingest.replay(Repo.reload!(delivery), ctx.user)
+      :ok = PrOutcomes.observe(ctx.task.id)
+
+      after_all = outcome(ctx)
+      assert after_all.merged_at == before.merged_at
+      assert after_all.human_shas == ["h1"]
+      assert after_all.pipeline_shas == ["p1"]
+      assert after_all.review_rounds == before.review_rounds
     end
   end
 end

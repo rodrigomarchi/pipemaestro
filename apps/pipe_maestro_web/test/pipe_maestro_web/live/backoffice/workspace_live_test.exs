@@ -3,6 +3,7 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias PipeMaestro.Jobs.Files
   alias PipeMaestro.Workspaces
 
   setup :register_and_log_in_operator
@@ -72,6 +73,74 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLiveTest do
 
       assert %{slug: "renomeado", max_running_tasks: 3, runner_log_retention_days: 0} =
                Workspaces.get_workspace!(workspace.id)
+    end
+  end
+
+  describe "retention and files" do
+    test "edits the four policies, refusing invalid values with a message", %{conn: conn} do
+      workspace = workspace_fixture()
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}/edit")
+
+      assert has_element?(view, "[data-testid=workspace-files-retention]")
+      assert has_element?(view, "[data-testid=workspace-files-quota]")
+      assert has_element?(view, "[data-testid=workspace-events-retention]")
+      assert has_element?(view, "[data-testid=workspace-events-after]")
+
+      assert view
+             |> form("#workspace-form", workspace: %{job_files_retention_days: "0"})
+             |> render_submit() =~ "use de 1 a 3650 dias"
+
+      assert view
+             |> form("#workspace-form", workspace: %{job_files_quota_mib: "-1"})
+             |> render_submit() =~ "use um número positivo"
+
+      assert view
+             |> form("#workspace-form", workspace: %{agent_events_retention_days: "4000"})
+             |> render_submit() =~ "use de 1 a 3650 dias"
+
+      view
+      |> form("#workspace-form",
+        workspace: %{
+          job_files_retention_days: "90",
+          job_files_quota_mib: "1024",
+          agent_events_retention_days: "14",
+          agent_events_after_retention: "delete"
+        }
+      )
+      |> render_submit()
+
+      assert_patch(view, ~p"/backoffice/workspaces")
+
+      assert %{
+               job_files_retention_days: 90,
+               job_files_quota_mib: 1024,
+               agent_events_retention_days: 14,
+               agent_events_after_retention: :delete
+             } =
+               workspace.id
+               |> Workspaces.get_workspace!()
+               |> Map.take([
+                 :job_files_retention_days,
+                 :job_files_quota_mib,
+                 :agent_events_retention_days,
+                 :agent_events_after_retention
+               ])
+    end
+
+    test "the workspace's page shows its files against the quota", %{conn: conn} do
+      workspace = workspace_fixture()
+      user = member_fixture(workspace)
+      {runner, _token} = runner_fixture(workspace, user)
+      job = job_fixture(runner, user)
+      {:ok, _} = Files.store(runner, job.id, "a.bin", :binary.copy("a", 2 * 1_048_576))
+
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}")
+      assert has_element?(view, "[data-testid=workspace-files-usage]", "2 MiB, sem cota")
+
+      {:ok, _} = Workspaces.update_workspace(workspace, %{job_files_quota_mib: 1024})
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{workspace}")
+      assert has_element?(view, "[data-testid=workspace-files-usage]", "2 MiB de 1.024 MiB")
+      assert has_element?(view, "[data-testid=workspace-retention-policy]", "30 dias")
     end
   end
 

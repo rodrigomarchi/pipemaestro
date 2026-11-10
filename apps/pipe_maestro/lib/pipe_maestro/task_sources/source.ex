@@ -1,6 +1,6 @@
 defmodule PipeMaestro.TaskSources.Source do
   @moduledoc """
-  What a task source does (ADR 0053), registered under its key in
+  What a task source does (ADR 0056), registered under its key in
   `PipeMaestro.TaskSources`. A source:
 
   1. **receive the trigger**: a webhook (`receive_webhook/4`: checked,

@@ -66,6 +66,15 @@ defmodule PipeMaestro.FakeGitHub do
     update_repo(fake, name, &Map.update!(&1, :pulls, fn pulls -> Enum.map(pulls, edit) end))
   end
 
+  @doc """
+  Adds a pull request as the host has it. Its `"commits"` (oldest first,
+  as `PipeMaestro.FakeForgejo.commit_json/2` builds them) answer
+  `GET /pulls/:n/commits`.
+  """
+  @spec put_pull(pid(), String.t(), map()) :: :ok
+  def put_pull(fake, name, pull),
+    do: update_repo(fake, name, &Map.update!(&1, :pulls, fn pulls -> pulls ++ [pull] end))
+
   @doc "Adds a commit status, as a CI would."
   @spec put_status(pid(), String.t(), String.t(), String.t(), String.t()) :: :ok
   def put_status(fake, name, sha, context, state) do
@@ -454,6 +463,13 @@ defmodule PipeMaestro.FakeGitHub do
 
     update_repo(fake, full, &Map.update!(&1, :pulls, fn pulls -> Enum.map(pulls, edit) end))
     respond(conn, 200, Enum.find(repo(fake, full).pulls, &(&1["number"] == number)))
+  end
+
+  defp repo_path(conn, _fake, _token, _full, repo, "GET", ["pulls", number, "commits"]) do
+    case Enum.find(repo.pulls, &(to_string(&1["number"]) == number)) do
+      nil -> respond(conn, 404, %{"message" => "Not Found"})
+      pull -> respond(conn, 200, paged(conn, pull["commits"] || []))
+    end
   end
 
   defp repo_path(conn, _fake, _token, _full, repo, "GET", ["pulls", number]) do

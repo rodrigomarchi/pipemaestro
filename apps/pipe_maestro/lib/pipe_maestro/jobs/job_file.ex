@@ -7,6 +7,10 @@ defmodule PipeMaestro.Jobs.JobFile do
 
   `content` is never loaded by a query unless it asks for it
   (`PipeMaestro.Jobs.Files.get_for_download/2`), so listings stay light.
+
+  Past its workspace's retention, a file loses its content (`content` is
+  `nil`) and gets `pruned_at`; its path, size and type stay, so the task still
+  names it.
   """
   use PipeMaestro.Schema
 
@@ -21,6 +25,7 @@ defmodule PipeMaestro.Jobs.JobFile do
           byte_size: non_neg_integer() | nil,
           sha256: String.t() | nil,
           content: binary() | nil,
+          pruned_at: DateTime.t() | nil,
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
           job_id: Ecto.UUID.t() | nil,
@@ -37,6 +42,7 @@ defmodule PipeMaestro.Jobs.JobFile do
     field :byte_size, :integer
     field :sha256, :string
     field :content, :binary, load_in_query: false
+    field :pruned_at, :utc_datetime
 
     belongs_to :workspace, Workspace
     belongs_to :job, Job
@@ -44,4 +50,8 @@ defmodule PipeMaestro.Jobs.JobFile do
 
     timestamps()
   end
+
+  @doc "Whether the retention emptied the file: it keeps its name, not its content."
+  @spec pruned?(t()) :: boolean()
+  def pruned?(%__MODULE__{pruned_at: pruned_at}), do: not is_nil(pruned_at)
 end

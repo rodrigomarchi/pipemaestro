@@ -3,7 +3,8 @@ defmodule PipeMaestroWeb.UsageLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.Jobs
+  alias PipeMaestro.{Jobs, Workspaces}
+  alias PipeMaestro.Jobs.Files
 
   setup :register_and_log_in_member
 
@@ -158,5 +159,151 @@ defmodule PipeMaestroWeb.UsageLiveTest do
     # Anything not offered is ignored.
     view |> form("#usage-period", period: %{pipeline: "", days: "7"}) |> render_change()
     assert has_element?(view, "[data-testid=usage-total-runs]", "2")
+  end
+
+  test "shows the files against the quota and the retention in force, read only", %{
+    conn: conn,
+    workspace: workspace,
+    user: user
+  } do
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage")
+    assert has_element?(view, "[data-testid=usage-files-bytes]", "sem cota")
+    assert has_element?(view, "[data-testid=usage-retention]", "30 dias")
+    assert has_element?(view, "[data-testid=usage-retention]", "metadados")
+    assert has_element?(view, "[data-testid=usage-retention]", "sem limite")
+
+    {:ok, _} =
+      Workspaces.update_workspace(workspace, %{
+        job_files_quota_mib: 1024,
+        job_files_retention_days: 90,
+        agent_events_after_retention: "delete"
+      })
+
+    {runner, _token} = runner_fixture(workspace, user)
+    job = job_fixture(runner, user)
+    {:ok, _} = Files.store(runner, job.id, "a.bin", :binary.copy("a", 2 * 1_048_576))
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage")
+    assert has_element?(view, "[data-testid=usage-files-bytes]", "2 MiB de 1.024 MiB")
+    assert has_element?(view, "[data-testid=usage-retention]", "90 dias")
+    assert has_element?(view, "[data-testid=usage-retention]", "apagados")
+    refute has_element?(view, "[data-testid=usage-files] form")
+  end
+
+  describe "the quality tab" do
+    alias PipeMaestro.{FakeForgejo, Integrations, Repo, Tasks}
+    alias PipeMaestro.Integrations.PrOutcome
+    alias PipeMaestro.Tasks.{Decision, StageRun}
+
+    defp delivered(ctx, pipeline, project, state, attrs \\ []) do
+      {:ok, task} =
+        Tasks.create_task(ctx.user, ctx.workspace, %{
+          "title" => "T",
+          "prompt" => "p",
+          "pipeline_id" => pipeline.id,
+          "project_id" => project.id
+        })
+
+      ready_at = DateTime.add(DateTime.utc_now(:second), -86_400)
+
+      Repo.insert!(
+        struct!(PrOutcome,
+          task_id: task.id,
+          workspace_id: ctx.workspace.id,
+          linked_repo_id: ctx.repo.id,
+          pr_number: System.unique_integer([:positive]),
+          pr_url: "https://forge.test/acme/app/pulls/1",
+          ready_at: ready_at,
+          state: state,
+          merged_at: if(state == "merged", do: DateTime.add(ready_at, 7_200)),
+          closed_at: if(state != "open", do: DateTime.add(ready_at, 7_200)),
+          review_rounds: 0,
+          human_shas: Keyword.get(attrs, :human_shas, []),
+          pipeline_shas: ["p1"],
+          commits_tracked: true,
+          commits_final: true
+        )
+      )
+
+      task
+    end
+
+    setup %{workspace: workspace, user: user} do
+      FakeForgejo.start()
+      {runner, _token} = runner_fixture(workspace, user, %{name: "mac"})
+
+      runner =
+        with_directories(runner, [
+          %{"name" => "app", "git" => true},
+          %{"name" => "site", "git" => true}
+        ])
+
+      app = project_on(runner, "app")
+      site = project_on(runner, "site")
+
+      {:ok, repo} =
+        Integrations.link_repo(
+          connection_fixture(workspace),
+          user,
+          %{"full_name" => "acme/app", "project_id" => app.id},
+          "https://pm.test/hook"
+        )
+
+      %{
+        repo: repo,
+        app: app,
+        site: site,
+        entrega: pipeline_fixture(workspace, %{"name" => "Entrega"}),
+        outra: pipeline_fixture(workspace, %{"name" => "Outra"})
+      }
+    end
+
+    test "nothing delivered says so", %{conn: conn, workspace: workspace} do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage?aba=qualidade")
+
+      assert has_element?(view, "[data-testid=usage-panel-qualidade]:not(.hidden)")
+      assert has_element?(view, "[data-testid=usage-quality-empty]")
+      refute has_element?(view, "[data-testid=usage-quality-by-pipeline]")
+    end
+
+    test "the rates, by pipeline, the rework by stage and the stages that pause the most",
+         %{conn: conn, workspace: workspace} = ctx do
+      clean = delivered(ctx, ctx.entrega, ctx.app, "merged")
+      _human = delivered(ctx, ctx.entrega, ctx.app, "merged", human_shas: ["h1"])
+      _closed = delivered(ctx, ctx.outra, ctx.site, "closed")
+
+      Repo.insert!(%StageRun{task_id: clean.id, index: 0, key: "a", name: "Etapa A", attempt: 2})
+      Repo.insert!(struct!(Decision, task_id: clean.id, stage_index: 0, action: :retry))
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/usage?aba=qualidade")
+
+      refute has_element?(view, "[data-testid=usage-quality-empty]")
+      assert has_element?(view, "[data-testid=usage-quality-delivered]", "3")
+      assert has_element?(view, "[data-testid=usage-quality-clean]", "33%")
+      assert has_element?(view, "[data-testid=usage-quality-changed]", "33%")
+      assert has_element?(view, "[data-testid=usage-quality-closed]", "33%")
+      assert has_element?(view, "[data-testid=usage-quality-open]", "0")
+      assert has_element?(view, "[data-testid=usage-quality-merge-time]", "120 min")
+      assert has_element?(view, "[data-testid=usage-quality-pipeline-Entrega-clean]", "50%")
+      assert has_element?(view, "[data-testid=usage-quality-pipeline-Outra]")
+      assert has_element?(view, "[data-testid=usage-quality-stage-Entrega-a-retries]", "1")
+      assert has_element?(view, "[data-testid=usage-quality-stage-Entrega-a-redone]", "1")
+      assert has_element?(view, "[data-testid=usage-quality-pause-Entrega-a]", "1")
+
+      view |> form("#usage-period", period: %{pipeline: "Entrega"}) |> render_change()
+      assert has_element?(view, "[data-testid=usage-quality-clean]", "50%")
+      refute has_element?(view, "[data-testid=usage-quality-pipeline-Outra]")
+
+      view
+      |> form("#usage-period", period: %{pipeline: "", project_id: ctx.site.id})
+      |> render_change()
+
+      assert has_element?(view, "[data-testid=usage-quality-closed]", "100%")
+      assert has_element?(view, "[data-testid=usage-quality-clean]", "0%")
+      refute has_element?(view, "[data-testid=usage-quality-pipeline-Entrega]")
+
+      # Other tabs follow the project too.
+      assert has_element?(view, "[data-testid=usage-period-label]", "site")
+    end
   end
 end

@@ -1,6 +1,6 @@
 defmodule PipeMaestro.TaskSources do
   @moduledoc """
-  Where tasks come from, apart from where their code lives (ADR 0053).
+  Where tasks come from, apart from where their code lives (ADR 0056).
 
   A task source (`PipeMaestro.TaskSources.Source`) is registered under a key
   in the configuration:

@@ -1,6 +1,6 @@
 defmodule PipeMaestro.Repo.Migrations.AddTaskSource do
   @moduledoc """
-  The origin of a task, whatever its source (ADR 0053): `source` (the key of
+  The origin of a task, whatever its source (ADR 0056): `source` (the key of
   the source, `"git_issue"` for an issue of a git host), `source_id` (the
   item's id there), `source_url`, `source_ref` (what the source keeps of the
   item, the issue's `number`) and `pending_source_note` (a decision's note,

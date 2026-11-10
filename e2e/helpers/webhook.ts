@@ -68,3 +68,25 @@ export function issueCommentPayload(repo: string, issue: { number: number; title
     },
   };
 }
+
+/** A `pull_request` payload: the pull request `number` of `repo`, from `branch`, closed, merged or not. */
+export function pullRequestClosedPayload(repo: string, pull: { number: number; branch: string; merged: boolean }, baseUrl: string) {
+  const at = new Date().toISOString();
+
+  return {
+    action: "closed",
+    number: pull.number,
+    repository: { full_name: repo },
+    sender: { login: "ana" },
+    pull_request: {
+      number: pull.number,
+      state: "closed",
+      merged: pull.merged,
+      merged_at: pull.merged ? at : null,
+      closed_at: at,
+      html_url: `${baseUrl}/${repo}/pulls/${pull.number}`,
+      head: { ref: pull.branch },
+      base: { ref: "main" },
+    },
+  };
+}
