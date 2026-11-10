@@ -20,7 +20,7 @@ export class UsagePage {
   readonly clean: Locator;
   readonly changed: Locator;
   readonly closed: Locator;
-  readonly open: Locator;
+  readonly openCount: Locator;
   readonly mergeTime: Locator;
   readonly reviewRounds: Locator;
   readonly byPipeline: Locator;
@@ -37,7 +37,7 @@ export class UsagePage {
     this.clean = page.getByTestId("usage-quality-clean");
     this.changed = page.getByTestId("usage-quality-changed");
     this.closed = page.getByTestId("usage-quality-closed");
-    this.open = page.getByTestId("usage-quality-open");
+    this.openCount = page.getByTestId("usage-quality-open");
     this.mergeTime = page.getByTestId("usage-quality-merge-time");
     this.reviewRounds = page.getByTestId("usage-quality-review-rounds");
     this.byPipeline = page.getByTestId("usage-quality-by-pipeline");

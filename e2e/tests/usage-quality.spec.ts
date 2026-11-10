@@ -140,7 +140,7 @@ test.describe("The quality of the deliveries", () => {
     await expect(usage.delivered).toHaveText(/1/);
     await expect(usage.clean).toHaveText(/0%/);
     await expect(usage.closed).toHaveText(/0%/);
-    await expect(usage.open).toHaveText(/0/);
+    await expect(usage.openCount).toHaveText(/0/);
     await expect(usage.mergeTime).toBeVisible();
     await expect(usage.reviewRounds).toHaveText(/0/);
     await expect(usage.pipelineChanged("Correção de bug")).toHaveText("100%");
