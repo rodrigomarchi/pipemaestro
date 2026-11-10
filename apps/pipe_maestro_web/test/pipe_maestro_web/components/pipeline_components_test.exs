@@ -237,6 +237,17 @@ defmodule PipeMaestroWeb.PipelineComponentsTest do
       assert text(html, "[data-testid=pipeline-summary-agents]") =~ "revisor"
       assert count(html, "[data-testid=pipeline-summary-panel-avancado].hidden") == 1
     end
+
+    test "says when the automatic analysis of failures is off, and only then" do
+      on = %Pipeline{name: "Bug", delivery: "none"}
+      off = struct(on, auto_analysis: false)
+
+      html = render_component(&PipelineComponents.pipeline_summary/1, pipeline: on)
+      assert count(html, "[data-testid=pipeline-summary-no-analysis]") == 0
+
+      html = render_component(&PipelineComponents.pipeline_summary/1, pipeline: off)
+      assert text(html, "[data-testid=pipeline-summary-no-analysis]") =~ "análise"
+    end
   end
 
   describe "side_panel/1" do

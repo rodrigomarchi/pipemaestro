@@ -73,9 +73,9 @@ Cada tentativa é um `StageRun` com um job. Quando o job termina, o gate decide:
 | `succeeded`, saída `status: ok`, artefato e gates atendidos | `:passed` | `passed` | próxima etapa, sem aprovação ([ADR 0018](../adr/0018-etapas-autonomas.md)); `succeeded` se era a última | — |
 | o mesmo, mas uma regra da etapa casa com a saída estruturada | `{:paused, regra}` | `passed` | `awaiting_decision` | nenhum |
 | `succeeded`, saída `status: bloqueado` com `perguntas` válidas ou `opcoes` | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) | do agente |
-| `succeeded`, saída `status: bloqueado` sem nada a perguntar | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) | da análise |
+| `succeeded`, saída `status: bloqueado` sem nada a perguntar | `{:blocked, resumo}` | `blocked` | `awaiting_decision` (sem retentativa) | da análise (se ligada) |
 | `failed`, sem saída estruturada, sem artefato ou com um gate não atendido, com tentativas sobrando | `{:retry, erro}` | `failed` | nova tentativa da mesma etapa, com feedback | — |
-| o mesmo, sem tentativas sobrando | `{:exhausted, erro}` | `failed` | `awaiting_decision` | da análise |
+| o mesmo, sem tentativas sobrando | `{:exhausted, erro}` | `failed` | `awaiting_decision` | da análise (se ligada) |
 | `canceled` | `:canceled` | `canceled` | `canceled`; `awaiting_decision` se foi uma interrupção (`pause_requested`) | — |
 
 Uma pausa por orçamento ou a pedido (`pause_requested`) também não tem questionário.
@@ -120,7 +120,7 @@ gates não atendidos. O feedback fica no `StageRun` (`feedback`).
   - alguma bloqueou ou esgotou as tentativas: `awaiting_decision` com o motivo de
     cada uma. As perguntas das etapas bloqueadas se juntam num questionário (cada uma
     marcada com a sua etapa, `"etapa"`); sem nenhuma pergunta, a plataforma pede a
-    análise.
+    análise (se o pipeline a tiver ligada).
 
   A `current_stage` aponta para a primeira etapa do passo. `retry_stage` repete as
   que não passaram, e `advance` vai para o passo seguinte.
@@ -169,9 +169,13 @@ Valem só em `awaiting_decision`:
 Uma decisão reivindica a pausa num `UPDATE` condicional: de duas ao mesmo tempo, a
 segunda recebe `:not_awaiting`.
 
-**Análise automática.** Na pausa por falha, ou num bloqueio sem perguntas, a plataforma
-pede uma proposta `analysis` (`Tasks.request_analysis/1`) e guarda o job em
-`decision_analysis_job_id`. Quando ela termina com perguntas válidas, e a pausa ainda é a
-mesma, o diagnóstico e as perguntas viram o `decision_questionnaire` (origem `analise`).
+**Análise automática.** Na pausa por falha, ou num bloqueio sem perguntas, com o ajuste
+`auto_analysis` do pipeline ligado (o padrão; uma tarefa cujo `pipeline_context` não tem a
+chave conta como ligada), a plataforma pede uma proposta `analysis`
+(`Tasks.request_analysis/1`) e guarda o job em `decision_analysis_job_id`. Quando ela
+termina com perguntas válidas, e a pausa ainda é a mesma, o diagnóstico e as perguntas
+viram o `decision_questionnaire` (origem `analise`).
 Qualquer decisão, ou `redo_from`, cancela a análise ativa; o início de uma etapa e o fim
-da tarefa limpam `decision_questionnaire` e `decision_analysis_job_id`.
+da tarefa limpam `decision_questionnaire` e `decision_analysis_job_id`. Com o ajuste
+desligado, a pausa leva só o motivo, sem `decision_analysis_job_id`, e a pessoa decide à
+mão (ou pede "Sugerir com IA").

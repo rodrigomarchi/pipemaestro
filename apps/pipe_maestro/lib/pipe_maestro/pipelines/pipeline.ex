@@ -19,6 +19,10 @@ defmodule PipeMaestro.Pipelines.Pipeline do
   (`merge_method`: `"merge"`, `"squash"` or `"rebase"`); a check that fails
   or a conflict sends the task to a correction stage, up to
   `max_merge_fixes` times (`PipeMaestro.Integrations.AutoMerge`).
+  `auto_analysis` (on by default) has every pause for a failure, and every
+  block with nothing to ask, ask the agent for a diagnosis and questions
+  (`PipeMaestro.Proposals.AnalysisKind`, up to US$ 1 each); off, the task
+  pauses with the reason only.
 
   `version` goes up on every save. A task keeps a snapshot of the pipeline it
   started with, so editing one never changes a task already running.
@@ -45,6 +49,7 @@ defmodule PipeMaestro.Pipelines.Pipeline do
           auto_merge: boolean(),
           merge_method: String.t(),
           max_merge_fixes: non_neg_integer(),
+          auto_analysis: boolean(),
           stages: [Stage.t()],
           workspace_id: Ecto.UUID.t() | nil,
           workspace: Workspace.t() | Ecto.Association.NotLoaded.t(),
@@ -68,6 +73,7 @@ defmodule PipeMaestro.Pipelines.Pipeline do
     field :auto_merge, :boolean, default: false
     field :merge_method, :string, default: "squash"
     field :max_merge_fixes, :integer, default: 3
+    field :auto_analysis, :boolean, default: true
 
     embeds_many :stages, Stage, on_replace: :delete
 
@@ -93,7 +99,8 @@ defmodule PipeMaestro.Pipelines.Pipeline do
       :delivery,
       :auto_merge,
       :merge_method,
-      :max_merge_fixes
+      :max_merge_fixes,
+      :auto_analysis
     ])
     |> validate_inclusion(:delivery, ~w(none commit pr), message: "escolha como entregar")
     |> validate_inclusion(:merge_method, ~w(merge squash rebase),
@@ -152,7 +159,8 @@ defmodule PipeMaestro.Pipelines.Pipeline do
       "delivery" => pipeline.delivery,
       "auto_merge" => pipeline.auto_merge,
       "merge_method" => pipeline.merge_method,
-      "max_merge_fixes" => pipeline.max_merge_fixes
+      "max_merge_fixes" => pipeline.max_merge_fixes,
+      "auto_analysis" => pipeline.auto_analysis
     }
   end
 

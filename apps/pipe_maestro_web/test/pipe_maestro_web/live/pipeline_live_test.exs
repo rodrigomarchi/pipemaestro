@@ -269,6 +269,39 @@ defmodule PipeMaestroWeb.PipelineLiveTest do
            )
   end
 
+  test "the delivery tab turns the automatic analysis of failures off and keeps it", %{
+    conn: conn,
+    workspace: workspace
+  } do
+    pipeline = pipeline_fixture(workspace, %{"name" => "Análise"})
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+
+    view |> element("[data-testid=diagram-entry]") |> render_click()
+    view |> element("[data-testid=pipeline-panel-tab-entrega]") |> render_click()
+
+    assert has_element?(
+             view,
+             "[data-testid=pipeline-panel-panel-entrega] [data-testid=pipeline-auto-analysis][checked]"
+           )
+
+    assert render(view) =~ "Analisar falhas com IA"
+
+    {:error, {:live_redirect, _}} =
+      view
+      |> form("#pipeline-form", pipeline: %{auto_analysis: "false"})
+      |> render_submit()
+
+    assert %{auto_analysis: false} = Pipelines.get_pipeline!(workspace, pipeline.id)
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}/edit")
+    assert has_element?(view, "[data-testid=pipeline-auto-analysis]")
+    refute has_element?(view, "[data-testid=pipeline-auto-analysis][checked]")
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/pipelines/#{pipeline.id}")
+    view |> element("[data-testid=diagram-entry]") |> render_click()
+    assert has_element?(view, "[data-testid=pipeline-summary-no-analysis]")
+  end
+
   test "edits a pipeline, bumping its version, and deletes it", %{
     conn: conn,
     workspace: workspace

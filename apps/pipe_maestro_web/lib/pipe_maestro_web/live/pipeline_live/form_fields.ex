@@ -40,7 +40,14 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
   @entry_tabs [
     {"geral", "Geral", "hero-identification", [:name, :description, :system_prompt]},
     {"entrega", "Entrega", "hero-rocket-launch",
-     [:max_task_cost_usd, :delivery, :auto_merge, :merge_method, :max_merge_fixes]},
+     [
+       :max_task_cost_usd,
+       :auto_analysis,
+       :delivery,
+       :auto_merge,
+       :merge_method,
+       :max_merge_fixes
+     ]},
     {"avancado", "Avançado", "hero-puzzle-piece", [:mcp_config_json, :agents_json]}
   ]
 
@@ -155,8 +162,9 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
 
   attr :form, Phoenix.HTML.Form, required: true
 
-  # The pipeline's cost cap and delivery, with the platform's checks and, for
-  # a delivery in PR, whether the platform merges it.
+  # The pipeline's cost cap, whether failures are analysed by the agent, and
+  # the delivery, with the platform's checks and, for a delivery in PR,
+  # whether the platform merges it.
   defp execution_fields(assigns) do
     assigns = assign(assigns, delivery: delivery(assigns.form[:delivery].value))
 
@@ -170,6 +178,13 @@ defmodule PipeMaestroWeb.PipelineLive.FormFields do
       label="Teto de custo por tarefa (US$, opcional)"
       help_text="Vazio é sem limite. Com um valor, a tarefa para e pede uma decisão ao passar dele."
       data-testid="pipeline-max-cost"
+    />
+    <.field
+      field={@form[:auto_analysis]}
+      type="switch"
+      label="Analisar falhas com IA"
+      help_text="Cada pausa por falha pede ao agente um diagnóstico e perguntas (até US$ 1). Desligado, a tarefa pausa só com o erro."
+      data-testid="pipeline-auto-analysis"
     />
     <.icon_field
       field={@form[:delivery]}

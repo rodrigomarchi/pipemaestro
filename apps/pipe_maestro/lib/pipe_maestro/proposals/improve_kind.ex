@@ -283,13 +283,14 @@ defmodule PipeMaestro.Proposals.ImproveKind do
     attrs
     |> put_cap("max_task_cost_usd", pipeline.max_task_cost_usd)
     |> Map.merge(merge_settings(pipeline))
+    |> Map.put("auto_analysis", pipeline.auto_analysis)
     |> Map.update!("stages", fn stages ->
       Enum.map(stages, &put_cap(&1, "max_budget_usd", caps[&1["key"]]))
     end)
   end
 
-  # Merging the pull request is a person's choice: the improved pipeline
-  # keeps the current one's.
+  # Merging the pull request, like analysing failures, is a person's choice:
+  # the improved pipeline keeps the current one's.
   defp merge_settings(%Pipeline{auto_merge: true} = pipeline),
     do: %{
       "auto_merge" => true,
