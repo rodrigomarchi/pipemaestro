@@ -8,7 +8,7 @@ defmodule PipeMaestro.Jobs.Files do
   protocol's limits per file, per job and in number, and go away with their
   job. Listings never load the content; only a download does.
 
-  The workspace sets the rest (ADR 0053): a quota of MiB its files that still
+  The workspace sets the rest (ADR 0054): a quota of MiB its files that still
   have content may take (`workspace_usage/1`), past which an upload is refused
   and counted on the job (`files_refused_quota`), and a retention in days past
   which a file loses its content but keeps its name (`prune/2`).

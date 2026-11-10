@@ -1,4 +1,4 @@
-# 0053 — Retenção por workspace para anexos e eventos do agente
+# 0054 — Retenção por workspace para anexos e eventos do agente
 
 - **Status:** aceita
 - **Data:** 09/11/2026

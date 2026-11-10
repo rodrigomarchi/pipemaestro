@@ -57,7 +57,7 @@ desses arquivos na tarefa.
 - A tarefa mostra os arquivos de cada tentativa junto do artefato, com as imagens em
   miniatura, e a aba "Anexos" junta os de todas as etapas.
 - O banco cresce com o uso. A retenção (em dias) e a cota por workspace vieram depois,
-  no [ADR 0053](0053-retencao-por-workspace.md). Um anexo vencido perde o conteúdo e
+  no [ADR 0054](0054-retencao-por-workspace.md). Um anexo vencido perde o conteúdo e
   guarda o nome, e um upload além da cota volta com `413 quota_exceeded`.
 - O proxy na frente do control plane precisa aceitar corpos de até 10 MiB. O padrão do
   nginx é 1 MB (`client_max_body_size`). Enquanto não for ajustado, os arquivos maiores

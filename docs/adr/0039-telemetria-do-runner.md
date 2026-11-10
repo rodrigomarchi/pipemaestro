@@ -70,7 +70,8 @@ do runner não:
 5. **Eventos operacionais** (`runner_events`, 30 dias).
    - Uma linha de log pode trazer `event`, de uma lista fechada. O control plane a guarda
      também como evento. Do runner, vêm `update_applied`, `update_failed`,
-     `scratch_remove_failed`, `outbox_dropped`, `connection_lost` e `log_dropped`.
+     `scratch_remove_failed`, `outbox_dropped`, `connection_lost`, `log_dropped` e
+     `claude_sessions_not_found` (ADR 0053).
    - O control plane deriva eventos do `job:finished`. Isso vale também para runners
      antigos:
      - `setup_failed`;

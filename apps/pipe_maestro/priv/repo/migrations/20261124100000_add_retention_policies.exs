@@ -2,7 +2,7 @@ defmodule PipeMaestro.Repo.Migrations.AddRetentionPolicies do
   use Ecto.Migration
 
   def up do
-    # Each workspace's retention (ADR 0053): how long its files keep their
+    # Each workspace's retention (ADR 0054): how long its files keep their
     # content and how much they may take, and how long its agent's events stay
     # whole once their job ended, then what is left of them.
     alter table(:workspaces) do

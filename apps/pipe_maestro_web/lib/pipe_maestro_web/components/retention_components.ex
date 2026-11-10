@@ -1,6 +1,6 @@
 defmodule PipeMaestroWeb.RetentionComponents do
   @moduledoc """
-  A workspace's retention as people read it (ADR 0053): what its files take
+  A workspace's retention as people read it (ADR 0054): what its files take
   against its quota (`PipeMaestro.Jobs.Files.workspace_usage/1`) and the
   policies in force for its files and its agent's events. The backoffice and
   the members' usage page show the same text.

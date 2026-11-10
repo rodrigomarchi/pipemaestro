@@ -10,7 +10,7 @@ a [0012](../adr/0012-uso-papeis-auditoria-e-segredos.md); o protocolo, em
 ### Imagem
 
 ```bash
-make image        # docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .
+make image        # valida as versões e roda docker build --build-arg CP_VERSION=<versão> --build-arg RUNNER_VERSION=<versão> -t pipemaestro .
 ```
 
 A imagem roda `bin/server`: aplica as migrations pendentes e sobe o servidor web na
@@ -18,9 +18,15 @@ porta 4000.
 
 A imagem não leva o `.git`, então as versões entram por `--build-arg`: `CP_VERSION`, a
 do control plane (`make cp.version`), e `RUNNER_VERSION`, a versão de runner que ele
-exige (`make runner.version`). O `make image` calcula as duas. Num `docker build` feito
-à mão sem elas, as duas ficam `dev+unknown`, e o control plane não marca nenhum runner
-como desatualizado (seção 4).
+exige (`make runner.version`). O `make image` calcula as duas, imprime-as e confere que
+estão no esquema de versão (seção 4). Se o cálculo falhar (a compilação quebrada, por
+exemplo) ou se uma delas sair do esquema, inclusive vazia ou `dev+unknown`, ele para
+antes do `docker build` e diz qual versão falhou.
+
+Um `docker build` feito à mão sem as duas versões para antes de compilar e aponta o
+`make image`. Para um build local sem versão, passe `--build-arg ALLOW_UNVERSIONED=1`:
+as que faltam ficam `dev+unknown`, e o control plane não marca nenhum runner como
+desatualizado.
 
 ### Variáveis
 
@@ -67,7 +73,7 @@ reconecta sozinho, mas cada queda é uma reconexão à toa. O `client_max_body_s
 deixa passar os arquivos que os runners sobem dos jobs, de até 10 MiB cada. O padrão do
 nginx, 1 MB, os recusaria com 413. A recusa por cota do workspace também é um 413, mas
 vem do app, com o corpo `{"error": "quota_exceeded"}`
-([ADR 0053](../adr/0053-retencao-por-workspace.md)).
+([ADR 0054](../adr/0054-retencao-por-workspace.md)).
 
 ### Primeiro operador, workspace e pessoas
 

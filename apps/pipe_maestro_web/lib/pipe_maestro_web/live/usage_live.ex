@@ -9,7 +9,7 @@ defmodule PipeMaestroWeb.UsageLive do
   (`PipeMaestro.Insights`): tokens and cache, models, API, tools and
   permissions; how near each runner's account is to its usage limits; and,
   read only, what the workspace's files take against its quota and the
-  retention in force (`PipeMaestro.Jobs.Files`, ADR 0053).
+  retention in force (`PipeMaestro.Jobs.Files`, ADR 0054).
   In tabs (`?aba=`), first on the page: the overview (totals, cost by day,
   origin, account limits, then files and retention), the breakdown, the stages and how the agent worked;
   the filters stay in the top bar.

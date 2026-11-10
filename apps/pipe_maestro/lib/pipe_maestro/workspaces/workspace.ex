@@ -6,7 +6,7 @@ defmodule PipeMaestro.Workspaces.Workspace do
   `runner_log_retention_days` is how long its runners' log lines are kept
   (`PipeMaestro.RunnerTelemetry`); 0 keeps none, only their events.
 
-  Its retention of what the agent left (ADR 0053), applied by
+  Its retention of what the agent left (ADR 0054), applied by
   `PipeMaestro.Maintenance`:
 
     * `job_files_retention_days`: after how many days a job's file loses its

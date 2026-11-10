@@ -12,7 +12,7 @@ repositório `retro_hex_chat_infra`, do mesmo jeito que os outros apps Elixir de
   10 MiB cada, [ADR 0042](../adr/0042-arquivos-gerados-pela-etapa.md)). Com o padrão de
   1 MB, os maiores voltam com 413 e aparecem na tarefa como "não chegaram". Com 12m
   há folga sobre os 10 MiB (10.485.760 bytes). Uma recusa por cota do workspace
-  ([ADR 0053](../adr/0053-retencao-por-workspace.md)) **não** é um 413 do nginx: ela vem
+  ([ADR 0054](../adr/0054-retencao-por-workspace.md)) **não** é um 413 do nginx: ela vem
   do app, com o corpo JSON `{"error": "quota_exceeded", "quota_bytes"}`, e aparece na
   tarefa como "arquivos recusados".
 
