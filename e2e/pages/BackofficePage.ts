@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { acceptConfirms, waitForLiveView } from "../helpers/liveView";
 import { clickPageAction } from "../helpers/pageActions";
+import { shot } from "../helpers/screenshots";
 
 /**
  * The backoffice at /backoffice. Every element is reached by its
@@ -83,6 +84,46 @@ export class BackofficePage {
     await this.page.getByTestId("workspace-slug").fill(slug);
     await this.page.getByTestId("workspace-save").click();
     await this.expectToast(`Workspace ${name} atualizado.`);
+  }
+
+  /**
+   * On a workspace page: sets its retention policies and returns to the list.
+   * An empty string clears a field (no limit, no quota).
+   */
+  async setRetention(name: string, policy: {
+    filesDays?: string;
+    quotaMib?: string;
+    eventsDays?: string;
+    eventsAfter?: "metadata" | "delete";
+    /** Captures the filled form under this name (E2E_SHOTS). */
+    shot?: string;
+  }) {
+    await clickPageAction(this.page, "edit-workspace");
+    if (policy.filesDays !== undefined) {
+      await this.page.getByTestId("workspace-files-retention").fill(policy.filesDays);
+    }
+    if (policy.quotaMib !== undefined) {
+      await this.page.getByTestId("workspace-files-quota").fill(policy.quotaMib);
+    }
+    if (policy.eventsDays !== undefined) {
+      await this.page.getByTestId("workspace-events-retention").fill(policy.eventsDays);
+    }
+    if (policy.eventsAfter !== undefined) {
+      await this.page.getByTestId("workspace-events-after").selectOption(policy.eventsAfter);
+    }
+    if (policy.shot) await shot(this.page.getByTestId("workspace-name").locator("xpath=ancestor::form"), policy.shot);
+    await this.page.getByTestId("workspace-save").click();
+    await this.expectToast(`Workspace ${name} atualizado.`);
+  }
+
+  /** On a workspace page: what its files take, against its quota. */
+  get filesUsage(): Locator {
+    return this.page.getByTestId("workspace-files-usage");
+  }
+
+  /** On a workspace page: the retention policies in force. */
+  get retentionPolicy(): Locator {
+    return this.page.getByTestId("workspace-retention-policy");
   }
 
   /** On a workspace page: creates a user straight into it. */

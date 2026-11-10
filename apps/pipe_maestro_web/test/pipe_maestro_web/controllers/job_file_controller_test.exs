@@ -1,8 +1,10 @@
 defmodule PipeMaestroWeb.JobFileControllerTest do
   use PipeMaestroWeb.ConnCase, async: true
 
-  alias PipeMaestro.Jobs.Files
-  alias PipeMaestro.Tasks
+  import Ecto.Query
+
+  alias PipeMaestro.Jobs.{Files, JobFile}
+  alias PipeMaestro.{Repo, Tasks, Workspaces}
 
   # A PNG of 1×1 pixel.
   @png Base.decode64!(
@@ -89,5 +91,16 @@ defmodule PipeMaestroWeb.JobFileControllerTest do
     file = store(ctx, "a.png", @png)
     conn = get(build_conn(), "/w/#{ctx.workspace.slug}/files/#{file.id}")
     assert redirected_to(conn) =~ "/login"
+  end
+
+  test "410 for a file the retention emptied, with a plain message", ctx do
+    {:ok, _} = Workspaces.update_workspace(ctx.workspace, %{job_files_retention_days: 1})
+    file = store(ctx, "telas/login.png", @png)
+    at = DateTime.add(DateTime.utc_now(:second), -2, :day)
+    Repo.update_all(from(f in JobFile, where: f.id == ^file.id), set: [inserted_at: at])
+    assert Files.prune(DateTime.utc_now()) == 1
+
+    conn = download(ctx, file)
+    assert response(conn, 410) =~ "removido pela retenção"
   end
 end
