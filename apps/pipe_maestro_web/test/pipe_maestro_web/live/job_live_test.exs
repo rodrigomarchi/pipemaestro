@@ -3,7 +3,7 @@ defmodule PipeMaestroWeb.JobLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.Jobs
+  alias PipeMaestro.{Jobs, Maintenance, Repo}
 
   setup :register_and_log_in_member
 
@@ -306,6 +306,80 @@ defmodule PipeMaestroWeb.JobLiveTest do
     assert has_element?(view, "[data-testid=job-audit-api-refusals]", "1 recusa")
     assert has_element?(view, "[data-testid=job-audit-active-time]", "1 min 30 s")
     assert has_element?(view, "[data-testid=job-audit-timing-gates]", "3 s")
+  end
+
+  test "a run whose events the retention emptied shows each event's metadata, and says so once",
+       %{conn: conn, workspace: workspace, runner: runner, job: job} do
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+
+    for {{type, data}, seq} <-
+          Enum.with_index(
+            [
+              {"system", %{"text" => "Sessão iniciada", "model" => "claude-sonnet-5-5"}},
+              {"assistant_text", %{"text" => "Vou ler o segredo", "usage" => %{"output" => 3}}},
+              {"thinking", %{"text" => "hmm", "duration_ms" => 400}},
+              {"tool_use",
+               %{
+                 "id" => "t1",
+                 "name" => "Bash",
+                 "text" => "cat segredo.ex",
+                 "input" => %{"command" => "cat segredo.ex"}
+               }},
+              {"tool_result",
+               %{"tool_use_id" => "t1", "text" => "defmodule Segredo", "is_error" => true}},
+              {"api_retry", %{"attempt" => 1, "error" => "overloaded", "text" => "Tentativa 1"}},
+              {"compact", %{"trigger" => "auto", "pre_tokens" => 9000, "text" => "Compactada"}},
+              {"permission_denied",
+               %{"tool_name" => "Write", "tool_use_id" => "t2", "text" => "Negada"}},
+              {"rate_limit", %{"status" => "allowed", "utilization" => %{"five_hour" => 0.2}}},
+              {"result",
+               %{
+                 "text" => "Pronto: segredo lido",
+                 "is_error" => false,
+                 "subtype" => "success",
+                 "cost_usd" => 0.42,
+                 "duration_ms" => 1200
+               }}
+            ],
+            1
+          ) do
+      {:ok, _} = Jobs.append_event(runner, job.id, event(seq, type, data))
+    end
+
+    {:ok, _} = Jobs.finish_job(runner, job.id, %{"status" => "succeeded", "cost_usd" => 0.42})
+
+    job
+    |> Ecto.Changeset.change(finished_at: DateTime.add(DateTime.utc_now(:second), -40, :day))
+    |> Repo.update!()
+
+    Maintenance.run(DateTime.utc_now())
+
+    {:ok, view, html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+
+    assert has_element?(
+             view,
+             "[data-testid=job-events-pruned]",
+             "conteúdo removido pela retenção"
+           )
+
+    assert count(view, "[data-testid=job-events-pruned]") == 1
+    assert has_element?(view, "[data-testid=job-event-count]", "10 eventos")
+    assert has_element?(view, "[data-testid=job-event-icon-4][data-type=tool_use]")
+    assert has_element?(view, "[data-testid=job-event-panel-4]", "Bash")
+    refute html =~ "segredo"
+  end
+
+  test "a run with its events whole does not speak of retention", %{
+    conn: conn,
+    workspace: workspace,
+    runner: runner,
+    job: job
+  } do
+    {:ok, _} = Jobs.mark_started(runner, job.id)
+    {:ok, _} = Jobs.append_event(runner, job.id, event(1, "assistant_text", %{"text" => "oi"}))
+
+    {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}/jobs/#{job.id}")
+    refute has_element?(view, "[data-testid=job-events-pruned]")
   end
 
   test "while it runs, shows what it spent so far", %{

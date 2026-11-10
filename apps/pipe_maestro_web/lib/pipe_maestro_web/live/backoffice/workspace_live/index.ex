@@ -199,6 +199,43 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
             help_text="Quanto tempo o log que os runners enviam fica guardado. Com 0, nenhuma linha é guardada, só os eventos."
             data-testid="workspace-runner-log-retention"
           />
+          <.icon_field
+            field={@form[:job_files_retention_days]}
+            icon="hero-paper-clip"
+            type="number"
+            min="1"
+            max="3650"
+            label="Dias de conteúdo dos anexos (opcional)"
+            help_text="Depois desse prazo, o anexo fica só com o nome. Em branco, o conteúdo fica sem limite."
+            data-testid="workspace-files-retention"
+          />
+          <.icon_field
+            field={@form[:job_files_quota_mib]}
+            icon="hero-circle-stack"
+            type="number"
+            min="1"
+            label="Cota de anexos, em MiB (opcional)"
+            help_text="Passada a cota, o runner tem os novos anexos recusados. Em branco, sem cota."
+            data-testid="workspace-files-quota"
+          />
+          <.icon_field
+            field={@form[:agent_events_retention_days]}
+            icon="hero-chat-bubble-left-right"
+            type="number"
+            min="1"
+            max="3650"
+            label="Dias de eventos completos do agente"
+            help_text="Por quanto tempo, depois do fim do job, os eventos guardam o texto e os argumentos."
+            data-testid="workspace-events-retention"
+          />
+          <.icon_field
+            field={@form[:agent_events_after_retention]}
+            icon="hero-archive-box"
+            type="select"
+            label="Depois desse prazo"
+            options={[{"Manter só os metadados", "metadata"}, {"Apagar os eventos", "delete"}]}
+            data-testid="workspace-events-after"
+          />
           <div class="flex flex-wrap justify-end gap-2">
             <.button
               to={~p"/backoffice/workspaces"}

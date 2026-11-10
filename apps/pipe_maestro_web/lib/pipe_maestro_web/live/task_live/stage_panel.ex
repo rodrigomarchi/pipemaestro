@@ -294,6 +294,7 @@ defmodule PipeMaestroWeb.TaskLive.StagePanel do
             prompt={@stage.prompt}
             tab={@tab}
             workspace_slug={@slug}
+            quota_bytes={@quota_bytes}
             target={@myself}
           />
         </div>

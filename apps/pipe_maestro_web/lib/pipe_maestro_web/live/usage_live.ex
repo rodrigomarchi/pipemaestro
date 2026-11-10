@@ -7,9 +7,11 @@ defmodule PipeMaestroWeb.UsageLive do
   runs show which stages retry the most and the averages show how long runs
   wait for their runner and spend in gates; how the agent worked
   (`PipeMaestro.Insights`): tokens and cache, models, API, tools and
-  permissions; and how near each runner's account is to its usage limits.
+  permissions; how near each runner's account is to its usage limits; and,
+  read only, what the workspace's files take against its quota and the
+  retention in force (`PipeMaestro.Jobs.Files`, ADR 0054).
   In tabs (`?aba=`), first on the page: the overview (totals, cost by day,
-  origin, account limits), the breakdown, the stages and how the agent worked;
+  origin, account limits, then files and retention), the breakdown, the stages and how the agent worked;
   the filters stay in the top bar.
   """
   use PipeMaestroWeb, :live_view
@@ -19,10 +21,12 @@ defmodule PipeMaestroWeb.UsageLive do
 
   import PipeMaestroWeb.AuditComponents, only: [workspace_audit: 1]
 
+  import PipeMaestroWeb.RetentionComponents, only: [files_usage: 1, retention_policy: 1]
   import PipeMaestroWeb.RunnerComponents, only: [rate_limit: 1]
   import PipeMaestroWeb.TabComponents, only: [page_tabs: 1, tab_panel: 1]
 
   alias PipeMaestro.{Insights, Pipelines, Proposals, Runners, Usage}
+  alias PipeMaestro.Jobs.Files
   alias PipeMaestroWeb.{PipelineExplorer, TabComponents}
 
   @periods ~w(7 30 90)
@@ -35,6 +39,7 @@ defmodule PipeMaestroWeb.UsageLive do
      socket
      |> assign(page_title: "Uso e limites", days: 7, pipeline: "")
      |> assign(pipelines: Usage.pipeline_names(workspace))
+     |> assign(files_usage: Files.workspace_usage(workspace))
      |> load()}
   end
 
@@ -290,6 +295,17 @@ defmodule PipeMaestroWeb.UsageLive do
               </.card_content>
             </.card>
           </div>
+
+          <.card variant="outline" data-testid="usage-files">
+            <.card_header
+              title="Anexos e retenção"
+              description="O que os anexos das etapas ocupam e por quanto tempo o conteúdo fica guardado. Só a equipe do PipeMaestro altera."
+            />
+            <.card_content class="space-y-4">
+              <.files_usage usage={@files_usage} testid="usage-files-bytes" />
+              <.retention_policy workspace={@current_scope.workspace} data-testid="usage-retention" />
+            </.card_content>
+          </.card>
         </.tab_panel>
 
         <.tab_panel id="detalhamento" active={@tab} testid="usage">

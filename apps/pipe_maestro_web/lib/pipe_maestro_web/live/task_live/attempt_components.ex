@@ -17,6 +17,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
 
   import PipeMaestroWeb.JobComponents,
     only: [
+      events_pruned: 1,
       steps: 1,
       timeline_items: 2,
       timeline_segment: 1,
@@ -28,7 +29,10 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
     ]
 
   import PipeMaestroWeb.AgentOutput, only: [agent_output: 1]
-  import PipeMaestroWeb.JobFileComponents, only: [files: 1, files_failed: 1]
+
+  import PipeMaestroWeb.JobFileComponents,
+    only: [files: 1, files_failed: 1, files_refused_quota: 1]
+
   import PipeMaestroWeb.QuestionnaireComponents, only: [answer_list: 1]
 
   import PipeMaestroWeb.TaskComponents,
@@ -82,6 +86,7 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   attr :prompt, :string, default: nil, doc: "the stage's prompt, what the agent was given"
   attr :tab, :string, default: nil, doc: "the tab chosen (`tabs/3`); `default_tab/1` when nil"
   attr :workspace_slug, :string, required: true
+  attr :quota_bytes, :integer, default: nil, doc: "the workspace's quota of files, in bytes"
   attr :target, :any, default: nil, doc: "where the attempt's own events go (`phx-target`)"
 
   @spec attempt(map()) :: Phoenix.LiveView.Rendered.t()
@@ -177,7 +182,12 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
           </div>
           <.run_summary run={@run} />
           <.artifact :if={@run.artifact} run={@run} raw_artifact={@raw_artifact} target={@target} />
-          <.run_files run={@run} files={@files} workspace_slug={@workspace_slug} />
+          <.run_files
+            run={@run}
+            files={@files}
+            workspace_slug={@workspace_slug}
+            quota_bytes={@quota_bytes}
+          />
           <.run_answer run={@run} />
           <p
             :if={!@live and !@run.artifact and !@run.summary and !plain_result?(@run)}
@@ -375,22 +385,33 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   attr :run, StageRun, required: true
   attr :files, :list, required: true
   attr :workspace_slug, :string, required: true
+  attr :quota_bytes, :integer, default: nil
 
-  # The files the attempt's job sent, beside its artifact, and how many did not
-  # arrive.
+  # The files the attempt's job sent, beside its artifact, how many the
+  # workspace's quota refused and how many else did not arrive (the runner
+  # counts the refused ones among those).
   @spec run_files(map()) :: Phoenix.LiveView.Rendered.t()
   defp run_files(assigns) do
-    assigns = assign(assigns, failed: (assigns.run.job && assigns.run.job.files_failed) || 0)
+    job = assigns.run.job
+    refused = (job && job.files_refused_quota) || 0
+    failed = max(((job && job.files_failed) || 0) - refused, 0)
+    assigns = assign(assigns, failed: failed, refused: refused)
 
     ~H"""
     <div
-      :if={@files != [] or @failed > 0}
+      :if={@files != [] or @failed > 0 or @refused > 0}
       class="space-y-2"
       data-testid={"stage-run-files-#{@run.key}-#{@run.attempt}"}
     >
       <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
         Arquivos
       </p>
+      <.files_refused_quota
+        :if={@refused > 0}
+        count={@refused}
+        quota_bytes={@quota_bytes}
+        data-testid={"stage-run-files-refused-#{@run.key}-#{@run.attempt}"}
+      />
       <.files_failed
         :if={@failed > 0}
         count={@failed}
@@ -459,7 +480,11 @@ defmodule PipeMaestroWeb.TaskLive.AttemptComponents do
   @spec run_steps(map()) :: Phoenix.LiveView.Rendered.t()
   defp run_steps(assigns) do
     ~H"""
-    <div>
+    <div class="space-y-3">
+      <.events_pruned
+        :if={@run.job.events_pruned_at}
+        data-testid={"stage-run-events-pruned-#{run_ref(@run)}"}
+      />
       <.button
         :if={!@steps}
         size="xs"
