@@ -1,27 +1,42 @@
 defmodule PipeMaestroRunner.Disk do
   @moduledoc """
   The space the runner's task worktrees take, in the wire form of
-  `PipeMaestroProtocol.Worktree`'s `worktree:usage`. Measured with `du`
-  and `df`, so it may take a moment on large worktrees: call it off any
-  process that must stay responsive.
+  `PipeMaestroProtocol.Worktree`'s `worktree:usage`: the worktrees and the
+  agent CLI's sessions of each (`PipeMaestroRunner.ClaudeSessions`), which go
+  with it. Measured with `du` and `df`, so it may take a moment on large
+  worktrees: call it off any process that must stay responsive.
   """
 
-  @doc "How many worktrees `workdir` keeps, their size and the free space."
-  @spec usage(Path.t()) :: %{String.t() => non_neg_integer() | nil}
-  def usage(workdir) do
+  alias PipeMaestroRunner.ClaudeSessions
+
+  @doc """
+  How many worktrees `workdir` keeps, their size (with the CLI's sessions of
+  each, under `claude_projects`) and the free space.
+  """
+  @spec usage(Path.t(), Path.t()) :: %{String.t() => non_neg_integer() | nil}
+  def usage(workdir, claude_projects \\ ClaudeSessions.projects_root()) do
     dir = Path.join(workdir, "worktrees")
 
-    count =
+    tasks =
       case File.ls(dir) do
-        {:ok, names} -> Enum.count(names, &File.dir?(Path.join(dir, &1)))
-        {:error, _reason} -> 0
+        {:ok, names} -> Enum.filter(names, &File.dir?(Path.join(dir, &1)))
+        {:error, _reason} -> []
       end
 
     %{
-      "count" => count,
-      "bytes" => if(count > 0, do: kilobytes(System.cmd("du", ["-sk", dir])), else: 0),
+      "count" => length(tasks),
+      "bytes" => worktree_bytes(dir, tasks) + session_bytes(workdir, tasks, claude_projects),
       "free_bytes" => free_bytes(workdir)
     }
+  end
+
+  defp worktree_bytes(_dir, []), do: 0
+  defp worktree_bytes(dir, _tasks), do: kilobytes(System.cmd("du", ["-sk", dir])) || 0
+
+  defp session_bytes(workdir, tasks, claude_projects) do
+    tasks
+    |> Enum.map(&ClaudeSessions.bytes(claude_projects, ClaudeSessions.task_cwd(workdir, &1)))
+    |> Enum.sum()
   end
 
   defp free_bytes(path) do
