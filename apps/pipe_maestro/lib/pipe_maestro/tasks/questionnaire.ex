@@ -259,6 +259,32 @@ defmodule PipeMaestro.Tasks.Questionnaire do
     end)
   end
 
+  @doc """
+  A question in one line, for plain Markdown (an issue comment, a reason):
+  the question, then its options, the recommended one marked.
+  """
+  @spec question_text(question()) :: String.t()
+  def question_text(question) do
+    options =
+      Enum.map_join(question["opcoes"] || [], " · ", fn option ->
+        if option["recomendada"],
+          do: "#{option["rotulo"]} (recomendada)",
+          else: option["rotulo"]
+      end)
+
+    if options == "",
+      do: question["pergunta"],
+      else: "#{question["pergunta"]} — #{options}"
+  end
+
+  @doc "The questions numbered, one per line (`question_text/1`); empty without any."
+  @spec to_text([question()]) :: String.t()
+  def to_text(questions) do
+    questions
+    |> Enum.with_index(1)
+    |> Enum.map_join("\n", fn {question, n} -> "#{n}. #{question_text(question)}" end)
+  end
+
   @doc "An answer in words: the choices and the \"Outro\" text, or that it went unanswered."
   @spec answer_text(answer() | nil) :: String.t()
   def answer_text(answer) do

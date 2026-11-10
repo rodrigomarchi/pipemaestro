@@ -218,4 +218,31 @@ defmodule PipeMaestro.Tasks.QuestionnaireTest do
     assert text =~ "Decisões"
     assert text =~ "e o menu"
   end
+
+  describe "question_text/1 and to_text/1" do
+    test "a question reads with its options, the recommended one marked" do
+      {:ok, [normalized]} = Questionnaire.normalize([question()])
+      text = Questionnaire.question_text(normalized)
+
+      assert text =~ "Em qual navegador reproduz?"
+      assert text =~ "Safari 17 (recomendada)"
+      assert text =~ "Chrome"
+      refute text =~ "Chrome (recomendada)"
+    end
+
+    test "a question without options is just the question" do
+      assert Questionnaire.question_text(%{"pergunta" => "Por quê?", "opcoes" => []}) ==
+               "Por quê?"
+    end
+
+    test "to_text/1 numbers the questions, one per line, for the host's Markdown" do
+      other = question(%{"pergunta" => "Qual o limite de logins?"})
+      {:ok, questions} = Questionnaire.normalize([question(), other])
+
+      assert [first, second] = String.split(Questionnaire.to_text(questions), "\n")
+      assert first =~ ~r/^1\. .*Em qual navegador reproduz\?/
+      assert second =~ ~r/^2\. .*Qual o limite de logins\?/
+      assert Questionnaire.to_text([]) == ""
+    end
+  end
 end

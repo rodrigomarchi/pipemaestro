@@ -2,7 +2,7 @@ defmodule PipeMaestro.Proposals.Instructions do
   @moduledoc """
   The parts of a proposal's prompts that the kinds share: how a PipeMaestro
   pipeline works, how to study a project, and how a new round revises the
-  last proposal with the person's comment.
+  last proposal with the person's comment or answers.
   """
 
   alias PipeMaestro.Pipelines
@@ -102,11 +102,11 @@ defmodule PipeMaestro.Proposals.Instructions do
 
   defp feedback_section(feedback) when is_binary(feedback) and feedback != "" do
     """
-    ## O que a pessoa pediu para ajustar
+    ## O que a pessoa pediu para ajustar ou respondeu
 
     #{feedback}
 
-    Refaça a proposta com esse ajuste, mantendo o que estava bom.
+    Refaça a proposta com isso, mantendo o que estava bom.
     """
   end
 

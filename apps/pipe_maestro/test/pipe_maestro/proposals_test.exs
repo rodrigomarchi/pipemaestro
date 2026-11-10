@@ -5,7 +5,7 @@ defmodule PipeMaestro.ProposalsTest do
 
   alias PipeMaestro.{Audit, Jobs, Pipelines, Projects, Proposals, Runners, Tasks, Workspaces}
   alias PipeMaestro.Pipelines.{Prompt, Stage}
-  alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind, Instructions, PipelineKind}
+  alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind, Instructions, PipelineKind, TaskKind}
   alias PipeMaestro.Tasks.Task
   alias PipeMaestroProtocol.Job, as: WireJob
 
@@ -70,6 +70,36 @@ defmodule PipeMaestro.ProposalsTest do
 
   defp succeed(ctx, job, output),
     do: finish(ctx, job, %{"status" => "succeeded", "structured_output" => output})
+
+  # Questions as the agent asks them (ADR 0029): the recommended option last,
+  # to see it come first, and a title over 12 characters, to see it cut.
+  defp structured_questions do
+    [
+      %{
+        "titulo" => "Timeout do login",
+        "pergunta" => "Qual o timeout aceitável?",
+        "multipla" => false,
+        "opcoes" => [
+          %{"rotulo" => "30 segundos", "descricao" => "Folgado.", "recomendada" => false},
+          %{
+            "rotulo" => "5 segundos sob qualquer carga no servidor",
+            "descricao" => "O que o produto pede.",
+            "recomendada" => true,
+            "preview" => "```elixir\n@timeout 5_000\n```"
+          }
+        ]
+      },
+      %{
+        "titulo" => "Telas",
+        "pergunta" => "Quais telas mostram o erro?",
+        "multipla" => true,
+        "opcoes" => [
+          %{"rotulo" => "Login", "descricao" => "A de entrada.", "recomendada" => true},
+          %{"rotulo" => "Cadastro", "descricao" => "A de conta nova.", "recomendada" => false}
+        ]
+      }
+    ]
+  end
 
   defp task_output do
     %{
@@ -248,7 +278,8 @@ defmodule PipeMaestro.ProposalsTest do
       assert result.title == "Destravar o login sob carga"
       assert result.pipeline.id == pipeline.id
       refute result.ready
-      assert result.questions == ["Qual o timeout aceitável?"]
+      assert result.questions == []
+      assert result.legacy_questions == ["Qual o timeout aceitável?"]
 
       assert result.task_params == %{
                "title" => "Destravar o login sob carga",
@@ -392,6 +423,215 @@ defmodule PipeMaestro.ProposalsTest do
       output = %{task_output() | "pipeline" => "Correção de bug"}
       assert {:ok, result} = Proposals.result(succeed(ctx, job, output))
       assert result.pipeline.id == suggested.id
+    end
+  end
+
+  describe "task: structured questions (ADR 0029)" do
+    setup ctx do
+      %{pipeline: pipeline_fixture(ctx.workspace, %{"name" => "Correção de bug"})}
+    end
+
+    defp not_ready(questions),
+      do: %{task_output() | "pronta" => false, "perguntas" => questions}
+
+    defp answered_proposal(ctx, attrs \\ %{}) do
+      {:ok, job} =
+        ask(
+          ctx,
+          "task",
+          Map.merge(%{"request" => "O login trava", "auto_approve" => "false"}, attrs)
+        )
+
+      succeed(ctx, job, not_ready(structured_questions()))
+    end
+
+    defp both_answered,
+      do: [
+        %{"escolhas" => ["5 segundos sob qualquer carga"], "outro" => nil},
+        %{"escolhas" => [], "outro" => "Só no app móvel"}
+      ]
+
+    test "the schema asks for the questionnaire of the stages" do
+      assert TaskKind.schema()["properties"]["perguntas"] == Prompt.questions_schema()
+      refute "perguntas" in TaskKind.schema()["required"]
+    end
+
+    test "the system prompt teaches how to ask", ctx do
+      {:ok, job} = ask(ctx, "task", %{"request" => "x"})
+      prompt = job.context["system_prompt"]
+
+      assert prompt =~ "recomendada"
+      assert prompt =~ "`pronta`"
+      assert prompt =~ "Outro"
+    end
+
+    test "valid questions come normalized: recommended first, labels and titles cut", ctx do
+      {:ok, job} = ask(ctx, "task", %{"request" => "x"})
+
+      assert {:ok, result} =
+               Proposals.result(succeed(ctx, job, not_ready(structured_questions())))
+
+      assert [timeout, screens] = result.questions
+      assert result.legacy_questions == []
+      assert timeout["titulo"] == "Timeout do l"
+
+      assert Enum.map(timeout["opcoes"], & &1["rotulo"]) ==
+               ["5 segundos sob qualquer carga", "30 segundos"]
+
+      assert hd(timeout["opcoes"])["recomendada"]
+      assert hd(timeout["opcoes"])["preview"] =~ "@timeout"
+      assert screens["multipla"]
+    end
+
+    test "old phrases are kept apart, and garbage reads as no questions", ctx do
+      for {perguntas, legacy} <- [
+            {["Qual o timeout?", 3, nil], ["Qual o timeout?"]},
+            {"Qual o timeout?", ["Qual o timeout?"]},
+            {[%{"pergunta" => "sem opções?"}], []},
+            {nil, []},
+            {%{"x" => 1}, []}
+          ] do
+        {:ok, job} = ask(ctx, "task", %{"request" => "x"})
+        assert {:ok, result} = Proposals.result(succeed(ctx, job, not_ready(perguntas)))
+        assert result.questions == [], inspect(perguntas)
+        assert result.legacy_questions == legacy, inspect(perguntas)
+      end
+    end
+
+    test "the auto-approval's reason lists each question and its options", ctx do
+      {:ok, job} = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "true"})
+      succeed(ctx, job, not_ready(structured_questions()))
+
+      assert %{"status" => "skipped", "reason" => reason} =
+               Proposals.auto_approve(Jobs.get_job!(ctx.workspace, job.id))
+
+      assert reason =~ "O agente não considerou a tarefa pronta."
+      assert reason =~ ~r/1\. .*Qual o timeout aceitável\?/
+      assert reason =~ "5 segundos sob qualquer carga (recomendada)"
+      assert reason =~ "30 segundos"
+      assert reason =~ ~r/2\. .*Quais telas mostram o erro\?/
+    end
+
+    test "the auto-approval's reason still lists old phrases", ctx do
+      {:ok, job} = ask(ctx, "task", %{"request" => "O login trava", "auto_approve" => "true"})
+      succeed(ctx, job, not_ready(["Qual o timeout aceitável?"]))
+
+      assert %{"status" => "skipped", "reason" => reason} =
+               Proposals.auto_approve(Jobs.get_job!(ctx.workspace, job.id))
+
+      assert reason =~ "- Qual o timeout aceitável?"
+    end
+
+    test "answering asks a new round with the answers as its feedback", ctx do
+      job = answered_proposal(ctx)
+
+      assert {:ok, next} =
+               Proposals.answer_questions(ctx.user, ctx.workspace, job, both_answered())
+
+      assert next.id != job.id
+      assert Proposals.kind(next) == "task"
+      input = Proposals.input(next)
+      assert input["request"] == "O login trava"
+      assert input["project_id"] == ctx.projects["app"].id
+      assert input["auto_approve"] == false
+
+      feedback = input["feedback"]
+      assert feedback =~ "Respostas às suas perguntas"
+      assert feedback =~ "Qual o timeout aceitável?"
+      assert feedback =~ "5 segundos sob qualquer carga"
+      assert feedback =~ "Quais telas mostram o erro?"
+      assert feedback =~ "Só no app móvel"
+
+      # The new round revises the last one, telling the agent these answer it.
+      assert next.prompt =~ "Sua proposta anterior"
+      assert next.prompt =~ "Respostas às suas perguntas"
+      assert next.prompt =~ "descrição da tarefa"
+
+      assert Enum.any?(
+               Audit.list_events(ctx.workspace),
+               &(&1.action == "proposal.answered" and &1.subject_id == next.id)
+             )
+    end
+
+    test "a long Other is cut, but every answer stays and the request is accepted", ctx do
+      job = answered_proposal(ctx)
+      long = String.duplicate("muito texto ", 1_500)
+
+      answers = [
+        %{"escolhas" => [], "outro" => "Fim: " <> long},
+        %{"escolhas" => ["Login"], "outro" => long}
+      ]
+
+      assert {:ok, next} = Proposals.answer_questions(ctx.user, ctx.workspace, job, answers)
+      feedback = Proposals.input(next)["feedback"]
+
+      assert String.length(feedback) <= 8_000
+      assert feedback =~ "Qual o timeout aceitável?"
+      assert feedback =~ "Fim: muito texto"
+      assert feedback =~ "Quais telas mostram o erro?"
+      assert feedback =~ "Login"
+    end
+
+    test "the feedback of a round takes up to 8 000 characters", ctx do
+      assert {:ok, _job} =
+               ask(ctx, "task", %{"request" => "x", "feedback" => String.duplicate("a", 8_000)})
+
+      assert {:error, changeset} =
+               ask(ctx, "task", %{"request" => "x", "feedback" => String.duplicate("a", 8_001)})
+
+      assert errors_on(changeset)[:feedback]
+    end
+
+    test "incomplete or invalid answers are refused, and nothing is asked", ctx do
+      job = answered_proposal(ctx)
+
+      for answers <- [
+            [%{"escolhas" => ["30 segundos"], "outro" => nil}],
+            [%{"escolhas" => [], "outro" => ""}, %{"escolhas" => ["Login"]}],
+            [%{"escolhas" => ["Nenhuma"]}, %{"escolhas" => ["Login"]}],
+            "lixo"
+          ] do
+        assert {:error, reason} =
+                 Proposals.answer_questions(ctx.user, ctx.workspace, job, answers)
+
+        assert is_binary(reason)
+      end
+
+      assert length(Jobs.list_jobs(ctx.workspace)) == 1
+    end
+
+    test "only a finished task proposal with questions, not made a task yet, is answered",
+         ctx do
+      {:ok, running} = ask(ctx, "task", %{"request" => "x"})
+
+      assert {:error, _reason} =
+               Proposals.answer_questions(ctx.user, ctx.workspace, running, both_answered())
+
+      {:ok, ready} = ask(ctx, "task", %{"request" => "x"})
+      ready = succeed(ctx, ready, %{task_output() | "perguntas" => []})
+
+      assert {:error, _reason} =
+               Proposals.answer_questions(ctx.user, ctx.workspace, ready, both_answered())
+
+      job = answered_proposal(ctx)
+      {:ok, result} = Proposals.result(job)
+
+      {:ok, _task} =
+        Proposals.create_task(ctx.user, ctx.workspace, job, %{
+          result.task_params
+          | "pipeline_id" => ctx.pipeline.id
+        })
+
+      job = Jobs.get_job!(ctx.workspace, job.id)
+
+      assert {:error, _reason} =
+               Proposals.answer_questions(ctx.user, ctx.workspace, job, both_answered())
+
+      {:ok, pipeline} = ask(ctx, "pipeline", %{"request" => "PRs"})
+      pipeline = succeed(ctx, pipeline, @pipeline_output)
+
+      assert {:error, _reason} =
+               Proposals.answer_questions(ctx.user, ctx.workspace, pipeline, both_answered())
     end
   end
 
