@@ -6,6 +6,7 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
   alias PipeMaestro.{FakeForgejo, Integrations, Repo, Runners, Tasks}
   alias PipeMaestro.Integrations.{Feedback, Reconciler}
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.TaskSources.Origin
 
   setup do
     workspace = workspace_fixture()
@@ -50,10 +51,15 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
           "title" => "Corrige login",
           "prompt" => "O login quebra.",
           "pipeline_id" => pipeline.id,
-          "project_id" => project.id,
-          "issue_url" => "https://forge.test/acme/app/issues/3"
+          "project_id" => project.id
         },
-        issue: %{linked_repo_id: repo.id, issue_number: 3}
+        origin: %Origin{
+          source: "git_issue",
+          external_id: "https://forge.test/acme/app/issues/3",
+          url: "https://forge.test/acme/app/issues/3",
+          ref: %{"number" => 3},
+          linked_repo_id: repo.id
+        }
       )
 
     %{workspace: workspace, fake: fake, connection: connection, repo: repo, task: task}
@@ -300,7 +306,13 @@ defmodule PipeMaestro.Integrations.FeedbackTest do
             "pipeline_id" => ctx.task.pipeline_id,
             "project_id" => ctx.task.project_id
           },
-          issue: %{linked_repo_id: ctx.repo.id, issue_number: 3}
+          origin: %Origin{
+            source: "git_issue",
+            external_id: "https://forge.test/acme/app/issues/3",
+            url: "https://forge.test/acme/app/issues/3",
+            ref: %{"number" => 3},
+            linked_repo_id: ctx.repo.id
+          }
         )
 
       [job] =

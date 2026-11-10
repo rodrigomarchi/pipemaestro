@@ -1,7 +1,9 @@
 # Integrações com hosts git
 
 > Implementada em `PipeMaestro.Integrations`. Decisões: [ADR 0036](../adr/0036-integracoes-com-hosts-git.md)
-> e [ADR 0037](../adr/0037-credencial-git-por-job.md). O desfecho do PR (seção 8):
+> e [ADR 0037](../adr/0037-credencial-git-por-job.md). As issues são uma fonte de tarefa
+> (`PipeMaestro.TaskSources`, [ADR 0056](../adr/0056-fontes-de-tarefa.md)); o push, o PR, o
+> commit status e o auto-merge são do host git, e não da fonte. O desfecho do PR (seção 8):
 > [ADR 0055](../adr/0055-qualidade-das-entregas.md).
 
 ## 1. Modelo de dados
@@ -15,8 +17,23 @@
 | `Delivery` | `integration_deliveries` | Cada entrega recebida, reconciliada ou reprocessada, com o evento, o status e o motivo |
 | `PrOutcome` | `integration_pr_outcomes` | O desfecho do PR de cada tarefa entregue: `ready_at`, estado (`open`, `merged`, `closed`) com as datas, rodadas de review e os commits do pipeline e de pessoas, por SHA (seção 8) |
 
-A tarefa guarda `linked_repo_id`, `issue_number`, `issue_url`, `head_sha` (o último commit
-empurrado) e `issue_feedback` (o que já foi aplicado no host).
+A tarefa guarda a origem genérica (`source`, `source_id`, `source_url`, `source_ref`, e em
+`pending_source_note` a nota de uma decisão), `linked_repo_id` (o repositório do host git
+onde a plataforma cuida do PR), `head_sha` (o último commit empurrado) e `issue_feedback`
+(o que já foi aplicado no host, de `Integrations`). Nas issues, a origem é `git_issue`: o id
+e o link são o link da issue, e `source_ref` traz o `number`.
+
+### A fonte `git_issue`
+
+`PipeMaestro.Integrations.IssueSource` implementa `PipeMaestro.TaskSources.Source` para as
+issues do Forgejo e do GitHub:
+
+| Responsabilidade | Callback | Faz |
+|---|---|---|
+| gatilho | `receive_webhook/4`, `poll/2` | o webhook entra por `Ingest` (a chave é a conexão; sem chave, o App do GitHub); o polling é o `Reconciler` |
+| item | `fetch_item/1`, `parse_link/1` | lê a issue com a conexão do repositório vinculado e a normaliza num `Item`; reconhece o link de issue de qualquer host |
+| andamento | `task_changed/1`, `triage_finished/1`, `runner_delivery/1`, `pr_reference/1` | `Feedback.sync/1`, `PrOutcomes.observe/1` e `AutoMerge.check/1` para tarefa de repositório vinculado; o comentário da decisão que o runner leva; `Closes <issue>` no PR |
+| respostas e comandos | `reply/3` | comenta na issue; os comandos chegam por `Conversation` e valem por `TaskSources.apply_command/3` |
 
 ## 2. Eventos normalizados
 
@@ -80,7 +97,8 @@ Os passos, em ordem; o primeiro que encerra deixa o motivo:
 11. o repositório tem um projeto e o projeto pode receber trabalho (`Projects.health/2`): o runner dele offline não impede
     nada, o job espera por ele; projeto sem runner, ou cujo runner não oferece mais a pasta,
     deixa a entrega `waiting_runner`, e o comentário de status diz o que falta;
-12. cria a triagem ou a tarefa, registra o disparo e reconhece na issue (reação, label e
+12. cria a triagem ou a tarefa a partir do item da issue (`TaskSources.start/3`, com o projeto
+    do repositório e o pipeline do gatilho), registra o disparo e reconhece na issue (reação, label e
     comentário de status).
 
 Um erro no processamento deixa a entrega `failed` com a mensagem. A reconciliação tenta de
@@ -121,6 +139,9 @@ a esgotada e `error` quando a tarefa foi cancelada. No GitHub, um check run por 
 atualizado no lugar; o de uma etapa parada oferece "Refazer etapa".
 
 ## 6. Comandos em comentário
+
+O texto e a leitura dos comandos são de `PipeMaestro.TaskSources.Commands`, comuns a
+qualquer fonte; a aplicação é de `TaskSources.apply_command/3`.
 
 Valem numa issue (ou no PR) de uma tarefa, só de quem tem permissão de escrita. A primeira
 linha que começa com o comando do gatilho é a lida.
@@ -187,7 +208,7 @@ que o Uso lê na aba Qualidade (`PipeMaestro.Usage.quality/3`).
     e os que vêm depois são de uma pessoa.
   - Fora disso, todo SHA que não é do pipeline é de uma pessoa.
   - Um commit de merge (com mais de um pai) não conta.
-- **Quando lê:** a cada mudança da tarefa (`FeedbackWorker`), no merge e no fechamento, e na
+- **Quando lê:** a cada mudança da tarefa (`IssueSource.task_changed/1`), no merge e no fechamento, e na
   reconciliação enquanto o PR está aberto, falta a leitura final ou o host falhou
   (`commits_error`). Só com `api_mode` `control_plane`; no modo `runner`, `commits_tracked`
   é falso e só os reviews contam como alteração.

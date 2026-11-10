@@ -13,6 +13,8 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
     Reconciler
   }
 
+  alias PipeMaestro.TaskSources.Origin
+
   setup do
     workspace = workspace_fixture()
     user = member_fixture(workspace)
@@ -241,10 +243,15 @@ defmodule PipeMaestro.Integrations.ReconcilerTest do
             "title" => "Corrige login",
             "prompt" => "O login quebra.",
             "pipeline_id" => pipeline_fixture(ctx.workspace).id,
-            "project_id" => ctx.project.id,
-            "issue_url" => "https://forge.test/acme/app/issues/3"
+            "project_id" => ctx.project.id
           },
-          issue: %{linked_repo_id: ctx.repo.id, issue_number: 3}
+          origin: %Origin{
+            source: "git_issue",
+            external_id: "https://forge.test/acme/app/issues/3",
+            url: "https://forge.test/acme/app/issues/3",
+            ref: %{"number" => 3},
+            linked_repo_id: ctx.repo.id
+          }
         )
 
       task =

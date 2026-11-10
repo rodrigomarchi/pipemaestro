@@ -4,9 +4,11 @@ defmodule PipeMaestro.ProposalsTest do
   import PipeMaestro.Fixtures
 
   alias PipeMaestro.{Audit, Jobs, Pipelines, Projects, Proposals, Runners, Tasks, Workspaces}
+  alias PipeMaestro.Integrations.IssueSource
   alias PipeMaestro.Pipelines.{Prompt, Stage}
   alias PipeMaestro.Proposals.{AnalysisKind, ImproveKind, Instructions, PipelineKind, TaskKind}
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.TaskSources.Origin
   alias PipeMaestroProtocol.Job, as: WireJob
 
   @directories [%{"name" => "app", "git" => true}, %{"name" => "notas", "git" => false}]
@@ -256,7 +258,7 @@ defmodule PipeMaestro.ProposalsTest do
       assert {:ok, job} =
                ask(ctx, "task", %{
                  "request" => "O login trava às vezes\ncom muitos usuários",
-                 "issue_url" => "https://github.com/acme/app/issues/7"
+                 "source_url" => "https://github.com/acme/app/issues/7"
                })
 
       assert %WireJob{scratch: true} = wire!(job)
@@ -286,27 +288,51 @@ defmodule PipeMaestro.ProposalsTest do
                "prompt" => output["descricao"],
                "pipeline_id" => pipeline.id,
                "project_id" => ctx.projects["app"].id,
-               "issue_url" => "https://github.com/acme/app/issues/7"
+               "source_url" => "https://github.com/acme/app/issues/7"
              }
 
-      assert {:ok, _task} = Tasks.create_task(ctx.user, ctx.workspace, result.task_params)
+      assert {:ok, task} = Tasks.create_task(ctx.user, ctx.workspace, result.task_params)
+
+      assert {task.source, task.source_url} ==
+               {"git_issue", "https://github.com/acme/app/issues/7"}
     end
 
     test "refuses a request without an idea or with a bad issue link", ctx do
       assert {:error, changeset} = ask(ctx, "task", %{"request" => ""})
       assert "conte a ideia da tarefa" in errors_on(changeset).request
 
-      assert {:error, changeset} = ask(ctx, "task", %{"request" => "x", "issue_url" => "nope"})
-      assert errors_on(changeset).issue_url != []
+      assert {:error, changeset} = ask(ctx, "task", %{"request" => "x", "source_url" => "nope"})
+      assert errors_on(changeset).source_url != []
     end
 
     test "knows when an issue is being triaged", ctx do
       url = "https://github.com/acme/app/issues/9"
-      refute Proposals.triaging?(ctx.workspace, url)
-      {:ok, job} = ask(ctx, "task", %{"request" => "x", "issue_url" => url})
-      assert Proposals.triaging?(ctx.workspace, url)
+      refute Proposals.triaging?(ctx.workspace, "git_issue", url)
+      {:ok, job} = ask(ctx, "task", %{"request" => "x", "source_url" => url})
+      assert Proposals.triaging?(ctx.workspace, "git_issue", url)
       succeed(ctx, job, %{})
-      refute Proposals.triaging?(ctx.workspace, url)
+      refute Proposals.triaging?(ctx.workspace, "git_issue", url)
+    end
+
+    test "knows a triage saved before the sources, and its task keeps the issue", ctx do
+      url = "https://github.com/acme/app/issues/11"
+      {:ok, job} = ask(ctx, "task", %{"request" => "x"})
+      repo_id = Ecto.UUID.generate()
+
+      legacy =
+        update_in(job.context, ["proposal", "input"], fn input ->
+          input
+          |> Map.delete("origin")
+          |> Map.merge(%{"issue_url" => url, "linked_repo_id" => repo_id, "issue_number" => 11})
+        end)
+
+      job = job |> Ecto.Changeset.change(context: legacy) |> PipeMaestro.Repo.update!()
+
+      assert Proposals.triaging?(ctx.workspace, "git_issue", url)
+      assert Proposals.origin_url(Proposals.input(job)) == url
+
+      origin = Origin.from_input(Proposals.input(job))
+      assert {origin.ref, origin.linked_repo_id} == {%{"number" => 11}, repo_id}
     end
 
     test "triages a linked issue once, with its body cut, on behalf of the trigger's person",
@@ -326,28 +352,31 @@ defmodule PipeMaestro.ProposalsTest do
 
       repo = PipeMaestro.Repo.preload(repo, :project)
 
-      trigger = %PipeMaestro.Integrations.Trigger{
+      target = %{
+        mode: "triage",
+        project_id: repo.project_id,
+        pipeline_id: nil,
         acting_user_id: ctx.user.id,
         auto_approve: false
       }
 
-      issue = %{
-        "title" => "Botão quebrado",
-        "body" => String.duplicate("a", 40_000),
-        "html_url" => "https://forge.test/acme/app/issues/5",
-        "number" => 5
-      }
+      item =
+        IssueSource.item(repo, %{
+          title: "Botão quebrado",
+          body: String.duplicate("a", 40_000),
+          url: "https://forge.test/acme/app/issues/5",
+          number: 5
+        })
 
-      assert {:ok, job} =
-               Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue)
+      assert {:ok, job} = Proposals.triage_item(ctx.workspace, item, target)
 
       assert job.created_by_user_id == ctx.user.id
       assert byte_size(job.prompt) < 20_000
-      assert Proposals.input(job)["issue_number"] == 5
+      assert Proposals.input(job)["origin"]["ref"] == %{"number" => 5}
       # The project's own dependency paths go to the disposable worktree.
       assert job.context["setup"] == %{"copy" => ["deps", "vendor"]}
 
-      assert Proposals.triage_linked_issue(ctx.workspace, repo, trigger, issue) ==
+      assert Proposals.triage_item(ctx.workspace, item, target) ==
                {:error, :already_triaging}
     end
 

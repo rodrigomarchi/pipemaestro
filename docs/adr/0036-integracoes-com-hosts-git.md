@@ -4,6 +4,7 @@
 - **Data:** 06/11/2026
 - **Plano:** [`04-integracao-forges.md`](../plano/04-integracao-forges.md)
 - **Spec:** [`integracoes.md`](../specs/integracoes.md)
+- **Relacionada:** [ADR 0056](0056-fontes-de-tarefa.md) separa a fonte da tarefa do host git: as issues passam a ser uma fonte (`git_issue`), e o push, o PR, o commit status e o auto-merge continuam aqui
 - **Substitui:** o webhook do GitHub por label do [ADR 0014](0014-pendencias-do-roadmap.md) e
   os campos de gatilho do projeto (removidos na fase do GitHub App), entre eles o
   `github_repo` único por workspace do [ADR 0034](0034-o-projeto-e-a-escolha-de-onde-o-trabalho-roda.md)

@@ -14,6 +14,10 @@ config :pipe_maestro,
   ecto_repos: [PipeMaestro.Repo],
   generators: [binary_id: true, timestamp_type: :utc_datetime]
 
+# Where tasks come from, by key (ADR 0056).
+config :pipe_maestro, PipeMaestro.TaskSources,
+  sources: %{"git_issue" => PipeMaestro.Integrations.IssueSource}
+
 # Who is online is known by the runners' channel, in the web app.
 config :pipe_maestro, PipeMaestro.Runners, presence: PipeMaestroWeb.RunnerStatus
 

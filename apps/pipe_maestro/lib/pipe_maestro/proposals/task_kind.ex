@@ -1,6 +1,6 @@
 defmodule PipeMaestro.Proposals.TaskKind do
   @moduledoc """
-  A task written by the agent from an idea or a GitHub issue
+  A task written by the agent from an idea or an item of a task source
   (`PipeMaestro.Proposals`) for a project: it studies the project's
   directory and answers with the
   task's title, its prompt (context, the files involved, how to reproduce,
@@ -18,12 +18,13 @@ defmodule PipeMaestro.Proposals.TaskKind do
   @behaviour PipeMaestro.Proposals.Kind
 
   alias Ecto.Changeset
-  alias PipeMaestro.Integrations.IssueUrl
   alias PipeMaestro.Pipelines
   alias PipeMaestro.Pipelines.Prompt
   alias PipeMaestro.Proposals
   alias PipeMaestro.Proposals.Instructions
   alias PipeMaestro.Tasks.Questionnaire
+  alias PipeMaestro.TaskSources
+  alias PipeMaestro.TaskSources.Origin
   alias PipeMaestro.Workspaces.Workspace
 
   @types %{
@@ -31,12 +32,11 @@ defmodule PipeMaestro.Proposals.TaskKind do
     runner_id: :binary_id,
     directory: :string,
     request: :string,
-    issue_url: :string,
+    source_url: :string,
+    origin: :map,
     feedback: :string,
     pipeline_id: :binary_id,
-    auto_approve: :boolean,
-    linked_repo_id: :binary_id,
-    issue_number: :integer
+    auto_approve: :boolean
   }
 
   # A round's feedback: a comment, or the answers to the agent's questions
@@ -60,7 +60,7 @@ defmodule PipeMaestro.Proposals.TaskKind do
     |> Changeset.validate_required([:request], message: "conte a ideia da tarefa")
     |> Changeset.validate_length(:request, max: 16_000)
     |> Changeset.validate_length(:feedback, max: @feedback_length)
-    |> Changeset.validate_format(:issue_url, IssueUrl.regex(), message: IssueUrl.message())
+    |> put_linked_origin()
     |> validate_pipeline(workspace)
   end
 
@@ -78,7 +78,11 @@ defmodule PipeMaestro.Proposals.TaskKind do
 
   @impl true
   def job(input, workspace, previous) do
-    issue = if input[:issue_url], do: "\nA ideia vem da issue #{input.issue_url}.\n", else: ""
+    issue =
+      case Origin.from_input(input[:origin] && %{"origin" => input.origin}) do
+        %Origin{url: url} when is_binary(url) -> "\nA ideia vem da issue #{url}.\n"
+        _none -> ""
+      end
 
     %{
       title:
@@ -230,8 +234,33 @@ defmodule PipeMaestro.Proposals.TaskKind do
              "pipeline_id" => pipeline && pipeline.id,
              "project_id" => input["project_id"]
            }
-           |> put_issue(input["issue_url"])
+           |> put_source_url(Origin.from_input(input))
        }}
+    end
+  end
+
+  defp put_source_url(params, %Origin{url: url}) when is_binary(url),
+    do: Map.put(params, "source_url", url)
+
+  defp put_source_url(params, _origin), do: params
+
+  # A link pasted on the request is the origin of the task, when a source
+  # recognizes it.
+  defp put_linked_origin(changeset) do
+    case Changeset.get_change(changeset, :source_url) do
+      nil ->
+        changeset
+
+      url ->
+        case TaskSources.parse_link(url) do
+          {:ok, origin} ->
+            changeset
+            |> Changeset.delete_change(:source_url)
+            |> Changeset.put_change(:origin, Origin.to_input(origin))
+
+          {:error, message} ->
+            Changeset.add_error(changeset, :source_url, message)
+        end
     end
   end
 
@@ -246,9 +275,6 @@ defmodule PipeMaestro.Proposals.TaskKind do
         {[], perguntas |> List.wrap() |> Enum.filter(&(is_binary(&1) and String.trim(&1) != ""))}
     end
   end
-
-  defp put_issue(params, nil), do: params
-  defp put_issue(params, url), do: Map.put(params, "issue_url", url)
 
   defp chosen_pipeline(_job, nil), do: nil
 

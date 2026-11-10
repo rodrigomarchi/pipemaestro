@@ -4,11 +4,11 @@ defmodule PipeMaestro.Integrations.Conversation do
   sections 6 and 7):
 
   - a command in a comment on the task's issue or pull request
-    (`PipeMaestro.Integrations.Commands`), from someone with write access,
+    (`PipeMaestro.TaskSources.Commands`), from someone with write access,
     goes to the same functions as the task's screen, on behalf of whoever
-    the task belongs to; the host's login is kept in the audit. An applied
-    command gets a 👍; one that does not apply gets an answer with the
-    commands that do;
+    the task belongs to (`PipeMaestro.TaskSources.apply_command/3`); the
+    host's login is kept in the audit. An applied command gets a 👍; one
+    that does not apply gets an answer with the commands that do;
   - a review asking for changes on the pull request of a finished task
     becomes the stage "Correção N";
   - the pull request merged is told on the issue; merged or closed, it is
@@ -21,12 +21,10 @@ defmodule PipeMaestro.Integrations.Conversation do
 
   import Ecto.Query
 
-  alias PipeMaestro.Accounts.User
-  alias PipeMaestro.{Audit, Repo, Tasks}
+  alias PipeMaestro.{Audit, Repo, Tasks, TaskSources}
 
   alias PipeMaestro.Integrations.{
     Access,
-    Commands,
     Connection,
     Event,
     Feedback,
@@ -36,6 +34,7 @@ defmodule PipeMaestro.Integrations.Conversation do
   }
 
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.TaskSources.Commands
 
   @default_command "/pipemaestro"
 
@@ -126,7 +125,7 @@ defmodule PipeMaestro.Integrations.Conversation do
          {:ok, client} <- client(connection),
          :ok <- Access.writer(client, repo, event.sender) do
       case Tasks.retry_stage(task, nil,
-             by: owner(task),
+             by: TaskSources.owner(task),
              via: "#{provider_name(connection)}: #{event.sender}"
            ) do
         {:ok, task} ->
@@ -163,7 +162,7 @@ defmodule PipeMaestro.Integrations.Conversation do
       prompt = review_prompt(client, repo, event)
 
       case Tasks.correct(task, prompt,
-             by: owner(task),
+             by: TaskSources.owner(task),
              via: "#{provider_name(connection)}: #{event.sender}",
              origin: :review
            ) do
@@ -210,7 +209,8 @@ defmodule PipeMaestro.Integrations.Conversation do
   defp task_for(repo, %Event{issue: %{is_pull: false, number: number}}) do
     Repo.one(
       from t in Task,
-        where: t.linked_repo_id == ^repo.id and t.issue_number == ^number,
+        where: t.linked_repo_id == ^repo.id,
+        where: fragment("(?->>'number')::int = ?", t.source_ref, ^number),
         order_by: [desc: t.inserted_at],
         limit: 1
     )
@@ -268,7 +268,7 @@ defmodule PipeMaestro.Integrations.Conversation do
          :ok <- Access.writer(client, repo, event.comment.author) do
       via = "#{provider_name(connection)}: #{event.comment.author}"
 
-      case run(task, parsed, via) do
+      case TaskSources.apply_command(task, parsed, via: via) do
         {:ok, _task} ->
           _ =
             client.provider.add_reaction(
@@ -278,18 +278,22 @@ defmodule PipeMaestro.Integrations.Conversation do
               "+1"
             )
 
-          Audit.record(task.workspace_id, owner(task), "task.decided_from_host", task, %{
-            "login" => event.comment.author,
-            "action" => Atom.to_string(parsed.action)
-          })
+          Audit.record(
+            task.workspace_id,
+            TaskSources.owner(task),
+            "task.decided_from_host",
+            task,
+            %{
+              "login" => event.comment.author,
+              "action" => Atom.to_string(parsed.action)
+            }
+          )
 
           {:processed,
            "comando #{Commands.word(parsed.action)} aplicado por #{event.comment.author}",
            %{task_id: task.id}}
 
-        error ->
-          reason = reason(error)
-
+        {:error, reason} ->
           _ =
             client.provider.create_comment(
               client,
@@ -323,38 +327,6 @@ defmodule PipeMaestro.Integrations.Conversation do
 
   defp client(connection), do: Access.client(connection)
 
-  defp run(task, %{action: :advance, text: text}, via),
-    do: Tasks.advance(task, blank(text), by: owner(task), via: via)
-
-  defp run(task, %{action: :retry, text: text}, via),
-    do: Tasks.retry_stage(task, blank(text), by: owner(task), via: via)
-
-  defp run(task, %{action: :pause}, _via), do: Tasks.request_pause(task)
-  defp run(task, %{action: :cancel}, via), do: Tasks.cancel_task(task, by: owner(task), via: via)
-
-  defp run(task, %{action: :correct, text: text}, via),
-    do: Tasks.correct(task, blank(text), by: owner(task), via: via)
-
-  defp run(task, %{action: :answer, text: text}, via) do
-    questions = get_in(task.decision_questionnaire || %{}, ["perguntas"]) || []
-    Tasks.answer(task, Commands.answers(text, questions), nil, by: owner(task), via: via)
-  end
-
-  defp owner(%Task{created_by_user_id: id}), do: Repo.get(User, id)
-
   defp provider_name(%Connection{provider: "github"}), do: "GitHub"
   defp provider_name(%Connection{}), do: "Forgejo"
-
-  defp blank(text), do: if(String.trim(text) == "", do: nil, else: text)
-
-  defp reason({:error, :invalid_answers, message}), do: "As respostas não valem: #{message}"
-  defp reason({:error, :not_awaiting}), do: "A tarefa não espera uma decisão agora."
-  defp reason({:error, :not_running}), do: "A tarefa não está rodando."
-  defp reason({:error, :finished}), do: "A tarefa já terminou."
-
-  defp reason({:error, :active}),
-    do: "A tarefa ainda está em andamento; corrija quando ela terminar."
-
-  defp reason({:error, :blank}), do: "Diga o que corrigir depois do comando."
-  defp reason({:error, other}), do: "Não foi possível (#{inspect(other)})."
 end

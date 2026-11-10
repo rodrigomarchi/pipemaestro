@@ -221,9 +221,15 @@ defmodule PipeMaestro.Integrations.IngestTest do
 
       assert input["auto_approve"] == true
       assert input["pipeline_id"] == ctx.pipeline.id
-      assert input["linked_repo_id"] == ctx.repo.id
-      assert input["issue_number"] == 3
-      assert input["issue_url"] == "https://forge.test/acme/app/issues/3"
+
+      assert input["origin"] == %{
+               "source" => "git_issue",
+               "external_id" => "https://forge.test/acme/app/issues/3",
+               "url" => "https://forge.test/acme/app/issues/3",
+               "ref" => %{"number" => 3},
+               "linked_repo_id" => ctx.repo.id
+             }
+
       assert input["request"] =~ "Login quebra"
       assert job.created_by_user_id == ctx.user.id
     end
@@ -248,8 +254,8 @@ defmodule PipeMaestro.Integrations.IngestTest do
       task = Repo.get_by!(Task, proposal_job_id: job_id)
       assert task.title == "Normalizar o e-mail no login"
       assert task.pipeline_id == ctx.pipeline.id
-      assert {task.linked_repo_id, task.issue_number} == {ctx.repo.id, 3}
-      assert task.issue_url == "https://forge.test/acme/app/issues/3"
+      assert {task.linked_repo_id, task.source_ref} == {ctx.repo.id, %{"number" => 3}}
+      assert task.source_url == "https://forge.test/acme/app/issues/3"
       assert task.created_by_user_id == ctx.user.id
 
       # The triage's end is told in the background: it must not outlive the test.
@@ -382,9 +388,9 @@ defmodule PipeMaestro.Integrations.IngestTest do
       assert task.prompt =~ "Com e-mail maiúsculo."
       assert task.pipeline_id == ctx.pipeline.id
       assert task.directory == "app"
-      assert {task.linked_repo_id, task.issue_number} == {ctx.repo.id, 3}
-      assert task.issue_url == "https://forge.test/acme/app/issues/3"
-      assert Tasks.active_for_issue?(ctx.workspace, task.issue_url)
+      assert {task.linked_repo_id, task.source_ref} == {ctx.repo.id, %{"number" => 3}}
+      assert task.source_url == "https://forge.test/acme/app/issues/3"
+      assert Tasks.active_for_source?(ctx.workspace, "git_issue", task.source_url)
     end
 
     test "a label added by someone without write access (an issue template) is ignored", ctx do

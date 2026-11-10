@@ -53,7 +53,7 @@ Faltava o que medir:
      host trazendo a base, e não muda o trabalho entregue;
    - **conjuntos:** só crescem, então ler duas vezes não muda nada.
 
-   A leitura acontece depois de cada mudança da tarefa (`FeedbackWorker`, na entrega e ao
+   A leitura acontece depois de cada mudança da tarefa (`IssueSource.task_changed/1`, na entrega e ao
    começar uma etapa nova), no merge e no fechamento (na hora, em `Conversation`) e no
    `Reconciler`. O `Reconciler` também consulta `get_pr/3` dos PRs abertos para pegar o
    merge que o webhook perdeu. Uma falha do host fica em `commits_error` e é tentada de

@@ -1,7 +1,7 @@
-defmodule PipeMaestro.Integrations.CommandsTest do
+defmodule PipeMaestro.TaskSources.CommandsTest do
   use ExUnit.Case, async: true
 
-  alias PipeMaestro.Integrations.Commands
+  alias PipeMaestro.TaskSources.Commands
 
   test "reads each command and the text that follows" do
     assert Commands.parse("/pipemaestro seguir use a opção B", "/pipemaestro") ==

@@ -16,9 +16,9 @@ defmodule PipeMaestro.Integrations.PrOutcomes do
     the commits up to it are the pipeline's and those after it a person's;
     otherwise any commit the pipeline did not push is a person's. A merge
     commit (more than one parent) is nobody's change. It runs after each
-    change of the task (`PipeMaestro.Integrations.FeedbackWorker`), on the
-    merge and the close, and in the reconciliation (`reconcile/1`), which
-    also finds a merge the webhook missed.
+    change of the task (`PipeMaestro.Integrations.IssueSource.task_changed/1`),
+    on the merge and the close, and in the reconciliation (`reconcile/1`),
+    which also finds a merge the webhook missed.
 
   A host that fails leaves its message in `commits_error` for the
   reconciliation; nothing here stops a task.

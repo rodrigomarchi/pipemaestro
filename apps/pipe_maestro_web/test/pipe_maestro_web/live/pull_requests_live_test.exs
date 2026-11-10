@@ -21,7 +21,7 @@ defmodule PipeMaestroWeb.PullRequestsLiveTest do
         "prompt" => "p",
         "pipeline_id" => pipeline.id,
         "project_id" => project_on(runner, "app").id,
-        "issue_url" => "https://github.com/acme/app/issues/42"
+        "source_url" => "https://github.com/acme/app/issues/42"
       })
 
     job = List.last(Tasks.get_task!(ctx.workspace, task.id).stage_runs).job

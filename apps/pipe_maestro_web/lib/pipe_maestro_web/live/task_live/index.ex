@@ -346,7 +346,7 @@ defmodule PipeMaestroWeb.TaskLive.Index do
             testid="task-prompt"
           />
           <.icon_field
-            field={@form[:issue_url]}
+            field={@form[:source_url]}
             icon="hero-link"
             label="Issue do GitHub (opcional)"
             placeholder="https://github.com/dono/repo/issues/42"

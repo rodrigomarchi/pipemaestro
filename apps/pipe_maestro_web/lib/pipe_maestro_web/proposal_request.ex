@@ -223,7 +223,7 @@ defmodule PipeMaestroWeb.ProposalRequest do
         />
         <.icon_field
           :if={@request.kind == "task"}
-          field={@request.form[:issue_url]}
+          field={@request.form[:source_url]}
           icon="hero-link"
           label="Issue do GitHub (opcional)"
           placeholder="https://github.com/dono/repo/issues/42"

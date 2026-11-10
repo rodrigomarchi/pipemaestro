@@ -202,17 +202,17 @@ defmodule PipeMaestroWeb.TaskLive.NodePanel do
           {worktree_state(@task)}
         </dd>
       </div>
-      <div :if={@task.issue_url}>
+      <div :if={@task.source_url}>
         <dt class="text-gray-500 dark:text-gray-400">Issue</dt>
         <dd class="text-xs">
           <a
-            href={@task.issue_url}
+            href={@task.source_url}
             target="_blank"
             rel="noopener"
             class="text-primary-600 hover:underline dark:text-primary-400"
             data-testid="task-issue"
           >
-            {IntegrationComponents.issue_label(@task.issue_url)}
+            {IntegrationComponents.issue_label(@task.source_url)}
             <.icon name="hero-arrow-top-right-on-square" class="size-3" />
           </a>
         </dd>

@@ -6,6 +6,7 @@ defmodule PipeMaestro.Integrations.PrOutcomesTest do
   alias PipeMaestro.{FakeForgejo, FakeGitHub, Integrations, Jobs, Repo, Runners, Tasks}
   alias PipeMaestro.Integrations.{Connection, Conversation, Event, PrOutcome, PrOutcomes}
   alias PipeMaestro.Tasks.Task
+  alias PipeMaestro.TaskSources.Origin
 
   @commits_path "/api/v1/repos/acme/app/pulls/7/commits"
 
@@ -40,10 +41,15 @@ defmodule PipeMaestro.Integrations.PrOutcomesTest do
           "title" => "Corrige login",
           "prompt" => "O login quebra.",
           "pipeline_id" => pipeline_fixture(workspace, %{"delivery" => "pr"}).id,
-          "project_id" => project.id,
-          "issue_url" => issue_url
+          "project_id" => project.id
         },
-        issue: %{linked_repo_id: repo.id, issue_number: 3}
+        origin: %Origin{
+          source: "git_issue",
+          external_id: issue_url,
+          url: issue_url,
+          ref: %{"number" => 3},
+          linked_repo_id: repo.id
+        }
       )
 
     %{task: task, runner: runner, repo: repo}

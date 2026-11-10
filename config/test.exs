@@ -25,8 +25,8 @@ config :pipe_maestro, PipeMaestro.Integrations.GitHub,
   api_url: "https://api.github.test",
   web_url: "https://github.test"
 
-# Tests reflect a task on its issue themselves (PipeMaestro.Integrations.Feedback).
-config :pipe_maestro, PipeMaestro.Integrations.FeedbackWorker, false
+# Tests reflect a task on its source themselves (PipeMaestro.TaskSources).
+config :pipe_maestro, PipeMaestro.TaskSources.Dispatcher, false
 
 # Tests look at a task's pull request themselves (PipeMaestro.Integrations.AutoMerge).
 config :pipe_maestro, PipeMaestro.Integrations.AutoMergeWorker, false
@@ -42,7 +42,13 @@ config :pipe_maestro, PipeMaestro.Repo,
   port: String.to_integer(System.get_env("TEST_DB_PORT", "5443")),
   database: "pipe_maestro_test#{worktree}#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  pool_size: System.schedulers_online() * 2,
+  # A test's processes share its one sandbox connection: one waits while
+  # another holds it in a transaction (a row lock around a call to a fake
+  # host), longer on a machine busy with other suites than the default
+  # queue allows.
+  queue_target: 2_000,
+  queue_interval: 5_000
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

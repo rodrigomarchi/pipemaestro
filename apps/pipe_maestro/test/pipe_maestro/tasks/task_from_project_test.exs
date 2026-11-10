@@ -3,6 +3,7 @@ defmodule PipeMaestro.Tasks.TaskFromProjectTest do
 
   import PipeMaestro.Fixtures
 
+  alias PipeMaestro.Integrations.IssueSource
   alias PipeMaestro.{Jobs, Projects, Repo, Tasks}
   alias PipeMaestro.Projects.Project
 
@@ -214,7 +215,7 @@ defmodule PipeMaestro.Tasks.TaskFromProjectTest do
     end
   end
 
-  describe "create_from_linked_issue/4" do
+  describe "create_from_item/3" do
     setup ctx do
       PipeMaestro.FakeForgejo.start()
 
@@ -226,29 +227,34 @@ defmodule PipeMaestro.Tasks.TaskFromProjectTest do
           "https://pm.test/hook"
         )
 
-      trigger = %PipeMaestro.Integrations.Trigger{
+      target = %{
+        mode: "task",
         acting_user_id: ctx.user.id,
         pipeline_id: ctx.pipeline.id,
-        mode: "task"
+        project_id: ctx.project.id
       }
 
-      %{repo: Repo.preload(repo, :project), trigger: trigger}
+      %{repo: Repo.preload(repo, :project), target: target}
     end
 
     @issue %{
-      "title" => "Botão quebrado",
-      "body" => "Nada acontece.",
-      "html_url" => "https://forge.test/acme/app/issues/9",
-      "number" => 9
+      title: "Botão quebrado",
+      body: "Nada acontece.",
+      url: "https://forge.test/acme/app/issues/9",
+      number: 9
     }
 
     test "starts the task on the project's runner", ctx do
       assert {:ok, task} =
-               Tasks.create_from_linked_issue(ctx.workspace, ctx.repo, ctx.trigger, @issue)
+               Tasks.create_from_item(
+                 ctx.workspace,
+                 IssueSource.item(ctx.repo, @issue),
+                 ctx.target
+               )
 
       assert task.project_id == ctx.project.id
       assert task.runner_id == ctx.runner.id
-      assert task.issue_url == "https://forge.test/acme/app/issues/9"
+      assert task.source_url == "https://forge.test/acme/app/issues/9"
     end
 
     test "a project without a runner cannot start it", ctx do
@@ -256,7 +262,7 @@ defmodule PipeMaestro.Tasks.TaskFromProjectTest do
       repo = Repo.preload(ctx.repo, :project, force: true)
 
       assert {:error, changeset} =
-               Tasks.create_from_linked_issue(ctx.workspace, repo, ctx.trigger, @issue)
+               Tasks.create_from_item(ctx.workspace, IssueSource.item(repo, @issue), ctx.target)
 
       assert %{project_id: ["o projeto precisa de um runner"]} = errors_on(changeset)
     end

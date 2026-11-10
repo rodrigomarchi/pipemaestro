@@ -1,9 +1,9 @@
-defmodule PipeMaestro.Integrations.Commands do
+defmodule PipeMaestro.TaskSources.Commands do
   @moduledoc """
-  The commands a person writes in a comment on the issue or the pull request
-  of a task (`docs/specs/integracoes.md`, section 6): the first line that
-  starts with the command (`/pipemaestro`, or the repository's comment
-  trigger's), then a word and, for some, instructions:
+  The commands a person writes to a task on its source, as on an issue or a
+  pull request of a git host (`docs/specs/integracoes.md`, section 6): the
+  first line that starts with the command (`/pipemaestro`, or the one the
+  source sets), then a word and, for some, instructions:
 
       /pipemaestro seguir use a opção B
       /pipemaestro refazer
