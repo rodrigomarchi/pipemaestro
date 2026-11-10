@@ -310,9 +310,9 @@ remoção (`PipeMaestroProtocol.Worktree`).
 
 | Evento | Sentido | Payload |
 |---|---|---|
-| `worktree:remove` | control plane → runner | `{"task_id", "directory"}`: remove o worktree e mantém o branch no repositório. É reenviado a cada join até ser confirmado |
+| `worktree:remove` | control plane → runner | `{"task_id", "directory"}`: remove o worktree e as sessões do CLI dele (ADR 0053) e mantém o branch no repositório. É reenviado a cada join até ser confirmado |
 | `worktree:removed` | runner → control plane | `{"task_id", "error"?}`. O runner recusa (`error`) se a tarefa tem job em execução ou na fila |
-| `worktree:usage` | runner → control plane | `{"count", "bytes", "free_bytes"}`: quantos worktrees o runner guarda, o espaço que ocupam e o espaço livre no disco. É enviado depois de cada join e a cada cinco minutos, se mudou |
+| `worktree:usage` | runner → control plane | `{"count", "bytes", "free_bytes"}`: quantos worktrees o runner guarda, o espaço que ocupam (com as sessões do CLI de cada um, ADR 0053) e o espaço livre no disco. É enviado depois de cada join e a cada cinco minutos, se mudou |
 
 ### 4.6 Estados
 
@@ -338,7 +338,7 @@ diagnóstico a quem anuncia `doctor`.
 | Evento | Sentido | Payload |
 |---|---|---|
 | `runner:health` | runner → control plane | `{"at", "cpu_pct", "load1", "mem_used_bytes", "mem_total_bytes", "disk_free_bytes", "disk_total_bytes", "outbox_pending", "running_jobs", "beam_bytes"}` (`PipeMaestroProtocol.RunnerHealth`). Cada número pode ser `null` quando a máquina não o informa. Enviado depois de cada join e a cada 60 s, fora da outbox |
-| `runner:log` | runner → control plane | `{"lines"}`: até 200 linhas `{"at", "level", "message", "event"?, "attrs"?}` (`PipeMaestroProtocol.RunnerLog`), `level` igual a `debug`, `info`, `warning` ou `error`, `message` de até 4 KB, já com os segredos redigidos. `event` vem de uma lista fechada (`update_draining`, `update_applied`, `update_failed`, `scratch_remove_failed`, `outbox_dropped`, `connection_lost`, `log_dropped`), com `attrs` de valores simples. Um lote sai a cada 5 s ou 200 linhas, e o runner envia no máximo 1 000 linhas por minuto. Passa pela outbox, que o descarta primeiro, como `job:event`, quando enche. Com `"logs": false` na resposta do join, só as linhas com `event` são enviadas |
+| `runner:log` | runner → control plane | `{"lines"}`: até 200 linhas `{"at", "level", "message", "event"?, "attrs"?}` (`PipeMaestroProtocol.RunnerLog`), `level` igual a `debug`, `info`, `warning` ou `error`, `message` de até 4 KB, já com os segredos redigidos. `event` vem de uma lista fechada (`update_draining`, `update_applied`, `update_failed`, `scratch_remove_failed`, `outbox_dropped`, `connection_lost`, `log_dropped`, `claude_sessions_not_found`), com `attrs` de valores simples. Um lote sai a cada 5 s ou 200 linhas, e o runner envia no máximo 1 000 linhas por minuto. Passa pela outbox, que o descarta primeiro, como `job:event`, quando enche. Com `"logs": false` na resposta do join, só as linhas com `event` são enviadas |
 | `runner:doctor` | control plane → runner | `{"request_id"}`: roda o diagnóstico agora |
 | `runner:doctor` | runner → control plane | `{"request_id"?, "at", "checks"}`: `checks` é `[{"key", "name", "status", "detail"}]` (`PipeMaestroProtocol.RunnerDoctor`), `status` igual a `ok`, `warning` ou `error`. Enviado depois de cada join, a cada hora e em resposta a um pedido, com o `request_id` dele. Fora da outbox |
 
