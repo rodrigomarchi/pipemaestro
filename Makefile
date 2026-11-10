@@ -154,15 +154,29 @@ runner.install: runner.rel ## Install pipemaestro for this user (~/.local/share 
 runner.binary: ## Build the runner as one binary per platform into burrito_out/, in Docker ([TARGET=linux_x86_64] only one)
 	$(if $(TARGET),BURRITO_TARGET=$(TARGET)) scripts/build_runner_binaries.sh burrito_out
 
+# The version scheme of PipeMaestroProtocol.Version, as grep -E expressions: a
+# release (AAAA-MM-DD.NN), and any build in the scheme (a release, a commit after
+# one, <release>+dev.<commit>, or one without a reachable release, dev+<commit>).
+# A build without git is dev+unknown (or <release>+dev.unknown): in the scheme,
+# but not a version an image may carry.
+VERSION_RELEASE_DAY = [0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2,}
+VERSION_RELEASE = ^$(VERSION_RELEASE_DAY)$$
+VERSION_BUILD = ^($(VERSION_RELEASE_DAY)(\+dev\.[0-9a-z]+)?|dev\+[0-9a-z]+)$$
+VERSION_UNKNOWN = (^dev\+|\+dev\.)unknown$$
+
 # The runner's version of this checkout (AAAA-MM-DD.NN, or +dev.<commit> after
 # one): the last commit that changed the runner, the one the control plane
 # requires. Mix may print what it compiles first: the version is the last line.
+# When mix fails, both targets print all it printed and fail too.
 runner.version: ## Print the runner's version this checkout builds (the one the control plane requires)
-	@cd $(RUNNER_DIR) && mix runner.version | tail -n 1
+	@out=$$(cd $(RUNNER_DIR) && mix runner.version 2>&1) || { printf '%s\n' "$$out"; exit 1; }; \
+		printf '%s\n' "$$out" | tail -n 1
 
 cp.version: ## Print the control plane's version this checkout builds (HEAD's)
-	@cd apps/pipe_maestro_protocol && \
-		mix run --no-start -e 'IO.puts(PipeMaestroProtocol.Version.Git.current("."))' | tail -n 1
+	@out=$$(cd apps/pipe_maestro_protocol && \
+		mix run --no-start -e 'IO.puts(PipeMaestroProtocol.Version.Git.current("."))' 2>&1) || \
+		{ printf '%s\n' "$$out"; exit 1; }; \
+		printf '%s\n' "$$out" | tail -n 1
 
 # A release is an annotated tag runner-AAAA-MM-DD.NN at a clean HEAD, named
 # after today's local date and the day's next number, then the binary built
@@ -173,7 +187,7 @@ runner.release: ## Tag the next runner release (runner-AAAA-MM-DD.NN) and build 
 	@existing=$$(git tag --points-at HEAD --list 'runner-*'); \
 		test -z "$$existing" || { echo "Este commit já é a release $$existing."; exit 1; }
 	@version=$$(cd $(RUNNER_DIR) && mix runner.version --next | tail -n 1); \
-		echo "$$version" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2,}$$' || \
+		printf '%s\n' "$$version" | LC_ALL=C grep -Eq '$(VERSION_RELEASE)' || \
 			{ echo "Não consegui calcular a próxima versão: $$version"; exit 1; }; \
 		git tag -a "runner-$$version" -m "Runner $$version" || exit 1; \
 		echo "Tag runner-$$version criada."; \
@@ -181,10 +195,23 @@ runner.release: ## Tag the next runner release (runner-AAAA-MM-DD.NN) and build 
 			{ echo "O build falhou. A tag é só local; para apagá-la: git tag -d runner-$$version"; exit 1; }; \
 		echo "Release $$version pronta em burrito_out/. Para publicar: git push origin runner-$$version"
 
-image: ## Build the control plane's Docker image (pipemaestro), with this checkout's version
-	docker build --build-arg CP_VERSION=$$($(MAKE) -s cp.version) \
-		--build-arg RUNNER_VERSION=$$($(MAKE) -s runner.version) \
-		-t pipemaestro .
+# The image has no .git to read its versions from: both are computed first,
+# each must be a build in the scheme, and only then is the image built.
+image: ## Build the control plane's Docker image (pipemaestro) with this checkout's versions, checked
+	@in_scheme() { \
+		printf '%s\n' "$$2" | LC_ALL=C grep -Eq '$(VERSION_BUILD)' && \
+			! printf '%s\n' "$$2" | LC_ALL=C grep -Eq '$(VERSION_UNKNOWN)' || \
+			{ echo "A versão $$1 está fora do esquema: '$$2'"; exit 1; }; \
+	}; \
+	cp_version=$$($(MAKE) -s --no-print-directory cp.version) || \
+		{ echo "Não consegui calcular a versão do control plane: $$cp_version"; exit 1; }; \
+	in_scheme "do control plane" "$$cp_version"; \
+	runner_version=$$($(MAKE) -s --no-print-directory runner.version) || \
+		{ echo "Não consegui calcular a versão do runner: $$runner_version"; exit 1; }; \
+	in_scheme "do runner" "$$runner_version"; \
+	echo "Control plane $$cp_version, runner $$runner_version"; \
+	docker build --build-arg CP_VERSION="$$cp_version" \
+		--build-arg RUNNER_VERSION="$$runner_version" -t pipemaestro .
 
 REF ?= main
 
