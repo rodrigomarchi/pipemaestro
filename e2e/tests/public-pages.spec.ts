@@ -5,9 +5,9 @@
  * @flow D [done] A visitor sees the real product on the landing page: the board in the
  *   hero and a tour of the screens, in the theme of the page and without horizontal
  *   scroll on a phone
- * @flow E A visitor goes from the landing to the documentation: an everyday example, the
+ * @flow E [done] A visitor goes from the landing to the documentation: an everyday example, the
  *   index beside the page, the next page, a screenshot in the page's theme, and on a phone
- *   the index folded in a menu, without horizontal scroll
+ *   the index folded in a menu, without horizontal scroll (its tables scroll on their own)
  * @flow B [done] The sign-in page shows the e-mail and password form
  * @flow C [done] Every public page shows the PipeMaestro mark (its own SVG symbol and the
  *   name); the SVG favicon is checked by the control plane's ExUnit
@@ -164,11 +164,15 @@ test.describe("Public pages", () => {
     await page.getByTestId("docs-menu").click();
     await page.getByTestId("docs-menu-runner").click();
     await expect(page.getByTestId("docs-title")).toHaveText("O runner na sua máquina");
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
+    const overflow = () =>
+      page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(await overflow()).toBeLessThanOrEqual(0);
     await shot(page, "docs-page-phone");
+
+    // A page with wide tables scrolls them, not the page.
+    await page.goto("/docs/comandos");
+    expect(await overflow()).toBeLessThanOrEqual(0);
+    await shot(page, "docs-tables-phone");
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.goto("/");

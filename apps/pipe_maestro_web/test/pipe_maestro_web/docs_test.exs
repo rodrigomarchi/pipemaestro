@@ -23,6 +23,13 @@ defmodule PipeMaestroWeb.DocsTest do
     [first, second | _] = Docs.pages()
     assert Docs.neighbors(first) == {nil, second}
     assert Docs.neighbors(List.last(Docs.pages())) |> elem(1) == nil
+    assert Docs.neighbors(%{slug: "nada"}) == {nil, nil}
+  end
+
+  test "a heading carries an anchor labelled in Portuguese" do
+    assert [{:html, html}] = Blocks.render("## Projeto", "x")
+    assert html =~ ~s(id="projeto")
+    assert html =~ ~s(aria-label="Link para a seção 'Projeto'")
   end
 
   test "a screenshot line splits the Markdown around it" do

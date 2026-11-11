@@ -144,11 +144,13 @@ defmodule PipeMaestroWeb.Docs do
   @spec section!(String.t()) :: section()
   def section!(key), do: Enum.find(@compiled, &(&1.key == key)) || raise(ArgumentError, key)
 
-  @doc "The pages before and after `page`, in reading order (nil at the ends)."
+  @doc "The pages before and after `page`, in reading order (nil at the ends, or for a page not listed)."
   @spec neighbors(page()) :: {page() | nil, page() | nil}
   def neighbors(%{slug: slug}) do
-    index = Enum.find_index(@pages, &(&1.slug == slug))
-    previous = if index > 0, do: Enum.at(@pages, index - 1)
-    {previous, Enum.at(@pages, index + 1)}
+    case Enum.find_index(@pages, &(&1.slug == slug)) do
+      nil -> {nil, nil}
+      0 -> {nil, Enum.at(@pages, 1)}
+      index -> {Enum.at(@pages, index - 1), Enum.at(@pages, index + 1)}
+    end
   end
 end

@@ -20,10 +20,17 @@ defmodule PipeMaestroWeb.DocsHTML do
     ~H"""
     <div class="space-y-6">
       <div :for={section <- @sections}>
-        <p class="flex items-center gap-2 text-xs font-semibold tracking-wide text-gray-500 uppercase dark:text-gray-400">
-          <.icon name={section.icon} class="size-4 text-primary-500" />{section.title}
+        <p
+          id={"#{@prefix}-section-#{section.key}"}
+          class="flex items-center gap-2 text-xs font-semibold tracking-wide text-gray-500 uppercase dark:text-gray-400"
+        >
+          <.icon name={section.icon} class="size-4 text-primary-500" aria-hidden="true" />
+          {section.title}
         </p>
-        <ul class="mt-2 space-y-0.5 border-l border-gray-200 dark:border-gray-800">
+        <ul
+          class="mt-2 space-y-0.5 border-l border-gray-200 dark:border-gray-800"
+          aria-labelledby={"#{@prefix}-section-#{section.key}"}
+        >
           <li :for={page <- section.pages}>
             <.link
               href={~p"/docs/#{page.slug}"}

@@ -34,7 +34,10 @@ defmodule PipeMaestroWeb.Layouts do
         :if={@nav}
         class="sticky top-0 z-30 border-b border-gray-200/70 bg-white/80 backdrop-blur dark:border-gray-800/70 dark:bg-gray-950/80"
       >
-        <nav class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <nav
+          class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8"
+          aria-label="Principal"
+        >
           <.brand />
           <div class="hidden items-center gap-8 text-sm font-medium text-gray-600 lg:flex dark:text-gray-300">
             <a

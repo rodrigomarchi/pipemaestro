@@ -31,9 +31,14 @@ defmodule PipeMaestroWeb.Docs.Blocks do
   defp block(chunk, slug) do
     case Regex.run(@shot_line, chunk) do
       [_line, name] -> {:shot, shot!(name, slug)}
-      nil -> {:html, chunk |> MDEx.to_html!(@markdown) |> String.trim()}
+      nil -> {:html, chunk |> MDEx.to_html!(@markdown) |> String.trim() |> label_anchors()}
     end
   end
+
+  # MDEx labels a heading's anchor in English; the pages are in Portuguese.
+  defp label_anchors(html),
+    do:
+      String.replace(html, ~s(aria-label="Link to heading '), ~s(aria-label="Link para a seção '))
 
   defp shot!(name, slug) do
     case LandingShots.fetch(name) do

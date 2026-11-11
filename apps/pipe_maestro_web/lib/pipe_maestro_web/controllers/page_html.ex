@@ -6,7 +6,10 @@ defmodule PipeMaestroWeb.PageHTML do
 
   embed_templates "page_html/*"
 
-  attr :shot, :map, required: true, doc: "one of `PipeMaestroWeb.LandingShots.all/0`"
+  attr :shot, :map,
+    required: true,
+    doc: "one of `PipeMaestroWeb.LandingShots.all/0` or `PipeMaestroWeb.LandingShots.docs/0`"
+
   attr :loading, :string, default: "lazy", values: ~w(lazy eager)
   attr :class, :any, default: nil, doc: "classes for the frame"
   attr :rest, :global

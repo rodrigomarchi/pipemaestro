@@ -57,21 +57,32 @@ defmodule PipeMaestroWeb.DocsControllerTest do
              1
   end
 
-  test "every internal link of the documentation leads to a page that exists", %{conn: conn} do
-    slugs = MapSet.new(Docs.pages(), & &1.slug)
+  test "every internal link of the documentation leads to a page, and to a heading of it",
+       %{conn: conn} do
+    docs = Map.new(Docs.pages(), &{&1.slug, document(conn, ~p"/docs/#{&1.slug}")})
+    index = document(conn, ~p"/docs")
 
-    for page <- Docs.pages() do
-      hrefs =
-        conn
-        |> document(~p"/docs/#{page.slug}")
-        |> LazyHTML.query(".docs-prose a[href^='/docs/']")
-        |> LazyHTML.attribute("href")
+    for {slug, doc} <- docs,
+        href <-
+          doc |> LazyHTML.query(".docs-prose a[href^='/docs']") |> LazyHTML.attribute("href") do
+      {target, fragment} =
+        case href |> String.trim_leading("/docs") |> String.split("#", parts: 2) do
+          ["", fragment] ->
+            {index, fragment}
 
-      for href <- hrefs do
-        "/docs/" <> rest = href
-        slug = rest |> String.split("#") |> hd()
-        assert MapSet.member?(slugs, slug), "#{page.slug} links #{href}, which does not exist"
-      end
+          ["/" <> page, fragment] ->
+            {Map.fetch!(docs, page), fragment}
+
+          ["/" <> page] ->
+            {Map.get(docs, page) || flunk("#{slug} links #{href}, which does not exist"), nil}
+        end
+
+      if fragment,
+        do:
+          assert(
+            LazyHTML.query(target, "##{fragment}") |> Enum.count() == 1,
+            "#{slug} links #{href}, whose heading does not exist"
+          )
     end
   end
 
