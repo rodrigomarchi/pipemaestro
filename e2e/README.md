@@ -116,7 +116,8 @@ make landing.shots    # APAGA o banco e2e deste worktree e regrava as imagens
 - **O agente é o CLI de vitrine** `director/support/showcase_claude`, separado do
   `fake_claude` do runner (as specs dependem das saídas exatas dele). Imprime o mesmo
   `stream-json`, lê, edita arquivos do worktree e roda `make test`, escreve o artefato
-  de cada etapa e exporta OTLP. O que cada tarefa faz vem do mapa de cenas
+  de cada etapa, faz o commit dela (como a entrega pede; na última, tira os artefatos do
+  branch) e exporta OTLP. O que cada tarefa faz vem do mapa de cenas
   (`SHOWCASE_SCENES`, linhas `frase|comportamento|módulo`, escrito pelo diretor):
   `ok`, `perguntas` (a primeira etapa para com duas perguntas) ou `segura:<etapa>`
   (a etapa fica rodando até existir `$SHOWCASE_DIR/release`, para a foto).

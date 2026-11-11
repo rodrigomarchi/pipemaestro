@@ -357,7 +357,11 @@ case "$PWD" in
         *"Esta é a última etapa da tarefa"*)
           [ -n "$CP_ARTIFACT_PATH" ] && git rm -r -q --cached --ignore-unmatch -- "$(dirname "$CP_ARTIFACT_PATH")" ;;
       esac
-      git -c user.name="Claude" -c user.email=claude@nimbus.dev commit -q -m "$summary" >/dev/null 2>&1 || true
+      # Nothing to commit is fine; any other failure shows on stderr, where the runner logs it.
+      if [ -n "$(git status --porcelain)" ]; then
+        git -c user.name="Claude" -c user.email=claude@nimbus.dev commit -q -m "${summary:-Etapa concluída}" >/dev/null ||
+          echo "showcase_claude: o commit da etapa falhou" >&2
+      fi
     fi
     ;;
 esac

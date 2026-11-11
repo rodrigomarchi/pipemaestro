@@ -122,9 +122,9 @@ test.describe("Landing director", () => {
     }
     await capture(page, "board");
 
-    // task: the held task from its third stage: the test it wrote, the steps of
-    // that stage with the test run open, and the stage running live.
-    await taskPage.show(workspace.slug, paginationId);
+    // task: the coupon task's reproduction stage: the steps of the stage, with
+    // the run of the test it wrote open, failing for the reason the bug gives.
+    await taskPage.show(workspace.slug, couponId);
     await taskPage.openStage("reproducao");
     const steps = new Timeline(await taskPage.openSteps("reproducao", 1));
     await steps.icons().last().click();
@@ -241,7 +241,12 @@ test.describe("Landing director", () => {
       secret,
       event: "pull_request",
       id: "nimbus-merged-1",
-      payload: pullRequestClosedPayload(repository, { number: pull.number, branch: pull.head.ref, merged: true }, fakeForgejo.url),
+      // Merged after a person's review, two hours after the PR was ready.
+      payload: pullRequestClosedPayload(
+        repository,
+        { number: pull.number, branch: pull.head.ref, merged: true, at: new Date(Date.now() + 2 * 3_600_000) },
+        fakeForgejo.url,
+      ),
     });
     expect(merged.status()).toBe(202);
 
@@ -257,7 +262,7 @@ test.describe("Landing director", () => {
     const usage = new UsagePage(page);
     await expect(async () => {
       await usage.openTab(workspace.slug, "qualidade");
-      await expect(usage.delivered).toHaveText(/1/, { timeout: 1_000 });
+      await expect(usage.delivered).toHaveText(/\b1\s*$/, { timeout: 1_000 });
     }).toPass({ timeout: 30_000 });
     await capture(page, "quality");
   });

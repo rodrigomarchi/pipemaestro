@@ -70,8 +70,13 @@ export function issueCommentPayload(repo: string, issue: { number: number; title
 }
 
 /** A `pull_request` payload: the pull request `number` of `repo`, from `branch`, closed, merged or not. */
-export function pullRequestClosedPayload(repo: string, pull: { number: number; branch: string; merged: boolean }, baseUrl: string) {
-  const at = new Date().toISOString();
+/** A pull request closed (merged or not), at `pull.at` (now when not given). */
+export function pullRequestClosedPayload(
+  repo: string,
+  pull: { number: number; branch: string; merged: boolean; at?: Date },
+  baseUrl: string,
+) {
+  const at = (pull.at ?? new Date()).toISOString();
 
   return {
     action: "closed",
