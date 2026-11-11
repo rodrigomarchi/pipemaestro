@@ -1,0 +1,54 @@
+A plataforma separa quem **coordena** de quem **executa**. O control plane, na nuvem,
+guarda pipelines e decide o próximo passo. O runner, na sua máquina, faz o trabalho no seu
+código.
+
+## O que fica na sua máquina
+
+- **O repositório.** O runner trabalha num worktree do diretório do projeto, e o
+  repositório nunca é clonado nem guardado no control plane. O push e o PR saem da sua
+  máquina, com as credenciais dela.
+- **O login do Claude.** O agente roda com a conta de quem roda o runner. A plataforma não
+  recebe a credencial.
+- **A rede fechada.** O runner abre a conexão de saída; nenhuma porta de entrada precisa
+  ficar aberta.
+
+## O que fica no control plane
+
+- Pipelines, projetos, tarefas e artefatos.
+- **O que o agente relata**: o passo a passo de cada execução (o que ele pensou, os comandos
+  e a saída de cada ferramenta, o que inclui trechos dos arquivos que ele lê) e o diff de
+  cada etapa. É o que permite acompanhar e auditar o trabalho; o conteúdo completo fica só
+  pelo prazo de retenção do workspace.
+- **Segredos** do workspace (o token de um servidor MCP, uma conta de teste): cifrados,
+  entregues ao runner só em memória, a cada execução, e nunca mostrados de volta.
+- As credenciais das integrações, também cifradas.
+
+## Isolamento
+
+- Cada tarefa tem o próprio worktree e o próprio branch.
+- Uma etapa só passa pelos gates do projeto: os seus testes, não a opinião do agente.
+- O merge só é automático num pipeline em que alguém ligou essa opção. Por padrão, o PR
+  espera a sua revisão. O deploy nunca é feito pela plataforma.
+
+## Quem pode o quê
+
+| Papel | Pode |
+|---|---|
+| Membro | criar e acompanhar tarefas, decidir quando elas param, cancelar as próprias |
+| Administrador | também gerenciar pipelines, projetos, runners (aprovar, renomear, revogar), integrações e segredos, cancelar qualquer tarefa e ver a auditoria |
+
+Na issue, só quem tem permissão de escrita no repositório dispara tarefas e manda comandos,
+a menos que um gatilho aceite qualquer pessoa (com triagem e confirmação).
+
+## Runners
+
+- Um runner entra pelo código de oito letras confirmado no navegador, e cada um tem a
+  própria credencial.
+- Revogar o runner desconecta o executável na hora.
+- A plataforma recusa um runner numa versão diferente da exigida; a atualização é
+  automática.
+
+## Retenção
+
+O conteúdo dos anexos, os eventos completos do agente e os logs dos runners ficam pelo prazo
+de retenção do workspace e depois são apagados.

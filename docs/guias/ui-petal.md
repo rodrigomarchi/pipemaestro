@@ -90,6 +90,15 @@ tem esse componente). São duas `<img>`, a clara com `dark:hidden` e a escura co
 layout) e `loading="lazy"`, salvo a do hero (`eager`). As imagens são geradas por
 `make landing.shots` ([e2e/README.md](../../e2e/README.md)).
 
+## Documentação pública
+
+As páginas de `/docs` são Markdown em `apps/pipe_maestro_web/priv/docs/`, listadas em
+`PipeMaestroWeb.Docs` ([ADR 0057](../adr/0057-documentacao-publica.md)). O texto vai em
+`prose`, e uma linha `{{tela:<nome>}}` põe um `landing_shot/1` (de `LandingShots.all/0` ou
+`LandingShots.docs/0`). Os test ids: `docs-title`, `docs-nav-<slug>` (índice ao lado),
+`docs-menu` e `docs-menu-<slug>` (o mesmo índice no celular), `docs-previous`, `docs-next`,
+`docs-shot-<nome>`, e no índice `docs-section-<seção>` e `docs-card-<slug>`.
+
 ## Tema
 
 - **Cores:** `primary` é violeta e `secondary` é sky, definidos em `@theme inline`

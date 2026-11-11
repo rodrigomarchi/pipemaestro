@@ -9,6 +9,30 @@ defmodule PipeMaestroWeb.PageControllerTest do
     assert html =~ ~s(href="/login")
   end
 
+  test "the landing page leads to the documentation and its everyday examples", %{conn: conn} do
+    doc = conn |> get(~p"/") |> html_response(200) |> LazyHTML.from_document()
+
+    for page <- PipeMaestroWeb.Docs.section!("exemplos").pages do
+      assert [href] =
+               doc
+               |> LazyHTML.query(~s([data-testid="example-#{page.slug}"]))
+               |> LazyHTML.attribute("href")
+
+      assert href == "/docs/#{page.slug}"
+    end
+
+    for testid <- ~w(nav-docs nav-docs-compact cta-docs) do
+      assert doc |> LazyHTML.query(~s([data-testid="#{testid}"])) |> Enum.count() == 1
+    end
+  end
+
+  test "the landing page does not promise that the platform never merges", %{conn: conn} do
+    html = conn |> get(~p"/") |> html_response(200)
+
+    refute html =~ "nunca são feitos pela plataforma"
+    assert html =~ "o merge só é automático"
+  end
+
   test "the landing page explains the platform simply and in diagrams", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
 
@@ -49,7 +73,7 @@ defmodule PipeMaestroWeb.PageControllerTest do
                |> LazyHTML.query(~s([data-testid="nav-product"]))
                |> LazyHTML.attribute("href")
 
-      assert href == "#produto"
+      assert href == "/#produto"
       assert doc |> LazyHTML.query(~s(#produto[data-testid="product-tour"])) |> Enum.count() == 1
     end
 

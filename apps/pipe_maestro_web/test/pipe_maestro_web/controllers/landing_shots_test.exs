@@ -30,6 +30,18 @@ defmodule PipeMaestroWeb.LandingShotsTest do
     end
   end
 
+  test "lists the further screens the documentation shows, and fetches any by name" do
+    assert Enum.map(LandingShots.docs(), & &1.name) ==
+             ~w(pipeline integrations notifications quality)
+
+    for shot <- LandingShots.all() ++ LandingShots.docs() do
+      assert {:ok, ^shot} = LandingShots.fetch(shot.name)
+      assert String.trim(shot.alt) != ""
+    end
+
+    assert LandingShots.fetch("nothing") == :error
+  end
+
   test "path/2 names the light and dark files without random suffixes" do
     assert LandingShots.path("board", :light) == "/images/landing/board.png"
     assert LandingShots.path("board", :dark) == "/images/landing/board-dark.png"
@@ -37,7 +49,7 @@ defmodule PipeMaestroWeb.LandingShotsTest do
 
   for theme <- [:light, :dark] do
     test "every #{theme} screenshot exists, matches its declared size and stays small" do
-      for shot <- LandingShots.all() do
+      for shot <- LandingShots.all() ++ LandingShots.docs() do
         path = LandingShots.path(shot.name, unquote(theme))
         refute path =~ @forbidden
         assert File.regular?(file(path)), "missing #{path}; run make landing.shots"

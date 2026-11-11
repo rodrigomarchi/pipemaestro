@@ -96,3 +96,12 @@
 .pc-sidebar[data-collapsed="true"] [data-sidebar-toggle] .pc-sidebar-item__icon {
   transform: rotate(180deg);
 }
+
+/* Documentation pages: a heading's anchor lands below the sticky header, and
+   its link shows as a "#" beside the heading on hover or keyboard focus. */
+.docs-prose :where(h2, h3) { scroll-margin-top: 5.5rem; }
+.docs-prose a.anchor {
+  @apply ml-2 font-normal text-gray-400 no-underline opacity-0 focus:opacity-100 dark:text-gray-500;
+}
+.docs-prose a.anchor::before { content: "#"; }
+.docs-prose :where(h2, h3):hover a.anchor { opacity: 1; }

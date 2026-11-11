@@ -3,30 +3,41 @@
  * @flow A [done] The director builds the Nimbus workspace through the UI, with a real runner
  *   on the showcase CLI, and photographs the board, a running task, a decision, a job's
  *   audit, usage and the runners, light and dark, for the landing page
+ * @flow B [done] It goes on for the documentation: the notifications panel while tasks run, a
+ *   pipeline's diagram, and a Forgejo issue taken to a merged PR, for the integration's page
+ *   and the quality of the deliveries
  *
  * Not part of the suite: it runs only under `make landing.shots` (E2E_DIRECTOR=1), on an
  * empty e2e database, and writes apps/pipe_maestro_web/priv/static/images/landing/.
  * Its names are fixed on purpose: they show on the landing page.
  */
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { bootstrapOperator, userPassword } from "../helpers/env";
+import { createForgejoIssue, createForgejoRepo, fakeForgejo, forgejoState } from "../helpers/fakeForgejo";
+import { issueLabelPayload, pullRequestClosedPayload, sendForgejoWebhook } from "../helpers/webhook";
 import { RunnerProcess } from "../helpers/runnerProcess";
 import { waitForLiveView } from "../helpers/liveView";
 import { AppPage } from "../pages/AppPage";
 import { BackofficePage } from "../pages/BackofficePage";
+import { IntegrationsPage } from "../pages/IntegrationsPage";
+import { NotificationsPage } from "../pages/NotificationsPage";
 import { Timeline } from "../pages/JobsPage";
 import { PipelinesPage } from "../pages/PipelinesPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
+import { UsagePage } from "../pages/UsagePage";
 import { capture, retext } from "./capture";
 import {
   createCodeRoot,
   directory,
+  issue,
   member,
+  repository,
   runnerName,
   tasks,
   workspace,
@@ -47,7 +58,7 @@ test.describe("Landing director", () => {
     if (showcaseDir) rmSync(showcaseDir, { recursive: true, force: true });
   });
 
-  test("photographs the platform for the landing page", async ({ page, browser }) => {
+  test("photographs the platform for the landing page", async ({ page, browser, request }) => {
     showcaseDir = mkdtempSync(join(tmpdir(), "nimbus-showcase-"));
     const scenes = join(showcaseDir, "scenes.txt");
     writeScenes(scenes);
@@ -111,9 +122,9 @@ test.describe("Landing director", () => {
     }
     await capture(page, "board");
 
-    // task: the held task from its third stage: the test it wrote, the steps of
-    // that stage with the test run open, and the stage running live.
-    await taskPage.show(workspace.slug, paginationId);
+    // task: the coupon task's reproduction stage: the steps of the stage, with
+    // the run of the test it wrote open, failing for the reason the bug gives.
+    await taskPage.show(workspace.slug, couponId);
     await taskPage.openStage("reproducao");
     const steps = new Timeline(await taskPage.openSteps("reproducao", 1));
     await steps.icons().last().click();
@@ -129,13 +140,13 @@ test.describe("Landing director", () => {
     await taskPage.show(workspace.slug, couponId);
     await taskPage.openStage("implementacao");
     await page.getByTestId("stage-run-audit-implementacao-1").click();
-    // The link opens the run's agent on its audit.
+    // The link opens the run's agent, in a drawer over the task, on its audit.
     await expect(page.getByTestId("job-audit")).toBeVisible();
     await waitForLiveView(page);
     await capture(page, "audit", { top: "job-audit" });
 
     // usage: the cost by stage and by origin.
-    await page.getByTestId("sidebar-usage").click();
+    await new UsagePage(page).open(workspace.slug);
     await expect(page.getByTestId("usage-by-runner")).toContainText(runnerName);
     await waitForLiveView(page);
     await capture(page, "usage");
@@ -150,11 +161,109 @@ test.describe("Landing director", () => {
     ]);
     await capture(page, "runners");
 
+    // notifications: the bell's panel, with the held tasks running.
+    await app.openBoard(workspace.slug);
+    const bell = new NotificationsPage(page);
+    await bell.open();
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(400);
+    await capture(page, "notifications");
+    await bell.close();
+
     // The held tasks finish before the runner goes.
     writeFileSync(join(showcaseDir, "release"), "");
     await taskPage.show(workspace.slug, paginationId);
     await expect(taskPage.status).toHaveText("Concluída", { timeout: 120_000 });
     await taskPage.show(workspace.slug, stockId);
     await expect(taskPage.status).toHaveText("Concluída", { timeout: 120_000 });
+
+    // pipeline: the feature pipeline's diagram, its reviews side by side.
+    await pipelines.open(workspace.slug);
+    await pipelines.openPage("Nova funcionalidade");
+    await expect(pipelines.diagram).toBeVisible();
+    await capture(page, "pipeline");
+
+    // The store's code gets an origin on the Nimbus Forgejo, and the bug pipeline delivers
+    // in a pull request.
+    const repo = join(root, directory);
+    const origin = join(runner.configDir, "loja-api.git");
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin], { stdio: "ignore" });
+    execFileSync("git", ["-C", repo, "remote", "add", "origin", origin], { stdio: "ignore" });
+    execFileSync("git", ["-C", repo, "push", "-q", "origin", "main"], { stdio: "ignore" });
+    await createForgejoRepo(repository);
+
+    await pipelines.open(workspace.slug);
+    await pipelines.edit(pipeline);
+    await pipelines.openEntry();
+    await pipelines.openEntryTab("entrega");
+    await page.getByTestId("pipeline-delivery").selectOption("pr");
+    await pipelines.save();
+
+    const integrations = new IntegrationsPage(page);
+    await integrations.open(workspace.slug);
+    await integrations.createTokenConnection("Forgejo da Nimbus");
+    const { url: webhookUrl, secret } = await integrations.webhook();
+    await integrations.linkRepo(repository, `Loja API (${directory})`);
+    await page.getByTestId("trigger-new").click();
+    await page.getByTestId("trigger-kind").selectOption("label");
+    await page.getByTestId("trigger-label").fill("pipemaestro");
+    await page.getByTestId("trigger-mode").selectOption("task");
+    await page.getByTestId("trigger-pipeline").selectOption({ label: pipeline });
+    await page.getByTestId("trigger-save").click();
+    await expect(integrations.trigger({ kind: "label", label: "pipemaestro" })).toBeVisible();
+
+    // A label on an issue: the task runs and its PR is merged.
+    await createForgejoIssue({ repo: repository, ...issue });
+    const labeled = await sendForgejoWebhook(request, {
+      url: webhookUrl,
+      secret,
+      event: "issue_label",
+      id: "nimbus-label-1",
+      payload: issueLabelPayload(repository, issue, fakeForgejo.url),
+    });
+    expect(labeled.status()).toBe(202);
+
+    const taskLink = async (): Promise<string | null> => {
+      const state = await forgejoState(repository);
+      const found = state.comments
+        .map((comment: { body: string }) => comment.body.match(/\/w\/[^/]+\/tasks\/[0-9a-f-]+/))
+        .find(Boolean);
+      return found ? found[0] : null;
+    };
+    await expect.poll(taskLink, { timeout: 120_000 }).not.toBeNull();
+    await page.goto((await taskLink()) as string);
+    await waitForLiveView(page);
+    await expect(taskPage.status).toHaveText("Concluída", { timeout: 180_000 });
+
+    const [pull] = (await forgejoState(repository)).pulls;
+    const merged = await sendForgejoWebhook(request, {
+      url: webhookUrl,
+      secret,
+      event: "pull_request",
+      id: "nimbus-merged-1",
+      // Merged after a person's review, two hours after the PR was ready.
+      payload: pullRequestClosedPayload(
+        repository,
+        { number: pull.number, branch: pull.head.ref, merged: true, at: new Date(Date.now() + 2 * 3_600_000) },
+        fakeForgejo.url,
+      ),
+    });
+    expect(merged.status()).toBe(202);
+
+    // integrations: the connection, its repository and what the webhook delivered.
+    await integrations.open(workspace.slug);
+    await page.getByTestId("integration-link-forgejo-da-nimbus").click();
+    await waitForLiveView(page);
+    await integrations.openTab("entregas");
+    await retext(page, [[fakeForgejo.url, "https://git.nimbus.dev"]]);
+    await capture(page, "integrations");
+
+    // quality: the delivered PR, accepted as the pipeline left it.
+    const usage = new UsagePage(page);
+    await expect(async () => {
+      await usage.openTab(workspace.slug, "qualidade");
+      await expect(usage.delivered).toHaveText(/\b1\s*$/, { timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+    await capture(page, "quality");
   });
 });

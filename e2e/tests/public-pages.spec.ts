@@ -5,6 +5,9 @@
  * @flow D [done] A visitor sees the real product on the landing page: the board in the
  *   hero and a tour of the screens, in the theme of the page and without horizontal
  *   scroll on a phone
+ * @flow E [done] A visitor goes from the landing to the documentation: an everyday example, the
+ *   index beside the page, the next page, a screenshot in the page's theme, and on a phone
+ *   the index folded in a menu, without horizontal scroll (its tables scroll on their own)
  * @flow B [done] The sign-in page shows the e-mail and password form
  * @flow C [done] Every public page shows the PipeMaestro mark (its own SVG symbol and the
  *   name); the SVG favicon is checked by the control plane's ExUnit
@@ -128,6 +131,53 @@ test.describe("Public pages", () => {
     await loadAllShots(page.getByTestId("product-tour"));
     await shot(page.getByTestId("hero-screenshot"), "landing-hero-phone");
     await shot(page.getByTestId("product-tour"), "landing-tour-phone");
+  });
+
+  test("a visitor reads the documentation from the landing page", async ({ page }) => {
+    await page.goto("/");
+    await page.getByTestId("example-corrigir-um-bug").scrollIntoViewIfNeeded();
+    await shot(page.getByTestId("landing-examples"), "landing-examples");
+    await page.getByTestId("example-corrigir-um-bug").click();
+
+    await expect(page.getByTestId("docs-title")).toHaveText("Corrigir um bug com teste de reprodução");
+    await expect(page.getByTestId("docs-nav-corrigir-um-bug")).toHaveAttribute("aria-current", "page");
+    const screen = page.getByTestId("docs-shot-task");
+    await screen.scrollIntoViewIfNeeded();
+    await expectLoadedShot(screen, "task");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await shot(page, "docs-example");
+
+    await page.getByTestId("docs-next").click();
+    await expect(page.getByTestId("docs-title")).toHaveText("Uma issue do GitHub vira PR sozinha");
+
+    await page.getByTestId("docs-nav-primeiros-passos").click();
+    await expect(page.getByTestId("docs-title")).toHaveText("Do zero ao primeiro PR");
+    await expect(page.getByTestId("docs-previous")).toHaveCount(0);
+
+    await page.getByTestId("docs-home").click();
+    await expect(page.getByTestId("docs-section-exemplos")).toBeVisible();
+    await shot(page, "docs-index");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/docs/primeiros-passos");
+    await expect(page.getByTestId("docs-nav-runner")).toBeHidden();
+    await page.getByTestId("docs-menu").click();
+    await page.getByTestId("docs-menu-runner").click();
+    await expect(page.getByTestId("docs-title")).toHaveText("O runner na sua máquina");
+    const overflow = () =>
+      page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(await overflow()).toBeLessThanOrEqual(0);
+    await shot(page, "docs-page-phone");
+
+    // A page with wide tables scrolls them, not the page.
+    await page.goto("/docs/comandos");
+    expect(await overflow()).toBeLessThanOrEqual(0);
+    await shot(page, "docs-tables-phone");
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/");
+    await page.getByTestId("nav-docs").click();
+    await expect(page.getByTestId("docs-start")).toBeVisible();
   });
 
   test("the sign-in page offers e-mail and password", async ({ page }) => {

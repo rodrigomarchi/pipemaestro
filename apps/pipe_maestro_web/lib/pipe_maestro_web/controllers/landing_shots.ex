@@ -1,7 +1,9 @@
 defmodule PipeMaestroWeb.LandingShots do
   @moduledoc """
-  The screenshots of the platform the landing page shows: the hero's board and
-  one block of the product tour per screen, in the tour's order.
+  The screenshots of the platform the public pages show: the landing's hero
+  board and one block of its product tour per screen, in the tour's order
+  (`all/0`), and the further screens only the documentation shows (`docs/0`).
+  A documentation page places any of them by name (`fetch/1`).
 
   The files live in `priv/static/images/landing/`, `<name>.png` for the light
   theme and `<name>-dark.png` for the dark one, and are made by the e2e director
@@ -29,9 +31,9 @@ defmodule PipeMaestroWeb.LandingShots do
       name: "board",
       title: "Acompanhe ao vivo",
       text:
-        "O board mostra cada tarefa na sua etapa: o que está rodando, o que espera uma decisão e o que já terminou, com o custo do período e o runner de cada uma.",
+        "O board mostra cada tarefa no seu estado e o progresso do pipeline etapa por etapa: o que está rodando, o que espera uma decisão e o que já terminou.",
       alt:
-        "Board do workspace Nimbus com tarefas em execução, uma aguardando decisão e duas concluídas"
+        "Aba Tarefas do board do workspace Nimbus com duas tarefas em execução, uma aguardando decisão e duas concluídas"
     },
     %{
       name: "task",
@@ -61,9 +63,9 @@ defmodule PipeMaestroWeb.LandingShots do
       name: "usage",
       title: "Controle o custo",
       text:
-        "Custo, execuções, tempo de agente e tokens por dia, por origem, por pipeline, por runner, por pessoa e por etapa.",
+        "Custo, execuções, tempo de agente e tokens por dia, e o detalhe por pipeline, projeto, runner, pessoa e etapa.",
       alt:
-        "Página de uso e limites com o custo da semana e a divisão por pipeline, runner e pessoa"
+        "Visão geral do uso com o custo, as execuções, o tempo de agente e os tokens da semana e o custo por dia"
     },
     %{
       name: "runners",
@@ -74,9 +76,55 @@ defmodule PipeMaestroWeb.LandingShots do
     }
   ]
 
-  @doc "Every screenshot, in the order the tour shows them."
+  @docs_shots [
+    %{
+      name: "pipeline",
+      title: "O pipeline, de cima a baixo",
+      text: "Cada etapa na ordem, as revisões em paralelo lado a lado e onde uma pessoa decide.",
+      alt:
+        "Diagrama do pipeline Nova funcionalidade com as revisões de código e de segurança em paralelo"
+    },
+    %{
+      name: "integrations",
+      title: "Integrações com o host git",
+      text:
+        "Cada evento que o host git manda fica registrado, com o que a plataforma fez com ele.",
+      alt:
+        "Entregas da conexão Forgejo da Nimbus: a label da issue que criou a tarefa e o PR integrado"
+    },
+    %{
+      name: "notifications",
+      title: "Notificações",
+      text: "O sino mostra o que roda agora e avisa quando uma tarefa pausa ou termina.",
+      alt: "Painel de notificações aberto com tarefas em andamento e uma que espera decisão"
+    },
+    %{
+      name: "quality",
+      title: "Qualidade das entregas",
+      text:
+        "Quantos PRs foram aceitos sem mudança, com mudança ou fechados, e o retrabalho por etapa.",
+      alt: "Aba Qualidade do Uso com os PRs entregues por pipeline e o retrabalho por etapa"
+    }
+  ]
+
+  @doc "Every screenshot of the landing's tour, in the order it shows them."
   @spec all() :: [shot()]
-  def all, do: Enum.map(@shots, &Map.merge(&1, %{width: @width, height: @height}))
+  def all, do: Enum.map(@shots, &sized/1)
+
+  @doc "The screenshots only the documentation shows."
+  @spec docs() :: [shot()]
+  def docs, do: Enum.map(@docs_shots, &sized/1)
+
+  @doc "The screenshot named `name`, of the tour or of the documentation."
+  @spec fetch(String.t()) :: {:ok, shot()} | :error
+  def fetch(name) do
+    case Enum.find(all() ++ docs(), &(&1.name == name)) do
+      nil -> :error
+      shot -> {:ok, shot}
+    end
+  end
+
+  defp sized(shot), do: Map.merge(shot, %{width: @width, height: @height})
 
   @doc "The static path of the screenshot `name` in `theme`."
   @spec path(String.t(), theme()) :: String.t()

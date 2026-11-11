@@ -345,6 +345,27 @@ if [ -n "$OTEL_EXPORTER_OTLP_ENDPOINT" ]; then
 fi
 rm -f "$tools_log"
 
+# In a task's worktree a stage that passed commits what it wrote, as an agent
+# following the platform's contract does (a pipeline that delivers in a PR
+# checks it); told that it is the task's last stage, it takes the task's
+# artifacts out of the branch, keeping them on disk.
+case "$PWD" in
+  */worktrees/*)
+    if [ -z "$kind" ] && [ "$status" = "ok" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git add -A -- .
+      case "$prompt" in
+        *"Esta é a última etapa da tarefa"*)
+          [ -n "$CP_ARTIFACT_PATH" ] && git rm -r -q --cached --ignore-unmatch -- "$(dirname "$CP_ARTIFACT_PATH")" ;;
+      esac
+      # Nothing to commit is fine; any other failure shows on stderr, where the runner logs it.
+      if [ -n "$(git status --porcelain)" ]; then
+        git -c user.name="Claude" -c user.email=claude@nimbus.dev commit -q -m "${summary:-Etapa concluída}" >/dev/null ||
+          echo "showcase_claude: o commit da etapa falhou" >&2
+      fi
+    fi
+    ;;
+esac
+
 case "$kind" in
   decision)
     output='{"diagnostico":"A etapa parou porque **faltam duas decisões de produto**.","acao":"retry","instrucoes":"Use ponto e vírgula e libere para administradores e financeiro.","alternativas":[{"acao":"cancel","motivo":"Se a exportação não for mais necessária."}]}'

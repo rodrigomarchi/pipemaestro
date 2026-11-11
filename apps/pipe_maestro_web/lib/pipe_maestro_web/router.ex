@@ -23,6 +23,8 @@ defmodule PipeMaestroWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/docs", DocsController, :index
+    get "/docs/:slug", DocsController, :show
     delete "/logout", UserSessionController, :delete
   end
 
