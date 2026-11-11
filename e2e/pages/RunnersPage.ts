@@ -15,7 +15,8 @@ export class RunnersPage {
   }
 
   /** Types the code a runner printed and approves it under `name`. */
-  async approve(code: string, name: string) {
+  /** Approves a device code under `name`; `onFilled` runs on the filled request, before approving. */
+  async approve(code: string, name: string, onFilled?: () => Promise<void>) {
     await this.page.goto("/runners/activate");
     await waitForLiveView(this.page);
     await this.page.getByTestId("activate-code").fill(code);
@@ -23,6 +24,7 @@ export class RunnersPage {
     await expect(this.page.getByTestId("activate-request")).toBeVisible();
     await this.page.getByTestId("activate-name").fill(name);
     await shot(this.page, "runner-request");
+    if (onFilled) await onFilled();
     await this.page.getByTestId("activate-approve").click();
     await expect(this.page.getByTestId("activate-approved")).toContainText(name);
   }

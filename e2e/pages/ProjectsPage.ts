@@ -29,6 +29,8 @@ export class ProjectsPage {
     copyPaths?: string;
     /** Captures the filled form under this name (E2E_SHOTS). */
     shot?: string;
+    /** Runs on the filled form, before saving. */
+    onFilled?: () => Promise<void>;
   }) {
     await clickPageAction(this.page, "new-project");
     await waitForLiveView(this.page);
@@ -40,6 +42,7 @@ export class ProjectsPage {
     if (project.lint) await this.page.getByTestId("project-lint").fill(project.lint);
     if (project.copyPaths) await this.page.getByTestId("project-copy-paths").fill(project.copyPaths);
     if (project.shot) await shot(this.page, project.shot);
+    if (project.onFilled) await project.onFilled();
     await this.page.getByTestId("project-save").click();
     await expect(this.project(project.directory)).toContainText(project.name);
   }

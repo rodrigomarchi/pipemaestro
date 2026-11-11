@@ -77,6 +77,26 @@ defmodule PipeMaestroWeb.PageControllerTest do
       assert doc |> LazyHTML.query(~s(#produto[data-testid="product-tour"])) |> Enum.count() == 1
     end
 
+    test "the walkthrough shows each step in order, with its screens light and dark", %{
+      conn: conn
+    } do
+      doc = landing(conn)
+      steps = PipeMaestroWeb.LandingShots.walkthrough()
+
+      assert doc |> LazyHTML.query(~s(#passo-a-passo[data-testid="walkthrough"])) |> Enum.count() ==
+               1
+
+      for {step, index} <- Enum.with_index(steps, 1) do
+        block = LazyHTML.query(doc, ~s([data-testid="walkthrough-step-#{index}"]))
+        assert LazyHTML.text(block) =~ step.title
+
+        for shot <- step.shots, theme <- ["", "-dark"] do
+          img = LazyHTML.query(block, ~s(img[src="/images/landing/#{shot.name}#{theme}.png"]))
+          assert Enum.count(img) == 1, "step #{index} does not show #{shot.name}#{theme}.png"
+        end
+      end
+    end
+
     test "the screenshots come from PipeMaestroWeb.LandingShots, one per tour block" do
       assert Enum.map(PipeMaestroWeb.LandingShots.all(), & &1.name) == @tour
     end

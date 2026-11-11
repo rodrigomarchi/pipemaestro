@@ -30,11 +30,46 @@ defmodule PipeMaestroWeb.LandingShotsTest do
     end
   end
 
+  test "lists the walkthrough's steps in order, each with its copy and its screens" do
+    steps = LandingShots.walkthrough()
+
+    assert Enum.map(steps, &Enum.map(&1.shots, fn shot -> shot.name end)) == [
+             ~w(setup-runner),
+             ~w(setup-project),
+             ~w(setup-pipelines),
+             ~w(setup-gate),
+             ~w(setup-pipeline setup-pipeline-menu),
+             ~w(setup-pipeline-stage),
+             ~w(first-task-new),
+             ~w(first-task-running first-task-stage),
+             ~w(first-task-gate),
+             ~w(first-task-done)
+           ]
+
+    for step <- steps do
+      assert String.trim(step.title) != "" and String.trim(step.text) != ""
+      assert Enum.all?(step.code, &is_binary/1)
+      # Two screens side by side say what each one shows.
+      if length(step.shots) > 1, do: assert(Enum.all?(step.shots, &is_binary(&1[:caption])))
+    end
+  end
+
+  test "a close-up has the size of the director's detail box, a screen the window's" do
+    {:ok, gate} = LandingShots.fetch("first-task-gate")
+    assert {gate.kind, gate.width, gate.height} == {:detail, 1920, 900}
+
+    {:ok, board} = LandingShots.fetch("board")
+    assert {board.kind, board.width, board.height} == {:screen, 2880, 1800}
+  end
+
   test "lists the further screens the documentation shows, and fetches any by name" do
     assert Enum.map(LandingShots.docs(), & &1.name) ==
              ~w(pipeline integrations notifications quality)
 
-    for shot <- LandingShots.all() ++ LandingShots.docs() do
+    names = Enum.map(LandingShots.every(), & &1.name)
+    assert names == Enum.uniq(names)
+
+    for shot <- LandingShots.every() do
       assert {:ok, ^shot} = LandingShots.fetch(shot.name)
       assert String.trim(shot.alt) != ""
     end
@@ -49,7 +84,7 @@ defmodule PipeMaestroWeb.LandingShotsTest do
 
   for theme <- [:light, :dark] do
     test "every #{theme} screenshot exists, matches its declared size and stays small" do
-      for shot <- LandingShots.all() ++ LandingShots.docs() do
+      for shot <- LandingShots.every() do
         path = LandingShots.path(shot.name, unquote(theme))
         refute path =~ @forbidden
         assert File.regular?(file(path)), "missing #{path}; run make landing.shots"

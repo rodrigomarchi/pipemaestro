@@ -23,7 +23,11 @@ pipemaestro login --url https://app.pipemaestro.dev
 ```
 
 O terminal mostra um código de oito letras. Confirme o código no navegador e dê um nome à
-máquina. Depois ligue o runner apontando para a pasta onde ficam os seus repositórios:
+máquina.
+
+{{tela:setup-runner}}
+
+Depois ligue o runner apontando para a pasta onde ficam os seus repositórios:
 
 ```bash
 pipemaestro start --root ~/src
@@ -47,6 +51,8 @@ oferece e preencha:
 | Lint | `make lint` | o segundo gate, quando existe |
 | Notas para os agentes | "Postgres na porta 5432; nunca edite `priv/legacy`" | contexto que entra no prompt |
 
+{{tela:setup-project}}
+
 Não sabe os comandos de cor? Clique em **Analisar com IA**: o agente estuda o diretório numa
 cópia descartável e devolve o formulário preenchido. Nada é salvo até você salvar.
 
@@ -65,6 +71,14 @@ pode usar como estão ou editar:
 | Revisão de código | Revisão (não altera o código) |
 | Prompt único | Executar |
 
+{{tela:setup-pipelines}}
+
+Para um comando do projeto decidir se uma etapa passou, edite o pipeline, abra a etapa e, na
+aba **Verificação**, ponha o gate: `{{projeto.teste}}` roda o comando de teste do projeto
+depois do agente, e a etapa só segue se ele passar.
+
+{{tela:setup-gate}}
+
 Para o código virar um PR, edite o pipeline e, em **Entrega (num diretório com git)**,
 escolha a entrega em pull request. O diretório do projeto precisa de um `origin` no GitHub
 ou num Forgejo: o runner envia o branch e abre o PR com as credenciais da máquina (no
@@ -80,6 +94,8 @@ escolha o pipeline e o projeto:
 > Pedidos com cupom de 10% mostram R$ 189,91 no checkout e R$ 189,90 na fatura. O total
 > deve bater nos dois lugares.
 
+{{tela:first-task-new}}
+
 Prefere só descrever a ideia? Em **Tarefas**, **Escrever com IA** transforma algumas frases
 numa tarefa completa, com critérios de aceite.
 
@@ -89,7 +105,12 @@ A tarefa aparece no board e cada etapa roda num worktree próprio do runner, com
 branch. Você vê o agente trabalhando ao vivo, o artefato que cada etapa escreve e os
 arquivos que ela mudou.
 
-{{tela:board}}
+{{tela:first-task-stage}}
+
+Se um gate falha, a etapa tenta de novo, até o limite de tentativas dela. A saída do comando
+fica na verificação da tentativa:
+
+{{tela:first-task-gate}}
 
 Se o agente precisar de você, a tarefa pausa e o sino avisa (veja
 [Decisões](/docs/decisoes)). Quando a última etapa passa, o PR sai do rascunho e fica

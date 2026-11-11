@@ -8,7 +8,7 @@ defmodule PipeMaestroWeb.PageHTML do
 
   attr :shot, :map,
     required: true,
-    doc: "one of `PipeMaestroWeb.LandingShots.all/0` or `PipeMaestroWeb.LandingShots.docs/0`"
+    doc: "a screenshot of `PipeMaestroWeb.LandingShots` (`all/0`, `walkthrough/0` or `docs/0`)"
 
   attr :loading, :string, default: "lazy", values: ~w(lazy eager)
   attr :class, :any, default: nil, doc: "classes for the frame"
@@ -17,7 +17,8 @@ defmodule PipeMaestroWeb.PageHTML do
   @doc """
   A screenshot of the platform inside a browser window: a bar with three dots
   and the address, then the light and the dark picture, of which the page's
-  `dark` class shows one.
+  `dark` class shows one. A close-up (`kind: :detail`) is a part of the window,
+  so it goes in a plain frame, without the bar.
   """
   @spec landing_shot(map()) :: Phoenix.LiveView.Rendered.t()
   def landing_shot(assigns) do
@@ -36,6 +37,7 @@ defmodule PipeMaestroWeb.PageHTML do
       {@rest}
     >
       <div
+        :if={@shot.kind != :detail}
         class="flex items-center gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
         aria-hidden="true"
       >

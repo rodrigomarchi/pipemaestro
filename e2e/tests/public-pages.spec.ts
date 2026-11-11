@@ -8,6 +8,10 @@
  * @flow E [done] A visitor goes from the landing to the documentation: an everyday example, the
  *   index beside the page, the next page, a screenshot in the page's theme, and on a phone
  *   the index folded in a menu, without horizontal scroll (its tables scroll on their own)
+ * @flow F [done] A visitor follows the walkthrough from an empty workspace to the first task
+ *   done: each step in order with its real screens, the pipeline with the menu closed and
+ *   open side by side, the gate's close-up, in the page's theme and without horizontal scroll
+ *   on a phone
  * @flow B [done] The sign-in page shows the e-mail and password form
  * @flow C [done] Every public page shows the PipeMaestro mark (its own SVG symbol and the
  *   name); the SVG favicon is checked by the control plane's ExUnit
@@ -24,6 +28,20 @@ async function expectBrand(page: Page, testid = "brand") {
 }
 
 const TOUR = ["board", "task", "decision", "audit", "usage", "runners"] as const;
+
+/** The walkthrough's steps, by the screens each one shows. */
+const WALKTHROUGH = [
+  ["setup-runner"],
+  ["setup-project"],
+  ["setup-pipelines"],
+  ["setup-gate"],
+  ["setup-pipeline", "setup-pipeline-menu"],
+  ["setup-pipeline-stage"],
+  ["first-task-new"],
+  ["first-task-running", "first-task-stage"],
+  ["first-task-gate"],
+  ["first-task-done"],
+] as const;
 
 /**
  * Checks that the screenshot of `name` shown inside `container` is the one for `theme`
@@ -131,6 +149,47 @@ test.describe("Public pages", () => {
     await loadAllShots(page.getByTestId("product-tour"));
     await shot(page.getByTestId("hero-screenshot"), "landing-hero-phone");
     await shot(page.getByTestId("product-tour"), "landing-tour-phone");
+  });
+
+  test("the landing page walks from an empty workspace to the first task", async ({ page }) => {
+    await page.goto("/#passo-a-passo");
+    const walkthrough = page.getByTestId("walkthrough");
+    await expect(walkthrough).toBeInViewport();
+
+    for (const [index, names] of WALKTHROUGH.entries()) {
+      const step = page.getByTestId(`walkthrough-step-${index + 1}`);
+      await step.scrollIntoViewIfNeeded();
+      for (const name of names) await expectLoadedShot(step.getByTestId(`walkthrough-${name}`), name);
+    }
+    // The menu closed and open, side by side.
+    const closed = await page.getByTestId("walkthrough-setup-pipeline").boundingBox();
+    const open = await page.getByTestId("walkthrough-setup-pipeline-menu").boundingBox();
+    expect(open!.x).toBeGreaterThan(closed!.x);
+    expect(open!.y).toBe(closed!.y);
+
+    await loadAllShots(walkthrough);
+    await shot(page.getByTestId("walkthrough-step-1"), "landing-walkthrough-runner");
+    await shot(page.getByTestId("walkthrough-step-5"), "landing-walkthrough-pipeline");
+    await shot(page.getByTestId("walkthrough-step-9"), "landing-walkthrough-gate");
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+    const gate = page.getByTestId("walkthrough-step-9");
+    await gate.scrollIntoViewIfNeeded();
+    await expectLoadedShot(gate.getByTestId("walkthrough-first-task-gate"), "first-task-gate", "dark");
+    await page.evaluate(() => document.documentElement.classList.remove("dark"));
+    await page.emulateMedia({ colorScheme: "light" });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/#passo-a-passo");
+    await expect(walkthrough).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    await loadAllShots(walkthrough);
+    await shot(page.getByTestId("walkthrough-step-1"), "landing-walkthrough-runner-phone");
+    await shot(page.getByTestId("walkthrough-step-5"), "landing-walkthrough-pipeline-phone");
   });
 
   test("a visitor reads the documentation from the landing page", async ({ page }) => {

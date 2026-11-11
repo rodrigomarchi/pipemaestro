@@ -210,6 +210,65 @@
     </div>
   </section>
 
+  <%!-- The walkthrough: from an empty workspace to the first task, in real screens --%>
+  <section
+    id="passo-a-passo"
+    class="border-t border-gray-200 py-24 dark:border-gray-800"
+    data-testid="walkthrough"
+  >
+    <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-3xl text-center">
+        <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">
+          Passo a passo, nas telas de verdade
+        </p>
+        <h2 class="mt-2 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          Do workspace vazio à primeira tarefa concluída
+        </h2>
+        <p class="mt-4 text-lg text-gray-600 dark:text-gray-300">
+          O caminho que uma pessoa do time faz na primeira vez: conectar a máquina, dizer como o
+          código é testado, escolher um pipeline e pedir a primeira correção.
+        </p>
+      </div>
+
+      <ol class="relative mt-16 space-y-16 border-l border-gray-200 pl-8 sm:pl-12 dark:border-gray-800">
+        <li
+          :for={{step, index} <- Enum.with_index(@walkthrough, 1)}
+          class="relative"
+          data-testid={"walkthrough-step-#{index}"}
+        >
+          <span
+            class="absolute top-0 -left-[3rem] flex size-8 items-center justify-center rounded-full bg-primary-600 text-sm font-semibold text-white ring-8 ring-white sm:-left-[4rem] dark:ring-gray-950"
+            aria-hidden="true"
+          >
+            {index}
+          </span>
+          <h3 class="text-xl font-semibold text-gray-900 dark:text-white">{step.title}</h3>
+          <p class="mt-2 max-w-3xl text-base leading-7 text-gray-600 dark:text-gray-300">
+            {step.text}
+          </p>
+          <pre
+            :if={step.code != []}
+            class="mt-4 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-sm leading-6 text-gray-100 dark:bg-gray-800"
+          ><code :for={line <- step.code} class="block"><span class="select-none text-gray-500">$ </span>{line}</code></pre>
+          <div class={[
+            "mt-6 grid gap-6",
+            length(step.shots) > 1 && "lg:grid-cols-2"
+          ]}>
+            <div :for={shot <- step.shots} data-testid={"walkthrough-#{shot.name}"}>
+              <.landing_shot shot={shot} class={shot.kind == :detail && "mx-auto max-w-3xl"} />
+              <p
+                :if={shot[:caption]}
+                class="mt-2 text-center text-sm text-gray-500 dark:text-gray-400"
+              >
+                {shot.caption}
+              </p>
+            </div>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
   <%!-- Diagram: the path of a task through the pipeline --%>
   <section class="bg-gray-50 py-24 dark:bg-gray-900/40" data-testid="diagram-pipeline">
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

@@ -3,10 +3,11 @@
  * apps/pipe_maestro_web/priv/static/images/landing/, always under the same
  * names, so a new run replaces the files in place.
  *
- * Each picture is the browser's viewport (the director's 1440x900 at scale 2),
- * so every file has the size `PipeMaestroWeb.LandingShots` declares. A file
- * over the size limit, or of another size, fails the run: the framing is fixed
- * here, not found out in review.
+ * A screen is the browser's viewport (the director's 1440x900 at scale 2); a
+ * close-up is a fixed box of it around one element (`DETAIL`, at scale 2), so
+ * every file has the size `PipeMaestroWeb.LandingShots` declares. A file over
+ * the size limit, or of another size, fails the run: the framing is fixed here,
+ * not found out in review.
  */
 import { expect, type Page } from "@playwright/test";
 import { statSync } from "node:fs";
@@ -24,14 +25,32 @@ const HIDE = `
   * { caret-color: transparent !important; }
 `;
 
-async function write(page: Page, name: string): Promise<void> {
+/** The box of a close-up, in CSS pixels: `PipeMaestroWeb.LandingShots` declares it doubled. */
+export const DETAIL = { width: 960, height: 450 };
+
+type Clip = { x: number; y: number; width: number; height: number };
+
+async function write(page: Page, name: string, clip?: Clip): Promise<void> {
   const path = resolve(LANDING_DIR, `${name}.png`);
-  await page.screenshot({ path, animations: "disabled", style: HIDE, scale: "device" });
+  await page.screenshot({ path, animations: "disabled", style: HIDE, scale: "device", clip });
 
   const viewport = page.viewportSize()!;
   const { size } = statSync(path);
   expect(size, `${name}.png is over 600 KB; frame a smaller part of the screen`).toBeLessThan(MAX_BYTES);
   expect(viewport).toEqual({ width: 1440, height: 900 });
+}
+
+async function inBothThemes(page: Page, name: string, clip?: () => Promise<Clip>): Promise<void> {
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(400);
+  await write(page, name, await clip?.());
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.evaluate(() => document.documentElement.classList.add("dark"));
+  await page.waitForTimeout(300);
+  await write(page, `${name}-dark`, await clip?.());
+  await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  await page.emulateMedia({ colorScheme: "light" });
 }
 
 /**
@@ -48,16 +67,31 @@ export async function capture(page: Page, name: string, options: { top?: string 
   } else {
     await page.evaluate(() => window.scrollTo(0, 0));
   }
-  await page.mouse.move(0, 0);
-  await page.waitForTimeout(400);
-  await write(page, name);
+  await inBothThemes(page, name);
+}
 
-  await page.emulateMedia({ colorScheme: "dark" });
-  await page.evaluate(() => document.documentElement.classList.add("dark"));
-  await page.waitForTimeout(300);
-  await write(page, `${name}-dark`);
-  await page.evaluate(() => document.documentElement.classList.remove("dark"));
-  await page.emulateMedia({ colorScheme: "light" });
+/**
+ * Captures a close-up of the element `testid` as `name`, light and dark: the
+ * `DETAIL` box whose top left corner sits `pad.top` pixels above and
+ * `pad.left` to the left of the element, kept inside the viewport. What of the
+ * element does not fit the box is cut, so frame an element about its size.
+ */
+export async function closeUp(
+  page: Page,
+  name: string,
+  testid: string,
+  pad: { top: number; left: number } = { top: 24, left: 24 },
+): Promise<void> {
+  const element = page.getByTestId(testid);
+  await element.evaluate((el: HTMLElement) => el.scrollIntoView({ block: "center" }));
+  const viewport = page.viewportSize()!;
+  const clip = async (): Promise<Clip> => {
+    const box = (await element.boundingBox())!;
+    const x = Math.min(Math.max(box.x - pad.left, 0), viewport.width - DETAIL.width);
+    const y = Math.min(Math.max(box.y - pad.top, 0), viewport.height - DETAIL.height);
+    return { x, y, ...DETAIL };
+  };
+  await inBothThemes(page, name, clip);
 }
 
 /**
