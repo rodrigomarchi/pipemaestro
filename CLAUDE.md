@@ -13,3 +13,6 @@ This section is only what is specific to Claude Code.
   not after every edit, and never again on a tree that already passed (see "Verify
   what the change touches, once" in `AGENTS.md`).
 - **Every error found is yours to fix now**, regardless of which session introduced it.
+- **Every decision or ambiguity for the user goes through the interactive questionnaire**
+  (`AskUserQuestion`): before, during and at the end of a task, commit and PR included.
+  Never ask in prose, and never end a summary with a question in text.
