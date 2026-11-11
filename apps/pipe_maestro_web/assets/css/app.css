@@ -96,3 +96,6 @@
 .pc-sidebar[data-collapsed="true"] [data-sidebar-toggle] .pc-sidebar-item__icon {
   transform: rotate(180deg);
 }
+
+/* Documentation pages: a heading's anchor lands below the sticky header. */
+.docs-prose :where(h2, h3) { scroll-margin-top: 5.5rem; }

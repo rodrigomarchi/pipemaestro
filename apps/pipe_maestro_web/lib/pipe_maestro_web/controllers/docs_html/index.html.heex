@@ -1,0 +1,81 @@
+<Layouts.public flash={@flash}>
+  <section class="relative isolate overflow-hidden border-b border-gray-200 dark:border-gray-800">
+    <div
+      class="absolute inset-0 -z-10 bg-[radial-gradient(60%_60%_at_50%_0%,var(--color-primary-100),transparent)] dark:bg-[radial-gradient(60%_60%_at_50%_0%,color-mix(in_oklab,var(--color-primary-900)_60%,transparent),transparent)]"
+      aria-hidden="true"
+    />
+    <div class="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:py-20">
+      <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">Documentação</p>
+      <h1
+        data-testid="docs-title"
+        class="mt-2 text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl dark:text-white"
+      >
+        Aprenda a pôr agentes para trabalhar no seu time
+      </h1>
+      <p class="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
+        Como a plataforma funciona, como começar em poucos minutos e exemplos do dia a dia:
+        do bug relatado pelo suporte à issue que vira PR sozinha.
+      </p>
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <.button
+          to={~p"/docs/primeiros-passos"}
+          link_type="a"
+          size="lg"
+          icon="hero-rocket-launch"
+          data-testid="docs-start"
+        >
+          Começar pelos primeiros passos
+        </.button>
+        <.button
+          to={~p"/docs/corrigir-um-bug"}
+          link_type="a"
+          size="lg"
+          variant="outline"
+          color="gray"
+          icon="hero-light-bulb"
+        >
+          Ver um exemplo
+        </.button>
+      </div>
+    </div>
+  </section>
+
+  <div class="mx-auto max-w-7xl space-y-16 px-4 py-16 sm:px-6 lg:px-8">
+    <section
+      :for={section <- @sections}
+      id={section.key}
+      class="scroll-mt-24"
+      data-testid={"docs-section-#{section.key}"}
+    >
+      <div class="flex items-start gap-4">
+        <span class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400">
+          <.icon name={section.icon} class="size-6" />
+        </span>
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+            {section.title}
+          </h2>
+          <p class="mt-1 text-gray-600 dark:text-gray-400">{section.intro}</p>
+        </div>
+      </div>
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <.link
+          :for={page <- section.pages}
+          href={~p"/docs/#{page.slug}"}
+          data-testid={"docs-card-#{page.slug}"}
+          class="group flex flex-col rounded-2xl border border-gray-200 bg-white p-5 transition hover:border-primary-400 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-primary-600"
+        >
+          <span class="font-semibold text-gray-900 group-hover:text-primary-700 dark:text-white dark:group-hover:text-primary-300">
+            {page.title}
+          </span>
+          <span class="mt-2 flex-1 text-sm text-gray-600 dark:text-gray-400">
+            {page.description}
+          </span>
+          <span class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 dark:text-primary-400">
+            Ler <.icon name="hero-arrow-right-mini" class="size-4" />
+          </span>
+        </.link>
+      </div>
+    </section>
+  </div>
+</Layouts.public>

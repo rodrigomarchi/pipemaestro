@@ -82,6 +82,7 @@ Documentação de produto e arquitetura da plataforma de pipeline de agentes de 
 | 0054 | [Retenção por workspace para anexos e eventos do agente](adr/0054-retencao-por-workspace.md) | Aceita |
 | 0055 | [Qualidade das entregas: o desfecho do PR e o commit humano](adr/0055-qualidade-das-entregas.md) | Aceita |
 | 0056 | [Fontes de tarefa](adr/0056-fontes-de-tarefa.md) | Aceita |
+| 0057 | [Documentação pública](adr/0057-documentacao-publica.md) | Aceita |
 
 ## Specs
 

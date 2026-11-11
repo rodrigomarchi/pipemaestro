@@ -1,0 +1,68 @@
+<Layouts.public flash={@flash}>
+  <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12 lg:px-8 lg:py-14">
+    <aside class="hidden lg:block" aria-label="Documentação">
+      <nav class="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pb-8">
+        <.docs_index sections={@sections} current={@page.slug} prefix="docs-nav" />
+      </nav>
+    </aside>
+
+    <article class="min-w-0 max-w-3xl" data-testid={"docs-page-#{@page.slug}"}>
+      <details
+        class="mb-8 rounded-xl border border-gray-200 lg:hidden dark:border-gray-800"
+        data-testid="docs-menu"
+      >
+        <summary class="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+          <.icon name="hero-bars-3" class="size-5" /> Nesta documentação
+        </summary>
+        <nav class="border-t border-gray-200 px-4 py-4 dark:border-gray-800">
+          <.docs_index sections={@sections} current={@page.slug} prefix="docs-menu" />
+        </nav>
+      </details>
+
+      <p class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+        <.link
+          href={~p"/docs"}
+          class="hover:text-gray-900 dark:hover:text-white"
+          data-testid="docs-home"
+        >
+          Documentação
+        </.link>
+        <.icon name="hero-chevron-right-mini" class="size-4" />
+        <.link
+          href={~p"/docs" <> "##{@section.key}"}
+          class="hover:text-gray-900 dark:hover:text-white"
+        >
+          {@section.title}
+        </.link>
+      </p>
+      <h1
+        data-testid="docs-title"
+        class="mt-3 text-3xl font-semibold tracking-tight text-gray-900 sm:text-4xl dark:text-white"
+      >
+        {@page.title}
+      </h1>
+      <p class="mt-4 text-lg text-gray-600 dark:text-gray-300">{@page.description}</p>
+
+      <div class="mt-10">
+        <%= for block <- @page.blocks do %>
+          <%= case block do %>
+            <% {:html, html} -> %>
+              <div class="docs-prose prose max-w-none prose-gray dark:prose-invert prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-pre:overflow-x-auto">
+                {raw(html)}
+              </div>
+            <% {:shot, shot} -> %>
+              <.landing_shot shot={shot} class="my-10" data-testid={"docs-shot-#{shot.name}"} />
+          <% end %>
+        <% end %>
+      </div>
+
+      <nav
+        class="mt-16 grid gap-4 border-t border-gray-200 pt-8 sm:grid-cols-2 dark:border-gray-800"
+        aria-label="Páginas vizinhas"
+      >
+        <.neighbor_link :if={@previous} page={@previous} direction={:previous} />
+        <.neighbor_link :if={@next} page={@next} direction={:next} />
+      </nav>
+    </article>
+  </div>
+</Layouts.public>
