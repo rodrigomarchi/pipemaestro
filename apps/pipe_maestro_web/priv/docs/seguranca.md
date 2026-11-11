@@ -4,9 +4,9 @@ código.
 
 ## O que fica na sua máquina
 
-- **O código.** O runner trabalha num worktree do diretório do projeto. A plataforma vê o
-  que o agente relata (artefatos, os nomes dos arquivos mudados, a saída das ferramentas),
-  não o repositório.
+- **O repositório.** O runner trabalha num worktree do diretório do projeto, e o
+  repositório nunca é clonado nem guardado no control plane. O push e o PR saem da sua
+  máquina, com as credenciais dela.
 - **O login do Claude.** O agente roda com a conta de quem roda o runner. A plataforma não
   recebe a credencial.
 - **A rede fechada.** O runner abre a conexão de saída; nenhuma porta de entrada precisa
@@ -14,7 +14,11 @@ código.
 
 ## O que fica no control plane
 
-- Pipelines, projetos, tarefas, artefatos e o registro de cada execução.
+- Pipelines, projetos, tarefas e artefatos.
+- **O que o agente relata**: o passo a passo de cada execução (o que ele pensou, os comandos
+  e a saída de cada ferramenta, o que inclui trechos dos arquivos que ele lê) e o diff de
+  cada etapa. É o que permite acompanhar e auditar o trabalho; o conteúdo completo fica só
+  pelo prazo de retenção do workspace.
 - **Segredos** do workspace (o token de um servidor MCP, uma conta de teste): cifrados,
   entregues ao runner só em memória, a cada execução, e nunca mostrados de volta.
 - As credenciais das integrações, também cifradas.

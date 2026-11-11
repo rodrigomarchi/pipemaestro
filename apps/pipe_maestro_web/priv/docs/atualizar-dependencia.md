@@ -33,5 +33,6 @@ O artefato da etapa Risco é o que você lê primeiro: ele diz onde concentrar a
 
 - **Várias dependências pequenas**: uma tarefa por dependência. Elas rodam em paralelo,
   cada uma no próprio branch, e uma que quebre não segura as outras.
-- **Rotina**: com o GitHub conectado, um gatilho de label numa issue aberta pelo Dependabot
-  (ou pelo Renovate) transforma o aviso em tarefa.
+- **Rotina**: com o GitHub ou o Forgejo conectados, abra uma issue por atualização pendente e
+  ponha a label `pipemaestro`: cada uma vira uma tarefa deste pipeline. Veja
+  [Uma issue vira PR](/docs/issue-vira-pr).

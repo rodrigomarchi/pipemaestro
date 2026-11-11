@@ -81,11 +81,14 @@ no seu worktree.
 
 ## Entrega: commit, PR e merge
 
-Com entrega em pull request, cada etapa que passa vira um commit no branch da tarefa, o
-branch é enviado e o PR fica em rascunho. Ao fim, o PR fica pronto para revisão. Os
-artefatos saem do branch na última etapa, então o PR só leva código.
+Com entrega em commit, o agente faz o commit do que mudou em cada etapa, e a plataforma
+confere que nada ficou de fora antes de seguir. Com entrega em pull request, o runner também
+envia o branch e mantém um PR em rascunho, que fica pronto depois da última etapa. Os
+artefatos saem do branch na última etapa, então o PR só leva código. O diretório precisa de
+um `origin` no GitHub (o runner usa o `gh` da máquina) ou num Forgejo.
 
-Com **Fazer o merge do PR sozinha** ligado, a plataforma espera os checks do repositório
+Com **Fazer o merge do PR sozinha** ligado, num repositório
+[vinculado](/docs/github-e-forgejo), a plataforma espera os checks do repositório
 passarem e faz o merge (merge, squash ou rebase). Um check vermelho ou um conflito vira uma
 etapa de correção, até um limite; depois disso, o merge fica parado e quem cuida da tarefa é
 avisado. Desligado, que é o padrão, o merge fica com você.

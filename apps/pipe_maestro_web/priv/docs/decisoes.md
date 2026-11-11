@@ -31,7 +31,7 @@ Elas entram no contexto das etapas seguintes.
 | Refazer | a etapa roda de novo, com as instruções que você escrever |
 | Refazer a partir daqui | volta para uma etapa anterior e refaz dali em diante |
 | Seguir para a próxima | aceita a etapa como está e segue |
-| Cancelar a tarefa | encerra; o worktree e o branch ficam |
+| Cancelar a tarefa | encerra a tarefa (um membro cancela as próprias; um administrador, qualquer uma) |
 
 **Sugerir com IA** pede ao agente uma sugestão de decisão (por exemplo, refazer com uma
 instrução específica), que você aplica ou descarta.

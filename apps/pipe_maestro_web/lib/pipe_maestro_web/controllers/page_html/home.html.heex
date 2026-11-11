@@ -479,7 +479,8 @@
               href={~p"/docs/#{slug}"}
               class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
             >
-              Saiba mais <.icon name="hero-arrow-right-mini" class="size-4" />
+              Saiba mais<span class="sr-only">: {title}</span>
+              <.icon name="hero-arrow-right-mini" class="size-4" aria-hidden="true" />
             </.link>
           </.card_content>
         </.card>
@@ -539,7 +540,7 @@
               :for={
                 item <- [
                   "O runner abre a conexão; nenhuma porta de entrada na sua rede.",
-                  "O código e o login do Claude ficam na máquina do runner, nunca no control plane.",
+                  "O repositório e o login do Claude ficam na máquina do runner; a plataforma guarda o que o agente relata, pelo prazo de retenção.",
                   "Cada tarefa trabalha no próprio worktree e no próprio branch.",
                   "O PR espera a sua revisão: o merge só é automático num pipeline em que você ligar, e o deploy nunca é feito pela plataforma."
                 ]

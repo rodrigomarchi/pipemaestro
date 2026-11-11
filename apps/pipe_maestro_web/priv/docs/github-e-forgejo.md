@@ -34,7 +34,7 @@ E como:
 - **Modo**: *triagem*, em que o agente escreve a tarefa a partir da issue (e pergunta, se
   ela não estiver pronta), ou *tarefa direta*, em que a issue vira a tarefa como está.
 - **Aprovação automática** (ligada por padrão): a tarefa da triagem começa sozinha.
-- **Pipeline**: o do gatilho; na triagem é opcional, e o agente escolhe.
+- **Pipeline**: o que a tarefa vai usar; na triagem é opcional.
 - **Quem pode disparar**: só quem tem escrita no repositório (o padrão), ou qualquer pessoa,
   com triagem e confirmação.
 - **Limite por hora** (padrão 10), para uma enxurrada de issues não virar uma enxurrada de

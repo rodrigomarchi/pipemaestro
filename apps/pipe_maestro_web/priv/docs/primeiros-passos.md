@@ -10,6 +10,9 @@ sua máquina.
 - O **Claude Code** instalado e com login feito nessa máquina. O agente roda com a sua
   conta, então os limites e a cobrança do Claude são os seus.
 
+Os passos 1 a 3 (runner, projeto e pipeline) são de um **administrador** do workspace. Criar
+e acompanhar tarefas, qualquer membro pode.
+
 ## 1. Conecte uma máquina como runner
 
 O runner é um executável que roda o agente perto do seu código. Em **Executores**, clique em
@@ -44,7 +47,7 @@ oferece e preencha:
 | Lint | `make lint` | o segundo gate, quando existe |
 | Notas para os agentes | "Postgres na porta 5432; nunca edite `priv/legacy`" | contexto que entra no prompt |
 
-Não sabe os comandos de cor? Clique em **Gerar com IA**: o agente estuda o diretório numa
+Não sabe os comandos de cor? Clique em **Analisar com IA**: o agente estuda o diretório numa
 cópia descartável e devolve o formulário preenchido. Nada é salvo até você salvar.
 
 ## 3. Escolha um pipeline
@@ -62,8 +65,10 @@ pode usar como estão ou editar:
 | Revisão de código | Revisão (não altera o código) |
 | Prompt único | Executar |
 
-Para o código virar um PR, abra o pipeline, vá em **Entrega (num diretório com git)** e
-escolha a entrega em pull request.
+Para o código virar um PR, edite o pipeline e, em **Entrega (num diretório com git)**,
+escolha a entrega em pull request. O diretório do projeto precisa de um `origin` no GitHub
+ou num Forgejo: o runner envia o branch e abre o PR com as credenciais da máquina (no
+GitHub, pelo `gh` autenticado).
 
 ## 4. Crie a primeira tarefa
 
@@ -75,8 +80,8 @@ escolha o pipeline e o projeto:
 > Pedidos com cupom de 10% mostram R$ 189,91 no checkout e R$ 189,90 na fatura. O total
 > deve bater nos dois lugares.
 
-Prefere só descrever a ideia? **Escrever com IA** transforma algumas frases numa tarefa
-completa, com critérios de aceite.
+Prefere só descrever a ideia? Em **Tarefas**, **Escrever com IA** transforma algumas frases
+numa tarefa completa, com critérios de aceite.
 
 ## 5. Acompanhe e revise o PR
 

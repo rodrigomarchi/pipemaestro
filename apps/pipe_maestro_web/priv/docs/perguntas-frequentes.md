@@ -13,8 +13,8 @@ tarefa pausa quando passa dele) ou um orçamento por etapa.
 ## Funciona com qualquer linguagem?
 
 Sim. O agente usa os comandos de setup, teste e lint que você define no projeto, sejam eles
-`make test`, `npm test`, `pytest` ou `mvn verify`. O runner só precisa do git e do CLI do
-agente.
+`make test`, `npm test`, `pytest` ou `mvn verify`. O runner precisa do git e do CLI do
+agente, e do `gh` autenticado para entregar PRs no GitHub.
 
 ## O agente pode quebrar o meu repositório?
 
