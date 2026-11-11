@@ -36,22 +36,45 @@ defmodule PipeMaestroWeb.Layouts do
       >
         <nav class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <.brand />
-          <div class="hidden items-center gap-8 text-sm font-medium text-gray-600 md:flex dark:text-gray-300">
+          <div class="hidden items-center gap-8 text-sm font-medium text-gray-600 lg:flex dark:text-gray-300">
             <a
-              href="#produto"
+              href="/#produto"
               class="hover:text-gray-900 dark:hover:text-white"
               data-testid="nav-product"
             >
               Produto
             </a>
-            <a href="#como-funciona" class="hover:text-gray-900 dark:hover:text-white">
+            <a href="/#como-funciona" class="hover:text-gray-900 dark:hover:text-white">
               Como funciona
             </a>
-            <a href="#recursos" class="hover:text-gray-900 dark:hover:text-white">Recursos</a>
-            <a href="#seguranca" class="hover:text-gray-900 dark:hover:text-white">Segurança</a>
+            <a href="/#recursos" class="hover:text-gray-900 dark:hover:text-white">Recursos</a>
+            <a
+              href={~p"/docs" <> "#exemplos"}
+              class="hover:text-gray-900 dark:hover:text-white"
+              data-testid="nav-examples"
+            >
+              Exemplos
+            </a>
+            <a
+              href={~p"/docs"}
+              class="hover:text-gray-900 dark:hover:text-white"
+              data-testid="nav-docs"
+            >
+              Documentação
+            </a>
           </div>
           <div class="flex items-center gap-2">
             <.color_scheme_switch id="public-scheme" variant="toggle" />
+            <.button
+              to={~p"/docs"}
+              link_type="a"
+              variant="ghost"
+              color="gray"
+              class="lg:hidden"
+              data-testid="nav-docs-compact"
+            >
+              Docs
+            </.button>
             <.button
               to={~p"/login"}
               link_type="live_redirect"
@@ -82,7 +105,20 @@ defmodule PipeMaestroWeb.Layouts do
       <footer :if={@nav} class="border-t border-gray-200 dark:border-gray-800">
         <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-gray-500 sm:flex-row sm:px-6 lg:px-8 dark:text-gray-400">
           <.brand size="sm" testid="footer-brand" />
-          <p>Powered by Claude · O merge e o deploy continuam com você.</p>
+          <nav class="flex flex-wrap justify-center gap-x-6 gap-y-2" aria-label="Rodapé">
+            <a href={~p"/docs/primeiros-passos"} class="hover:text-gray-900 dark:hover:text-white">
+              Primeiros passos
+            </a>
+            <a href={~p"/docs" <> "#exemplos"} class="hover:text-gray-900 dark:hover:text-white">
+              Exemplos
+            </a>
+            <a href={~p"/docs/seguranca"} class="hover:text-gray-900 dark:hover:text-white">
+              Segurança
+            </a>
+            <a href={~p"/docs/perguntas-frequentes"} class="hover:text-gray-900 dark:hover:text-white">
+              Perguntas frequentes
+            </a>
+          </nav>
           <.app_version />
         </div>
       </footer>
