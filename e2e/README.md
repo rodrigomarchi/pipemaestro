@@ -94,7 +94,9 @@ As telas da landing (`/`) são screenshots reais da plataforma, gerados por um
 **diretor**: `director/landing.spec.ts`, a exceção deliberada à regra acima. Ele monta
 pela interface o workspace **Nimbus** (Marina Costa, o runner `macbook-marina` e o
 diretório `loja-api`, em `director/scenario.ts`), com um runner real, e fotografa
-`board`, `task`, `decision`, `audit`, `usage` e `runners`, claro e escuro, em
+`board`, `task`, `decision`, `audit`, `usage` e `runners` para a landing, e depois
+`notifications`, `pipeline`, `integrations` e `quality` para a documentação pública (uma
+issue do Forgejo falso levada até o PR integrado), claro e escuro, em
 `apps/pipe_maestro_web/priv/static/images/landing/` (`<nome>.png` e
 `<nome>-dark.png`, sempre os mesmos nomes).
 
@@ -104,7 +106,7 @@ make landing.shots    # APAGA o banco e2e deste worktree e regrava as imagens
 
 - **Fora da suíte.** O projeto `director` do `playwright.config.ts` só existe com
   `E2E_DIRECTOR=1`; `make e2e` e `make e2e.shots` não o enxergam e não tocam nas imagens.
-- **Quando rodar:** sempre que uma tela mostrada na landing mudar. Confira as imagens
+- **Quando rodar:** sempre que uma tela mostrada na landing ou nas docs (`/docs`) mudar. Confira as imagens
   antes do commit; `PipeMaestroWeb.LandingShotsTest` falha se faltar uma, se o tamanho
   em pixels divergir do declarado em `PipeMaestroWeb.LandingShots` ou se passar de 600 KB.
 - **Enquadramento:** `director/capture.ts` grava o viewport (1440×900, escala 2), com

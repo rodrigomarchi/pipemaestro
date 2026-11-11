@@ -10,6 +10,14 @@ export const workspace = { name: "Nimbus", slug: "nimbus" };
 export const member = { name: "Marina Costa", email: "marina@nimbus.dev" };
 export const runnerName = "macbook-marina";
 export const directory = "loja-api";
+/** The store's repository on the Nimbus Forgejo, and the issue a label takes to a PR. */
+export const repository = "nimbus/loja-api";
+export const issue = {
+  number: 42,
+  title: "Cupom vencido ainda dá desconto",
+  body: "O cupom BEMVINDO10 venceu ontem, mas o checkout ainda aplicou o desconto hoje de manhã.",
+  labels: ["pipemaestro"],
+};
 
 /**
  * One task of the scenario. `phrase` is a sentence of its description that
