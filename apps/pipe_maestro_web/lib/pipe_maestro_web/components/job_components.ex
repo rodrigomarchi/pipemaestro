@@ -917,17 +917,28 @@ defmodule PipeMaestroWeb.JobComponents do
       body: @neutral
     }
 
-  @doc ~s(A duration in milliseconds, short: "850 ms", "12 s", "3 min 05 s".)
+  @doc ~s(A duration in milliseconds, short: "850 ms", "12 s", "3 min 05 s", "2 h 05 min", "3 d 04 h".)
   @spec format_duration(non_neg_integer() | nil) :: String.t()
   def format_duration(nil), do: "—"
   def format_duration(ms) when ms < 1_000, do: "#{ms} ms"
   def format_duration(ms) when ms < 60_000, do: "#{div(ms, 1_000)} s"
 
-  def format_duration(ms) do
+  def format_duration(ms) when ms < 3_600_000 do
     seconds = div(ms, 1_000)
-
-    "#{div(seconds, 60)} min #{seconds |> rem(60) |> Integer.to_string() |> String.pad_leading(2, "0")} s"
+    "#{div(seconds, 60)} min #{two_digits(rem(seconds, 60))} s"
   end
+
+  def format_duration(ms) when ms < 86_400_000 do
+    minutes = div(ms, 60_000)
+    "#{div(minutes, 60)} h #{two_digits(rem(minutes, 60))} min"
+  end
+
+  def format_duration(ms) do
+    hours = div(ms, 3_600_000)
+    "#{div(hours, 24)} d #{two_digits(rem(hours, 24))} h"
+  end
+
+  defp two_digits(n), do: n |> Integer.to_string() |> String.pad_leading(2, "0")
 
   @doc ~s(A cost in US dollars with four decimals: "US$ 0.0037".)
   @spec format_cost(Decimal.t() | number() | nil) :: String.t()

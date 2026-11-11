@@ -36,6 +36,16 @@ defmodule PipeMaestroWeb.JobComponentsTest do
 
   defp tool_panel(name, input), do: panel_html("tool_use", %{"name" => name, "input" => input})
 
+  test "format_duration/1 picks the unit by size, up to days" do
+    assert JobComponents.format_duration(nil) == "—"
+    assert JobComponents.format_duration(850) == "850 ms"
+    assert JobComponents.format_duration(12_400) == "12 s"
+    assert JobComponents.format_duration(185_000) == "3 min 05 s"
+    assert JobComponents.format_duration(7_200_000) == "2 h 00 min"
+    assert JobComponents.format_duration(7_500_000) == "2 h 05 min"
+    assert JobComponents.format_duration(3 * 86_400_000 + 4 * 3_600_000) == "3 d 04 h"
+  end
+
   describe "which events become icons" do
     test "every event without text to read is an icon; the agent's text and the result are not" do
       for type <- @icon_types ++ ["something_new"], do: assert(JobComponents.icon?(ev(1, type)))
