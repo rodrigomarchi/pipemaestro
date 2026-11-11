@@ -20,6 +20,12 @@
 #   perguntas          the first stage stops with two structured questions
 #   segura:<stage>     <stage> runs its first steps and then waits until the
 #                      file $SHOWCASE_DIR/release exists (at most 10 minutes)
+#   erra:implementacao the first attempt of the implementation edits the wrong
+#                      line and still reports success, so a gate running the
+#                      project's tests fails it; the next attempt fixes the bug
+#
+# A scene may combine behaviours, separated by spaces (`segura:investigacao
+# erra:implementacao`).
 #
 # `module` is the path under lib/loja/ the task is about (e.g. pedidos/total).
 
@@ -197,6 +203,7 @@ out '{"type":"system","subtype":"init","cwd":"'"$PWD"'","session_id":"'"$session
 status="ok"
 questions=""
 cost="0.18"
+missed=""
 
 case "$stage" in
   triagem)
@@ -204,11 +211,11 @@ case "$stage" in
     read_file README.md 14
     grep_code "def $area" 96
     read_file "$lib" 11
-    case "$behaviour" in
-      segura:triagem) hold ;;
+    case " $behaviour " in
+      *" segura:triagem "*) hold ;;
     esac
-    case "$behaviour" in
-      perguntas)
+    case " $behaviour " in
+      *" perguntas "*)
         status="bloqueado"
         summary="O pedido não diz o formato do arquivo nem quem pode exportar; preciso de duas decisões."
         questions='[{"titulo":"Formato","pergunta":"Qual separador o arquivo exportado deve usar?","multipla":false,"opcoes":[{"rotulo":"Ponto e vírgula","descricao":"Abre direto no Excel em português, sem importar.","recomendada":true,"preview":"```csv\nnumero;cliente;total\n1042;Ana Souza;189,90\n```"},{"rotulo":"Vírgula","descricao":"O padrão do CSV; exige importar no Excel em português.","recomendada":false}]},{"titulo":"Acesso","pergunta":"Quem pode exportar os pedidos?","multipla":true,"opcoes":[{"rotulo":"Administradores","descricao":"Já veem todos os pedidos.","recomendada":true},{"rotulo":"Financeiro","descricao":"Precisa do arquivo para a conciliação.","recomendada":true},{"rotulo":"Atendimento","descricao":"Vê só os pedidos dos seus clientes.","recomendada":false}]}]'
@@ -237,6 +244,9 @@ O comportamento de \`$area\` diverge do esperado no fluxo descrito na tarefa.
     think 3400 720
     read_file "$lib" 9
     grep_code "Decimal" 88
+    case " $behaviour " in
+      *" segura:investigacao "*) hold ;;
+    esac
     bash_run "git log --oneline -5" "Histórico recente" 41
     call Task '{"subagent_type":"Explore","description":"Mapear quem chama o módulo","prompt":"Liste quem chama Loja.'"$area"'"}' \
       "Chamado por lib/loja/pedidos.ex e pelo controller de checkout." 2400
@@ -260,8 +270,8 @@ Somar em \`Decimal\` e arredondar uma vez, no fim."
     read_file "$test_file" 8
     mod=$(echo "$area" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
     append_test "soma antes de arredondar" "Loja.$mod.calcular(@pedido) == Decimal.new(\"189.90\")" 23
-    case "$behaviour" in
-      segura:reproducao) hold ;;
+    case " $behaviour " in
+      *" segura:reproducao "*) hold ;;
     esac
     bash_run "make test" "Roda a suíte" 1840
     summary="Teste que reproduz o problema escrito em $test_file; falha pelo motivo certo."
@@ -280,9 +290,27 @@ Somar em \`Decimal\` e arredondar uma vez, no fim."
   implementacao)
     think 2600 640
     read_file "$lib" 10
+    case " $behaviour " in
+      *" erra:implementacao "*) [ -f "$state.errou" ] || missed=1 ;;
+    esac
+    if [ -n "$missed" ]; then
+      # The first attempt rounds each item differently, which leaves the sum
+      # rounded per item: the reproduction test still fails.
+      touch "$state.errou"
+      edit_file "$lib" "  defp valor(item, :por_item), do: Decimal.round(item.preco, 2)" \
+        "  defp valor(item, :por_item), do: Decimal.round(item.preco, 2, :half_even)" 21
+      bash_run "make lint" "Roda o lint" 860
+      summary="Arredondamento de cada item passou a usar half_even em $lib."
+      artifact "# Implementação
+
+## Arquivos alterados
+- \`$lib\`: arredonda cada item com \`:half_even\`."
+      say "Arredondamento ajustado em $lib."
+      cost="0.48"
+    else
     edit_file "$lib" "  @arredondamento :por_item" "  @arredondamento :no_total" 19
-    case "$behaviour" in
-      segura:implementacao) hold ;;
+    case " $behaviour " in
+      *" segura:implementacao "*) hold ;;
     esac
     bash_run "make test" "Roda a suíte" 1910
     bash_run "make lint" "Roda o lint" 870
@@ -299,6 +327,7 @@ make test
 \`\`\`"
     say "Correção aplicada; a suíte e o lint passam."
     cost="0.71"
+    fi
     ;;
   auditoria)
     think 2900 530

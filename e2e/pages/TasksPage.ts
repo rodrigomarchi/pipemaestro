@@ -31,6 +31,8 @@ export class TasksPage {
     project: string;
     /** Captures the filled form under this name (E2E_SHOTS). */
     shot?: string;
+    /** Runs on the filled form, before submitting. */
+    onFilled?: () => Promise<void>;
   }): Promise<string> {
     await clickPageAction(this.page, "new-task");
     await this.page.getByTestId("task-title").fill(task.title);
@@ -40,6 +42,7 @@ export class TasksPage {
     await expect(this.page.getByTestId("task-pipeline-preview")).toBeVisible();
     await selectProject(this.page.getByTestId("task-project"), task.project);
     if (task.shot) await shot(this.page, task.shot);
+    if (task.onFilled) await task.onFilled();
     await this.page.getByTestId("task-submit").click();
     await expect(this.overview()).toBeVisible();
     await waitForLiveView(this.page);

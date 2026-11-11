@@ -6,6 +6,10 @@
  * @flow B [done] It goes on for the documentation: the notifications panel while tasks run, a
  *   pipeline's diagram, and a Forgejo issue taken to a merged PR, for the integration's page
  *   and the quality of the deliveries
+ * @flow C [done] It photographs the way from an empty workspace to the first task for the
+ *   landing's walkthrough: the runner approved, the project, the default pipelines, a
+ *   pipeline with the menu closed and open and a stage's drawer, the gate put on a stage, the
+ *   first task's form, the task running, the gate failing its first attempt and the task done
  *
  * Not part of the suite: it runs only under `make landing.shots` (E2E_DIRECTOR=1), on an
  * empty e2e database, and writes apps/pipe_maestro_web/priv/static/images/landing/.
@@ -31,7 +35,7 @@ import { ProjectsPage } from "../pages/ProjectsPage";
 import { RunnersPage } from "../pages/RunnersPage";
 import { TasksPage } from "../pages/TasksPage";
 import { UsagePage } from "../pages/UsagePage";
-import { capture, retext } from "./capture";
+import { capture, closeUp, retext } from "./capture";
 import {
   createCodeRoot,
   directory,
@@ -84,28 +88,103 @@ test.describe("Landing director", () => {
     const root = createCodeRoot(join(runner.configDir, "src"));
     runner.start("runner.login", ["--url", page.url().replace(/\/w\/.*$/, ""), "--capacity", "4"]);
     const [, code] = await runner.waitFor(/digite o código:\s+([A-Z]{4}-[A-Z]{4})/);
-    await new RunnersPage(page).approve(code, runnerName);
+    // setup-runner: the code the terminal showed, confirmed and named.
+    const machine = hostname().replace(/\.local$/, "");
+    await new RunnersPage(page).approve(code, runnerName, async () => {
+      await retext(page, [[machine, "MacBook-Pro-de-Marina"]]);
+      await capture(page, "setup-runner");
+    });
     expect(await runner.waitForExit()).toBe(0);
     runner.start("runner.start", ["--root", root]);
     await runner.waitFor(/Online como/);
 
+    // setup-project: one of the runner's directories, with the commands that prove the code.
+    const projects = new ProjectsPage(page);
+    await projects.open(workspace.slug);
+    await projects.create({
+      name: "Loja API",
+      runner: runnerName,
+      directory,
+      setup: "make deps",
+      test: "make test",
+      lint: "make lint",
+      onFilled: () => capture(page, "setup-project"),
+    });
+
+    // setup-pipelines: the ready-made pipelines.
     const pipelines = new PipelinesPage(page);
     await pipelines.open(workspace.slug);
     await pipelines.createDefaults();
+    await capture(page, "setup-pipelines");
 
-    const projects = new ProjectsPage(page);
-    await projects.open(workspace.slug);
-    await projects.create({ name: "Loja API", runner: runnerName, directory, setup: "make deps", test: "make test" });
+    // setup-gate: the implementation of the bug pipeline passes only when the project's tests do.
+    const implementation = 3;
+    await pipelines.edit(pipeline);
+    await pipelines.openStage(implementation);
+    await expect(pipelines.stageName(implementation)).toHaveValue("Implementação");
+    await pipelines.openStageTab(implementation, "verificacao");
+    await pipelines.stageGates(implementation).fill("{{projeto.teste}}");
+    await capture(page, "setup-gate");
+    await pipelines.closePanel(implementation);
+    await pipelines.save();
 
-    // The tasks: two that finish, one that stops with questions, two held mid-pipeline.
+    // setup-pipeline: the pipeline's page with the app's menu closed, then open, then a
+    // stage's drawer.
+    await pipelines.open(workspace.slug);
+    await pipelines.openPage(pipeline);
+    await expect(pipelines.diagram).toBeVisible();
+    const sidebar = page.getByTestId("app-sidebar");
+    const setMenu = async (collapsed: boolean) => {
+      if ((await sidebar.getAttribute("data-collapsed")) !== String(collapsed)) {
+        await page.getByTestId("sidebar-collapse").click();
+      }
+      await expect(sidebar).toHaveAttribute("data-collapsed", String(collapsed));
+      await page.waitForTimeout(300);
+    };
+    await setMenu(true);
+    await capture(page, "setup-pipeline");
+    await setMenu(false);
+    await capture(page, "setup-pipeline-menu");
+    await pipelines.selectStage(implementation);
+    await expect(pipelines.pagePanel).toContainText("Implementação");
+    await capture(page, "setup-pipeline-stage");
+
+    // The tasks: the first one, which misses on its first try; two that finish, one that
+    // stops with questions, two held mid-pipeline.
     const taskPage = new TasksPage(page);
-    const start = async (task: ShowcaseTask) => {
+    const start = async (task: ShowcaseTask, onFilled?: () => Promise<void>) => {
       await taskPage.open(workspace.slug);
-      return taskPage.create({ title: task.title, prompt: task.prompt, pipeline, project: "Loja API" });
+      return taskPage.create({ title: task.title, prompt: task.prompt, pipeline, project: "Loja API", onFilled });
     };
 
-    const couponId = await start(tasks.coupon);
-    await expect(taskPage.status).toHaveText("Concluída", { timeout: 120_000 });
+    // first-task-new, first-task-running and first-task-stage: the form, then the task
+    // investigating, its stage's drawer closed and open.
+    const couponId = await start(tasks.coupon, () => capture(page, "first-task-new"));
+    await expect(taskPage.stageNodeState("investigacao")).toHaveText("Executando", { timeout: 120_000 });
+    await capture(page, "first-task-running");
+    await taskPage.openStage("investigacao");
+    // The agent's last step so far open, with what it found.
+    await new Timeline(taskPage.liveEvents()).icons().last().click();
+    await capture(page, "first-task-stage");
+    await taskPage.closeStage();
+
+    // first-task-gate: the first implementation missed, and the tests' gate said so.
+    writeFileSync(join(showcaseDir, "release"), "");
+    await expect(taskPage.status).toHaveText("Concluída", { timeout: 180_000 });
+    rmSync(join(showcaseDir, "release"));
+    await taskPage.openStage("implementacao");
+    await taskPage.selectAttempt("implementacao", 1);
+    await taskPage.openAttemptTab("implementacao", 1, "verificacao");
+    await expect(page.getByTestId("stage-run-gate-implementacao-1-0")).toHaveAttribute("data-passed", "false");
+    await page.getByTestId("stage-run-gate-implementacao-1-0").locator("summary").click();
+    // The gate's command and its output, with the reason the attempt failed above it.
+    await closeUp(page, "first-task-gate", "stage-run-gates-implementacao-1", { top: 44, left: 12 });
+    await taskPage.closeStage();
+
+    // first-task-done: every stage passed, the second implementation through the gate.
+    await expect(taskPage.stageNodeState("implementacao")).toHaveText("Concluída");
+    await capture(page, "first-task-done");
+
     const shippingId = await start(tasks.shipping);
     await expect(taskPage.status).toHaveText("Concluída", { timeout: 120_000 });
     const exportId = await start(tasks.export);
@@ -139,7 +218,7 @@ test.describe("Landing director", () => {
     // audit: the job of a finished stage.
     await taskPage.show(workspace.slug, couponId);
     await taskPage.openStage("implementacao");
-    await page.getByTestId("stage-run-audit-implementacao-1").click();
+    await page.getByTestId("stage-run-audit-implementacao-2").click();
     // The link opens the run's agent, in a drawer over the task, on its audit.
     await expect(page.getByTestId("job-audit")).toBeVisible();
     await waitForLiveView(page);
@@ -156,7 +235,7 @@ test.describe("Landing director", () => {
     await runners.open(workspace.slug);
     await expect(runners.status(runnerName)).toBeVisible();
     await retext(page, [
-      [hostname().replace(/\.local$/, ""), "MacBook-Pro-de-Marina"],
+      [machine, "MacBook-Pro-de-Marina"],
       [new URL(page.url()).origin, "https://app.pipemaestro.dev"],
     ]);
     await capture(page, "runners");

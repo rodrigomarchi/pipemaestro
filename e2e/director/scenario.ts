@@ -22,7 +22,8 @@ export const issue = {
 /**
  * One task of the scenario. `phrase` is a sentence of its description that
  * picks its scene in the showcase CLI; `behaviour` is that scene ("ok",
- * "perguntas" or "segura:<stage>"), and `module` the code under lib/loja/ the
+ * "perguntas", "segura:<stage>" or "erra:implementacao", several
+ * separated by spaces), and `module` the code under lib/loja/ the
  * task is about.
  */
 export type ShowcaseTask = {
@@ -39,7 +40,7 @@ export const tasks = {
     prompt:
       "Pedidos com cupom de 10% mostram R$ 189,91 no checkout e R$ 189,90 na fatura. O total deve bater nos dois lugares.",
     phrase: "cupom de 10%",
-    behaviour: "ok",
+    behaviour: "segura:investigacao erra:implementacao",
     module: "pedidos/total",
   },
   shipping: {
@@ -125,7 +126,7 @@ fail=0
 for t in $(find test -name '*_test.exs'); do
   m=\${t#test/}
   m=lib/\${m%_test.exs}.ex
-  if grep -q 'soma antes de arredondar' "$t" && grep -q ':por_item' "$m"; then
+  if grep -q 'soma antes de arredondar' "$t" && grep -q '@arredondamento :por_item' "$m"; then
     fail=$((fail + 1))
     failing=$(sed -n 's/^defmodule \\([A-Za-z.]*\\) do$/\\1/p' "$t")
   fi
