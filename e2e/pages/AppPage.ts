@@ -46,6 +46,10 @@ export class AppPage {
     await waitForLiveView(this.page);
   }
 
+  async expectPlanBadge(text: string) {
+    await expect(this.page.getByTestId("workspace-plan-badge")).toHaveText(text);
+  }
+
   workspaceCard(slug: string): Locator {
     return this.page.getByTestId(`workspace-card-${slug}`);
   }

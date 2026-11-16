@@ -62,6 +62,7 @@ defmodule PipeMaestroWeb.RegistrationLive do
             <.form
               for={@form}
               id="signup-form"
+              data-testid="signup-form"
               action={~p"/signup"}
               phx-change="validate"
               phx-submit="save"
