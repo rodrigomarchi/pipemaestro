@@ -20,6 +20,21 @@ defmodule PipeMaestroWeb.WorkspaceNewLiveTest do
     assert has_element?(view, ~s([data-testid="workspace-new-stepper"]))
   end
 
+  test "someone who already has a workspace can go back to them", %{conn: conn, user: user} do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/new")
+    refute has_element?(view, ~s([data-testid="workspace-new-back"]))
+
+    {:ok, _} = Workspaces.create_owned_workspace(user, %{"name" => "Primeiro"})
+    {:ok, view, _html} = live(conn, ~p"/workspaces/new")
+
+    assert has_element?(
+             view,
+             ~s(a[data-testid="workspace-new-back"][href="/workspaces?choose=1"])
+           )
+
+    refute has_element?(view, ~s([data-testid="workspace-new-stepper"]))
+  end
+
   test "shows the address that the name gives", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/workspaces/new")
 

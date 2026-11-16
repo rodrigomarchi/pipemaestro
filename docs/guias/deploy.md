@@ -16,6 +16,13 @@ repositório `retro_hex_chat_infra`, do mesmo jeito que os outros apps Elixir de
   do app, com o corpo JSON `{"error": "quota_exceeded", "quota_bytes"}`, e aparece na
   tarefa como "arquivos recusados".
 
+O nginx e o HAProxy precisam repassar o endereço de quem acessa no `X-Forwarded-For`
+(`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` no nginx, `option forwardfor`
+no HAProxy). O app só acredita nesse cabeçalho quando a conexão vem de um endereço local ou
+privado, e os limites de login e de cadastro contam por esse endereço
+([ADR 0058](../adr/0058-cadastro-aberto-e-plano-free-beta.md)). Sem ele, todo mundo conta
+como o proxy, e poucas tentativas bloqueiam a plataforma inteira.
+
 Os segredos ficam no vault da infra e entram no ambiente do app pelo DeployEx:
 
 | Variável | Vault |

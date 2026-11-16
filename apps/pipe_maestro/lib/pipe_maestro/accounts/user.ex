@@ -32,14 +32,17 @@ defmodule PipeMaestro.Accounts.User do
     timestamps()
   end
 
-  @doc "Changeset for creating a user."
-  @spec registration_changeset(t(), map()) :: Ecto.Changeset.t()
-  def registration_changeset(user, attrs) do
+  @doc """
+  Changeset for creating a user. `validate_unique: false` leaves out asking
+  whether the e-mail is taken (`Credentials.validate_email/3`).
+  """
+  @spec registration_changeset(t(), map(), keyword()) :: Ecto.Changeset.t()
+  def registration_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:email, :name, :password])
     |> validate_required([:name])
     |> validate_length(:name, max: 120)
-    |> Credentials.validate_email(:users_email_index)
+    |> Credentials.validate_email(:users_email_index, opts)
     |> Credentials.validate_and_hash_password()
   end
 

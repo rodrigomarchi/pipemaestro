@@ -33,6 +33,14 @@ workspace sozinha, de graça, e aprender a colocar o primeiro pipeline de pé.
    robôs: 10 tentativas de login a cada 15 minutos por endereço IP e por e-mail, e 5
    cadastros por hora por IP. Usa o contador em ETS que já protegia o login do runner
    (`PipeMaestroWeb.RateLimit`), com os limites na configuração. Cada nó conta os seus.
+   Como o app fica atrás do nginx e do HAProxy, o endereço do cliente vem do
+   `X-Forwarded-For`, lido da direita para a esquerda e só quando quem conecta é um proxy
+   local (`PipeMaestroWeb.Plugs.RemoteIp`); o que o próprio cliente escreve no cabeçalho
+   não conta. O formulário de cadastro não diz, enquanto se digita, se um e-mail já tem
+   conta: só o envio diz, e o envio tem limite.
+6. **Endereços reservados.** Quem se cadastra não pode dar ao workspace um endereço que
+   passe pela plataforma (`admin`, `suporte`, `pipemaestro` e outros de
+   `Workspace.reserved_slugs/0`); o operador pode.
 5. **Uma aula de primeiros passos, não um assistente.** No primeiro acesso a um workspace
    Free que ainda não tem runner, projeto e pipeline, a admin vê uma aula em tela cheia,
    em três passos: conectar o runner, cadastrar o projeto e escolher o pipeline. A aula

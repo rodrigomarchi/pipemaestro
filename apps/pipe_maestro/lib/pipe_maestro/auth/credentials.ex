@@ -21,18 +21,30 @@ defmodule PipeMaestro.Auth.Credentials do
   @spec min_password_length() :: pos_integer()
   def min_password_length, do: @min_password_length
 
-  @doc "Validates `:email` and its uniqueness against `unique_index`."
-  @spec validate_email(Ecto.Changeset.t(), atom()) :: Ecto.Changeset.t()
-  def validate_email(changeset, unique_index) do
-    changeset
-    |> update_change(:email, &normalize_email/1)
-    |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+\.[^@,;\s]+$/,
-      message: "deve ser um e-mail válido"
-    )
-    |> validate_length(:email, max: 160)
-    |> unsafe_validate_unique(:email, PipeMaestro.Repo, message: "já está em uso")
-    |> unique_constraint(:email, name: unique_index, message: "já está em uso")
+  @doc """
+  Validates `:email` and its uniqueness against `unique_index`. With
+  `validate_unique: false`, the database is not asked whether the e-mail is
+  taken (a form checked as it is typed must not tell); the unique index still
+  refuses it on insert.
+  """
+  @spec validate_email(Ecto.Changeset.t(), atom(), keyword()) :: Ecto.Changeset.t()
+  def validate_email(changeset, unique_index, opts \\ []) do
+    changeset =
+      changeset
+      |> update_change(:email, &normalize_email/1)
+      |> validate_required([:email])
+      |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+\.[^@,;\s]+$/,
+        message: "deve ser um e-mail válido"
+      )
+      |> validate_length(:email, max: 160)
+
+    changeset =
+      if Keyword.get(opts, :validate_unique, true),
+        do:
+          unsafe_validate_unique(changeset, :email, PipeMaestro.Repo, message: "já está em uso"),
+        else: changeset
+
+    unique_constraint(changeset, :email, name: unique_index, message: "já está em uso")
   end
 
   @doc """

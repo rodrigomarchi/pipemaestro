@@ -85,6 +85,23 @@ defmodule PipeMaestroWeb.OnboardingLiveTest do
     assert {:ok, _view, _html} = live(conn, ~p"/w/acme")
   end
 
+  test "the lesson is only for whom it is pending", %{conn: conn, workspace: workspace} do
+    member = member_fixture(workspace)
+
+    assert {:error, {:live_redirect, %{to: "/w/acme"}}} =
+             conn |> log_in_user(member) |> live(~p"/w/acme/onboarding")
+
+    {:ok, view, _html} = live(conn, ~p"/w/acme/onboarding")
+    view |> element(~s([data-testid="onboarding-skip"])) |> render_click()
+
+    assert {:error, {:live_redirect, %{to: "/w/acme"}}} = live(conn, ~p"/w/acme/onboarding")
+  end
+
+  test "welcomes without assuming anyone's gender", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/w/acme/onboarding")
+    assert html =~ "Boas-vindas ao Acme"
+  end
+
   test "a workspace an operator created never shows the lesson", %{conn: conn} do
     workspace = workspace_fixture(%{name: "Globex", slug: "globex"})
     admin = member_fixture(workspace)

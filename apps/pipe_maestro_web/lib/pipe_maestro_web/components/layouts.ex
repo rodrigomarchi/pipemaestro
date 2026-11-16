@@ -332,7 +332,7 @@ defmodule PipeMaestroWeb.Layouts do
             >
               <.dropdown_menu_item
                 link_type="a"
-                to={~p"/workspaces"}
+                to={~p"/workspaces?#{[choose: 1]}"}
                 data-testid="account-switch-workspace"
               >
                 <.icon name="hero-squares-2x2" class="size-5" /> Trocar de workspace

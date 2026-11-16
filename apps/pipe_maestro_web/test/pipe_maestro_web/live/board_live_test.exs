@@ -558,6 +558,11 @@ defmodule PipeMaestroWeb.BoardLiveTest do
     test "a workspace an operator set up shows none", %{conn: conn, workspace: workspace} do
       {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
       refute has_element?(view, ~s([data-testid="workspace-plan-badge"]))
+
+      assert has_element?(
+               view,
+               ~s(a[data-testid="account-switch-workspace"][href="/workspaces?choose=1"])
+             )
     end
   end
 

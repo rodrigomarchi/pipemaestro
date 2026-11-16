@@ -1,8 +1,9 @@
 defmodule PipeMaestroWeb.RegistrationLive do
   @moduledoc """
   The sign-up screen of the Free beta plan (ADR 0058). It checks the form as it
-  is typed; a valid form is posted to `UserRegistrationController.create/2`,
-  which creates the account and signs it in.
+  is typed, except whether the e-mail is taken; a valid form is posted to
+  `UserRegistrationController.create/2`, which creates the account and signs
+  it in, or sends it back here (filled in from the session) with the reason.
   """
   use PipeMaestroWeb, :live_view
 
@@ -10,23 +11,22 @@ defmodule PipeMaestroWeb.RegistrationLive do
   alias PipeMaestro.Accounts.User
 
   @impl true
-  def mount(params, _session, socket) do
-    attrs = %{"name" => params["name"] || "", "email" => params["email"] || ""}
+  def mount(_params, session, socket) do
+    attrs = Map.take(session["signup"] || %{}, ["name", "email"])
 
     {:ok,
      socket
      |> assign(page_title: "Criar conta", trigger_submit: false)
-     |> assign_form(Accounts.change_user_registration(%User{}, attrs))}
+     |> assign_form(change(attrs))}
   end
 
   @impl true
   def handle_event("validate", %{"user" => params}, socket) do
-    changeset = Accounts.change_user_registration(%User{}, params)
-    {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
+    {:noreply, assign_form(socket, params |> change() |> Map.put(:action, :validate))}
   end
 
   def handle_event("save", %{"user" => params}, socket) do
-    changeset = Accounts.change_user_registration(%User{}, params)
+    changeset = change(params)
 
     if changeset.valid? do
       {:noreply, socket |> assign(trigger_submit: true) |> assign_form(changeset)}
@@ -34,6 +34,10 @@ defmodule PipeMaestroWeb.RegistrationLive do
       {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
     end
   end
+
+  # Never asks whether the e-mail is taken: only the rate-limited POST tells.
+  defp change(attrs),
+    do: Accounts.change_user_registration(%User{}, attrs, validate_unique: false)
 
   defp assign_form(socket, changeset), do: assign(socket, form: to_form(changeset, as: "user"))
 
@@ -72,7 +76,7 @@ defmodule PipeMaestroWeb.RegistrationLive do
                 field={@form[:name]}
                 icon="hero-user"
                 label="Nome"
-                placeholder="Como quer ser chamado"
+                placeholder="Seu nome"
                 autocomplete="name"
                 required
                 phx-debounce="blur"

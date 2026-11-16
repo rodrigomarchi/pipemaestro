@@ -43,6 +43,9 @@ defmodule PipeMaestroWeb.PageControllerTest do
     assert html =~ "#{limits.job_files_quota_mib} MiB"
     assert html =~ "Sem cartão de crédito"
 
+    assert html =~
+             "Eventos do agente guardados por #{limits.agent_events_retention_days} dias e log do runner por #{limits.runner_log_retention_days}"
+
     assert [href] =
              doc
              |> LazyHTML.query(~s([data-testid="plan-start-free"]))

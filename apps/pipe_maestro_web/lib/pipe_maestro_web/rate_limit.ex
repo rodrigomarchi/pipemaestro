@@ -22,7 +22,14 @@ defmodule PipeMaestroWeb.RateLimit do
     # Monotonic time may be negative: floor_div keeps the windows aligned.
     now = System.monotonic_time(:millisecond)
     started = Integer.floor_div(now, window_ms) * window_ms
-    count = :ets.update_counter(@table, {key, started}, 1, {{key, started}, 0})
+
+    count =
+      :ets.update_counter(
+        @table,
+        {key, started},
+        {2, 1},
+        {{key, started}, 0, started + window_ms}
+      )
 
     if count <= limit,
       do: :ok,
@@ -48,14 +55,13 @@ defmodule PipeMaestroWeb.RateLimit do
     {:ok, nil}
   end
 
-  # Old windows are dropped every few minutes.
+  # Every few minutes, the windows that already ended are dropped. Each entry
+  # is `{{key, started}, count, ends_at}`, in monotonic milliseconds.
   @impl true
   def handle_info(:sweep, state) do
     now = System.monotonic_time(:millisecond)
 
-    :ets.select_delete(@table, [
-      {{{:_, :"$1"}, :_}, [{:<, :"$1", div(now, 3_600_000) - 1}], [true]}
-    ])
+    :ets.select_delete(@table, [{{:_, :_, :"$1"}, [{:<, :"$1", now}], [true]}])
 
     schedule_sweep()
     {:noreply, state}

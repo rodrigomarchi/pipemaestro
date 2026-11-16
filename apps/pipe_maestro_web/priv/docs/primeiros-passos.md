@@ -7,7 +7,7 @@ sua máquina.
 - Uma **conta** e um **workspace** na plataforma. Crie os dois de graça em
   [Planos](/pricing): durante o beta há só o plano Free. Depois do cadastro, você dá um nome
   ao workspace e passa a administrá-lo; no primeiro acesso, uma aula curta mostra os
-  passos 1 a 3 deste guia. Se a sua empresa já tem um workspace, peça para ser adicionado.
+  passos 1 a 3 deste guia. Se a sua empresa já tem um workspace, peça acesso a quem o administra.
 - Uma máquina com o seu código: o seu notebook, um servidor do time ou uma VM.
 - O **Claude Code** instalado e com login feito nessa máquina. O agente roda com a sua
   conta, então os limites e a cobrança do Claude são os seus.

@@ -38,6 +38,30 @@ defmodule PipeMaestroWeb.UserSessionControllerTest do
       refute get_session(conn, :user_token)
     end
 
+    test "behind the proxy, each client counts on its own", %{conn: conn, user: user} do
+      proxied = fn client ->
+        %{conn | remote_ip: {127, 0, 0, 1}}
+        |> put_req_header("x-forwarded-for", client)
+        |> post(~p"/login", user: %{email: unique_email(), password: "senha errada demais"})
+      end
+
+      for _ <- 1..10, do: proxied.("203.0.113.#{rem(System.unique_integer([:positive]), 250)}")
+      blocked_client = "198.51.100.#{rem(System.unique_integer([:positive]), 250)}"
+      for _ <- 1..10, do: proxied.(blocked_client)
+
+      assert Phoenix.Flash.get(proxied.(blocked_client).assigns.flash, :error) == @blocked
+
+      conn =
+        %{conn | remote_ip: {127, 0, 0, 1}}
+        |> put_req_header(
+          "x-forwarded-for",
+          "192.0.2.#{rem(System.unique_integer([:positive]), 250)}"
+        )
+        |> post(~p"/login", user: %{email: user.email, password: valid_password()})
+
+      assert redirected_to(conn) == ~p"/workspaces"
+    end
+
     test "below the limit, signing in works", %{conn: conn, user: user} do
       for _ <- 1..9, do: attempt(conn, conn.remote_ip, user.email, "senha errada demais")
 

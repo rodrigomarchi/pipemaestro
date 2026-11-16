@@ -127,6 +127,17 @@ defmodule PipeMaestro.Workspaces.Workspace do
     workspace
     |> cast(attrs, [:name, :slug])
     |> validate_identity()
+    |> validate_exclusion(:slug, reserved_slugs(), message: "é reservado")
+  end
+
+  @doc """
+  Addresses only an operator may give a workspace: names that could pass for
+  the platform itself.
+  """
+  @spec reserved_slugs() :: [String.t()]
+  def reserved_slugs do
+    ~w(admin administrador administracao api app ajuda backoffice docs help login oficial
+       pipemaestro pricing root signup status suporte support sistema staff www)
   end
 
   # The name, and the address derived from it when none is given.
@@ -160,6 +171,9 @@ defmodule PipeMaestro.Workspaces.Workspace do
     |> Enum.join("-")
   end
 
+  # A derived address keeps within the 40 characters allowed, never ending in a hyphen.
+  defp fit_slug(slug), do: slug |> String.slice(0, 40) |> String.trim_trailing("-")
+
   # A value out of `:metadata` and `:delete` fails the cast; its message says
   # what to choose.
   defp after_retention_message(changeset) do
@@ -178,7 +192,7 @@ defmodule PipeMaestro.Workspaces.Workspace do
   defp put_default_slug(changeset) do
     case {get_field(changeset, :slug), get_change(changeset, :name)} do
       {slug, name} when slug in [nil, ""] and is_binary(name) ->
-        put_change(changeset, :slug, slugify(name))
+        put_change(changeset, :slug, name |> slugify() |> fit_slug())
 
       _ ->
         changeset

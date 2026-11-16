@@ -76,6 +76,14 @@ defmodule PipeMaestroWeb.WorkspaceNewLive do
         </div>
 
         <div class="flex flex-1 flex-col justify-center py-12">
+          <.link
+            :if={!@first?}
+            navigate={~p"/workspaces?#{[choose: 1]}"}
+            class="mb-8 inline-flex items-center gap-1 self-start text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            data-testid="workspace-new-back"
+          >
+            <.icon name="hero-arrow-left-micro" class="size-4" /> Seus workspaces
+          </.link>
           <div :if={@first?} class="mb-10" data-testid="workspace-new-stepper">
             <.stepper
               size="sm"

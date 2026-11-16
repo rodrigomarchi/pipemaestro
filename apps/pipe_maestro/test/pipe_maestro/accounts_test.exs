@@ -35,6 +35,16 @@ defmodule PipeMaestro.AccountsTest do
     end
   end
 
+  describe "change_user_registration/3" do
+    test "can leave out whether the e-mail is taken, so typing never tells" do
+      user = user_fixture()
+      attrs = %{"name" => "Bia", "email" => user.email, "password" => valid_password()}
+
+      assert Accounts.change_user_registration(%User{}, attrs, validate_unique: false).valid?
+      refute Accounts.change_user_registration(%User{}, attrs).valid?
+    end
+  end
+
   describe "create_user/1" do
     test "stores a hash, never the password, and normalizes the e-mail" do
       {:ok, user} =

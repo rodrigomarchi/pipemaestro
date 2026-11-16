@@ -3,7 +3,8 @@
  * @flow A [done] From the landing to the plans, sign-up, the first workspace and the lesson's
  *   three steps; finishing it opens the Free beta board, and signing in again skips the lesson
  * @flow B [done] Skipping the lesson on its first step is for good
- * @flow C [done] A taken e-mail is pointed out on the form, which keeps what was typed
+ * @flow C [done] A taken e-mail is refused when the form is sent (never while typing), and the
+ *   form comes back with what was typed
  */
 import { expect, test } from "@playwright/test";
 import { uniqueSuffix, userPassword } from "../helpers/env";
@@ -28,16 +29,25 @@ test.describe("Self-serve sign-up", () => {
 
     await signup.startFree();
     await shot(page, "signup");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, "signup-phone");
+    await page.setViewportSize({ width: 1280, height: 800 });
     await signup.fillSignUp(person.name, person.email, userPassword);
     await signup.submitSignUp();
 
     await expect(app.toasts).toContainText("Conta criada! Agora dê um nome ao seu workspace.");
     await shot(page, "workspace-new");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, "workspace-new-phone");
+    await page.setViewportSize({ width: 1280, height: 800 });
     await signup.createWorkspace(workspace.name);
 
     await expect(page).toHaveURL(`/w/${workspace.slug}/onboarding`);
     await signup.expectLessonStep(1);
     await shot(page, "lesson-step-1");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, "lesson-step-1-phone");
+    await page.setViewportSize({ width: 1280, height: 800 });
     await signup.lessonNext(2);
     await shot(page, "lesson-step-2");
     await signup.lessonNext(3);
@@ -90,7 +100,7 @@ test.describe("Self-serve sign-up", () => {
     await signup.fillSignUp(`Outra ${suffix}`, email, userPassword);
     await signup.submitSignUp();
 
-    await expect(page.getByTestId("signup-form")).toContainText("já está em uso");
+    await expect(app.toasts).toContainText("e-mail já está em uso");
     await expect(page.getByTestId("signup-email")).toHaveValue(email);
     await shot(page, "signup-email-taken");
   });

@@ -62,10 +62,14 @@ defmodule PipeMaestro.Accounts do
     %User{} |> User.registration_changeset(attrs) |> Repo.insert()
   end
 
-  @doc "A changeset for the new-user form."
-  @spec change_user_registration(User.t(), map()) :: Ecto.Changeset.t()
-  def change_user_registration(%User{} = user, attrs \\ %{}) do
-    User.registration_changeset(user, attrs)
+  @doc """
+  A changeset for the new-user form. The public sign-up passes
+  `validate_unique: false`, so checking the form never tells whether an
+  e-mail has an account.
+  """
+  @spec change_user_registration(User.t(), map(), keyword()) :: Ecto.Changeset.t()
+  def change_user_registration(%User{} = user, attrs \\ %{}, opts \\ []) do
+    User.registration_changeset(user, attrs, opts)
   end
 
   @doc "A changeset for the reset-password form."

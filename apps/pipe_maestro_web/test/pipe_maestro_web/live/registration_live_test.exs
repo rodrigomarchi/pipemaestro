@@ -16,7 +16,8 @@ defmodule PipeMaestroWeb.RegistrationLiveTest do
     assert has_element?(view, ~s(a[href="/login"]), "Entrar")
   end
 
-  test "points out a taken e-mail and a short password as they are typed", %{conn: conn} do
+  test "points out a short password as it is typed, never whether an e-mail is taken",
+       %{conn: conn} do
     user = user_fixture()
     {:ok, view, _html} = live(conn, ~p"/signup")
 
@@ -25,12 +26,19 @@ defmodule PipeMaestroWeb.RegistrationLiveTest do
       |> form("#signup-form", user: %{name: "Bia", email: user.email, password: "123"})
       |> render_change()
 
-    assert html =~ "já está em uso"
     assert html =~ "deve ter entre 6 e 72 caracteres"
+    refute html =~ "já está em uso"
+
+    view
+    |> form("#signup-form", user: %{name: "Bia", email: user.email, password: valid_password()})
+    |> render_submit()
+
+    assert has_element?(view, ~s(#signup-form[phx-trigger-action]))
   end
 
   test "comes back filled in after the controller refused it", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/signup?name=Bia&email=bia@acme.dev")
+    conn = init_test_session(conn, signup: %{"name" => "Bia", "email" => "bia@acme.dev"})
+    {:ok, view, _html} = live(conn, ~p"/signup")
 
     assert has_element?(view, ~s(#signup-form input[type=email][value="bia@acme.dev"]))
     assert has_element?(view, ~s(#signup-form input[value="Bia"]))

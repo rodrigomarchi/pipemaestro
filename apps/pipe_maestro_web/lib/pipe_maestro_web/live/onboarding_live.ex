@@ -5,7 +5,8 @@ defmodule PipeMaestroWeb.OnboardingLive do
   pipeline, with the texts, commands and screenshots of the landing's
   walkthrough. It sets nothing up. Skipping it, or leaving it at the end,
   ends it for good (`PipeMaestro.Onboarding.dismiss/1`); the board sends an
-  admin here while it is pending.
+  admin here while it is pending, and anyone else who opens it goes to the
+  board.
   """
   use PipeMaestroWeb, :live_view
 
@@ -18,11 +19,17 @@ defmodule PipeMaestroWeb.OnboardingLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok,
-     assign(socket,
-       page_title: "Primeiros passos",
-       steps: Enum.take(LandingShots.walkthrough(), @steps)
-     )}
+    scope = socket.assigns.current_scope
+
+    if Onboarding.pending?(scope) do
+      {:ok,
+       assign(socket,
+         page_title: "Primeiros passos",
+         steps: Enum.take(LandingShots.walkthrough(), @steps)
+       )}
+    else
+      {:ok, push_navigate(socket, to: ~p"/w/#{scope.workspace.slug}")}
+    end
   end
 
   @impl true
@@ -79,7 +86,7 @@ defmodule PipeMaestroWeb.OnboardingLive do
 
         <div class="mt-10">
           <p class="text-sm font-semibold text-primary-600 dark:text-primary-400">
-            Bem-vindo ao {@current_scope.workspace.name}
+            Boas-vindas ao {@current_scope.workspace.name}
           </p>
           <h1 class="mt-1 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl dark:text-white">
             Como colocar o PipeMaestro de pé

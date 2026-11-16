@@ -1,8 +1,9 @@
 ## Quanto custa a plataforma?
 
-Nada, durante o beta. Há um plano só, o Free: cada conta cria até 3 workspaces, cada
-workspace roda até 2 tarefas ao mesmo tempo e guarda até 500 MiB de anexos, mantidos por 14
-dias. Veja os detalhes em [Planos](/pricing). O uso do Claude é à parte, na sua conta.
+Nada, durante o beta. Há um plano só, o Free, com limites de quantos workspaces cada conta
+cria, de quantas tarefas rodam ao mesmo tempo e de quanto cada workspace guarda de anexos e
+por quanto tempo. Os números estão em [Planos](/pricing). O uso do Claude é à parte, na sua
+conta.
 
 ## Esqueci a minha senha. E agora?
 

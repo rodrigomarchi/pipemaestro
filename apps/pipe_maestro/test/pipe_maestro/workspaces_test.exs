@@ -233,6 +233,30 @@ defmodule PipeMaestro.WorkspacesTest do
       refute Workspaces.can_create_workspace?(user)
     end
 
+    test "a long name gives an address that fits" do
+      name = "Engenharia de Plataforma " |> String.duplicate(3) |> String.trim()
+      {:ok, workspace} = Workspaces.create_owned_workspace(user_fixture(), %{"name" => name})
+
+      assert String.length(workspace.slug) <= 40
+      refute String.ends_with?(workspace.slug, "-")
+    end
+
+    test "refuses an address the platform keeps for itself" do
+      for slug <- ~w(admin suporte pipemaestro backoffice) do
+        {:error, changeset} =
+          Workspaces.create_owned_workspace(user_fixture(), %{"name" => "X", "slug" => slug})
+
+        assert %{slug: ["é reservado"]} = errors_on(changeset)
+      end
+
+      {:error, changeset} =
+        Workspaces.create_owned_workspace(user_fixture(), %{"name" => "Admin"})
+
+      assert %{slug: ["é reservado"]} = errors_on(changeset)
+
+      assert {:ok, _} = Workspaces.create_workspace(%{name: "Suporte", slug: "suporte"})
+    end
+
     test "a workspace an operator creates stays custom, with no owner" do
       workspace = workspace_fixture()
       assert workspace.plan == :custom

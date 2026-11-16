@@ -24,7 +24,8 @@ defmodule PipeMaestroWeb.UserRegistrationControllerTest do
     user = user_fixture()
     conn = sign_up(conn, name: "Bia", email: user.email)
 
-    assert redirected_to(conn) == ~p"/signup?#{[name: "Bia", email: user.email]}"
+    assert redirected_to(conn) == ~p"/signup"
+    assert get_session(conn, :signup) == %{"name" => "Bia", "email" => user.email}
 
     assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
              "Não foi possível criar a conta: e-mail já está em uso."

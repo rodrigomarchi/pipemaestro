@@ -36,6 +36,28 @@ defmodule PipeMaestroWeb.WorkspacePickerLiveTest do
              conn |> log_in_user(user_fixture()) |> live(~p"/workspaces")
   end
 
+  test "without any workspace and past the plan's limit, tells whom to ask", %{conn: conn} do
+    user = user_fixture()
+
+    for n <- 1..3 do
+      {:ok, workspace} = Workspaces.create_owned_workspace(user, %{"name" => "Fora #{n}"})
+      :ok = Workspaces.remove_member(workspace, user)
+    end
+
+    {:ok, view, html} = conn |> log_in_user(user) |> live(~p"/workspaces")
+    assert has_element?(view, ~s([data-testid="no-workspaces"]))
+    assert html =~ "Fale com o suporte"
+  end
+
+  test "asked to choose, lists even a single workspace and offers a new one", %{conn: conn} do
+    user = user_fixture()
+    {:ok, workspace} = Workspaces.create_owned_workspace(user, %{"name" => "Único"})
+
+    {:ok, view, _html} = conn |> log_in_user(user) |> live(~p"/workspaces?choose=1")
+    assert has_element?(view, ~s([data-testid="workspace-card-#{workspace.slug}"]))
+    assert has_element?(view, ~s([data-testid="picker-new-workspace"]))
+  end
+
   test "offers a new workspace while the plan allows one", %{conn: conn} do
     user = user_fixture()
     for n <- 1..2, do: {:ok, _} = Workspaces.create_owned_workspace(user, %{"name" => "T #{n}"})

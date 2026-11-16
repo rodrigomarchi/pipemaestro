@@ -1,7 +1,9 @@
 defmodule PipeMaestroWeb.UserRegistrationController do
   @moduledoc """
   Creates the account of someone signing up on their own (ADR 0058); the form
-  itself is `RegistrationLive`. A new account is signed in right away.
+  itself is `RegistrationLive`. A new account is signed in right away; a
+  refused one goes back to the form, which the session fills in again. This is
+  the only place that tells whether an e-mail is taken, and it is rate limited.
   """
   use PipeMaestroWeb, :controller
 
@@ -21,8 +23,9 @@ defmodule PipeMaestroWeb.UserRegistrationController do
     else
       {:error, %Ecto.Changeset{} = changeset} ->
         conn
+        |> put_session(:signup, back_params(params))
         |> put_flash(:error, "Não foi possível criar a conta: #{describe(changeset)}.")
-        |> redirect(to: ~p"/signup?#{back_params(params)}")
+        |> redirect(to: ~p"/signup")
 
       {:error, _retry_after} ->
         conn
@@ -44,10 +47,12 @@ defmodule PipeMaestroWeb.UserRegistrationController do
     |> Enum.join("; ")
   end
 
+  # What the form shows again after a refusal; kept in the session, never in
+  # the address, so no name or e-mail lands in a log or the browser history.
   defp back_params(params) do
-    [
-      name: String.slice(params["name"] || "", 0, 120),
-      email: String.slice(params["email"] || "", 0, 160)
-    ]
+    %{
+      "name" => String.slice(params["name"] || "", 0, 120),
+      "email" => String.slice(params["email"] || "", 0, 160)
+    }
   end
 end
