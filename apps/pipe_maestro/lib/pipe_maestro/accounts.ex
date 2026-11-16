@@ -53,6 +53,15 @@ defmodule PipeMaestro.Accounts do
     %User{} |> User.registration_changeset(attrs) |> Repo.insert()
   end
 
+  @doc """
+  Creates the account of someone signing up on their own (ADR 0058). The rules
+  are those of `create_user/1`, which an operator uses.
+  """
+  @spec register_user(map()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def register_user(attrs) do
+    %User{} |> User.registration_changeset(attrs) |> Repo.insert()
+  end
+
   @doc "A changeset for the new-user form."
   @spec change_user_registration(User.t(), map()) :: Ecto.Changeset.t()
   def change_user_registration(%User{} = user, attrs \\ %{}) do

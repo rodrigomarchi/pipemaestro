@@ -1,6 +1,6 @@
 # 0002 — Identidades, workspaces e backoffice
 
-- **Status:** aceita
+- **Status:** aceita; superada em parte pela [ADR 0058](0058-cadastro-aberto-e-plano-free-beta.md): há cadastro aberto, com workspaces no plano Free beta
 - **Data:** 03/11/2026
 
 ## Contexto

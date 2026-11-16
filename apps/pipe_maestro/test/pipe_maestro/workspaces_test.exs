@@ -158,4 +158,85 @@ defmodule PipeMaestro.WorkspacesTest do
       assert Workspaces.list_members(workspace) == []
     end
   end
+
+  describe "create_owned_workspace/2" do
+    alias PipeMaestro.Workspaces.{Plan, Workspace}
+
+    test "creates a Free beta workspace with the plan's limits, its owner as the admin" do
+      user = user_fixture()
+
+      {:ok, workspace} = Workspaces.create_owned_workspace(user, %{"name" => "Acme Engenharia"})
+
+      assert %Workspace{
+               plan: :free_beta,
+               slug: "acme-engenharia",
+               max_running_tasks: 2,
+               job_files_quota_mib: 500,
+               job_files_retention_days: 14,
+               agent_events_retention_days: 14,
+               runner_log_retention_days: 7
+             } = workspace
+
+      assert workspace.owner_id == user.id
+      assert Workspaces.role(workspace, user) == :admin
+    end
+
+    test "ignores limits sent with the name" do
+      {:ok, workspace} =
+        Workspaces.create_owned_workspace(user_fixture(), %{
+          "name" => "Acme",
+          "max_running_tasks" => "99",
+          "job_files_quota_mib" => "99999"
+        })
+
+      assert workspace.max_running_tasks == 2
+      assert workspace.job_files_quota_mib == 500
+    end
+
+    test "refuses a taken address and leaves nothing behind" do
+      user = user_fixture()
+      taken = workspace_fixture()
+
+      {:error, changeset} =
+        Workspaces.create_owned_workspace(user, %{"name" => "Outra", "slug" => taken.slug})
+
+      assert %{slug: ["já está em uso"]} = errors_on(changeset)
+      assert Workspaces.list_workspaces_for_user(user) == []
+    end
+
+    test "stops at the plan's limit of workspaces per owner" do
+      user = user_fixture()
+      limit = Plan.free_beta().workspaces_per_owner
+
+      for n <- 1..limit do
+        assert {:ok, _} = Workspaces.create_owned_workspace(user, %{"name" => "Time #{n}"})
+      end
+
+      assert {:error, :limit_reached} =
+               Workspaces.create_owned_workspace(user, %{"name" => "Mais um"})
+
+      assert length(Workspaces.list_workspaces_for_user(user)) == limit
+    end
+
+    test "can_create_workspace?/1 counts only the workspaces the person created" do
+      user = user_fixture()
+      assert Workspaces.can_create_workspace?(user)
+
+      {:ok, _} = Workspaces.add_member(workspace_fixture(), user)
+      {:ok, _} = Workspaces.create_owned_workspace(user_fixture(), %{"name" => "De outra pessoa"})
+
+      for n <- 1..2, do: {:ok, _} = Workspaces.create_owned_workspace(user, %{"name" => "T #{n}"})
+      assert Workspaces.count_owned_workspaces(user) == 2
+      assert Workspaces.can_create_workspace?(user)
+
+      {:ok, _} = Workspaces.create_owned_workspace(user, %{"name" => "T 3"})
+      refute Workspaces.can_create_workspace?(user)
+    end
+
+    test "a workspace an operator creates stays custom, with no owner" do
+      workspace = workspace_fixture()
+      assert workspace.plan == :custom
+      assert workspace.owner_id == nil
+    end
+  end
 end

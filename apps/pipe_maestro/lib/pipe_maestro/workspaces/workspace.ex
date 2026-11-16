@@ -18,6 +18,10 @@ defmodule PipeMaestro.Workspaces.Workspace do
       ended stay whole (default 30);
     * `agent_events_after_retention`: what then happens to them, `:metadata`
       (the default: each keeps only its metadata) or `:delete`.
+
+  Its `plan` (`PipeMaestro.Workspaces.Plan`, ADR 0058) is `:custom` when an
+  operator created it and `:free_beta` when someone who signed up did; then
+  `owner` is that person.
   """
   use PipeMaestro.Schema
 
@@ -37,6 +41,9 @@ defmodule PipeMaestro.Workspaces.Workspace do
           job_files_quota_mib: pos_integer() | nil,
           agent_events_retention_days: pos_integer(),
           agent_events_after_retention: :metadata | :delete,
+          plan: :custom | :free_beta,
+          owner_id: Ecto.UUID.t() | nil,
+          owner: User.t() | Ecto.Association.NotLoaded.t() | nil,
           users: [User.t()] | Ecto.Association.NotLoaded.t(),
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
@@ -56,6 +63,9 @@ defmodule PipeMaestro.Workspaces.Workspace do
       values: [:metadata, :delete],
       default: :metadata
 
+    field :plan, Ecto.Enum, values: [:custom, :free_beta], default: :custom
+
+    belongs_to :owner, User
     has_many :memberships, Membership
     many_to_many :users, User, join_through: Membership
 
@@ -105,6 +115,23 @@ defmodule PipeMaestro.Workspaces.Workspace do
       less_than_or_equal_to: 3650,
       message: "use de 1 a 3650 dias"
     )
+    |> validate_identity()
+  end
+
+  @doc """
+  Changeset for a workspace someone creates for themselves: only its name and
+  address come from them; the plan sets the rest.
+  """
+  @spec owned_changeset(t(), map()) :: Ecto.Changeset.t()
+  def owned_changeset(workspace, attrs) do
+    workspace
+    |> cast(attrs, [:name, :slug])
+    |> validate_identity()
+  end
+
+  # The name, and the address derived from it when none is given.
+  defp validate_identity(changeset) do
+    changeset
     |> validate_required([:name])
     |> validate_length(:name, max: 80)
     |> put_default_slug()
