@@ -23,6 +23,7 @@ defmodule PipeMaestroWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/pricing", PageController, :pricing
     get "/docs", DocsController, :index
     get "/docs/:slug", DocsController, :show
     delete "/logout", UserSessionController, :delete
@@ -32,10 +33,12 @@ defmodule PipeMaestroWeb.Router do
     pipe_through [:browser, :redirect_if_user_is_authenticated]
 
     post "/login", UserSessionController, :create
+    post "/signup", UserRegistrationController, :create
 
     live_session :user_guest,
       on_mount: [{PipeMaestroWeb.UserAuth, :redirect_if_authenticated}] do
       live "/login", LoginLive
+      live "/signup", RegistrationLive
     end
   end
 

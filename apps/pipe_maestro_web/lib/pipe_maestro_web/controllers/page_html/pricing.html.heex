@@ -1,0 +1,119 @@
+<Layouts.public flash={@flash}>
+  <section class="relative isolate overflow-hidden">
+    <div
+      class="absolute inset-x-0 top-0 -z-10 h-96 bg-gradient-to-b from-primary-50 to-transparent dark:from-primary-950/40"
+      aria-hidden="true"
+    />
+    <div class="mx-auto max-w-7xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24 lg:px-8">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-sm font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-400">
+          Planos
+        </p>
+        <h1
+          class="mt-3 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl dark:text-white"
+          data-testid="pricing-title"
+        >
+          Planos simples. Durante o beta, tudo grátis.
+        </h1>
+        <p class="mt-4 text-lg text-gray-600 dark:text-gray-300">
+          Crie a conta, dê um nome ao workspace e conecte a sua máquina. O agente roda perto do
+          seu código, com a sua assinatura do Claude.
+        </p>
+      </div>
+
+      <div class="mx-auto mt-12 grid max-w-md gap-8">
+        <.card class="ring-2 ring-primary-500 dark:ring-primary-400" data-testid="plan-card-free">
+          <.card_content class="p-8">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Free</h2>
+              <.badge
+                color="primary"
+                variant="soft"
+                size="sm"
+                label="BETA"
+                data-testid="plan-badge-beta"
+              />
+            </div>
+            <p class="mt-6 flex items-baseline gap-1">
+              <span class="text-5xl font-bold tracking-tight text-gray-900 dark:text-white">
+                R$ 0
+              </span>
+              <span class="text-sm text-gray-500 dark:text-gray-400">/mês</span>
+            </p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">enquanto durar o beta</p>
+
+            <ul class="mt-8 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+              <li
+                :for={
+                  item <- [
+                    "Até #{@limits.workspaces_per_owner} workspaces",
+                    "Runners na sua máquina: o código não sai dela",
+                    "Pipelines prontos e personalizados",
+                    "Integração com GitHub e Forgejo",
+                    "#{@limits.max_running_tasks} tarefas rodando ao mesmo tempo",
+                    "#{@limits.job_files_quota_mib} MiB de anexos por workspace, guardados por #{@limits.job_files_retention_days} dias"
+                  ]
+                }
+                class="flex gap-3"
+              >
+                <.icon
+                  name="hero-check-circle-solid"
+                  class="mt-0.5 size-5 shrink-0 text-success-500"
+                />
+                <span>{item}</span>
+              </li>
+            </ul>
+
+            <.button
+              to={~p"/signup"}
+              link_type="live_redirect"
+              size="lg"
+              class="mt-8 w-full"
+              icon="hero-arrow-right"
+              icon_placement="right"
+              data-testid="plan-start-free"
+            >
+              Começar grátis
+            </.button>
+            <p class="mt-3 text-center text-sm text-gray-500 dark:text-gray-400">
+              Sem cartão de crédito.
+            </p>
+            <p class="mt-1 text-center text-xs text-gray-400 dark:text-gray-500">
+              Beta: sem garantia de disponibilidade.
+            </p>
+          </.card_content>
+        </.card>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-3xl px-4 pb-24 sm:px-6 lg:px-8">
+    <h2 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+      Perguntas frequentes
+    </h2>
+    <div class="mt-6 divide-y divide-gray-200 border-y border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+      <details
+        :for={
+          {question, answer} <- [
+            {"O que acontece quando o beta acabar?",
+             "Avisamos com antecedência dentro da plataforma. Os seus workspaces, pipelines e tarefas continuam onde estão."},
+            {"Quem paga o uso do Claude?",
+             "Você. O agente roda no runner, na sua máquina, com a sua assinatura ou chave do Claude. A plataforma não cobra pelo uso dele."},
+            {"O meu código sai da minha máquina?",
+             "Não. O runner trabalha num worktree local e só envia à plataforma o andamento, os artefatos das etapas e o que você anexar. O Pull Request é aberto pela sua máquina."}
+          ]
+        }
+        class="group py-4"
+      >
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-gray-900 dark:text-white">
+          {question}
+          <.icon
+            name="hero-chevron-down"
+            class="size-5 shrink-0 text-gray-400 transition group-open:rotate-180"
+          />
+        </summary>
+        <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">{answer}</p>
+      </details>
+    </div>
+  </section>
+</Layouts.public>

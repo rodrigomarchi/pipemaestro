@@ -65,6 +65,13 @@ defmodule PipeMaestroWeb.Layouts do
             >
               Documentação
             </a>
+            <a
+              href={~p"/pricing"}
+              class="hover:text-gray-900 dark:hover:text-white"
+              data-testid="nav-pricing"
+            >
+              Planos
+            </a>
           </div>
           <div class="flex items-center gap-2">
             <.color_scheme_switch id="public-scheme" variant="toggle" />
@@ -88,14 +95,14 @@ defmodule PipeMaestroWeb.Layouts do
               Entrar
             </.button>
             <.button
-              to={~p"/login"}
-              link_type="live_redirect"
+              to={~p"/pricing"}
+              link_type="a"
               class="hidden sm:inline-flex"
               icon="hero-arrow-right"
               icon_placement="right"
-              data-testid="nav-get-started"
+              data-testid="nav-signup"
             >
-              Começar
+              Criar conta
             </.button>
           </div>
         </nav>

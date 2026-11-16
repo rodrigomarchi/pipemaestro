@@ -26,4 +26,13 @@ defmodule PipeMaestroWeb.LoginLiveTest do
 
     assert {:error, {:redirect, %{to: "/workspaces"}}} = live(conn, ~p"/login")
   end
+
+  test "leads someone without an account to sign up, and a forgotten password to support",
+       %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/login")
+
+    assert has_element?(view, ~s(a[data-testid="login-signup-link"][href="/pricing"]))
+    assert html =~ "Esqueceu a senha? Fale com o suporte."
+    refute html =~ "Fale com o administrador"
+  end
 end

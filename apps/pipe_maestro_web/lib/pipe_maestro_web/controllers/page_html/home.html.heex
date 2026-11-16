@@ -25,13 +25,14 @@
         </p>
         <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <.button
-            to={~p"/login"}
-            link_type="live_redirect"
+            to={~p"/pricing"}
+            link_type="a"
             size="lg"
             icon="hero-arrow-right"
             icon_placement="right"
+            data-testid="hero-signup"
           >
-            Começar agora
+            Criar conta grátis
           </.button>
           <.button
             to="#como-funciona"
@@ -620,19 +621,20 @@
               Pronto para colocar o primeiro pipeline de pé?
             </p>
             <p class="mt-3 text-white/85">
-              Baixe o runner, escolha um pipeline pronto e crie a primeira tarefa. O guia leva poucos minutos.
+              Crie a conta grátis, baixe o runner, escolha um pipeline pronto e crie a primeira tarefa. O guia leva poucos minutos.
             </p>
             <div class="mt-8 flex flex-col gap-3 sm:flex-row">
               <.button
-                to={~p"/login"}
-                link_type="live_redirect"
+                to={~p"/pricing"}
+                link_type="a"
                 size="lg"
                 variant="light"
                 color="gray"
                 icon="hero-arrow-right"
                 icon_placement="right"
+                data-testid="cta-signup"
               >
-                Entrar
+                Criar conta grátis
               </.button>
               <.button
                 to={~p"/docs/primeiros-passos"}
