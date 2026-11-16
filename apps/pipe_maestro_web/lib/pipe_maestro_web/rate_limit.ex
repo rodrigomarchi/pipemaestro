@@ -2,7 +2,8 @@ defmodule PipeMaestroWeb.RateLimit do
   @moduledoc """
   A fixed-window request counter per key (an address and what it asks for),
   kept in ETS on this node. Enough to keep one machine from flooding the
-  runner sign-in; with several nodes each counts its own.
+  runner sign-in, the sign-in form or the sign-up (ADR 0058); with several
+  nodes each counts its own.
   """
   use GenServer
 
@@ -26,6 +27,18 @@ defmodule PipeMaestroWeb.RateLimit do
     if count <= limit,
       do: :ok,
       else: {:error, max(1, div(started + window_ms - now + 999, 1000))}
+  end
+
+  @doc """
+  Counts one more request for `key` against the limit named `name` in the
+  `:rate_limits` configuration (`{limit, window_ms}`).
+  """
+  @spec check(atom(), term()) :: :ok | {:error, pos_integer()}
+  def check(name, key) do
+    {limit, window_ms} =
+      Keyword.fetch!(Application.fetch_env!(:pipe_maestro_web, :rate_limits), name)
+
+    hit({name, key}, limit, window_ms)
   end
 
   @impl true

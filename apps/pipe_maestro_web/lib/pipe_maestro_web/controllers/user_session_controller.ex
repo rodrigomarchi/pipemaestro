@@ -3,11 +3,27 @@ defmodule PipeMaestroWeb.UserSessionController do
   use PipeMaestroWeb, :controller
 
   alias PipeMaestro.Accounts
-  alias PipeMaestroWeb.UserAuth
+  alias PipeMaestro.Auth.Credentials
+  alias PipeMaestroWeb.{RateLimit, UserAuth}
 
-  @doc "Checks the credentials posted by the sign-in form."
+  @doc """
+  Checks the credentials posted by the sign-in form, once the address and the
+  e-mail are within their number of attempts.
+  """
   @spec create(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def create(conn, %{"user" => %{"email" => email, "password" => password} = params}) do
+    with :ok <- RateLimit.check(:login, {:ip, conn.remote_ip}),
+         :ok <- RateLimit.check(:login, {:email, Credentials.normalize_email(email)}) do
+      check_credentials(conn, email, password, params)
+    else
+      {:error, _retry_after} ->
+        conn
+        |> put_flash(:error, "Muitas tentativas. Tente de novo em alguns minutos.")
+        |> redirect(to: ~p"/login")
+    end
+  end
+
+  defp check_credentials(conn, email, password, params) do
     if user = Accounts.get_user_by_email_and_password(email, password) do
       conn
       |> put_flash(:info, "Que bom ter você de volta, #{first_name(user.name)}!")
