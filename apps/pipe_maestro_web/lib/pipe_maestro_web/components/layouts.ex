@@ -359,7 +359,18 @@ defmodule PipeMaestroWeb.Layouts do
         />
         <.back_link :if={@back} back={@back} />
         <div class="min-w-0 flex-1">
-          <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
+          <div class="flex min-w-0 items-center gap-2">
+            <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
+            <.badge
+              :if={@current_scope.workspace.plan == :free_beta}
+              color="primary"
+              variant="soft"
+              size="xs"
+              label="Free · BETA"
+              class="shrink-0"
+              data-testid="workspace-plan-badge"
+            />
+          </div>
           <div class="flex min-w-0 items-center gap-2">
             <h1
               class="truncate text-base font-semibold text-gray-900 dark:text-white"

@@ -106,6 +106,16 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Index do
             <.avatar name={workspace.name} size="sm" random_color shape="rounded" />
           </:leading>
           <:title><span data-testid={"workspace-#{workspace.slug}"}>{workspace.name}</span></:title>
+          <:badge>
+            <.badge
+              :if={workspace.plan == :free_beta}
+              color="primary"
+              variant="soft"
+              size="sm"
+              label="Free beta"
+              data-testid={"backoffice-workspace-plan-#{workspace.slug}"}
+            />
+          </:badge>
           <:meta>
             <.record_fact
               icon="hero-link"

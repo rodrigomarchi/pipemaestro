@@ -1,6 +1,8 @@
 defmodule PipeMaestroWeb.PageControllerTest do
   use PipeMaestroWeb.ConnCase, async: true
 
+  alias PipeMaestro.Workspaces.Plan
+
   test "GET / renders the landing page", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
 
@@ -30,7 +32,7 @@ defmodule PipeMaestroWeb.PageControllerTest do
   test "GET /pricing shows the Free beta plan and leads to sign-up", %{conn: conn} do
     html = conn |> get(~p"/pricing") |> html_response(200)
     doc = LazyHTML.from_document(html)
-    limits = PipeMaestro.Workspaces.Plan.free_beta()
+    limits = Plan.free_beta()
 
     assert html =~ "Durante o beta, tudo grátis"
     assert doc |> LazyHTML.query(~s([data-testid="plan-card-free"])) |> Enum.count() == 1

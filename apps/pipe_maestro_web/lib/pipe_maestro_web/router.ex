@@ -54,6 +54,7 @@ defmodule PipeMaestroWeb.Router do
 
     live_session :user, on_mount: [{PipeMaestroWeb.UserAuth, :require_authenticated}] do
       live "/workspaces", WorkspacePickerLive
+      live "/workspaces/new", WorkspaceNewLive
       live "/runners/activate", ActivateRunnerLive
     end
 
@@ -63,6 +64,7 @@ defmodule PipeMaestroWeb.Router do
         {PipeMaestroWeb.UserAuth, :require_workspace}
       ] do
       live "/w/:workspace_slug", BoardLive
+      live "/w/:workspace_slug/onboarding", OnboardingLive
       live "/w/:workspace_slug/decisions", DecisionsLive
       live "/w/:workspace_slug/usage", UsageLive
       live "/w/:workspace_slug/pull-requests", PullRequestsLive

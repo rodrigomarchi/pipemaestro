@@ -22,9 +22,9 @@ defmodule PipeMaestro.Workspaces do
     )
   end
 
-  @doc "The workspace with `id`. Raises when there is none."
+  @doc "The workspace with `id`, with its `owner`. Raises when there is none."
   @spec get_workspace!(Ecto.UUID.t()) :: Workspace.t()
-  def get_workspace!(id), do: Repo.get!(Workspace, id)
+  def get_workspace!(id), do: Workspace |> Repo.get!(id) |> Repo.preload(:owner)
 
   @doc """
   The workspaces `user` belongs to, by name; with `role: :admin`, only those
@@ -87,23 +87,25 @@ defmodule PipeMaestro.Workspaces do
       # Holding the owner's row makes two creations at once count one after the other.
       Repo.one!(from u in User, where: u.id == ^user_id, lock: "FOR UPDATE", select: u.id)
 
-      if count_owned_workspaces(user) >= limits.workspaces_per_owner do
-        {:error, :limit_reached}
-      else
-        workspace =
-          struct!(
-            Workspace,
-            limits
-            |> Map.delete(:workspaces_per_owner)
-            |> Map.merge(%{plan: :free_beta, owner_id: user_id})
-          )
-
-        with {:ok, workspace} <- workspace |> Workspace.owned_changeset(attrs) |> Repo.insert(),
-             {:ok, _membership} <- add_member(workspace, user, :admin) do
-          {:ok, workspace}
-        end
-      end
+      if count_owned_workspaces(user) >= limits.workspaces_per_owner,
+        do: {:error, :limit_reached},
+        else: insert_owned(user, attrs, limits)
     end)
+  end
+
+  defp insert_owned(user, attrs, limits) do
+    workspace =
+      struct!(
+        Workspace,
+        limits
+        |> Map.delete(:workspaces_per_owner)
+        |> Map.merge(%{plan: :free_beta, owner_id: user.id})
+      )
+
+    with {:ok, workspace} <- workspace |> Workspace.owned_changeset(attrs) |> Repo.insert(),
+         {:ok, _membership} <- add_member(workspace, user, :admin) do
+      {:ok, workspace}
+    end
   end
 
   @doc "How many workspaces `user` created through self-serve sign-up."

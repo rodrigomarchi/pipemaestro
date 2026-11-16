@@ -145,6 +145,19 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLive.Show do
       />
 
       <div class="space-y-6">
+        <p
+          :if={@workspace.plan == :free_beta}
+          class="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400"
+        >
+          <.badge color="primary" variant="soft" size="sm" label="Free beta" />
+          Criado pelo cadastro aberto por
+          <span
+            class="font-medium text-gray-900 dark:text-white"
+            data-testid="backoffice-workspace-owner"
+          >
+            {if @workspace.owner, do: @workspace.owner.email, else: "uma conta removida"}
+          </span>
+        </p>
         <.card variant="outline">
           <.card_header
             title="Membros"
