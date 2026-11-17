@@ -23,7 +23,7 @@ defmodule PipeMaestroWeb.BoardLive do
   use PipeMaestroWeb, :live_view
 
   alias Phoenix.Socket.Broadcast
-  alias PipeMaestro.{Jobs, Runners, RunnerTelemetry, Tasks}
+  alias PipeMaestro.{Jobs, Onboarding, Runners, RunnerTelemetry, Tasks}
   alias PipeMaestroWeb.BoardLive.{ActivityTab, DecisionsTab, OverviewTab, RunnersTab, TasksTab}
   alias PipeMaestroWeb.RunnerStatus
 
@@ -42,8 +42,16 @@ defmodule PipeMaestroWeb.BoardLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    workspace = socket.assigns.current_scope.workspace
+    scope = socket.assigns.current_scope
 
+    if Onboarding.pending?(scope) do
+      {:ok, push_navigate(socket, to: ~p"/w/#{scope.workspace.slug}/onboarding")}
+    else
+      mount_board(socket, scope.workspace)
+    end
+  end
+
+  defp mount_board(socket, workspace) do
     if connected?(socket) do
       RunnerStatus.subscribe(workspace.id)
       Tasks.subscribe({:workspace, workspace.id})

@@ -23,6 +23,7 @@ defmodule PipeMaestroWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/pricing", PageController, :pricing
     get "/docs", DocsController, :index
     get "/docs/:slug", DocsController, :show
     delete "/logout", UserSessionController, :delete
@@ -32,10 +33,12 @@ defmodule PipeMaestroWeb.Router do
     pipe_through [:browser, :redirect_if_user_is_authenticated]
 
     post "/login", UserSessionController, :create
+    post "/signup", UserRegistrationController, :create
 
     live_session :user_guest,
       on_mount: [{PipeMaestroWeb.UserAuth, :redirect_if_authenticated}] do
       live "/login", LoginLive
+      live "/signup", RegistrationLive
     end
   end
 
@@ -51,6 +54,7 @@ defmodule PipeMaestroWeb.Router do
 
     live_session :user, on_mount: [{PipeMaestroWeb.UserAuth, :require_authenticated}] do
       live "/workspaces", WorkspacePickerLive
+      live "/workspaces/new", WorkspaceNewLive
       live "/runners/activate", ActivateRunnerLive
     end
 
@@ -60,6 +64,7 @@ defmodule PipeMaestroWeb.Router do
         {PipeMaestroWeb.UserAuth, :require_workspace}
       ] do
       live "/w/:workspace_slug", BoardLive
+      live "/w/:workspace_slug/onboarding", OnboardingLive
       live "/w/:workspace_slug/decisions", DecisionsLive
       live "/w/:workspace_slug/usage", UsageLive
       live "/w/:workspace_slug/pull-requests", PullRequestsLive

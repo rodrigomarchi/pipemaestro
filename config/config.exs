@@ -25,6 +25,12 @@ config :pipe_maestro_web,
   ecto_repos: [PipeMaestro.Repo],
   generators: [context_app: :pipe_maestro, binary_id: true]
 
+# How many sign-ins (per address and per e-mail) and sign-ups (per address)
+# fit in each window, in milliseconds (ADR 0058).
+config :pipe_maestro_web, :rate_limits,
+  login: {10, :timer.minutes(15)},
+  signup: {5, :timer.hours(1)}
+
 # Configures the endpoint
 config :pipe_maestro_web, PipeMaestroWeb.Endpoint,
   url: [host: "localhost"],

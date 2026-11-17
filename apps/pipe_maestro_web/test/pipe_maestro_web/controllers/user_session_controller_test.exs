@@ -5,6 +5,72 @@ defmodule PipeMaestroWeb.UserSessionControllerTest do
 
   setup do: %{user: user_fixture()}
 
+  describe "POST /login, too many attempts" do
+    @blocked "Muitas tentativas. Tente de novo em alguns minutos."
+
+    defp attempt(conn, ip, email, password) do
+      %{conn | remote_ip: ip} |> post(~p"/login", user: %{email: email, password: password})
+    end
+
+    test "an address that failed ten times is stopped, even with the right password",
+         %{conn: conn, user: user} do
+      ip = conn.remote_ip
+
+      for n <- 1..10 do
+        attempt(conn, ip, "outra#{n}@example.com", "senha errada demais")
+      end
+
+      conn = attempt(conn, ip, user.email, valid_password())
+
+      assert redirected_to(conn) == ~p"/login"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == @blocked
+      refute get_session(conn, :user_token)
+    end
+
+    test "an e-mail tried ten times is stopped, from any address", %{conn: conn, user: user} do
+      for n <- 1..10 do
+        attempt(conn, {10, 200, 1, n}, user.email, "senha errada demais")
+      end
+
+      conn = attempt(conn, {10, 200, 2, 1}, user.email, valid_password())
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == @blocked
+      refute get_session(conn, :user_token)
+    end
+
+    test "behind the proxy, each client counts on its own", %{conn: conn, user: user} do
+      proxied = fn client ->
+        %{conn | remote_ip: {127, 0, 0, 1}}
+        |> put_req_header("x-forwarded-for", client)
+        |> post(~p"/login", user: %{email: unique_email(), password: "senha errada demais"})
+      end
+
+      for _ <- 1..10, do: proxied.("203.0.113.#{rem(System.unique_integer([:positive]), 250)}")
+      blocked_client = "198.51.100.#{rem(System.unique_integer([:positive]), 250)}"
+      for _ <- 1..10, do: proxied.(blocked_client)
+
+      assert Phoenix.Flash.get(proxied.(blocked_client).assigns.flash, :error) == @blocked
+
+      conn =
+        %{conn | remote_ip: {127, 0, 0, 1}}
+        |> put_req_header(
+          "x-forwarded-for",
+          "192.0.2.#{rem(System.unique_integer([:positive]), 250)}"
+        )
+        |> post(~p"/login", user: %{email: user.email, password: valid_password()})
+
+      assert redirected_to(conn) == ~p"/workspaces"
+    end
+
+    test "below the limit, signing in works", %{conn: conn, user: user} do
+      for _ <- 1..9, do: attempt(conn, conn.remote_ip, user.email, "senha errada demais")
+
+      conn = attempt(conn, conn.remote_ip, user.email, valid_password())
+      assert redirected_to(conn) == ~p"/workspaces"
+      assert get_session(conn, :user_token)
+    end
+  end
+
   describe "POST /login" do
     test "signs the user in and goes to the workspaces", %{conn: conn, user: user} do
       conn = post(conn, ~p"/login", user: %{email: user.email, password: valid_password()})

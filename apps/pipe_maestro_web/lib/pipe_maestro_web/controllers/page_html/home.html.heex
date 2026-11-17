@@ -25,13 +25,14 @@
         </p>
         <div class="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <.button
-            to={~p"/login"}
-            link_type="live_redirect"
+            to={~p"/pricing"}
+            link_type="a"
             size="lg"
             icon="hero-arrow-right"
             icon_placement="right"
+            data-testid="hero-signup"
           >
-            Começar agora
+            Criar conta grátis
           </.button>
           <.button
             to="#como-funciona"
@@ -246,10 +247,7 @@
           <p class="mt-2 max-w-3xl text-base leading-7 text-gray-600 dark:text-gray-300">
             {step.text}
           </p>
-          <pre
-            :if={step.code != []}
-            class="mt-4 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-sm leading-6 text-gray-100 dark:bg-gray-800"
-          ><code :for={line <- step.code} class="block"><span class="select-none text-gray-500">$ </span>{line}</code></pre>
+          <.command_block lines={step.code} />
           <div class={[
             "mt-6 grid gap-6",
             length(step.shots) > 1 && "lg:grid-cols-2"
@@ -620,19 +618,20 @@
               Pronto para colocar o primeiro pipeline de pé?
             </p>
             <p class="mt-3 text-white/85">
-              Baixe o runner, escolha um pipeline pronto e crie a primeira tarefa. O guia leva poucos minutos.
+              Crie a conta grátis, baixe o runner, escolha um pipeline pronto e crie a primeira tarefa. O guia leva poucos minutos.
             </p>
             <div class="mt-8 flex flex-col gap-3 sm:flex-row">
               <.button
-                to={~p"/login"}
-                link_type="live_redirect"
+                to={~p"/pricing"}
+                link_type="a"
                 size="lg"
                 variant="light"
                 color="gray"
                 icon="hero-arrow-right"
                 icon_placement="right"
+                data-testid="cta-signup"
               >
-                Entrar
+                Criar conta grátis
               </.button>
               <.button
                 to={~p"/docs/primeiros-passos"}

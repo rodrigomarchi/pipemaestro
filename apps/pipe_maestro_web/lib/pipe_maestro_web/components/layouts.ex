@@ -65,6 +65,13 @@ defmodule PipeMaestroWeb.Layouts do
             >
               Documentação
             </a>
+            <a
+              href={~p"/pricing"}
+              class="hover:text-gray-900 dark:hover:text-white"
+              data-testid="nav-pricing"
+            >
+              Planos
+            </a>
           </div>
           <div class="flex items-center gap-2">
             <.color_scheme_switch id="public-scheme" variant="toggle" />
@@ -88,14 +95,14 @@ defmodule PipeMaestroWeb.Layouts do
               Entrar
             </.button>
             <.button
-              to={~p"/login"}
-              link_type="live_redirect"
+              to={~p"/pricing"}
+              link_type="a"
               class="hidden sm:inline-flex"
               icon="hero-arrow-right"
               icon_placement="right"
-              data-testid="nav-get-started"
+              data-testid="nav-signup"
             >
-              Começar
+              Criar conta
             </.button>
           </div>
         </nav>
@@ -325,7 +332,7 @@ defmodule PipeMaestroWeb.Layouts do
             >
               <.dropdown_menu_item
                 link_type="a"
-                to={~p"/workspaces"}
+                to={~p"/workspaces?#{[choose: 1]}"}
                 data-testid="account-switch-workspace"
               >
                 <.icon name="hero-squares-2x2" class="size-5" /> Trocar de workspace
@@ -352,7 +359,18 @@ defmodule PipeMaestroWeb.Layouts do
         />
         <.back_link :if={@back} back={@back} />
         <div class="min-w-0 flex-1">
-          <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
+          <div class="flex min-w-0 items-center gap-2">
+            <.workspace_switcher current={@current_scope.workspace} workspaces={@workspaces} />
+            <.badge
+              :if={@current_scope.workspace.plan == :free_beta}
+              color="primary"
+              variant="soft"
+              size="xs"
+              label="Free · BETA"
+              class="shrink-0"
+              data-testid="workspace-plan-badge"
+            />
+          </div>
           <div class="flex min-w-0 items-center gap-2">
             <h1
               class="truncate text-base font-semibold text-gray-900 dark:text-white"

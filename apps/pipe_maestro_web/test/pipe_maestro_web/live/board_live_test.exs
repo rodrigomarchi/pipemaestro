@@ -3,7 +3,8 @@ defmodule PipeMaestroWeb.BoardLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias PipeMaestro.{Jobs, Runners, Tasks}
+  alias PipeMaestro.Accounts.Scope
+  alias PipeMaestro.{Jobs, Onboarding, Runners, Tasks, Workspaces}
   alias PipeMaestroWeb.RunnerStatus
 
   setup :register_and_log_in_member
@@ -543,5 +544,29 @@ defmodule PipeMaestroWeb.BoardLiveTest do
       attempts == 0 -> false
       true -> Process.sleep(20) && eventually(fun, attempts - 1)
     end
+  end
+
+  describe "plan badge" do
+    test "a Free beta workspace shows its plan beside its name", %{conn: conn, user: user} do
+      {:ok, workspace} = Workspaces.create_owned_workspace(user, %{"name" => "Beta"})
+      :ok = Onboarding.dismiss(owner_scope(user, workspace))
+
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+      assert view |> element(~s([data-testid="workspace-plan-badge"])) |> render() =~ "BETA"
+    end
+
+    test "a workspace an operator set up shows none", %{conn: conn, workspace: workspace} do
+      {:ok, view, _html} = live(conn, ~p"/w/#{workspace.slug}")
+      refute has_element?(view, ~s([data-testid="workspace-plan-badge"]))
+
+      assert has_element?(
+               view,
+               ~s(a[data-testid="account-switch-workspace"][href="/workspaces?choose=1"])
+             )
+    end
+  end
+
+  defp owner_scope(user, workspace) do
+    user |> Scope.for_user() |> Scope.put_workspace(workspace, :admin)
   end
 end

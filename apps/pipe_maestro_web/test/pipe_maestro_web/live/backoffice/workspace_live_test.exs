@@ -9,6 +9,24 @@ defmodule PipeMaestroWeb.Backoffice.WorkspaceLiveTest do
   setup :register_and_log_in_operator
 
   describe "index" do
+    test "marks the Free beta workspaces, and the show page names their owner", %{conn: conn} do
+      owner = user_fixture(%{email: "dona@acme.dev"})
+      {:ok, free} = Workspaces.create_owned_workspace(owner, %{"name" => "Livre"})
+      custom = workspace_fixture()
+
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces")
+      assert has_element?(view, ~s([data-testid="backoffice-workspace-plan-#{free.slug}"]))
+      refute has_element?(view, ~s([data-testid="backoffice-workspace-plan-#{custom.slug}"]))
+
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{free}")
+
+      assert view |> element(~s([data-testid="backoffice-workspace-owner"])) |> render() =~
+               "dona@acme.dev"
+
+      {:ok, view, _html} = live(conn, ~p"/backoffice/workspaces/#{custom}")
+      refute has_element?(view, ~s([data-testid="backoffice-workspace-owner"]))
+    end
+
     test "lists workspaces with their member count", %{conn: conn} do
       workspace = workspace_fixture(%{name: "Acme"})
       member_fixture(workspace)

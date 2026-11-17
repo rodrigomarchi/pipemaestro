@@ -6,6 +6,19 @@ defmodule PipeMaestroWeb.PageHTML do
 
   embed_templates "page_html/*"
 
+  attr :lines, :list, required: true, doc: "the commands, one per line"
+
+  @doc "Terminal commands, each after a prompt; renders nothing without any."
+  @spec command_block(map()) :: Phoenix.LiveView.Rendered.t()
+  def command_block(assigns) do
+    ~H"""
+    <pre
+      :if={@lines != []}
+      class="mt-4 overflow-x-auto rounded-lg bg-gray-900 px-4 py-3 font-mono text-sm leading-6 text-gray-100 dark:bg-gray-800"
+    ><code :for={line <- @lines} class="block"><span class="select-none text-gray-500">$ </span>{line}</code></pre>
+    """
+  end
+
   attr :shot, :map,
     required: true,
     doc: "a screenshot of `PipeMaestroWeb.LandingShots` (`all/0`, `walkthrough/0` or `docs/0`)"

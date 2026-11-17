@@ -34,7 +34,14 @@ defmodule PipeMaestroWeb.ConnCase do
 
   setup tags do
     PipeMaestro.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+    {:ok, conn: %{Phoenix.ConnTest.build_conn() | remote_ip: unique_ip()}}
+  end
+
+  # Each test asks from its own address, so the rate limits (`PipeMaestroWeb.RateLimit`)
+  # of one never count the requests of another.
+  defp unique_ip do
+    n = System.unique_integer([:positive])
+    {127, rem(div(n, 65_536), 256), rem(div(n, 256), 256), rem(n, 256)}
   end
 
   @doc "Signs `user` in on `conn`, the way the sign-in form would."

@@ -2,7 +2,8 @@ defmodule PipeMaestro.Workspaces.Membership do
   @moduledoc """
   Links a user to a workspace they can sign in to, with their role there:
   `:admin` (also manages the workspace's pipelines, projects and runners) or
-  `:member` (`PipeMaestro.Authorization`).
+  `:member` (`PipeMaestro.Authorization`). `onboarding_seen_at` is when they
+  finished or skipped the getting-started lesson (`PipeMaestro.Onboarding`).
   """
   use PipeMaestro.Schema
 
@@ -16,6 +17,7 @@ defmodule PipeMaestro.Workspaces.Membership do
 
   schema "workspace_memberships" do
     field :role, Ecto.Enum, values: [:admin, :member], default: :member
+    field :onboarding_seen_at, :utc_datetime
 
     belongs_to :workspace, Workspace
     belongs_to :user, User

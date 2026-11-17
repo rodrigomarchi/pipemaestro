@@ -1,7 +1,10 @@
 defmodule PipeMaestroWeb.WorkspacePickerLive do
   @moduledoc """
   Where a user lands after signing in. With a single workspace they go straight
-  to it; with several they pick one; with none they are told who can help.
+  to it, unless they asked to choose (`?choose=1`, from the account menu);
+  with several they pick one. While their plan allows, they can create
+  another; with none they go on to create their first (ADR 0058), or, past the
+  plan's limit, are told to ask support.
 
   The board lives in another live_session (it loads the workspace on mount),
   so links into it are full navigations, not live redirects.
@@ -11,13 +14,24 @@ defmodule PipeMaestroWeb.WorkspacePickerLive do
   alias PipeMaestro.Workspaces
 
   @impl true
-  def mount(_params, _session, socket) do
-    case Workspaces.list_workspaces_for_user(socket.assigns.current_scope.user) do
-      [workspace] ->
+  def mount(params, _session, socket) do
+    user = socket.assigns.current_scope.user
+    can_create? = Workspaces.can_create_workspace?(user)
+
+    case {Workspaces.list_workspaces_for_user(user), params["choose"]} do
+      {[], _choose} when can_create? ->
+        {:ok, redirect(socket, to: ~p"/workspaces/new")}
+
+      {[workspace], nil} ->
         {:ok, redirect(socket, to: ~p"/w/#{workspace.slug}")}
 
-      workspaces ->
-        {:ok, assign(socket, page_title: "Seus workspaces", workspaces: workspaces)}
+      {workspaces, _choose} ->
+        {:ok,
+         assign(socket,
+           page_title: "Seus workspaces",
+           workspaces: workspaces,
+           can_create?: can_create?
+         )}
     end
   end
 
@@ -73,11 +87,24 @@ defmodule PipeMaestroWeb.WorkspacePickerLive do
             :if={@workspaces == []}
             class="mt-8"
             data-testid="no-workspaces"
-            title="Você ainda não faz parte de nenhum workspace"
-            description="Peça para a equipe da plataforma adicionar você ao workspace da sua empresa."
+            title="Você não faz parte de nenhum workspace"
+            description="Você já criou os workspaces que o plano Free permite. Fale com o suporte para voltar a um deles."
           >
             <:icon><.icon name="hero-building-office-2" /></:icon>
           </.empty>
+
+          <.button
+            :if={@can_create?}
+            to={~p"/workspaces/new"}
+            link_type="live_redirect"
+            variant="outline"
+            color="gray"
+            icon="hero-plus"
+            class="mt-6"
+            data-testid="picker-new-workspace"
+          >
+            Novo workspace
+          </.button>
         </div>
       </div>
     </Layouts.public>

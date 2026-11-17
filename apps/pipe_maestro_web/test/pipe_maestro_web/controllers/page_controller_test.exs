@@ -1,12 +1,57 @@
 defmodule PipeMaestroWeb.PageControllerTest do
   use PipeMaestroWeb.ConnCase, async: true
 
+  alias PipeMaestro.Workspaces.Plan
+
   test "GET / renders the landing page", %{conn: conn} do
     html = conn |> get(~p"/") |> html_response(200)
 
     assert html =~ "Da issue ao Pull Request"
     assert html =~ ~s(id="como-funciona")
     assert html =~ ~s(href="/login")
+  end
+
+  test "the landing page's calls to action lead to the plans", %{conn: conn} do
+    doc = conn |> get(~p"/") |> html_response(200) |> LazyHTML.from_document()
+
+    for testid <- ~w(hero-signup cta-signup nav-signup) do
+      assert [href] =
+               doc
+               |> LazyHTML.query(~s([data-testid="#{testid}"]))
+               |> LazyHTML.attribute("href")
+
+      assert href == "/pricing"
+    end
+
+    assert [href] =
+             doc |> LazyHTML.query(~s([data-testid="nav-login"])) |> LazyHTML.attribute("href")
+
+    assert href == "/login"
+  end
+
+  test "GET /pricing shows the Free beta plan and leads to sign-up", %{conn: conn} do
+    html = conn |> get(~p"/pricing") |> html_response(200)
+    doc = LazyHTML.from_document(html)
+    limits = Plan.free_beta()
+
+    assert html =~ "Durante o beta, tudo grátis"
+    assert doc |> LazyHTML.query(~s([data-testid="plan-card-free"])) |> Enum.count() == 1
+    assert doc |> LazyHTML.query(~s([data-testid="plan-badge-beta"])) |> Enum.count() == 1
+    assert html =~ "R$ 0"
+    assert html =~ "Até #{limits.workspaces_per_owner} workspaces"
+    assert html =~ "#{limits.max_running_tasks} tarefas rodando ao mesmo tempo"
+    assert html =~ "#{limits.job_files_quota_mib} MiB"
+    assert html =~ "Sem cartão de crédito"
+
+    assert html =~
+             "Eventos do agente guardados por #{limits.agent_events_retention_days} dias e log do runner por #{limits.runner_log_retention_days}"
+
+    assert [href] =
+             doc
+             |> LazyHTML.query(~s([data-testid="plan-start-free"]))
+             |> LazyHTML.attribute("href")
+
+    assert href == "/signup"
   end
 
   test "the landing page leads to the documentation and its everyday examples", %{conn: conn} do

@@ -37,7 +37,7 @@ defmodule PipeMaestroWeb.LoginLive do
               Entrar na sua organização
             </h1>
             <p class="mt-2 mb-8 text-sm text-gray-600 dark:text-gray-400">
-              Use o e-mail e a senha que a equipe da plataforma criou para você.
+              Use o e-mail e a senha da sua conta.
             </p>
 
             <.form
@@ -87,8 +87,17 @@ defmodule PipeMaestroWeb.LoginLive do
             </.form>
 
             <p class="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-              Esqueceu a senha ou ainda não tem acesso? Fale com o administrador da sua
-              organização.
+              Não tem conta?
+              <.link
+                navigate={~p"/pricing"}
+                class="font-medium text-primary-600 hover:underline dark:text-primary-400"
+                data-testid="login-signup-link"
+              >
+                Crie grátis
+              </.link>
+            </p>
+            <p class="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
+              Esqueceu a senha? Fale com o suporte.
             </p>
           </div>
         </div>

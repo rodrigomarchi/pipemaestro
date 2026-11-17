@@ -41,6 +41,12 @@ config :phoenix, :plug_init_mode, :runtime
 # runners page shows their links (the files themselves are not served here).
 config :pipe_maestro_web, :runner_downloads_url, "/downloads/runner"
 
+# Every spec signs in from 127.0.0.1; the limits themselves are covered by the
+# controller tests.
+config :pipe_maestro_web, :rate_limits,
+  login: {10_000, :timer.minutes(15)},
+  signup: {10_000, :timer.hours(1)}
+
 config :phoenix_live_view, enable_expensive_runtime_checks: true
 
 # Encrypts the workspaces' secrets at rest; production reads SECRETS_KEY.

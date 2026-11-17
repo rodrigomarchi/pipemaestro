@@ -6,6 +6,45 @@ defmodule PipeMaestro.AccountsTest do
   alias PipeMaestro.Accounts
   alias PipeMaestro.Accounts.{Scope, User, UserToken}
 
+  describe "register_user/1" do
+    test "creates the account of someone signing up, with a normalized e-mail" do
+      {:ok, user} =
+        Accounts.register_user(%{
+          "name" => "Bia",
+          "email" => " Bia@Acme.DEV ",
+          "password" => valid_password()
+        })
+
+      assert user.email == "bia@acme.dev"
+      assert user.name == "Bia"
+      assert Accounts.get_user_by_email_and_password("bia@acme.dev", valid_password())
+    end
+
+    test "refuses a taken e-mail, a bad e-mail, a short password and no name" do
+      user = user_fixture()
+
+      {:error, changeset} =
+        Accounts.register_user(%{"email" => user.email, "password" => valid_password()})
+
+      assert %{email: ["já está em uso"], name: [_]} = errors_on(changeset)
+
+      {:error, changeset} =
+        Accounts.register_user(%{"name" => "Bia", "email" => "nope", "password" => "12345"})
+
+      assert %{email: ["deve ser um e-mail válido"], password: [_]} = errors_on(changeset)
+    end
+  end
+
+  describe "change_user_registration/3" do
+    test "can leave out whether the e-mail is taken, so typing never tells" do
+      user = user_fixture()
+      attrs = %{"name" => "Bia", "email" => user.email, "password" => valid_password()}
+
+      assert Accounts.change_user_registration(%User{}, attrs, validate_unique: false).valid?
+      refute Accounts.change_user_registration(%User{}, attrs).valid?
+    end
+  end
+
   describe "create_user/1" do
     test "stores a hash, never the password, and normalizes the e-mail" do
       {:ok, user} =

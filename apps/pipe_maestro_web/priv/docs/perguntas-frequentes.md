@@ -1,3 +1,15 @@
+## Quanto custa a plataforma?
+
+Nada, durante o beta. Há um plano só, o Free, com limites de quantos workspaces cada conta
+cria, de quantas tarefas rodam ao mesmo tempo e de quanto cada workspace guarda de anexos e
+por quanto tempo. Os números estão em [Planos](/pricing). O uso do Claude é à parte, na sua
+conta.
+
+## Esqueci a minha senha. E agora?
+
+Durante o beta a plataforma não envia e-mail, então não há "esqueci a senha" automático.
+Fale com o suporte: a equipe redefine a senha e você entra com a nova.
+
 ## Preciso de uma conta do Claude?
 
 Sim. O agente é o Claude Code, que roda na máquina do runner com o login de quem o roda. O
